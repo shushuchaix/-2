@@ -1,0 +1,66 @@
+# ============================================================
+#  简历岗位雷达 · Caddy 配置（比 nginx 简单得多，推荐新手使用）
+#
+#  用法：
+#    1. 把 jobs.example.com 换成你的域名（需已解析到本机公网 IP）
+#    2. 把本文件内容追加到 /etc/caddy/Caddyfile
+#    3. systemctl reload caddy
+#
+#  Caddy 会自动申请并续期 Let's Encrypt 证书，无需额外配置 HTTPS。
+# ============================================================
+
+jobs.example.com {
+	# 上传体积上限
+	request_body {
+		max_size 50MB
+	}
+
+	# 安全响应头（应用也会发，这里兜底）
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# 日志
+	log {
+		output file /var/log/caddy/resume-radar.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+
+	# 检索接口：流式响应，必须关闭缓冲，并放宽超时
+	# 一次检索 40~90 秒，缓冲开启会导致前端看不到实时进度
+	handle /api/analyze {
+		reverse_proxy 127.0.0.1:3210 {
+			# 关闭响应缓冲，保证 NDJSON 逐行到达浏览器
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# 其余请求
+	handle {
+		reverse_proxy 127.0.0.1:3210 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# 登录接口限流（需要 Caddy 的 rate_limit 插件；
+	# 若未安装该插件请删除这一段，应用自身已有登录失败锁定）
+	# @login path /api/login
+	# rate_limit @login {
+	#     zone login {
+	#         key {remote_host}
+	#         events 10
+	#         window 1m
+	#     }
+	# }
+}

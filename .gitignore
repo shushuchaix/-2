@@ -1,0 +1,30 @@
+# 依赖
+node_modules
+.npm-cache
+
+# 运行时数据：检索结果、字体映射缓存、会话密钥、配额计数
+data
+
+# 密钥与本地配置，绝不提交
+config.json
+.env
+.env.local
+
+# 桌面版构建产物（体积大，且可由 npm run dist:desktop 重新生成）
+dist
+.cache
+.tmp
+# 测试运行时用的隔离数据目录（tools/run-all-tests.mjs 会设 RJR_DATA_DIR 到这里）
+.tmp-test-data
+build/icon.ico
+build/icon.png
+
+# 编辑器与系统
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+npm-debug.log*

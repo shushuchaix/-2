@@ -1,0 +1,134 @@
+{
+  "deepseek": {
+    "apiKey": "sk-在这里填入你的DeepSeek密钥",
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-chat",
+    "concurrency": 4,
+    "timeoutMs": 120000,
+    "allowUserKey": true
+  },
+  "search": {
+    "provider": "auto",
+    "tavilyApiKey": "",
+    "serperApiKey": "",
+    "bochaApiKey": ""
+  },
+  "sources": {
+    "zhaopin": {
+      "enabled": true,
+      "maxPages": 3,
+      "delayMs": 600
+    },
+    "shixiseng": {
+      "enabled": true,
+      "maxPages": 3,
+      "delayMs": 800,
+      "titleRepairSamples": 8
+    },
+    "searchApi": {
+      "enabled": true,
+      "maxQueries": 6,
+      "resultsPerQuery": 10
+    },
+    "wechat": {
+      "enabled": true,
+      "maxPages": 1,
+      "maxFetch": 8,
+      "maxExpand": 5,
+      "maxQueries": 4,
+      "delayMs": 1200
+    },
+    "nowcoder": {
+      "enabled": true,
+      "includeSchedule": true,
+      "maxSchedule": 6
+    },
+    "maxCities": 2,
+    "secondaryCityKeywords": 2,
+    "university": {
+      "enabled": true,
+      "maxHosts": 4,
+      "maxPerKeyword": 12,
+      "maxDetail": 12,
+      "delayMs": 900,
+      "hosts": [],
+      "_说明": [
+        "默认留空 hosts，系统会按「本校 → 专业相关院校 → 其余」自动选校：",
+        "  1) 本校：从简历识别学校名，自动探测其就业网（结果缓存到 data/university-hosts.json）",
+        "  2) 专业相关：计算机/软件等优先理工类院校，财经类优先财经院校",
+        "  3) 其余用已验证可用的院校补足",
+        "实测约 100 所学校 × 7 种域名模式，只有少数学校命中同一套「才立方就业」系统。",
+        "如果你本校的就业网不在支持范围内，把地址填进 hosts 即可，它会被优先使用。",
+        "hosts 示例：[{ \"name\": \"XX大学\", \"host\": \"https://job.xx.edu.cn\" }]"
+      ]
+    },
+    "chenyun": {
+      "enabled": true,
+      "maxHosts": 2,
+      "maxPages": 6,
+      "maxDetail": 12,
+      "delayMs": 800,
+      "hosts": [],
+      "_说明": [
+        "晨云智慧就业管理服务系统（与才立方是两套不同系统）。",
+        "已收录：中国民用航空飞行学院 https://jy.cafuc.edu.cn",
+        "特征：列表接口是 POST /index/index/employjoblistdata.html（body: page=N），",
+        "      GET 会抛 ThinkPHP 异常；且不支持关键词过滤，所以是全量翻页后本地排序。",
+        "若你学校也用晨云系统，填进 hosts：[{ \"name\": \"XX大学\", \"host\": \"https://jy.xx.edu.cn\" }]"
+      ]
+    },
+    "jiuyeqiao": {
+      "enabled": true,
+      "maxPerKeyword": 10,
+      "maxPages": 1,
+      "maxDetail": 8,
+      "delayMs": 700,
+      "_说明": [
+        "就业桥：按学校开子域的商用平台（https://{学校缩写}.jiuyeqiao.cn）。",
+        "实测 20/20 所测试院校都覆盖，包含北邮、电子科大、杭电等自建就业网抓不到的学校。",
+        "岗位库跨校：https://job.jiuyeqiao.cn/zhiwei/0/?keywords=X&page=N，支持服务端关键词过滤，",
+        "所以拉岗位不需要枚举学校。这是覆盖院校面最广的一个源。"
+      ]
+    }
+  },
+  "match": {
+    "shortlistSize": 200,
+    "enrichTopN": 12,
+    "scoreBatchSize": 8,
+    "minScore": 40
+  },
+  "filters": {
+    "graduationYear": "2027",
+    "includeInternship": false,
+    "strict": true,
+    "yearQueryCount": 3,
+    "cities": []
+  },
+  "profile": {
+    "_说明": [
+      "画像钉死：填了就覆盖简历解析出来的对应字段，用于把工具固定服务于一个特定目标。",
+      "例：{ \"school\": \"中国民用航空飞行学院\", \"major\": \"消防工程\" }",
+      "学校会影响高校就业网的选校，专业会影响检索词与岗位方向判定。留空 = 完全按简历来。"
+    ]
+  },
+  "auth": {
+    "mode": "password",
+    "passwordHash": "",
+    "sessionTtlHours": 168,
+    "maxLoginFails": 5,
+    "lockMinutes": 15
+  },
+  "limits": {
+    "maxConcurrent": 2,
+    "maxQueue": 8,
+    "dailyGlobal": 100,
+    "dailyPerIp": 10,
+    "perIpCooldownMs": 30000
+  },
+  "server": {
+    "port": 3210,
+    "host": "127.0.0.1",
+    "trustProxy": false,
+    "publicUrl": ""
+  }
+}

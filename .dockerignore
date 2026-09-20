@@ -1,0 +1,35 @@
+node_modules
+npm-debug.log
+
+# 运行时数据（结果、字体映射缓存、会话密钥、配额计数）
+data
+
+# 本地配置与密钥，绝不进镜像
+config.json
+.env
+.env.local
+
+# 开发/勘察脚本与桌面版构建产物
+# 注意：dist 有 300MB+、.cache 有 130MB+，若不打进 .dockerignore 会把构建上下文撑爆
+tools
+dist
+.cache
+.tmp
+electron
+build
+
+# 版本控制与编辑器
+.git
+.gitignore
+.vscode
+.idea
+
+# 文档与部署配置（由宿主机维护）
+README.md
+deploy
+*.md
+
+# 杂项
+.DS_Store
+Thumbs.db
+.npm-cache

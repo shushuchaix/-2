@@ -1,0 +1,47 @@
+# 简历岗位雷达 · 一键部署
+#
+# 用法：
+#   1. cp .env.example .env  并填写 AUTH_PASSWORD 与 DEEPSEEK_API_KEY
+#   2. docker compose up -d --build
+#   3. 在宿主机用 nginx / Caddy 反代到 127.0.0.1:3210 并配置 HTTPS
+#
+# 注意：端口只绑定到 127.0.0.1，不直接对外暴露。
+# 应用本身是明文 HTTP，直接暴露到公网会让密码和简历内容以明文传输。
+
+services:
+  radar:
+    build: .
+    image: resume-job-radar:latest
+    container_name: resume-job-radar
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3210"
+      # 由反向代理转发时置为 1，否则所有访客会被识别成同一个 IP，限流失效
+      TRUST_PROXY: "1"
+
+    ports:
+      # 只发布到宿主机环回地址，交给 nginx / Caddy 反代
+      - "127.0.0.1:3210:3210"
+
+    volumes:
+      # 持久化检索结果与字体映射缓存（避免每次重建容器都要重新学习）
+      - ./data:/app/data
+
+    # 资源上限：避免异常请求把整机拖垮
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 192M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

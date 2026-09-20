@@ -1,0 +1,61 @@
+{
+  "name": "resume-job-radar",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "简历关键词驱动的校招/实习岗位全网检索与匹配系统",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "start:public": "node src/start-public.mjs",
+    "desktop": "electron .",
+    "dist:desktop": "node tools/build-desktop.mjs",
+    "cli": "node src/cli.mjs",
+    "doctor": "node src/doctor.mjs",
+    "hash-password": "node src/hash-password.mjs",
+    "test": "node tools/run-all-tests.mjs",
+    "test:offline": "node tools/run-all-tests.mjs --skip-network",
+    "test:security": "node tools/test-security.mjs",
+    "test:deploy": "node tools/test-deploy-assets.mjs",
+    "test:desktop": "node tools/test-desktop.mjs",
+    "test:university": "node tools/test-university-registry.mjs",
+    "test:fire": "node tools/test-fire-safety-profile.mjs",
+    "test:pin": "node tools/test-profile-pin.mjs",
+    "test:chenyun": "node tools/test-chenyun.mjs",
+    "test:jiuyeqiao": "node tools/test-jiuyeqiao.mjs",
+    "test:scoring": "node tools/test-cert-proficiency.mjs",
+    "test:requirements": "node tools/test-requirement-severity.mjs",
+    "test:filters": "node tools/test-filters-intern-degree.mjs",
+    "test:export": "node tools/test-export.mjs",
+    "test:sources": "node tools/test-sources-index.mjs",
+    "test:store": "node tools/test-store.mjs",
+    "test:fontmap": "node tools/test-fontmap.mjs",
+    "test:search": "node tools/test-searchapi.mjs",
+    "test:destinations": "node tools/test-destinations.mjs",
+    "verify:package": "node tools/verify-package.mjs",
+    "sources": "node tools/check-sources.mjs",
+    "audit": "node tools/audit-project.mjs",
+    "clean": "node tools/clean-data.mjs",
+    "e2e": "node tools/run-e2e.mjs",
+    "orphans": "node tools/find-orphans.mjs",
+
+    "schools": "node tools/report-school-selection.mjs",
+    "registry": "node tools/audit-registry.mjs",
+    "collect:uni": "node tools/collect-university.mjs",
+    "company": "node tools/find-company.mjs",
+    "verify:hosts": "node tools/verify-candidate-hosts.mjs",
+    "deploy:check": "node tools/check-deploy-env.mjs",
+    "recover": "node tools/recover-recycle.mjs",
+    "test:web": "node tools/test-web.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^4.10.38"
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.3.6",
+    "electron": "^38.0.0"
+  }
+}

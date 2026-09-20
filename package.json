@@ -32,6 +32,7 @@
     "test:fontmap": "node tools/test-fontmap.mjs",
     "test:search": "node tools/test-searchapi.mjs",
     "test:destinations": "node tools/test-destinations.mjs",
+    "test:campus": "node tools/test-campus.mjs",
     "verify:package": "node tools/verify-package.mjs",
     "sources": "node tools/check-sources.mjs",
     "audit": "node tools/audit-project.mjs",

@@ -1006,7 +1006,7 @@ salaryMin/Max/Month, eduLevel: 薪资与学历
 
 单项测试：`npm run test:security` / `test:fire` / `test:jiuyeqiao` / `test:chenyun` /
 `test:scoring` / `test:requirements` / `test:filters` / `test:export` / `test:sources` /
-`test:store` / `test:search` / `test:destinations` / `test:fontmap` 等。
+`test:store` / `test:search` / `test:destinations` / `test:campus` / `test:fontmap` 等。
 
 > **`npm run sources` 值得定期跑。** 数据源失效是**静默的** —— 微信公众号源就是这么死掉的：
 > 每次检索都报几条反爬错误、产出 0 篇，而结果集里完全看不出异常。
@@ -1354,6 +1354,7 @@ $env:GITHUB_TOKEN = "ghp_xxxx"
 │   ├── run-all-tests.mjs      跑完所有套件并汇总；--skip-network 只跑离线部分
 │   ├── test-security.mjs      66 项公网部署安全测试（临时 RJR_DATA_DIR 隔离，不碰真实配置）
 │   ├── test-deploy-assets.mjs 部署资产校验（61 项）
+│   ├── test-desktop.mjs       桌面版自检：启动内置服务，逐项断言窗口/服务/静态资源行为
 │   ├── test-sources-index.mjs 多源调度契约（29 项）
 │   ├── test-searchapi.mjs     全网搜索适配器（39 项，mock 三家响应结构）
 │   ├── test-store.mjs         岗位索引持久层（44 项，含跨检索行为）
@@ -1365,6 +1366,7 @@ $env:GITHUB_TOKEN = "ghp_xxxx"
 │   ├── test-cert-proficiency.mjs    证书与技能熟练度打分（26 项）
 │   ├── test-requirement-severity.mjs「硬性要求 vs 优先条件」判别（31 项）
 │   ├── test-filters-intern-degree.mjs 实习转正 + 学历下限过滤（33 项）
+│   ├── test-campus.mjs        届别识别与校招分类回归（12 项断言；后半段会联网取真实样本，故归入联网组）
 │   ├── test-destinations.mjs  毕业生去向种子数据（21 项）
 │   ├── test-profile-pin.mjs   画像钉死覆盖（8 项）
 │   ├── test-fontmap.mjs       实习僧标题解码效果

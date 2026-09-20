@@ -35,7 +35,6 @@ const SUITES = [
   { f: 'test-security.mjs', offline: true },
   { f: 'test-deploy-assets.mjs', offline: true },
   { f: 'test-desktop.mjs', offline: true },
-  { f: 'test-campus.mjs', offline: true },
   { f: 'test-export.mjs', offline: true },
   { f: 'test-sources-index.mjs', offline: true },
   { f: 'test-searchapi.mjs', offline: true },
@@ -55,6 +54,11 @@ const SUITES = [
   // 需要联网
   // 注意 test-profile-pin 虽然是本地跑，但「钉死学校」会触发就业网探测（真实网络），
   // 所以必须归到联网组，否则离线 CI 里会假失败
+  // test-campus 的第一/五节是纯离线断言，但第二/三/四节会真抓牛客/智联/实习僧，
+  // 且 fetchCampusJobs() / fetchSchedule() 没有 try/catch —— 网络一抖就崩。
+  // 它此前标成 offline，与上面「离线套件不依赖外部站点」的注释自相矛盾，
+  // 会让离线 CI 假失败。归到联网组才对。
+  { f: 'test-campus.mjs', offline: false },
   { f: 'test-profile-pin.mjs', offline: false },
   { f: 'test-university-registry.mjs', offline: false },
   { f: 'test-fire-safety-profile.mjs', offline: false },

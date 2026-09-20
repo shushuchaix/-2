@@ -20,6 +20,10 @@ const cases = [
   ['毕业不限', []],
 ];
 let pass = 0;
+// 【为什么需要这个】本文件此前无论断言是否失败都无条件 process.exit(0)，
+// 于是它在 `npm test` 里永远计为「通过」—— 断言能打印 ❌，却无法让运行器失败，
+// 这种「永远不会红的测试」比没有测试更危险：它提供虚假的覆盖感。
+let failed = 0;
 for (const [text, want] of cases) {
   const got = extractGraduationYears(text);
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -27,6 +31,7 @@ for (const [text, want] of cases) {
   console.log(`  ${ok ? '✅' : '❌'} "${text}" → [${got.join(',')}]${ok ? '' : `  期望 [${want.join(',')}]`}`);
 }
 console.log(`  小计：${pass}/${cases.length}`);
+failed += cases.length - pass;
 
 console.log('\n' + '='.repeat(72));
 console.log('  二、牛客校招源：真实数据与推断字段的核对');
@@ -143,6 +148,7 @@ console.log('='.repeat(72));
   const c = classifyJob(fake);
   const m = matchTargetYear(fake, 2027, { includeInternship: false, strict: true });
   const ok = c.category === 'social' && !m.keep;
+  if (!ok) failed++;
   console.log(`  ${ok ? '✅' : '❌'} 社招岗位因页脚提到「2027届」而误判为校招 → 实际判定为 ${c.category}，${m.keep ? '被保留（错误）' : '已剔除：' + m.reason}`);
 
   // 真正的校招岗不应被误伤
@@ -161,7 +167,11 @@ console.log('='.repeat(72));
   const c2 = classifyJob(good);
   const m2 = matchTargetYear(good, 2027, { includeInternship: false, strict: true });
   const ok2 = c2.category === 'campus' && m2.keep;
+  if (!ok2) failed++;
   console.log(`  ${ok2 ? '✅' : '❌'} 真实校招岗正常保留 → ${c2.category}，${m2.reason}`);
 }
 
-process.exit(0);
+if (failed) {
+  console.log(`\n  ❌ 共 ${failed} 项断言失败（退出码 1，会让 run-all-tests / CI 失败）\n`);
+}
+process.exit(failed ? 1 : 0);

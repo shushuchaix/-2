@@ -1,5 +1,5 @@
 // 简历文本提取：txt / md / pdf / docx / doc(尽力而为)
-import zlib from 'node:zlib';
+import {readDocx} from './docx.mjs';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 
@@ -19,59 +19,6 @@ function decodeBest(buffer) {
     }
   }
   return utf8.replace(/^\uFEFF/, '');
-}
-
-/* ------------------------------- DOCX ------------------------------- */
-/** 解析 ZIP 中央目录，取出指定条目并解压 */
-function unzipEntry(buf, wanted) {
-  const eocdSig = 0x06054b50;
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= 0 && i > buf.length - 22 - 65536; i--) {
-    if (buf.readUInt32LE(i) === eocdSig) {
-      eocd = i;
-      break;
-    }
-  }
-  if (eocd === -1) throw new Error('不是有效的 ZIP/DOCX 文件（找不到中央目录）');
-  const count = buf.readUInt16LE(eocd + 10);
-  let offset = buf.readUInt32LE(eocd + 16);
-
-  for (let n = 0; n < count; n++) {
-    if (buf.readUInt32LE(offset) !== 0x02014b50) break;
-    const method = buf.readUInt16LE(offset + 10);
-    const compSize = buf.readUInt32LE(offset + 20);
-    const nameLen = buf.readUInt16LE(offset + 28);
-    const extraLen = buf.readUInt16LE(offset + 30);
-    const commentLen = buf.readUInt16LE(offset + 32);
-    const localOffset = buf.readUInt32LE(offset + 42);
-    const name = buf.toString('utf8', offset + 46, offset + 46 + nameLen);
-
-    if (name === wanted) {
-      const lhNameLen = buf.readUInt16LE(localOffset + 26);
-      const lhExtraLen = buf.readUInt16LE(localOffset + 28);
-      const dataStart = localOffset + 30 + lhNameLen + lhExtraLen;
-      const data = buf.subarray(dataStart, dataStart + compSize);
-      if (method === 0) return data;
-      if (method === 8) return zlib.inflateRawSync(data);
-      throw new Error(`不支持的 ZIP 压缩方式：${method}`);
-    }
-    offset += 46 + nameLen + extraLen + commentLen;
-  }
-  throw new Error(`DOCX 中未找到 ${wanted}`);
-}
-
-function parseDocx(buf) {
-  const xml = unzipEntry(buf, 'word/document.xml').toString('utf8');
-  const paragraphs = xml
-    .split(/<\/w:p>/)
-    .map((p) => {
-      const runs = [...p.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)].map((m) => m[1]);
-      const tabs = (p.match(/<w:tab\s*\/>/g) || []).length;
-      const text = runs.join('').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
-      return text + (tabs ? '\t' : '');
-    })
-    .filter((s) => s.trim());
-  return paragraphs.join('\n');
 }
 
 /* -------------------------------- PDF -------------------------------- */
@@ -128,8 +75,8 @@ export async function extractResumeText(buffer, filename = '') {
   }
   if (ext === 'docx' || (isZipMagic && ext !== 'doc')) {
     try {
-      const text = parseDocx(buffer);
-      return { text: cleanupResumeText(text), format: 'docx' };
+      const result = readDocx(buffer);
+      return { text: cleanupResumeText(result.text), format: 'docx', warnings:result.warnings,parserVersion:'docx-2' };
     } catch (e) {
       if (ext === 'docx') throw new Error(`DOCX 解析失败：${e.message}`);
     }
@@ -138,7 +85,7 @@ export async function extractResumeText(buffer, filename = '') {
     throw new Error('不支持旧版 .doc 格式，请另存为 .docx 或 PDF 后重试');
   }
   const text = decodeBest(buffer);
-  return { text: cleanupResumeText(text), format: ext || 'txt' };
+  return { text: cleanupResumeText(text), format: ext || 'txt',warnings:[],parserVersion:'text-2' };
 }
 
 /** 简历文本清洗：压缩空行、去重复行 */

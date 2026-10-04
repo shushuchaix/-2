@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SKIP_NET = process.argv.includes('--skip-network');
@@ -43,7 +43,7 @@ const SUITES = [
   { f: 'test-requirement-severity.mjs', offline: true },
   { f: 'test-filters-intern-degree.mjs', offline: true },
   { f: 'test-destinations.mjs', offline: true },
-  { f: 'verify-package.mjs', offline: true },
+  { f: 'verify-package.mjs', offline: true, artifact: true },
   { f: 'audit-project.mjs', offline: true },
   { f: 'audit-soft-requirements.mjs', offline: true },
   { f: 'check-package-json.mjs', offline: true },
@@ -72,6 +72,11 @@ console.log('  全量测试');
 console.log('='.repeat(84) + '\n');
 
 for (const s of SUITES) {
+  if (s.artifact && !process.argv.includes('--package')) {
+    console.log('  跳过 '+s.f+'（仅 --package 验证实际构建产物）');
+    results.push({...s,code:0,skipped:true});
+    continue;
+  }
   if (SKIP_NET && !s.offline) {
     console.log(`  ⏭  ${s.f.padEnd(34)} 跳过（需要联网）`);
     results.push({ ...s, code: 0, skipped: true });
@@ -83,17 +88,21 @@ for (const s of SUITES) {
   // 受限环境下不允许创建命名管道，child_process 一旦用默认的 'pipe' 捕获输出就会 EPERM，
   // 表现为「所有套件 0.0s 全失败」这种极难定位的现象。
   // inherit 让子进程直接写当前终端，退出码仍然拿得到 —— 代价只是无法在这里解析断言条数。
-  const r = spawnSync(process.execPath, [path.join(ROOT, 'tools', s.f)], {
+  const preload=s.offline?['--import',pathToFileURL(path.join(ROOT,'tests/helpers/network-guard.mjs')).href]:[];
+  const r = spawnSync(process.execPath, [...preload,path.join(ROOT, 'tools', s.f)], {
     cwd: ROOT,
     stdio: 'inherit',
     timeout: 300000,
-    env: { ...process.env, RJR_DATA_DIR: TMP_DATA },
+    env: { ...process.env, RJR_DATA_DIR: TMP_DATA, RJR_TEST_ALLOWED_ORIGINS:
+      s.f==='test-desktop.mjs'?'http://127.0.0.1:3422':s.f==='test-security.mjs'?'http://127.0.0.1:3311':'' },
   });
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
   const code = r.status ?? 1;
   results.push({ ...s, code, secs });
 }
 
+const v2=spawnSync(process.execPath,[path.join(ROOT,'tools/test-v2.mjs')],{cwd:ROOT,stdio:'inherit',timeout:300000});
+results.push({f:'v2 tests',offline:true,code:v2.status??1});
 const failed = results.filter((r) => r.code !== 0);
 const skipped = results.filter((r) => r.skipped);
 const passed = results.length - failed.length - skipped.length;

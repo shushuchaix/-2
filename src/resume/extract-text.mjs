@@ -1,5 +1,6 @@
 // 简历文本提取：txt / md / pdf / docx / doc(尽力而为)
 import {readDocx} from './docx.mjs';
+import {orderPdfItems} from './pdf-layout.mjs';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 
@@ -39,25 +40,18 @@ async function parsePdf(buffer) {
   });
   const doc = await task.promise;
   const pages = [];
+  const warnings=new Set();
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
-    let line = '';
-    const lines = [];
-    for (const item of content.items) {
-      if (typeof item.str !== 'string') continue;
-      line += item.str;
-      if (item.hasEOL) {
-        lines.push(line);
-        line = '';
-      }
-    }
-    if (line) lines.push(line);
-    pages.push(lines.join('\n'));
+    const viewport=page.getViewport({scale:1});
+    const result=orderPdfItems(content.items,{width:viewport.width,height:viewport.height});
+    for(const warning of result.warnings)warnings.add(warning);
+    pages.push(result.text);
     page.cleanup();
   }
   await doc.destroy();
-  return pages.join('\n');
+  return {text:pages.join('\n'),warnings:[...warnings]};
 }
 
 /* ------------------------------ 入口 ------------------------------ */
@@ -70,8 +64,8 @@ export async function extractResumeText(buffer, filename = '') {
   const isZipMagic = buffer[0] === 0x50 && buffer[1] === 0x4b;
 
   if (ext === 'pdf' || isPdfMagic) {
-    const text = await parsePdf(buffer);
-    return { text: cleanupResumeText(text), format: 'pdf' };
+    const result = await parsePdf(buffer);
+    return { text: cleanupResumeText(result.text), format: 'pdf',warnings:result.warnings,parserVersion:'pdf-2' };
   }
   if (ext === 'docx' || (isZipMagic && ext !== 'doc')) {
     try {

@@ -250,6 +250,8 @@ export async function runPipeline({
     log(`并入公众号岗位后岗位池：${collected.jobs.length} 条`);
   }
 
+  // Save every collected fact before ranking or eligibility filters.
+  await upsert([...collected.jobs, ...expandedJobs, ...articles.map(a=>({...a,kind:'recruitment_notice'}))], {runId,at:new Date().toISOString()});
   /* ---------- 3.6 届别过滤：只保留目标届别的校招岗位 ---------- */
   // 放在公众号岗位并入之后，保证新抽出来的岗位同样受约束。
   const strictYear = cfg.filters?.strict !== false;
@@ -395,8 +397,8 @@ export async function runPipeline({
   // 并入跨检索索引，算出「新增 / 仍在 / 消失」。
   // 放在 finalize 之后，且整体 try 包住：索引只是增强功能，失败不该影响检索结果本身。
   try {
-    const diff = upsert(result.jobs, { runId, at: result.createdAt });
-    const annotated = annotate(result.jobs, diff);
+    const diff = await upsert(result.jobs, { runId, at: result.createdAt });
+    const annotated = await annotate(result.jobs, diff);
     result.jobs = annotated.jobs;
     result.tracking = {
       added: diff.stats.added,
@@ -412,6 +414,7 @@ export async function runPipeline({
   } catch (e) {
     errors.push(`岗位索引更新失败：${e.message}`);
     log(`岗位索引更新失败：${e.message}`);
+    throw e;
   }
 
   onEvent({ type: 'result', result });

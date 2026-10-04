@@ -458,12 +458,12 @@ export function createServer(cfg) {
       // 跨检索持久化：新增岗位、存活时长、投递状态。
       // 这是 GitHub 上同类项目（jobsync ★1255、offeros）立住的核心功能。
       if (pathname === '/api/tracking/summary' && req.method === 'GET') {
-        return sendJson(req, res, cfg, 200, store.summary());
+        return sendJson(req, res, cfg, 200, await store.summary());
       }
       if (pathname === '/api/tracking/jobs' && req.method === 'GET') {
         const status = url.searchParams.get('status') || '';
         const limit = Math.min(1000, Number(url.searchParams.get('limit')) || 200);
-        return sendJson(req, res, cfg, 200, { jobs: store.listJobs({ status, limit }) });
+        return sendJson(req, res, cfg, 200, { jobs: await store.listJobs({ status, limit }) });
       }
       const trackMatch = pathname.match(/^\/api\/tracking\/jobs\/([^/]+)$/);
       if (trackMatch && req.method === 'POST') {
@@ -476,7 +476,7 @@ export function createServer(cfg) {
         }
         if (!body.status) return sendJson(req, res, cfg, 400, { error: '缺少 status 字段' });
         try {
-          const rec = store.setStatus(id, String(body.status), String(body.note || ''));
+          const rec = await store.setStatus(id, String(body.status), Object.hasOwn(body,'note') ? String(body.note) : undefined);
           return sendJson(req, res, cfg, 200, { ok: true, job: rec });
         } catch (e) {
           return sendJson(req, res, cfg, 400, { error: e.message, allowed: store.STATUSES });

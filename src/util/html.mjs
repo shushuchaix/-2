@@ -1,4 +1,5 @@
-// HTML / 内嵌数据 解析工具（零依赖）
+// HTML / 内嵌数据解析；远端载荷只静态读取。
+import {parseStaticPayload} from './static-payload.mjs';
 const NAMED = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
   ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', hellip: '…',
@@ -156,10 +157,10 @@ export function extractElementById(html, id, tag = 'div') {
 
 /**
  * 求值 Nuxt 风格的内嵌载荷：`window.__NUXT__=(function(a,b,...){...})(...args)`
- * 该类载荷是「函数序列化 + 参数压缩」形式，需要真正执行才能还原。
+ * 该类载荷只读取白名单数据表达式，禁止执行远端代码。
  */
 export function evalInlinePayload(html, varName = '__NUXT__') {
-  const re = new RegExp(`${varName}\\s*=\\s*`);
+  const re = new RegExp(`${varName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\s*=\\s*`);
   const m = re.exec(html);
   if (!m) return null;
   let startIdx = m.index + m[0].length;
@@ -167,12 +168,12 @@ export function evalInlinePayload(html, varName = '__NUXT__') {
   const expr = balancedFrom(html, startIdx);
   if (!expr || expr.length > 4_000_000) return null;
   try {
-    // eslint-disable-next-line no-new-func
-    return new Function(`"use strict";return (${expr.replace(/;\s*$/, '')});`)();
+    return parseStaticPayload(expr);
   } catch {
     return null;
   }
 }
+export const extractNuxtData=html=>evalInlinePayload(html,'__NUXT__');
 
 /** 相对 URL 转绝对 URL */
 export function absoluteUrl(href, base) {

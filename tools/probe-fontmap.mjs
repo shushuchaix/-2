@@ -1,5 +1,5 @@
 // 验证：用详情页明文标题反推字体映射，再解码列表页全部标题
-import { decodeEntities } from '../src/util/html.mjs';
+import { decodeEntities, evalInlinePayload } from '../src/util/html.mjs';
 import { hasPua, learnFromPair, decodeWithMap, coverage, mapSize } from '../src/sources/fontmap.mjs';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -13,21 +13,7 @@ async function get(url) {
   return res.ok ? res.text() : '';
 }
 
-function evalNuxt(html) {
-  const m = /__NUXT__\s*=\s*/.exec(html);
-  if (!m) return null;
-  let i = m.index + m[0].length;
-  while (/\s/.test(html[i] || '')) i++;
-  let depth = 0, j = i, inStr = false, q = '', esc = false;
-  for (; j < html.length; j++) {
-    const c = html[j];
-    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === q) inStr = false; continue; }
-    if (c === '"' || c === "'" || c === '`') { inStr = true; q = c; continue; }
-    if ('([{'.includes(c)) depth++;
-    else if (')]}'.includes(c)) { depth--; if (depth === 0) { j++; break; } }
-  }
-  try { return new Function(`return (${html.slice(i, j).replace(/;\s*$/, '')})`)(); } catch { return null; }
-}
+const evalNuxt=html=>evalInlinePayload(html,'__NUXT__');
 
 /** 从详情页 <title> 推出候选明文标题 */
 export function titleCandidatesFromDetail(html) {

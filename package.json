@@ -53,6 +53,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "acorn": "8.18.0",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {

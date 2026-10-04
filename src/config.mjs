@@ -19,9 +19,9 @@ export const DATA_ROOT = process.env.RJR_DATA_DIR ? path.resolve(process.env.RJR
 export const IS_DESKTOP = process.env.RJR_DESKTOP === '1';
 
 /** 配置优先读数据目录（用户可写），退回代码目录（随包自带的默认值） */
-function resolveConfigPath() {
-  const inData = path.join(DATA_ROOT, 'config.json');
-  if (DATA_ROOT !== path.join(ROOT, 'data') && fs.existsSync(inData)) return inData;
+export function resolveConfigPath(dataDir = process.env.RJR_DATA_DIR ? path.resolve(process.env.RJR_DATA_DIR) : DATA_ROOT) {
+  const inData = path.join(dataDir, 'config.json');
+  if (fs.existsSync(inData)) return inData;
   return path.join(ROOT, 'config.json');
 }
 
@@ -193,16 +193,17 @@ function isPlaceholderKey(k = '') {
   return /填入|你的|请填|在这里|your[-_ ]?key|placeholder|xxxx|todo/i.test(s);
 }
 
-export function loadConfig({ quiet = false } = {}) {
+export function loadConfig({ quiet = false, dataDir } = {}) {
   let userCfg = {};
-  if (fs.existsSync(CONFIG_PATH)) {
+  const configPath = resolveConfigPath(dataDir);
+  if (fs.existsSync(configPath)) {
     try {
-      userCfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      userCfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     } catch (e) {
       if (!quiet) console.warn(`[config] config.json 解析失败，使用默认配置：${e.message}`);
     }
   }
-  const cfg = deepMerge(DEFAULT_CONFIG, userCfg);
+  const cfg = deepMerge(structuredClone(DEFAULT_CONFIG), userCfg);
   if (isPlaceholderKey(cfg.deepseek.apiKey)) cfg.deepseek.apiKey = '';
 
   // 密钥解析：config.json → 环境变量 → DSH 凭据

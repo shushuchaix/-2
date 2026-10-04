@@ -26,6 +26,7 @@ export function learnFromPair(obf, plain, map) {
   for (let i = 0; i < obf.length; i++) {
     const c = obf[i];
     if (!PUA_RE.test(c)) continue;
+    if (map.__conflicted?.has(c)) continue;
     const want = plain[i];
     const known = map.get(c);
     if (known === undefined) {
@@ -33,7 +34,9 @@ export function learnFromPair(obf, plain, map) {
       learned++;
     } else if (known !== want) {
       // 同一码点在不同请求中含义不同 → 字体轮换了，本次映射不可信
-      map.set(c, want);
+      map.delete(c);
+      map.__conflicted ||= new Set();
+      map.__conflicted.add(c);
       map.__conflicts = (map.__conflicts || 0) + 1;
     }
   }

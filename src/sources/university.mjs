@@ -1,3 +1,4 @@
+import { sourceFetch as fetch } from './request-context.mjs';
 // 高校就业信息网岗位源
 //
 // 为什么加这个源：企业自研校招官网几乎全是 SPA + 需鉴权的接口（字节/华为/美团/京东

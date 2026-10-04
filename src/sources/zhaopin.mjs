@@ -1,3 +1,4 @@
+import { sourceFetch as fetch } from './request-context.mjs';
 // 智联招聘适配器
 // 通道：列表页 SSR 内嵌 __INITIAL_STATE__ → positionList[]（真实结构化岗位）
 //       详情页 SSR 内嵌 jobDetail → 完整 JD 正文
@@ -62,6 +63,7 @@ export function normalizePosition(pos) {
   const showTags = pickShowTags(pos);
   return {
     id: `zhaopin:${jobId}`,
+    sourceRecordId: String(jobId),
     source: meta.id,
     sourceName: meta.name,
     sources: [meta.id],
@@ -102,7 +104,7 @@ export async function fetchListPage(keyword, page = 1, { city = '全国', timeou
   if (!res.ok) throw new Error(`智联列表页 HTTP ${res.status}`);
   const html = await res.text();
   const state = extractAssignedJson(html, '__INITIAL_STATE__');
-  if (!state) return { jobs: [], pages: 0, total: 0, url };
+  if (!state || !Array.isArray(state.positionList)) throw Error('parse_error: 智联列表缺少 positionList');
   const list = Array.isArray(state.positionList) ? state.positionList : [];
   const jobs = list.map(normalizePosition).filter(Boolean);
   return {

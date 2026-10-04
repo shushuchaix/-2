@@ -1,3 +1,5 @@
+import {contentHash} from '../infrastructure/storage/repository.mjs';
+import { sourceFetch as fetch } from './request-context.mjs';
 // 实习僧适配器（校招/实习主战场）
 // 通道：列表页 Nuxt 内嵌载荷（函数序列化形式，需执行还原）→ interns.data[]
 //
@@ -132,6 +134,7 @@ export function normalizeIntern(item) {
 
   return {
     id: `shixiseng:${uuid}`,
+    sourceRecordId: String(uuid),
     source: meta.id,
     sourceName: meta.name,
     sources: [meta.id],
@@ -177,15 +180,16 @@ export async function fetchListPage(keyword, page = 1, { city = '全国', timeou
   const nuxt = evalInlinePayload(html, '__NUXT__');
   if (nuxt) list = findInternList(nuxt);
 
-  if (!list.length) {
+  if (!list.length && !nuxt) {
     const uuids = [...new Set([...html.matchAll(/shixiseng\.com\/intern\/(inn_[a-zA-Z0-9]+)/g)].map((m) => m[1]))];
     list = uuids.map((uuid) => ({ uuid, name: '', cname: '' }));
+    if (!list.length) throw Error('parse_error: 实习僧列表缺少岗位数据');
   }
 
   const jobs = list
     .map(normalizeIntern)
     .filter((j) => j && (j.title || j.titleObfuscated))
-    .map((j) => ({ ...j, queryKeyword: keyword }));
+    .map((j) => ({ ...j, queryKeyword: keyword, fontScope: contentHash(html) }));
   return { jobs, url, raw: list.length };
 }
 
@@ -261,11 +265,11 @@ export async function fetchPlainTitle(job, { timeoutMs = 20000 } = {}) {
  * 修复一批实习僧岗位的混淆标题。
  * 策略：贪心挑选能覆盖最多「未学到的码点」的样本 → 抓详情页学习映射 → 解码全部。
  */
-export async function repairTitles(jobs, { maxSamples = 6, concurrency = 3, log = () => {}, signal, useCache = true } = {}) {
+async function repairTitleScope(jobs, { maxSamples = 6, concurrency = 3, log = () => {}, signal, useCache = true } = {}) {
   const targets = jobs.filter((j) => j.titleObfuscated);
   if (!targets.length) return { learned: 0, repaired: 0, samples: 0, total: 0 };
 
-  const baseMap = useCache ? loadPersistedMap() : new Map();
+  const baseMap = new Map();
   const sessionMap = new Map();
   const before = mapSize(baseMap);
 
@@ -340,7 +344,7 @@ export async function repairTitles(jobs, { maxSamples = 6, concurrency = 3, log 
   const learned = Math.max(0, mapSize(map) - before);
   if (mapSize(sessionMap) > 0) {
     log(`字体映射：本次学到 ${mapSize(sessionMap)} 个字符，可用映射表 ${mapSize(map)} 个（样本 ${fetched} 个）`);
-    persistMap(map);
+    // Response-specific maps are not reused by another response.
   }
 
   // --- 解码全部 ---
@@ -427,3 +431,5 @@ async function pool(items, limit, worker) {
   );
   return results;
 }
+
+export async function repairTitles(jobs,options={}) {const groups=new Map();for(const job of jobs){const scope=job.fontScope||job.id||job.url||Symbol();if(!groups.has(scope))groups.set(scope,[]);groups.get(scope).push(job);}const totals={learned:0,repaired:0,samples:0,total:0};for(const group of groups.values()){const result=await repairTitleScope(group,{...options,useCache:false});for(const key of Object.keys(totals))totals[key]+=result[key]||0;}return totals;}

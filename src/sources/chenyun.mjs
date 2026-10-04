@@ -1,3 +1,4 @@
+import { sourceFetch as fetch } from './request-context.mjs';
 // 晨云智慧就业管理服务系统 岗位源
 //
 // 为什么单独写一个源：中国民用航空飞行学院（及多所院校）用的**不是**才立方那套系统，

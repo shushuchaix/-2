@@ -1,3 +1,6 @@
+import {withSourceContext} from './request-context.mjs';
+import {createRequestClient} from '../infrastructure/http/client.mjs';
+import {createSourceBudget} from '../infrastructure/http/budget.mjs';
 // 岗位源统一调度：并行拉取 → 归一化 → 去重合并
 import * as zhaopin from './zhaopin.mjs';
 import * as shixiseng from './shixiseng.mjs';
@@ -35,7 +38,7 @@ export function buildSearchPlan(titleKeywords, cities, { maxCities = 2, secondar
  * @param {string[]} p.cities        目标城市（第一个为主要城市）
  * @param {object}   p.profile       简历画像（高校就业网用它挑本校 + 按专业选院校）
  */
-export async function collectJobs({
+async function collectLegacyJobs({
   titleKeywords = [],
   webQueries = [],
   wechatQueries = [],
@@ -306,3 +309,5 @@ export async function collectJobs({
   if (articles.length) log(`公众号公告 ${articles.length} 篇待抽取岗位`);
   return { jobs: deduped, articles, errors, stats, rawCount: jobs.length };
 }
+
+export async function collectJobs(options={}) {const budget=options.budget||createSourceBudget({maxRequests:120,maxDetails:20});const request=options.request||createRequestClient({budget,signal:options.signal});return withSourceContext({request,signal:options.signal,cfg:options.cfg},()=>collectLegacyJobs(options));}

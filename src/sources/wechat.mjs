@@ -1,3 +1,4 @@
+import { sourceFetch as fetch } from './request-context.mjs';
 // 微信公众号岗位源
 //
 // 通道：搜狗微信搜索（公开入口，无需登录微信）
@@ -234,128 +235,13 @@ function monthsSince(dateStr) {
  * @param {string[]} p.keywords 检索词（通常为「岗位词 + 校招/实习」组合）
  * @param {string[]} p.profileKeywords 简历关键词，用于相关性排序
  */
-export async function collectWechat({
-  keywords = [],
-  roleKeywords = [],
-  profileKeywords = [],
-  cities = [],
-  maxPages = 2,
-  maxFetch = 8,
-  delayMs = 1200,
-  cfg,
-  log = () => {},
-  signal,
-} = {}) {
-  const session = new SogouSession();
-  const errors = [];
-  const seen = new Map(); // normKey(title)|account -> article
-  let searchCount = 0;
-  let blockedCount = 0;
-
-  /* --- 1. 搜索 --- */
-  for (const keyword of keywords.slice(0, 4)) {
-    for (let page = 1; page <= maxPages; page++) {
-      if (signal?.aborted) break;
-      try {
-        const url = buildSearchUrl(keyword, page);
-        const res = await session.get(url, { referer: 'https://weixin.sogou.com/' });
-        const html = await res.text();
-        searchCount++;
-
-        if (isBlocked(html)) {
-          blockedCount++;
-          log(`微信「${keyword}」第 ${page} 页触发搜狗反爬，已停止该关键词`);
-          errors.push(`搜狗微信反爬（${keyword} p${page}）`);
-          break;
-        }
-
-        const results = parseSearchResults(html);
-        let added = 0;
-        for (const r of results) {
-          const key = `${normKey(r.title)}|${normKey(r.account)}`;
-          if (seen.has(key)) continue;
-          seen.set(key, { ...r, keyword });
-          added++;
-        }
-        log(`微信「${keyword}」第 ${page} 页 → ${results.length} 条（新增 ${added}）`);
-        if (results.length === 0) break;
-      } catch (e) {
-        errors.push(`微信搜索失败（${keyword} p${page}）：${e.message}`);
-        break;
-      }
-      await sleep(delayMs);
-    }
-    await sleep(delayMs);
-  }
-
-  const all = [...seen.values()];
-  if (all.length === 0) {
-    return { jobs: [], errors, stats: { searched: searchCount, found: 0, fetched: 0, blocked: blockedCount } };
-  }
-
-  /* --- 2. 相关性排序，只对靠前的解析链接与抓正文 --- */
-  const ranked = all
-    .map((a) => ({ ...a, relevance: relevanceScore(a, { roleKeywords, profileKeywords, cities }) }))
-    .sort((a, b) => b.relevance - a.relevance);
-
-  const toFetch = ranked.slice(0, maxFetch);
-  log(`微信公众号：搜到 ${all.length} 篇，按相关性选取前 ${toFetch.length} 篇解析正文`);
-
-  let fetched = 0;
-  for (const a of toFetch) {
-    if (signal?.aborted) break;
-    try {
-      const linkUrl = `https://weixin.sogou.com${a.href}`;
-      const lr = await session.get(linkUrl, { referer: buildSearchUrl(a.keyword), allowRedirect: false });
-      const lbody = await lr.text();
-      if (isBlocked(lbody)) {
-        blockedCount++;
-        log('解析文章链接时触发反爬，剩余文章跳过（已有结果不受影响）');
-        errors.push('搜狗微信反爬（链接解析）');
-        break;
-      }
-      const realUrl = extractRealUrl(lbody);
-      if (!realUrl) {
-        a.unavailable = '未能解析文章地址';
-        continue;
-      }
-      a.url = realUrl;
-      await sleep(delayMs);
-
-      const ar = await session.get(realUrl, { referer: 'https://weixin.sogou.com/', allowRedirect: true, timeoutMs: 30000 });
-      const ahtml = await ar.text();
-      const parsed = parseArticle(ahtml);
-      a.articleTitle = parsed.title || a.title;
-      a.account = a.account || parsed.account;
-      a.publishTime = parsed.publishTime || a.publishTime;
-      a.text = parsed.text;
-      a.imageCount = parsed.imageCount;
-      if (parsed.unavailable) a.unavailable = parsed.unavailable;
-      fetched++;
-      log(`  已抓取「${truncate(a.articleTitle, 30)}」正文 ${parsed.text.length} 字 / 图 ${parsed.imageCount} 张`);
-    } catch (e) {
-      a.unavailable = `抓取失败：${e.message}`;
-      errors.push(`微信文章抓取失败：${e.message}`);
-    }
-    await sleep(delayMs);
-  }
-
-  /* --- 3. 归一化为统一的「文章线索」结构 --- */
-  const jobs = ranked.map((a) => normalizeArticle(a));
-
-  return {
-    jobs,
-    errors,
-    stats: {
-      searched: searchCount,
-      found: all.length,
-      fetched,
-      blocked: blockedCount,
-    },
-  };
+export async function collectWechat({keywords=[],cfg,log=()=>{},signal}={}) {
+  if(!cfg?.__activeSearchProvider)return {jobs:[],errors:[],stats:{fetched:0},skipped:'missing_key'};
+  const {searchAll}=await import('./searchapi.mjs');
+  const result=await searchAll(keywords.map(q=>'site:mp.weixin.qq.com '+q),{provider:cfg.__activeSearchProvider,apiKey:cfg.__searchKeys[cfg.__activeSearchProvider],maxResults:10,log,signal});
+  return {...result,jobs:result.jobs.map(j=>({...j,source:'wechat',kind:'recruitment_notice',extra:{...j.extra,platform:'wechat',accessStatus:'search_metadata',evidenceLevel:'discovery'}})),stats:{fetched:0}};
 }
 
-/** 文章线索 → 统一 Job 结构（后续由 LLM 抽取真实岗位） */
 export function normalizeArticle(a) {
   const account = sanitizeText(a.account);
   const title = sanitizeText(a.articleTitle || a.title);

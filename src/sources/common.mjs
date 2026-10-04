@@ -31,20 +31,7 @@ export function isOwnSchool(entry, profile = {}) {
 }
 
 /** 生成带重试的抓取（各源通用）：网络抖动不该让整轮检索失败 */
-export async function fetchWithRetry(url, opts = {}, { retries = 2, backoffMs = 800 } = {}) {
-  let lastErr;
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const res = await fetch(url, opts);
-      if (res.status >= 500 && i < retries) {
-        lastErr = new Error(`HTTP ${res.status}`);
-      } else {
-        return res;
-      }
-    } catch (e) {
-      lastErr = e;
-    }
-    if (i < retries) await new Promise((r) => setTimeout(r, backoffMs * (i + 1)));
-  }
-  throw lastErr || new Error('请求失败');
+export async function fetchWithRetry(url, opts = {}) {
+  const {sourceFetch}=await import('./request-context.mjs');
+  return sourceFetch(url,opts);
 }

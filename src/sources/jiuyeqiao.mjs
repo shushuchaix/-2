@@ -1,3 +1,4 @@
+import { sourceFetch as fetch } from './request-context.mjs';
 // 就业桥（全域智慧就业资讯服务平台）岗位源
 //
 // 为什么这个源价值最高：它是一套**按学校开子域**的商用平台，

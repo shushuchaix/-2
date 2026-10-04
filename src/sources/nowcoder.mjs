@@ -1,3 +1,4 @@
+import { sourceFetch as fetch } from './request-context.mjs';
 // 牛客校招岗位源
 //
 // 通道：https://www.nowcoder.com/jobs/school/jobs 的 SSR 内嵌 __INITIAL_STATE__
@@ -35,19 +36,8 @@ async function get(url, timeoutMs = 25000) {
  * 带重试的抓取。
  * 牛客的 SSR 偶发只返回壳页面（没有 __INITIAL_STATE__），重试一次通常就能拿到。
  */
-async function getWithRetry(url, { attempts = 3, timeoutMs = 25000, log = () => {} } = {}) {
-  let last;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const html = await get(url, timeoutMs);
-      if (/__INITIAL_STATE__/.test(html)) return html;
-      last = new Error('页面未包含内嵌数据（可能是壳页面）');
-    } catch (e) {
-      last = e;
-    }
-    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 900 * (i + 1)));
-  }
-  throw last;
+async function getWithRetry(url,{timeoutMs=25000}={}) {
+ const html=await get(url,timeoutMs);if(!/__INITIAL_STATE__/.test(html))throw Error('parse_error: 页面未包含内嵌数据');return html;
 }
 
 function balancedFrom(text, startIdx) {
@@ -175,6 +165,7 @@ export function normalizeNowcoderJob(j) {
 
   return {
     id: `nowcoder:${j.id}`,
+    sourceRecordId: String(j.id),
     source: meta.id,
     sourceName: meta.name,
     sources: [meta.id],

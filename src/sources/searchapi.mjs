@@ -1,3 +1,4 @@
+import { sourceFetch as fetch } from './request-context.mjs';
 // 全网搜索 API 适配器：Tavily / Bocha(博查) / Serper
 // 用于补齐站点直连之外的全网岗位线索（招聘页、校招公告、职位聚合页）
 import { truncate } from '../util/text.mjs';

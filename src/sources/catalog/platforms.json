@@ -1,0 +1,154 @@
+[
+  {
+    "siteId": "zhaopin",
+    "providerId": "zhaopin",
+    "category": "job_board",
+    "name": "智联招聘",
+    "institutionUrl": "https://sou.zhaopin.com/",
+    "origin": "https://sou.zhaopin.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://sou.zhaopin.com/",
+    "verifiedAt": null,
+    "status": "candidate"
+  },
+  {
+    "siteId": "shixiseng",
+    "providerId": "shixiseng",
+    "category": "job_board",
+    "name": "实习僧",
+    "institutionUrl": "https://www.shixiseng.com/",
+    "origin": "https://www.shixiseng.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.shixiseng.com/",
+    "verifiedAt": null,
+    "status": "candidate"
+  },
+  {
+    "siteId": "nowcoder",
+    "providerId": "nowcoder",
+    "category": "job_board",
+    "name": "牛客校招",
+    "institutionUrl": "https://www.nowcoder.com/jobs/school/jobs",
+    "origin": "https://www.nowcoder.com/jobs/school/jobs",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.nowcoder.com/jobs/school/jobs",
+    "verifiedAt": null,
+    "status": "candidate"
+  },
+  {
+    "siteId": "jiuyeqiao",
+    "providerId": "jiuyeqiao",
+    "category": "job_board",
+    "name": "就业桥",
+    "institutionUrl": "https://job.jiuyeqiao.cn/",
+    "origin": "https://job.jiuyeqiao.cn/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://job.jiuyeqiao.cn/",
+    "verifiedAt": null,
+    "status": "candidate"
+  },
+  {
+    "siteId": "ncss",
+    "providerId": "ncss",
+    "category": "national",
+    "name": "国家大学生就业服务平台",
+    "institutionUrl": "https://www.ncss.cn/student/jobs/index.html",
+    "origin": "https://www.ncss.cn/student/jobs/index.html",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.ncss.cn/student/jobs/index.html",
+    "verifiedAt": null,
+    "status": "candidate"
+  },
+  {
+    "siteId": "yingjiesheng",
+    "providerId": "yingjiesheng",
+    "category": "campus_aggregator",
+    "name": "应届生截止日期榜",
+    "institutionUrl": "https://www.yingjiesheng.com/deadline/",
+    "origin": "https://www.yingjiesheng.com/deadline/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.yingjiesheng.com/deadline/",
+    "verifiedAt": null,
+    "status": "candidate"
+  },
+  {
+    "siteId": "searchapi",
+    "providerId": "searchapi",
+    "category": "search",
+    "name": "全网搜索",
+    "institutionUrl": "https://api.tavily.com",
+    "origin": "https://api.tavily.com",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": false,
+      "discovery": true
+    },
+    "evidenceUrl": "https://api.tavily.com",
+    "verifiedAt": null,
+    "status": "candidate"
+  },
+  {
+    "siteId": "wechat",
+    "providerId": "wechat",
+    "category": "social_discovery",
+    "name": "微信公众号线索",
+    "institutionUrl": "https://mp.weixin.qq.com",
+    "origin": "https://mp.weixin.qq.com",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": false,
+      "discovery": true
+    },
+    "evidenceUrl": "https://mp.weixin.qq.com",
+    "verifiedAt": null,
+    "status": "candidate"
+  }
+]

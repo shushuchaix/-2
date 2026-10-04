@@ -43,7 +43,7 @@ export const VERIFIED_HOSTS = [
   { name: '浙江师范大学', host: 'https://career.zjnu.edu.cn', kind: 'normal', aliases: ['浙师大', '浙江师范大学'] },
   { name: '厦门大学', host: 'https://jy.xmu.edu.cn', kind: 'general', aliases: ['厦大', '厦门大学'] },
   { name: '郑州大学', host: 'https://job.zzu.edu.cn', kind: 'general', aliases: ['郑大', '郑州大学'] },
-  { name: '浙江树人学院', host: 'https://job.zjxu.edu.cn', kind: 'general', aliases: ['浙江树人学院', '树人大学'] },
+  { name: '嘉兴大学', host: 'https://job.zjxu.edu.cn', kind: 'general', aliases: ['嘉兴大学', '嘉兴学院'] },
 ];
 
 /** 兼容旧名 */

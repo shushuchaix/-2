@@ -1,0 +1,182 @@
+[
+  {
+    "siteId": "public-ict",
+    "providerId": "official-announcements",
+    "category": "public",
+    "name": "中国科学院计算技术研究所",
+    "institutionUrl": "https://www.ict.ac.cn",
+    "origin": "https://www.ict.ac.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "kinds": [
+        "recruitment_notice"
+      ]
+    },
+    "evidenceUrl": "https://www.ict.ac.cn/rczp/202510/t20251015_7989499.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "template": {
+      "listUrl": "https://www.ict.ac.cn/rczp/",
+      "linkRule": "a",
+      "titleRule": "h1",
+      "dateRule": null,
+      "bodyRule": ".textxl",
+      "pathPrefix": "/rczp/",
+      "category": "public"
+    }
+  },
+  {
+    "siteId": "public-iscas",
+    "providerId": "official-announcements",
+    "category": "public",
+    "name": "中国科学院软件研究所",
+    "institutionUrl": "https://www.iscas.ac.cn",
+    "origin": "https://www.iscas.ac.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "kinds": [
+        "recruitment_notice"
+      ]
+    },
+    "evidenceUrl": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260717_8251365.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "template": {
+      "listUrl": "https://www.iscas.ac.cn/rcdw/rczp/",
+      "linkRule": "a",
+      "titleRule": "h1",
+      "dateRule": null,
+      "bodyRule": ".article-content",
+      "pathPrefix": "/rcdw/rczp/",
+      "category": "public"
+    }
+  },
+  {
+    "siteId": "public-iop",
+    "providerId": "official-announcements",
+    "category": "public",
+    "name": "中国科学院物理研究所",
+    "institutionUrl": "https://www.iop.cas.cn",
+    "origin": "https://www.iop.cas.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "kinds": [
+        "recruitment_notice"
+      ]
+    },
+    "evidenceUrl": "https://www.iop.cas.cn/zszp/zp/202608/t20260817_8261008.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "template": {
+      "listUrl": "https://www.iop.cas.cn/zszp/zp/",
+      "linkRule": "a",
+      "titleRule": "h1",
+      "dateRule": "#news_sub_title",
+      "bodyRule": ".news_content",
+      "pathPrefix": "/zszp/zp/",
+      "category": "public"
+    }
+  },
+  {
+    "siteId": "public-gibh",
+    "providerId": "official-announcements",
+    "category": "public",
+    "name": "中国科学院广州生物医药与健康研究院",
+    "institutionUrl": "https://gibh.cas.cn",
+    "origin": "https://gibh.cas.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "kinds": [
+        "recruitment_notice"
+      ]
+    },
+    "evidenceUrl": "https://gibh.cas.cn/rczp/202609/t20260904_8278624.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "template": {
+      "listUrl": "https://gibh.cas.cn/rczp/index.html",
+      "linkRule": "a",
+      "titleRule": "h1",
+      "dateRule": null,
+      "bodyRule": "#zoom",
+      "pathPrefix": "/rczp/",
+      "category": "public"
+    }
+  },
+  {
+    "siteId": "public-las",
+    "providerId": "official-announcements",
+    "category": "public",
+    "name": "中国科学院文献情报中心",
+    "institutionUrl": "https://las.cas.cn",
+    "origin": "https://las.cas.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "kinds": [
+        "recruitment_notice"
+      ]
+    },
+    "evidenceUrl": "https://las.cas.cn/edu/rczp/202605/t20260525_8208837.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "template": {
+      "listUrl": "https://las.cas.cn/edu/rczp/",
+      "linkRule": "a",
+      "titleRule": "h1",
+      "dateRule": null,
+      "bodyRule": "#zoom",
+      "pathPrefix": "/edu/rczp/",
+      "category": "public"
+    }
+  },
+  {
+    "siteId": "public-ipe",
+    "providerId": "official-announcements",
+    "category": "public",
+    "name": "中国科学院过程工程研究所",
+    "institutionUrl": "https://ipe.cas.cn",
+    "origin": "https://ipe.cas.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "kinds": [
+        "recruitment_notice"
+      ]
+    },
+    "evidenceUrl": "https://ipe.cas.cn/rcdw/rczp/202608/t20260818_8261766.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "template": {
+      "listUrl": "https://ipe.cas.cn/rcdw/rczp/index.html",
+      "linkRule": "a",
+      "titleRule": "h1",
+      "dateRule": ".info",
+      "bodyRule": "#content",
+      "pathPrefix": "/rcdw/rczp/",
+      "category": "public"
+    }
+  }
+]

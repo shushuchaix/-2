@@ -1,0 +1,650 @@
+[
+  {
+    "siteId": "university-job.xidian.edu.cn",
+    "providerId": "university",
+    "category": "university",
+    "name": "西安电子科技大学",
+    "institutionUrl": "https://job.xidian.edu.cn",
+    "origin": "https://job.xidian.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [
+      "it"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://job.xidian.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate",
+    "aliases": [
+      "西电",
+      "西安电子科技大学"
+    ]
+  },
+  {
+    "siteId": "university-job.neuq.edu.cn",
+    "providerId": "university",
+    "category": "university",
+    "name": "东北大学秦皇岛分校",
+    "institutionUrl": "https://job.neuq.edu.cn",
+    "origin": "https://job.neuq.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [
+      "it"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://job.neuq.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate",
+    "aliases": [
+      "东秦",
+      "东北大学秦皇岛分校"
+    ]
+  },
+  {
+    "siteId": "university-myjob.dlmu.edu.cn",
+    "providerId": "university",
+    "category": "university",
+    "name": "大连海事大学",
+    "institutionUrl": "https://myjob.dlmu.edu.cn",
+    "origin": "https://myjob.dlmu.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [
+      "it"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://myjob.dlmu.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate",
+    "aliases": [
+      "大连海事大学",
+      "大连海事"
+    ]
+  },
+  {
+    "siteId": "university-job.sdufe.edu.cn",
+    "providerId": "university",
+    "category": "university",
+    "name": "山东财经大学",
+    "institutionUrl": "https://job.sdufe.edu.cn",
+    "origin": "https://job.sdufe.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [
+      "finance"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://job.sdufe.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate",
+    "aliases": [
+      "山财",
+      "山东财经大学"
+    ]
+  },
+  {
+    "siteId": "university-career.zjnu.edu.cn",
+    "providerId": "university",
+    "category": "university",
+    "name": "浙江师范大学",
+    "institutionUrl": "https://career.zjnu.edu.cn",
+    "origin": "https://career.zjnu.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [
+      "normal"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://career.zjnu.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate",
+    "aliases": [
+      "浙师大",
+      "浙江师范大学"
+    ]
+  },
+  {
+    "siteId": "university-jy.xmu.edu.cn",
+    "providerId": "university",
+    "category": "university",
+    "name": "厦门大学",
+    "institutionUrl": "https://jy.xmu.edu.cn",
+    "origin": "https://jy.xmu.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [
+      "general"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://jy.xmu.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate",
+    "aliases": [
+      "厦大",
+      "厦门大学"
+    ]
+  },
+  {
+    "siteId": "university-job.zzu.edu.cn",
+    "providerId": "university",
+    "category": "university",
+    "name": "郑州大学",
+    "institutionUrl": "https://job.zzu.edu.cn",
+    "origin": "https://job.zzu.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [
+      "general"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://job.zzu.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate",
+    "aliases": [
+      "郑大",
+      "郑州大学"
+    ]
+  },
+  {
+    "siteId": "university-job.zjxu.edu.cn",
+    "providerId": "university",
+    "category": "university",
+    "name": "嘉兴大学",
+    "institutionUrl": "https://job.zjxu.edu.cn",
+    "origin": "https://job.zjxu.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [
+      "general"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://job.zjxu.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate",
+    "aliases": [
+      "嘉兴大学",
+      "嘉兴学院"
+    ]
+  },
+  {
+    "siteId": "chenyun-cafuc",
+    "providerId": "chenyun",
+    "category": "university",
+    "name": "中国民用航空飞行学院",
+    "institutionUrl": "https://jy.cafuc.edu.cn",
+    "origin": "https://jy.cafuc.edu.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://jy.cafuc.edu.cn",
+    "verifiedAt": null,
+    "status": "candidate"
+  },
+  {
+    "siteId": "91job-seu",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "东南大学",
+    "institutionUrl": "https://seu.91job.org.cn/sub-station/home/10286",
+    "origin": "https://seu.91job.org.cn",
+    "tenantId": "10286",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://seu.91job.org.cn/sub-station/home/10286",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-hhu",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "河海大学",
+    "institutionUrl": "https://hhu.91job.org.cn/sub-station/home/10294",
+    "origin": "https://hhu.91job.org.cn",
+    "tenantId": "10294",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://hhu.91job.org.cn/sub-station/home/10294",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-nuaa",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京航空航天大学",
+    "institutionUrl": "https://nuaa.91job.org.cn/sub-station/home/10287",
+    "origin": "https://nuaa.91job.org.cn",
+    "tenantId": "10287",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://nuaa.91job.org.cn/sub-station/home/10287",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njust",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京理工大学",
+    "institutionUrl": "https://njust.91job.org.cn/sub-station/home/10288",
+    "origin": "https://njust.91job.org.cn",
+    "tenantId": "10288",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njust.91job.org.cn/sub-station/home/10288",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njau",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京农业大学",
+    "institutionUrl": "https://njau.91job.org.cn/sub-station/home/10307",
+    "origin": "https://njau.91job.org.cn",
+    "tenantId": "10307",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njau.91job.org.cn/sub-station/home/10307",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njnu",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京师范大学",
+    "institutionUrl": "https://njnu.91job.org.cn/sub-station/home/10319",
+    "origin": "https://njnu.91job.org.cn",
+    "tenantId": "10319",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njnu.91job.org.cn/sub-station/home/10319",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njtech",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京工业大学",
+    "institutionUrl": "https://njtech.91job.org.cn/sub-station/home/10291",
+    "origin": "https://njtech.91job.org.cn",
+    "tenantId": "10291",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njtech.91job.org.cn/sub-station/home/10291",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njupt",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京邮电大学",
+    "institutionUrl": "https://njupt.91job.org.cn/sub-station/home/10293",
+    "origin": "https://njupt.91job.org.cn",
+    "tenantId": "10293",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njupt.91job.org.cn/sub-station/home/10293",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-nuist",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京信息工程大学",
+    "institutionUrl": "https://nuist.91job.org.cn/sub-station/home/10300",
+    "origin": "https://nuist.91job.org.cn",
+    "tenantId": "10300",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://nuist.91job.org.cn/sub-station/home/10300",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njfu",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京林业大学",
+    "institutionUrl": "https://njfu.91job.org.cn/sub-station/home/10298",
+    "origin": "https://njfu.91job.org.cn",
+    "tenantId": "10298",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njfu.91job.org.cn/sub-station/home/10298",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-cpu",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "中国药科大学",
+    "institutionUrl": "https://cpu.91job.org.cn/sub-station/home/10316",
+    "origin": "https://cpu.91job.org.cn",
+    "tenantId": "10316",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://cpu.91job.org.cn/sub-station/home/10316",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njmu",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京医科大学",
+    "institutionUrl": "https://njmu.91job.org.cn/sub-station/home/10312",
+    "origin": "https://njmu.91job.org.cn",
+    "tenantId": "10312",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njmu.91job.org.cn/sub-station/home/10312",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njucm",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京中医药大学",
+    "institutionUrl": "https://njucm.91job.org.cn/sub-station/home/10315",
+    "origin": "https://njucm.91job.org.cn",
+    "tenantId": "10315",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njucm.91job.org.cn/sub-station/home/10315",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-njue",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京财经大学",
+    "institutionUrl": "https://njue.91job.org.cn/sub-station/home/10327",
+    "origin": "https://njue.91job.org.cn",
+    "tenantId": "10327",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://njue.91job.org.cn/sub-station/home/10327",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-nau",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "南京审计大学",
+    "institutionUrl": "https://nau.91job.org.cn/sub-station/home/11287",
+    "origin": "https://nau.91job.org.cn",
+    "tenantId": "11287",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://nau.91job.org.cn/sub-station/home/11287",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-suda",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "苏州大学",
+    "institutionUrl": "https://suda.91job.org.cn/sub-station/home/10285",
+    "origin": "https://suda.91job.org.cn",
+    "tenantId": "10285",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://suda.91job.org.cn/sub-station/home/10285",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-cczu",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "常州大学",
+    "institutionUrl": "https://cczu.91job.org.cn/sub-station/home/10292",
+    "origin": "https://cczu.91job.org.cn",
+    "tenantId": "10292",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://cczu.91job.org.cn/sub-station/home/10292",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-jiangnan",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "江南大学",
+    "institutionUrl": "https://jiangnan.91job.org.cn/sub-station/home/10295",
+    "origin": "https://jiangnan.91job.org.cn",
+    "tenantId": "10295",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://jiangnan.91job.org.cn/sub-station/home/10295",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-ujs",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "江苏大学",
+    "institutionUrl": "https://ujs.91job.org.cn/sub-station/home/10299",
+    "origin": "https://ujs.91job.org.cn",
+    "tenantId": "10299",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://ujs.91job.org.cn/sub-station/home/10299",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "91job-yzu",
+    "providerId": "university-91job",
+    "category": "university",
+    "name": "扬州大学",
+    "institutionUrl": "https://yzu.91job.org.cn/sub-station/home/11117",
+    "origin": "https://yzu.91job.org.cn",
+    "tenantId": "11117",
+    "regions": [
+      "江苏"
+    ],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://yzu.91job.org.cn/sub-station/home/11117",
+    "verifiedAt": null,
+    "status": "candidate",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+  },
+  {
+    "siteId": "official-nju",
+    "providerId": "official-announcements",
+    "category": "university",
+    "name": "南京大学",
+    "institutionUrl": "https://job.nju.edu.cn/",
+    "origin": "https://job.nju.edu.cn/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://job.nju.edu.cn/",
+    "verifiedAt": null,
+    "status": "candidate"
+  }
+]

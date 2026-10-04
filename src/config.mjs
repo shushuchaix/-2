@@ -29,6 +29,7 @@ export const CONFIG_PATH = resolveConfigPath();
 export const EXAMPLE_PATH = path.join(ROOT, 'config.example.json');
 
 export const DEFAULT_CONFIG = {
+  network: { dnsMode: 'auto' },
   deepseek: {
     apiKey: '',
     baseUrl: 'https://api.deepseek.com',
@@ -46,6 +47,8 @@ export const DEFAULT_CONFIG = {
     bochaApiKey: '',
   },
   sources: {
+    coverageMode: 'standard',
+    v2Budgets: { maxSites: 12, maxRequests: 120, maxKeywords: 6, maxPagesPerQuery: 2, maxDetails: 20 },
     zhaopin: { enabled: true, maxPages: 3, delayMs: 600 },
     shixiseng: { enabled: true, maxPages: 3, delayMs: 800, titleRepairSamples: 8 },
     searchApi: { enabled: true, maxQueries: 6, resultsPerQuery: 10 },

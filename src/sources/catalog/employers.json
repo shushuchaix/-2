@@ -1,0 +1,192 @@
+[
+  {
+    "siteId": "tencent",
+    "providerId": "tencent",
+    "category": "employer",
+    "name": "腾讯",
+    "institutionUrl": "https://careers.tencent.com/m/zh-cn/termsservice.html",
+    "origin": "https://careers.tencent.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://careers.tencent.com/m/zh-cn/termsservice.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "internet"
+  },
+  {
+    "siteId": "bosch",
+    "providerId": "smartrecruiters",
+    "category": "employer",
+    "name": "博世",
+    "institutionUrl": "https://www.bosch.com/careers/faq/",
+    "origin": "https://api.smartrecruiters.com",
+    "tenantId": "BoschGroup",
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://www.bosch.com/careers/faq/",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "manufacturing"
+  },
+  {
+    "siteId": "huawei",
+    "providerId": "official-announcements",
+    "category": "employer",
+    "name": "华为",
+    "institutionUrl": "https://career.huawei.com/reccampportal/next/mini/faq.html",
+    "origin": "https://career.huawei.com/cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://career.huawei.com/reccampportal/next/mini/faq.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "telecom"
+  },
+  {
+    "siteId": "xiaomi",
+    "providerId": "official-announcements",
+    "category": "employer",
+    "name": "小米",
+    "institutionUrl": "https://hr.xiaomi.com/website/campus.html",
+    "origin": "https://hr.xiaomi.com/website/campus.html",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://hr.xiaomi.com/website/campus.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "manufacturing"
+  },
+  {
+    "siteId": "alibaba",
+    "providerId": "official-announcements",
+    "category": "employer",
+    "name": "阿里巴巴",
+    "institutionUrl": "https://talent.alibaba.com/",
+    "origin": "https://talent.alibaba.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://talent.alibaba.com/",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "internet"
+  },
+  {
+    "siteId": "bytedance",
+    "providerId": "official-announcements",
+    "category": "employer",
+    "name": "字节跳动",
+    "institutionUrl": "https://jobs.bytedance.com/campus/page-6272Gc?spread=49TMNMC",
+    "origin": "https://jobs.bytedance.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://jobs.bytedance.com/campus/page-6272Gc?spread=49TMNMC",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "internet"
+  },
+  {
+    "siteId": "meituan",
+    "providerId": "official-announcements",
+    "category": "employer",
+    "name": "美团",
+    "institutionUrl": "https://zhaopin.meituan.com/web/question/campus",
+    "origin": "https://zhaopin.meituan.com/web/campus",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://zhaopin.meituan.com/web/question/campus",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "internet"
+  },
+  {
+    "siteId": "boc",
+    "providerId": "official-announcements",
+    "category": "employer",
+    "name": "中国银行",
+    "institutionUrl": "https://www.boc.cn/aboutboc/bi4/",
+    "origin": "https://www.boc.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://www.boc.cn/aboutboc/bi4/",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "finance"
+  },
+  {
+    "siteId": "siemens",
+    "providerId": "official-announcements",
+    "category": "employer",
+    "name": "西门子",
+    "institutionUrl": "https://www.siemens.com/zh-cn/company/jobs/",
+    "origin": "https://jobs.siemens.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://www.siemens.com/zh-cn/company/jobs/",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "manufacturing"
+  },
+  {
+    "siteId": "pep",
+    "providerId": "official-announcements",
+    "category": "employer",
+    "name": "人民教育出版社",
+    "institutionUrl": "https://www.pep.com.cn/rjdt/jqgg/202609/t20260929_2008304.shtml",
+    "origin": "https://www.pep.com.cn",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://www.pep.com.cn/rjdt/jqgg/202609/t20260929_2008304.shtml",
+    "verifiedAt": null,
+    "status": "candidate",
+    "industry": "publishing"
+  }
+]

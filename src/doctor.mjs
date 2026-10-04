@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // 环境自检：一键确认各项依赖/密钥/数据通道是否可用
-import { loadConfig, ROOT, maskKey } from './config.mjs';
+import { loadConfig, ROOT, DATA_ROOT, maskKey } from './config.mjs';
+import { openWorkspaceRepository } from './infrastructure/storage/repository.mjs';
+import { migrateV1 } from './infrastructure/storage/migrate-v1.mjs';
 import { DeepSeek } from './llm/deepseek.mjs';
 import * as zhaopin from './sources/zhaopin.mjs';
 import * as shixiseng from './sources/shixiseng.mjs';
@@ -11,6 +13,10 @@ import { searchQuery } from './sources/searchapi.mjs';
 import { truncate } from './util/text.mjs';
 
 const PASS = '  ✅';
+if (process.argv.includes('--migration-check')) {
+ const repository=await openWorkspaceRepository({dataDir:DATA_ROOT});
+ console.log(JSON.stringify(await migrateV1({dataDir:DATA_ROOT,repository,dryRun:true}),null,2));process.exit(0);
+}
 const FAIL = '  ❌';
 const WARN = '  ⚠️ ';
 let failures = 0;

@@ -17,6 +17,9 @@ if (process.argv.includes('--migration-check')) {
  const repository=await openWorkspaceRepository({dataDir:DATA_ROOT});
  console.log(JSON.stringify(await migrateV1({dataDir:DATA_ROOT,repository,dryRun:true}),null,2));process.exit(0);
 }
+if (process.argv.includes('--workspace-check')) {
+ const repository=await openWorkspaceRepository({dataDir:DATA_ROOT});const w=await repository.read();console.log(JSON.stringify({schemaVersion:w.schemaVersion,revision:w.revision,counts:{jobs:Object.keys(w.jobs).length,runs:Object.keys(w.runs).length},issues:w.recoveryRecords},null,2));process.exit(0);
+}
 const FAIL = '  ❌';
 const WARN = '  ⚠️ ';
 let failures = 0;

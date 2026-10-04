@@ -17,6 +17,6 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
  }));queue=operation.catch(()=>{});return operation;};
  const runPath=id=>{if(!/^[A-Za-z0-9_-]{1,160}$/.test(id))throw Error('Invalid run id');return path.join(dataDir,'runs-v2',id+'.json');};
  return {dataDir,clock,read,mutateWorkspace,
- async writeRunSnapshot(id,snapshot){const p=runPath(id);return withWorkspaceLock(dataDir,async()=>{const raw=JSON.stringify(snapshot);try{const old=await fsAdapter.readFile(p,'utf8');if(contentHash(JSON.parse(old))!==contentHash(snapshot))throw Error('Run snapshot immutable');}catch(e){if(e.code!=='ENOENT')throw e;await writeAtomicJson(p,snapshot,{fsAdapter});}return {path:path.relative(dataDir,p),hash:contentHash(raw)};});},
+ async writeRunSnapshot(id,snapshot){if(typeof id==='object'){snapshot=id;id=snapshot.run?.runId||snapshot.runId;}const p=runPath(id);return withWorkspaceLock(dataDir,async()=>{const raw=JSON.stringify(snapshot);try{const old=await fsAdapter.readFile(p,'utf8');if(contentHash(JSON.parse(old))!==contentHash(snapshot))throw Error('Run snapshot immutable');}catch(e){if(e.code!=='ENOENT')throw e;await writeAtomicJson(p,snapshot,{fsAdapter});}return {path:path.relative(dataDir,p).split(path.sep).join('/'),hash:contentHash(raw)};});},
  async readRunSnapshot(id){return JSON.parse(await fsAdapter.readFile(runPath(id),'utf8'));}};
 }

@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';
+import {tempRepository} from '../helpers/repository.mjs';import {createBackup,restoreBackup} from '../../src/infrastructure/storage/backup.mjs';import {recoverWorkspace} from '../../src/infrastructure/storage/recovery.mjs';import {createExportService} from '../../src/application/export-service.mjs';import {createJobService} from '../../src/application/job-service.mjs';import {job,AT} from '../helpers/fixtures.mjs';
+test('restart marks unfinished runs and hash checks protect the current workspace',async t=>{
+ const repo=await tempRepository(t);await repo.mutateWorkspace(w=>{w.runs.r1={runId:'r1',status:'running',snapshotRef:null};w.settings.model={model:'example',apiKey:'SECRET'};});
+ const recovered=await recoverWorkspace(repo);assert.deepEqual(recovered.interruptedRunIds,['r1']);assert.equal((await repo.read()).runs.r1.status,'interrupted');const backup=await createBackup({repository:repo});assert.equal(JSON.stringify(backup.manifest).includes('apiKey'),false);assert.equal((await fs.readFile(backup.path,'utf8')).includes('SECRET'),false);
+ await repo.mutateWorkspace(w=>w.recoveryRecords.push({message:'new'}));await restoreBackup({repository:repo,archivePath:backup.path});assert.equal((await repo.read()).recoveryRecords.some(x=>x.message==='new'),false);
+ const corrupt=JSON.parse(await fs.readFile(backup.path,'utf8'));corrupt.workspace.runs.r1.status='completed';await fs.writeFile(backup.path,JSON.stringify(corrupt));await assert.rejects(restoreBackup({repository:repo,archivePath:backup.path}),/hash/);assert.equal((await repo.read()).runs.r1.status,'interrupted');
+});
+test('orphan and missing snapshots are visible and CSV formulas are escaped',async t=>{
+ const repo=await tempRepository(t);await repo.writeRunSnapshot('orphan',{run:{runId:'orphan'}});await repo.mutateWorkspace(w=>w.runs.missing={runId:'missing',status:'completed',snapshotRef:{path:'runs-v2/missing.json',hash:'x'}});const r=await recoverWorkspace(repo);assert.deepEqual(r.orphanSnapshots,['orphan']);assert.ok(r.issues.some(x=>x.code==='missing_snapshot'));
+ const s=createJobService({repository:repo});await s.ingestRecords({runId:'r',records:[job({title:'=SUM(A1:A2)',salary:{raw:'200元/天',unit:'day'}})],observedAt:AT});const csv=await createExportService({repository:repo}).export({format:'csv'});assert.ok(csv.body.includes("'=SUM"));assert.ok(csv.body.includes('200元/天'));
+});

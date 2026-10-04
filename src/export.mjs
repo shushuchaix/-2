@@ -1,5 +1,6 @@
 // 结果导出：CSV / Markdown / JSON
 import { verdictOf } from './match/score.mjs';
+import { csvCell } from './domain/redact.mjs';
 
 const HEADERS = ['排名', '匹配分', '评级', '岗位', '公司', '城市', '薪资', '学历', '经验', '类型', '届别', '命中关键词', '匹配理由', '差距', '来源', '公众号', '招聘批次', '截止时间', '投递方式', '发布时间', '链接', '标题待确认'];
 
@@ -39,10 +40,6 @@ function row(j, i) {
   ];
 }
 
-function csvCell(v) {
-  const s = String(v ?? '');
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export function toCsv(result) {
   const lines = [HEADERS.map(csvCell).join(',')];

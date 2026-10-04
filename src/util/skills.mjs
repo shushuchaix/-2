@@ -1,4 +1,5 @@
 // 技能词表与文本技能抽取（供离线画像与岗位源共用）
+import { termEvidence } from '../domain/skills.mjs';
 export const TECH = [
   // 编程语言
   'Java', 'Python', 'C++', 'C#', 'C语言', 'Go', 'Golang', 'Rust', 'PHP', 'Ruby', 'Swift', 'Kotlin', 'Scala', 'R', 'MATLAB', 'JavaScript', 'TypeScript', 'Dart', 'Objective-C', 'Shell', 'SQL', 'HTML', 'CSS',
@@ -56,7 +57,7 @@ export function extractTechTerms(text = '') {
   const lower = s.toLowerCase();
   const hits = [];
   for (const { term, lower: lt, boundary } of LOWER_INDEX) {
-    if (boundary ? boundary.test(lower) : lower.includes(lt)) hits.push(term);
+    if (termEvidence(s, term).length) hits.push(term);
   }
   return [...new Set(hits)];
 }

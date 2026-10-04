@@ -2,6 +2,7 @@
 import { cityMatches, chunk, normKey, pool, truncate } from '../util/text.mjs';
 import { deriveRoleKeywords } from '../resume/profile.mjs';
 import { isSoftRequirement, hasSoftMarker } from './requirements.mjs';
+import { findSkillEvidence, majorRoleFit } from '../domain/skills.mjs';
 
 const DEGREE_RANK = { 学历不限: 0, 不限: 0, 高中: 1, 中专: 1, 中技: 1, 大专: 2, 专科: 2, 本科: 3, 学士: 3, 硕士: 4, 研究生: 4, MBA: 4, 博士: 5 };
 
@@ -88,7 +89,7 @@ export function matchedKeywords(job, keywords = []) {
   for (const kw of keywords) {
     const k = String(kw).trim();
     if (!k) continue;
-    if (text.toLowerCase().includes(k.toLowerCase()) || normText.includes(normKey(k))) hits.push(k);
+    if (findSkillEvidence(text, [k]).some(e=>e.relation !== 'related')) hits.push(k);
   }
   return [...new Set(hits)];
 }
@@ -126,7 +127,7 @@ export function majorFit(job, profile) {
   // 同族专业也算相符（计算机类岗位往往列一串相近专业）
   const core = major.slice(-3);
   if (core.length >= 2 && need.includes(core)) return { score: 2, note: `要求含 ${core} 相关专业` };
-  if (CS_FAMILY.test(major) && CS_FAMILY.test(need)) return { score: 1, note: '岗位面向计算机相关专业' };
+  if (majorRoleFit(profile,{...job,description:need}).status === 'matched') return { score: 1, note: '岗位与专业方向相符' };
   // 明确列了专业要求但都不沾边 → 扣分。
   // 但**只提到「优先」时不能扣**：「计算机相关专业优先」对消防工程学生不是门槛，
   // 只是少个加分；按硬性要求扣 3 分会把本来能投的岗位压下去。

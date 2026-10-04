@@ -1,5 +1,6 @@
 // 文本归一化与岗位去重
 import { decodeEntities, stripPrivateUse } from './html.mjs';
+import {resolveJobIdentity,relateJobs} from '../domain/identity.mjs';
 
 /**
  * 字段清洗：解码 HTML 实体 + 去掉图标字体私有区字符 + 压缩空白。
@@ -70,9 +71,7 @@ export function cityMatches(jobCity, preferred = []) {
 
 /** 岗位唯一键：优先用 URL，其次 公司+标题 */
 export function jobKey(job) {
-  const url = (job.url || '').split('?')[0].replace(/^https?:\/\//, '').replace(/\/$/, '');
-  if (url && !/^www\.(zhaopin|shixiseng)\.com$/.test(url)) return `u:${url}`;
-  return `t:${normKey(job.company)}|${normKey(job.title)}|${cityCanon(job.city)}`;
+  return resolveJobIdentity(job).key;
 }
 
 /** 标题相似度（基于字符 bigram Jaccard），用于合并"同岗不同源" */
@@ -104,7 +103,7 @@ export function dedupeJobs(jobs) {
   const kept = [];
   for (const j of jobs) {
     const key = jobKey(j);
-    if (byUrl.has(key)) {
+    if (byUrl.has(key) && relateJobs(byUrl.get(key),j).relation==='same') {
       mergeInto(byUrl.get(key), j);
       continue;
     }
@@ -121,7 +120,7 @@ export function dedupeJobs(jobs) {
     for (let k = i + 1; k < kept.length; k++) {
       if (used[k]) continue;
       const other = kept[k];
-      if (normKey(base.company) && normKey(base.company) === normKey(other.company) && titleSimilarity(base.title, other.title) >= 0.82) {
+      if (relateJobs(base,other).relation==='same') {
         used[k] = true;
         mergeInto(base, other);
       }

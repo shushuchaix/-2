@@ -5,6 +5,7 @@ import tls from 'node:tls';
 import { syncBuiltinESMExports } from 'node:module';
 const failure=()=>{throw new Error('offline_network_forbidden: inject a transport or allow an isolated local endpoint');};
 const allowed=new Set((process.env.RJR_TEST_ALLOWED_ORIGINS||'').split(',').filter(Boolean));
+export function allowLocalOrigin(value){const url=new URL(value);if(!['localhost','127.0.0.1','[::1]'].includes(url.hostname)||!['http:','https:'].includes(url.protocol))throw Error('Only isolated local test origins allowed');allowed.add(url.origin);}
 const isAllowed=args=>{
   if(!allowed.size)return false;
   try {

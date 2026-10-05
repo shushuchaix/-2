@@ -19,7 +19,11 @@ import {
 import { RunGate } from './limits.mjs';
 import { DeepSeek } from './llm/deepseek.mjs';
 import { extractResumeText, looksLikeResume } from './resume/extract-text.mjs';
-import { runPipeline, saveRun, listRuns, loadRun, RUNS_DIR } from './pipeline.mjs';
+import {createApplicationContext} from './application/context.mjs';
+import {handleV2Request} from './server/routes-v2.mjs';
+import {handleV1Request} from './server/routes-v1.mjs';
+import {readJsonBody as readValidatedJsonBody} from './server/validation.mjs';
+import {VERSION} from './version.mjs';
 import { exportResult } from './export.mjs';
 import * as zhaopin from './sources/zhaopin.mjs';
 import * as shixiseng from './sources/shixiseng.mjs';
@@ -104,7 +108,7 @@ async function readJsonBody(req) {
 function serveStatic(req, res, cfg, pathname, { allowMissing = false } = {}) {
   const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
   const resolved = path.resolve(path.join(PUBLIC_DIR, rel));
-  if (!resolved.startsWith(path.resolve(PUBLIC_DIR))) {
+  if (resolved!==path.resolve(PUBLIC_DIR)&&!resolved.startsWith(path.resolve(PUBLIC_DIR)+path.sep)) {
     sendJson(req, res, cfg, 403, { error: '非法路径' });
     return;
   }
@@ -158,7 +162,7 @@ function originAllowed(req, cfg) {
 
 /* ------------------------------ 服务 ------------------------------ */
 
-export function createServer(cfg) {
+export function createServer(cfg, {dataDir=process.env.RJR_DATA_DIR||DATA_ROOT, dependencies={}}={}) {
   const llm = new DeepSeek(cfg);
   const exposure = assertSafeExposure(cfg);
 
@@ -181,7 +185,10 @@ export function createServer(cfg) {
     dailyGlobal: cfg.limits.dailyGlobal,
     dailyPerIp: cfg.limits.dailyPerIp,
     perIpCooldownMs: cfg.limits.perIpCooldownMs,
+    storageFile: path.join(dataDir, 'quota.json'),
   });
+
+  const ready=createApplicationContext({cfg,dataDir,dependencies:{...dependencies,runGate:gate}});ready.catch(()=>{});
 
   function sessionOf(req) {
     const cookies = parseCookies(req);
@@ -223,7 +230,7 @@ export function createServer(cfg) {
           allowUserKey: Boolean(cfg.deepseek.allowUserKey),
           // 桌面外壳据此切换交互：免登录、自带 Key 本地持久化、指向数据目录
           desktop: IS_DESKTOP,
-          dataDir: IS_DESKTOP ? DATA_ROOT : undefined,
+          dataDir: IS_DESKTOP ? dataDir : undefined,
           deepseekConfigured: llm.available,
         });
       }
@@ -275,7 +282,7 @@ export function createServer(cfg) {
       /* ---------------- 健康检查 ---------------- */
       if (pathname === '/api/health' && req.method === 'GET') {
         const authed = isAuthed(req);
-        const base = { ok: true, version: '1.1.0', authRequired, authenticated: authed };
+        const base = { ok: true, version: VERSION, authRequired, authenticated: authed };
         if (!authed) return sendJson(req, res, cfg, 200, base);
         return sendJson(req, res, cfg, 200, {
           ...base,
@@ -331,172 +338,11 @@ export function createServer(cfg) {
         return sendJson(req, res, cfg, 403, { error: '请求来源不被允许' });
       }
 
-      /* ---------------- 简历文件上传 → 文本 ---------------- */
-      if (pathname === '/api/upload' && req.method === 'POST') {
-        const body = await readJsonBody(req);
-        const { filename = 'resume.txt', base64 = '' } = body;
-        if (!base64) return sendJson(req, res, cfg, 400, { error: '缺少文件内容' });
-        const buf = Buffer.from(String(base64).replace(/^data:[^;]+;base64,/, ''), 'base64');
-        if (!buf.length) return sendJson(req, res, cfg, 400, { error: '文件内容为空或 base64 解码失败' });
-        try {
-          const { text, format } = await extractResumeText(buf, filename);
-          if (!text || text.length < 30) {
-            return sendJson(req, res, cfg, 422, { error: '未能从文件中提取到有效文字（可能是扫描版图片 PDF），请改用手动粘贴简历内容' });
-          }
-          return sendJson(req, res, cfg, 200, { text, format, length: text.length, looksLikeResume: looksLikeResume(text), filename });
-        } catch (e) {
-          return sendJson(req, res, cfg, 422, { error: e.message });
-        }
-      }
-
-      /* ---------------- 主流程（NDJSON 流式） ---------------- */
-      if (pathname === '/api/analyze' && req.method === 'POST') {
-        const body = await readJsonBody(req);
-        const resumeText = String(body.resumeText || '').trim();
-        if (resumeText.length < 30) {
-          return sendJson(req, res, cfg, 400, { error: '简历内容太短（至少 30 个字符），请粘贴完整简历或上传简历文件' });
-        }
-        if (resumeText.length > 60000) {
-          return sendJson(req, res, cfg, 413, { error: '简历内容过长（上限 6 万字符）' });
-        }
-        const options = body.options || {};
-
-        // 访客自带 Key：仅在内存中使用，不落盘、不写日志
-        let requestLlm = llm;
-        const userKey = String(body.userApiKey || '').trim();
-        if (userKey) {
-          if (!cfg.deepseek.allowUserKey) {
-            return sendJson(req, res, cfg, 403, { error: '本站不允许使用自带 API Key' });
-          }
-          if (!/^sk-[A-Za-z0-9_-]{16,}$/.test(userKey)) {
-            return sendJson(req, res, cfg, 400, { error: '自带 API Key 格式不正确（应以 sk- 开头）' });
-          }
-          requestLlm = new DeepSeek({ ...cfg, deepseek: { ...cfg.deepseek, apiKey: userKey } });
-        }
-
-        // 配额与并发闸门
-        const permit = gate.acquire(ip);
-        if (!permit.ok) {
-          res.writeHead(permit.status, { 'Content-Type': 'application/json; charset=utf-8', ...securityHeaders(req, cfg) });
-          return res.end(JSON.stringify({ error: permit.reason, retryAfterMs: permit.retryAfterMs }));
-        }
-
-        res.writeHead(200, {
-          'Content-Type': 'application/x-ndjson; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          Connection: 'keep-alive',
-          'X-Accel-Buffering': 'no',
-          ...securityHeaders(req, cfg),
-        });
-
-        const controller = new AbortController();
-        req.on('close', () => controller.abort());
-
-        const emit = (ev) => {
-          if (res.writableEnded) return;
-          try {
-            res.write(JSON.stringify(ev) + '\n');
-          } catch {
-            /* 客户端已断开 */
-          }
-        };
-        const heartbeat = setInterval(() => emit({ type: 'ping', t: Date.now() }), 15000);
-
-        try {
-          if (permit.queued > 0) {
-            emit({ type: 'log', message: `前面还有 ${permit.queued} 个任务在排队，请稍候…` });
-            emit({ type: 'queued', position: permit.queued });
-            await gate.waitTurn(permit.ticket, (pos) => emit({ type: 'queued', position: pos }), controller.signal);
-            emit({ type: 'log', message: '已排到，开始检索' });
-          }
-          const result = await runPipeline({
-            resumeText,
-            llm: requestLlm,
-            cfg,
-            options,
-            onEvent: emit,
-            signal: controller.signal,
-          });
-          try {
-            const file = await saveRun(result);
-            emit({ type: 'saved', file: path.relative(ROOT, file), runId: result.runId });
-          } catch (e) {
-            emit({ type: 'log', message: `结果保存失败：${e.message}` });
-          }
-          emit({ type: 'quota', quota: gate.peek(ip) });
-          emit({ type: 'done' });
-        } catch (e) {
-          emit({ type: 'error', message: e.message || String(e) });
-          emit({ type: 'done' });
-        } finally {
-          clearInterval(heartbeat);
-          permit.release();
-          res.end();
-        }
-        return;
-      }
-
-      /* ---------------- 历史运行 ---------------- */
-      if (pathname === '/api/runs' && req.method === 'GET') {
-        return sendJson(req, res, cfg, 200, { runs: listRuns(100) });
-      }
-
-      const runMatch = pathname.match(/^\/api\/runs\/([^/]+)$/);
-      if (runMatch && req.method === 'GET') {
-        const run = loadRun(runMatch[1]);
-        if (!run) return sendJson(req, res, cfg, 404, { error: '未找到该运行记录' });
-        return sendJson(req, res, cfg, 200, run);
-      }
-      if (runMatch && req.method === 'DELETE') {
-        const safe = runMatch[1].replace(/[^a-zA-Z0-9\-]/g, '');
-        const file = path.join(RUNS_DIR, `${safe}.json`);
-        if (fs.existsSync(file)) fs.unlinkSync(file);
-        return sendJson(req, res, cfg, 200, { ok: true });
-      }
-
-      /* ---------------- 岗位索引 / 投递追踪 ---------------- */
-      // 跨检索持久化：新增岗位、存活时长、投递状态。
-      // 这是 GitHub 上同类项目（jobsync ★1255、offeros）立住的核心功能。
-      if (pathname === '/api/tracking/summary' && req.method === 'GET') {
-        return sendJson(req, res, cfg, 200, await store.summary());
-      }
-      if (pathname === '/api/tracking/jobs' && req.method === 'GET') {
-        const status = url.searchParams.get('status') || '';
-        const limit = Math.min(1000, Number(url.searchParams.get('limit')) || 200);
-        return sendJson(req, res, cfg, 200, { jobs: await store.listJobs({ status, limit }) });
-      }
-      const trackMatch = pathname.match(/^\/api\/tracking\/jobs\/([^/]+)$/);
-      if (trackMatch && req.method === 'POST') {
-        const id = decodeURIComponent(trackMatch[1]);
-        let body = {};
-        try {
-          body = await readJsonBody(req);
-        } catch {
-          return sendJson(req, res, cfg, 400, { error: '请求体不是合法 JSON' });
-        }
-        if (!body.status) return sendJson(req, res, cfg, 400, { error: '缺少 status 字段' });
-        try {
-          const rec = await store.setStatus(id, String(body.status), Object.hasOwn(body,'note') ? String(body.note) : undefined);
-          return sendJson(req, res, cfg, 200, { ok: true, job: rec });
-        } catch (e) {
-          return sendJson(req, res, cfg, 400, { error: e.message, allowed: store.STATUSES });
-        }
-      }
-
-      const exportMatch = pathname.match(/^\/api\/runs\/([^/]+)\/export$/);      if (exportMatch && req.method === 'GET') {
-        const run = loadRun(exportMatch[1]);
-        if (!run) return sendJson(req, res, cfg, 404, { error: '未找到该运行记录' });
-        const format = url.searchParams.get('format') || 'json';
-        const { body, ext, mime } = exportResult(run, format);
-        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        res.writeHead(200, {
-          'Content-Type': mime,
-          'Content-Disposition': `attachment; filename="jobs-${stamp}.${ext}"`,
-          'Cache-Control': 'no-store',
-          ...securityHeaders(req, cfg),
-        });
-        res.end(body);
-        return;
+      if(pathname.startsWith('/api/')){
+        const app=await ready;
+        const context={...app,http:{json:(request,response,status,data)=>sendJson(request,response,cfg,status,data),readJson:readValidatedJsonBody,ip:request=>clientIp(request,cfg.server.trustProxy)}};
+        for(const [name,value] of Object.entries(securityHeaders(req,cfg)))res.setHeader(name,value);
+        if(await handleV2Request(req,res,context)||await handleV1Request(req,res,context))return;
       }
 
       /* ---------------- 静态资源 ---------------- */
@@ -510,7 +356,9 @@ export function createServer(cfg) {
       return sendJson(req, res, cfg, 404, { error: '未知接口' });
     } catch (e) {
       if (!res.headersSent) {
-        sendJson(req, res, cfg, 500, { error: e.message || String(e) });
+        const storage=/ENOSPC|EACCES|EPERM|EROFS/.test(e.code||'');
+        const status=e.status||(/not found|未找到|does not exist/i.test(e.message)?404:/Invalid|Private|Missing|forbidden|required|referenced|mismatch/i.test(e.message)?400:500);
+        sendJson(req, res, cfg, status, { error: storage?'存储写入失败':e.message || String(e) });
       } else {
         try {
           res.end();
@@ -521,7 +369,7 @@ export function createServer(cfg) {
     }
   });
 
-  return { server, llm, gate, authRequired, exposure };
+  return { server, llm, gate, authRequired, exposure, ready };
 }
 
 /* ------------------------------ 启动 ------------------------------ */

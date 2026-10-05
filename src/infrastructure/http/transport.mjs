@@ -1,6 +1,88 @@
-import http from 'node:http';import https from 'node:https';
-import {isPublicAddress} from './public-url.mjs';
-export function socketTransport({url,addresses,method='GET',headers={},body,signal,maxBytes}) {return new Promise((resolve,reject)=>{
- const address=addresses[0];const request=(url.protocol==='https:'?https:http).request(url,{method,headers,signal,agent:false,lookup:(host,options,callback)=>options.all?callback(null,[address]):callback(null,address.address,address.family)},res=>{const chunks=[];let size=0;res.on('data',chunk=>{size+=chunk.length;if(size>maxBytes){request.destroy(Error('Response size limit exceeded'));return;}chunks.push(chunk);});res.on('error',reject);res.on('end',()=>{const content=Buffer.concat(chunks);const charset=String(res.headers['content-type']||'').match(/charset\s*=\s*([^;\s]+)/i)?.[1]||'utf-8';let text;try{text=new TextDecoder(charset).decode(content);}catch{text=content.toString('utf8');}resolve({status:res.statusCode,headers:Object.fromEntries(Object.entries(res.headers).map(([k,v])=>[k,Array.isArray(v)?v.join(','):String(v||'')])),text,url:url.href});});});
- request.on('error',reject);request.on('socket',socket=>{const connected=()=>{if(!isPublicAddress(socket.remoteAddress)||!addresses.some(a=>a.address===socket.remoteAddress||a.family===4&&socket.remoteAddress==='::ffff:'+a.address)){request.destroy(Error('Unexpected connected address'));return;}request.end(body);};socket.once(url.protocol==='https:'?'secureConnect':'connect',connected);});
- });}
+import http from "node:http";
+import https from "node:https";
+import { isPublicAddress } from "./public-url.mjs";
+export function socketTransport({
+  url,
+  addresses,
+  method = "GET",
+  headers = {},
+  body,
+  signal,
+  maxBytes,
+}) {
+  return new Promise((resolve, reject) => {
+    const address = addresses[0];
+    const request = (url.protocol === "https:" ? https : http).request(
+      url,
+      {
+        method,
+        headers,
+        signal,
+        agent: false,
+        lookup: (host, options, callback) =>
+          options.all
+            ? callback(null, [address])
+            : callback(null, address.address, address.family),
+      },
+      (res) => {
+        const chunks = [];
+        let size = 0;
+        res.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > maxBytes) {
+            request.destroy(Error("Response size limit exceeded"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("error", reject);
+        res.on("end", () => {
+          const content = Buffer.concat(chunks);
+          const charset =
+            String(res.headers["content-type"] || "").match(
+              /charset\s*=\s*([^;\s]+)/i,
+            )?.[1] || "utf-8";
+          let text;
+          try {
+            text = new TextDecoder(charset).decode(content);
+          } catch {
+            text = content.toString("utf8");
+          }
+          resolve({
+            status: res.statusCode,
+            headers: Object.fromEntries(
+              Object.entries(res.headers).map(([k, v]) => [
+                k,
+                Array.isArray(v) ? v.join(",") : String(v || ""),
+              ]),
+            ),
+            text,
+            url: url.href,
+          });
+        });
+      },
+    );
+    request.on("error", reject);
+    request.on("socket", (socket) => {
+      const connected = () => {
+        if (
+          !isPublicAddress(socket.remoteAddress) ||
+          !addresses.some(
+            (a) =>
+              a.address === socket.remoteAddress ||
+              (a.family === 4 &&
+                socket.remoteAddress === "::ffff:" + a.address),
+          )
+        ) {
+          request.destroy(Error("Unexpected connected address"));
+          return;
+        }
+        request.end(body);
+      };
+      socket.once(
+        url.protocol === "https:" ? "secureConnect" : "connect",
+        connected,
+      );
+    });
+  });
+}

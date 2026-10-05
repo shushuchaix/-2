@@ -1,9 +1,9 @@
 {
   "name": "resume-job-radar",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "简历关键词驱动的校招/实习岗位全网检索与匹配系统",
+  "description": "个人求职工作台：多来源招聘、证据匹配与投递进度",
   "main": "electron/main.mjs",
   "scripts": {
     "start": "node src/server.mjs",
@@ -60,7 +60,10 @@
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
-    "@electron/packager": "^18.3.6",
-    "electron": "^38.0.0"
+    "@electron/asar": "3.4.1",
+    "electron": "44.5.1",
+    "js-yaml": "4.3.2",
+    "prettier": "3.6.2",
+    "resedit": "2.0.3"
   }
 }

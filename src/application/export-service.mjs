@@ -1,6 +1,83 @@
-import {createJobService} from './job-service.mjs';import {redactBusiness,csvCell} from '../domain/redact.mjs';
-export function createExportService({repository}) {return {async export({format='json',filters={}}={}){const service=createJobService({repository});const result=await service.queryJobs({...filters,page:1,pageSize:200});const items=[...result.items];for(let page=2;items.length<result.total;page++)items.push(...(await service.queryJobs({...filters,page,pageSize:200})).items);const rows=redactBusiness(items);
- if(format==='json')return {filename:'jobs.json',contentType:'application/json; charset=utf-8',body:JSON.stringify(rows,null,2)};
- const header=['岗位ID','岗位','公司','城市','薪资原文','来源','链接','状态','备注','资格','匹配分'];const values=rows.map(i=>[i.jobId,i.title,i.company,i.cities.join(' / '),typeof i.salary==='object'?i.salary?.raw:i.salary,i.sourceId,i.url,i.application.status,i.application.note,i.evaluation?.qualification?.status,i.evaluation?.score]);
- if(format==='csv')return {filename:'jobs.csv',contentType:'text/csv; charset=utf-8',body:'\uFEFF'+[header,...values].map(r=>r.map(csvCell).join(',')).join('\r\n')};
- if(format==='markdown')return {filename:'jobs.md',contentType:'text/markdown; charset=utf-8',body:[header,header.map(()=> '---'),...values].map(r=>'| '+r.map(v=>String(v??'').replace(/\|/g,'\\|').replace(/[\r\n]/g,' ')).join(' | ')+' |').join('\n')};throw Error('Unsupported export format');}};}
+import { createJobService } from "./job-service.mjs";
+import { redactBusiness, csvCell } from "../domain/redact.mjs";
+export function createExportService({ repository }) {
+  return {
+    async export({ format = "json", filters = {} } = {}) {
+      const service = createJobService({ repository });
+      const result = await service.queryJobs({
+        ...filters,
+        page: 1,
+        pageSize: 200,
+      });
+      const items = [...result.items];
+      for (let page = 2; items.length < result.total; page++)
+        items.push(
+          ...(await service.queryJobs({ ...filters, page, pageSize: 200 }))
+            .items,
+        );
+      const rows = redactBusiness(items);
+      if (format === "json")
+        return {
+          filename: "jobs.json",
+          contentType: "application/json; charset=utf-8",
+          body: JSON.stringify(rows, null, 2),
+        };
+      const header = [
+        "岗位ID",
+        "岗位",
+        "公司",
+        "城市",
+        "薪资原文",
+        "来源",
+        "链接",
+        "状态",
+        "备注",
+        "资格",
+        "匹配分",
+      ];
+      const values = rows.map((i) => [
+        i.jobId,
+        i.title,
+        i.company,
+        i.cities.join(" / "),
+        typeof i.salary === "object" ? i.salary?.raw : i.salary,
+        i.sourceId,
+        i.url,
+        i.application.status,
+        i.application.note,
+        i.evaluation?.qualification?.status,
+        i.evaluation?.score,
+      ]);
+      if (format === "csv")
+        return {
+          filename: "jobs.csv",
+          contentType: "text/csv; charset=utf-8",
+          body:
+            "\uFEFF" +
+            [header, ...values]
+              .map((r) => r.map(csvCell).join(","))
+              .join("\r\n"),
+        };
+      if (format === "markdown")
+        return {
+          filename: "jobs.md",
+          contentType: "text/markdown; charset=utf-8",
+          body: [header, header.map(() => "---"), ...values]
+            .map(
+              (r) =>
+                "| " +
+                r
+                  .map((v) =>
+                    String(v ?? "")
+                      .replace(/\|/g, "\\|")
+                      .replace(/[\r\n]/g, " "),
+                  )
+                  .join(" | ") +
+                " |",
+            )
+            .join("\n"),
+        };
+      throw Error("Unsupported export format");
+    },
+  };
+}

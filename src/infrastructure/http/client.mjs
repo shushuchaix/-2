@@ -1,17 +1,169 @@
-import {socketTransport} from './transport.mjs';
-import {createDnsLookup} from './dns.mjs';
-export {socketTransport} from './transport.mjs';
-import {resolvePublicUrl,validatePublicUrl,isPublicAddress} from './public-url.mjs';import {createSourceBudget} from './budget.mjs';import {sharedScheduler,cancellableSleep,abortError} from './scheduler.mjs';import {createResponseCache} from './cache.mjs';
+import { socketTransport } from "./transport.mjs";
+import { createDnsLookup } from "./dns.mjs";
+export { socketTransport } from "./transport.mjs";
+import {
+  resolvePublicUrl,
+  validatePublicUrl,
+  isPublicAddress,
+} from "./public-url.mjs";
+import { createSourceBudget } from "./budget.mjs";
+import { sharedScheduler, cancellableSleep, abortError } from "./scheduler.mjs";
+import { createResponseCache } from "./cache.mjs";
 
-function abortable(promise,signal){signal?.throwIfAborted();return new Promise((resolve,reject)=>{const abort=()=>reject(abortError(signal));signal?.addEventListener('abort',abort,{once:true});Promise.resolve(promise).then(resolve,reject).finally(()=>signal?.removeEventListener('abort',abort));});}
-export function createRequestClient({scheduler=sharedScheduler,budget=createSourceBudget(),transport=socketTransport,dnsLookup,cache=createResponseCache(),clock={now:Date.now,sleep:cancellableSleep},signal:defaultSignal,dnsMode='auto',maxBytes=4*1024*1024}={}) {
- dnsLookup ||= createDnsLookup({mode:dnsMode,budget,signal:defaultSignal});
- return async function request(value,options={}){const signal=options.signal&&defaultSignal?AbortSignal.any([options.signal,defaultSignal]):options.signal||defaultSignal;signal?.throwIfAborted();let url=validatePublicUrl(value);for(const key of Object.keys(options.headers||{}))if(['host',':authority'].includes(key.toLowerCase()))throw Error('Host override forbidden');
- const cacheKey=options.cacheKey?JSON.stringify([url.href,options.method||'GET',options.cacheKey]):null;const cached=cacheKey&&cache.get(cacheKey);if(cached)return cached;let retries=0,redirects=0;let method=options.method||'GET',body=options.body,headers={...options.headers};
- for(;;){signal?.throwIfAborted();let response;try{response=await scheduler.run(url.origin,async()=>{signal?.throwIfAborted();const timed=AbortSignal.timeout(options.timeoutMs??15000);const combined=signal?AbortSignal.any([signal,timed]):timed;const resolved=await abortable(resolvePublicUrl(url,{dnsLookup}),combined);combined.throwIfAborted();budget.claimRequest(redirects?'redirect':retries?'retry':options.kind||'request');const result=await abortable(transport({...resolved,method,headers,body,signal:combined,maxBytes}),combined);if(Buffer.byteLength(result.text||'')>maxBytes)throw Error('Response size limit exceeded');return {...result,url:result.url||url.href,headers:Object.fromEntries(Object.entries(result.headers||{}).map(([k,v])=>[k.toLowerCase(),String(v)]))};},{signal,minIntervalMs:options.minIntervalMs||0});}
- catch(e){if(signal?.aborted)throw abortError(signal);if(retries<2&&['ECONNRESET','ETIMEDOUT','EAI_AGAIN','ECONNREFUSED'].includes(e.code)){retries++;await clock.sleep(400*2**(retries-1),signal);continue;}throw e;}
- if([301,302,303,307,308].includes(response.status)&&response.headers.location){if(++redirects>3)throw Error('Redirect limit exceeded');const next=validatePublicUrl(new URL(response.headers.location,url).href);if(next.origin!==url.origin){if(body!==undefined&&[307,308].includes(response.status))throw Error('Cross-origin body redirect forbidden');headers=Object.fromEntries(Object.entries(headers).filter(([k])=>!['authorization','cookie','proxy-authorization','x-api-key'].includes(k.toLowerCase())));}if(response.status===303||[301,302].includes(response.status)&&method==='POST'){method='GET';body=undefined;}url=next;continue;}
- if((response.status===429||response.status>=500)&&retries<2){retries++;const ra=response.headers['retry-after'];const delay=ra?(Number.isFinite(Number(ra))?Number(ra)*1000:Date.parse(ra)-clock.now()):400*2**(retries-1);await clock.sleep(Math.max(0,Math.min(60000,delay||400)),signal);continue;}
- if(cacheKey&&response.status===200)cache.set(cacheKey,response);return response;}
- };
+function abortable(promise, signal) {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(abortError(signal));
+    signal?.addEventListener("abort", abort, { once: true });
+    Promise.resolve(promise)
+      .then(resolve, reject)
+      .finally(() => signal?.removeEventListener("abort", abort));
+  });
+}
+export function createRequestClient({
+  scheduler = sharedScheduler,
+  budget = createSourceBudget(),
+  transport = socketTransport,
+  dnsLookup,
+  cache = createResponseCache(),
+  clock = { now: Date.now, sleep: cancellableSleep },
+  signal: defaultSignal,
+  dnsMode = "auto",
+  maxBytes = 4 * 1024 * 1024,
+} = {}) {
+  dnsLookup ||= createDnsLookup({
+    mode: dnsMode,
+    budget,
+    signal: defaultSignal,
+  });
+  return async function request(value, options = {}) {
+    const signal =
+      options.signal && defaultSignal
+        ? AbortSignal.any([options.signal, defaultSignal])
+        : options.signal || defaultSignal;
+    signal?.throwIfAborted();
+    let url = validatePublicUrl(value);
+    for (const key of Object.keys(options.headers || {}))
+      if (["host", ":authority"].includes(key.toLowerCase()))
+        throw Error("Host override forbidden");
+    const cacheKey = options.cacheKey
+      ? JSON.stringify([url.href, options.method || "GET", options.cacheKey])
+      : null;
+    const cached = cacheKey && cache.get(cacheKey);
+    if (cached) return cached;
+    let retries = 0,
+      redirects = 0;
+    let method = options.method || "GET",
+      body = options.body,
+      headers = { ...options.headers };
+    for (;;) {
+      signal?.throwIfAborted();
+      let response;
+      try {
+        response = await scheduler.run(
+          url.origin,
+          async () => {
+            signal?.throwIfAborted();
+            const timed = AbortSignal.timeout(options.timeoutMs ?? 15000);
+            const combined = signal ? AbortSignal.any([signal, timed]) : timed;
+            const resolved = await abortable(
+              resolvePublicUrl(url, { dnsLookup }),
+              combined,
+            );
+            combined.throwIfAborted();
+            budget.claimRequest(
+              redirects
+                ? "redirect"
+                : retries
+                  ? "retry"
+                  : options.kind || "request",
+            );
+            const result = await abortable(
+              transport({
+                ...resolved,
+                method,
+                headers,
+                body,
+                signal: combined,
+                maxBytes,
+              }),
+              combined,
+            );
+            if (Buffer.byteLength(result.text || "") > maxBytes)
+              throw Error("Response size limit exceeded");
+            return {
+              ...result,
+              url: result.url || url.href,
+              headers: Object.fromEntries(
+                Object.entries(result.headers || {}).map(([k, v]) => [
+                  k.toLowerCase(),
+                  String(v),
+                ]),
+              ),
+            };
+          },
+          { signal, minIntervalMs: options.minIntervalMs || 0 },
+        );
+      } catch (e) {
+        if (signal?.aborted) throw abortError(signal);
+        if (
+          retries < 2 &&
+          ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ECONNREFUSED"].includes(
+            e.code,
+          )
+        ) {
+          retries++;
+          await clock.sleep(400 * 2 ** (retries - 1), signal);
+          continue;
+        }
+        throw e;
+      }
+      if (
+        [301, 302, 303, 307, 308].includes(response.status) &&
+        response.headers.location
+      ) {
+        if (++redirects > 3) throw Error("Redirect limit exceeded");
+        const next = validatePublicUrl(
+          new URL(response.headers.location, url).href,
+        );
+        if (next.origin !== url.origin) {
+          if (body !== undefined && [307, 308].includes(response.status))
+            throw Error("Cross-origin body redirect forbidden");
+          headers = Object.fromEntries(
+            Object.entries(headers).filter(
+              ([k]) =>
+                ![
+                  "authorization",
+                  "cookie",
+                  "proxy-authorization",
+                  "x-api-key",
+                ].includes(k.toLowerCase()),
+            ),
+          );
+        }
+        if (
+          response.status === 303 ||
+          ([301, 302].includes(response.status) && method === "POST")
+        ) {
+          method = "GET";
+          body = undefined;
+        }
+        url = next;
+        continue;
+      }
+      if ((response.status === 429 || response.status >= 500) && retries < 2) {
+        retries++;
+        const ra = response.headers["retry-after"];
+        const delay = ra
+          ? Number.isFinite(Number(ra))
+            ? Number(ra) * 1000
+            : Date.parse(ra) - clock.now()
+          : 400 * 2 ** (retries - 1);
+        await clock.sleep(Math.max(0, Math.min(60000, delay || 400)), signal);
+        continue;
+      }
+      if (cacheKey && response.status === 200) cache.set(cacheKey, response);
+      return response;
+    }
+  };
 }

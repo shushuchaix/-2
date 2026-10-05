@@ -1,2 +1,82 @@
-import {el,button,field,downloadBlob} from './dom.js';import {feedback} from './feedback.js';
-export function backupPanel({document:d,api}){const status=feedback(d),root=el(d,'section',{className:'card stack'}),format=el(d,'select',{'aria-label':'导出格式'},['json','csv','md'].map(v=>el(d,'option',{value:v},v.toUpperCase()))),file=el(d,'input',{type:'file',accept:'.json','aria-label':'选择工作区备份'});root.append(el(d,'h2',{},'备份与导出'),el(d,'p',{className:'muted'},'备份保留岗位、简历、目标和人工记录。恢复会先备份当前工作区，并验证内容完整性。'),el(d,'div',{className:'row'},format,button(d,'导出岗位与投递记录',async()=>{try{downloadBlob(d,await api.download('/exports?format='+format.value),'job-radar.'+format.value);status.show('导出已生成');}catch(e){status.show(e.message,true);}})),button(d,'下载工作区备份',async()=>{try{const archive=await api.request('/workspace/backup',{method:'POST',body:{}});downloadBlob(d,new Blob([JSON.stringify(archive,null,2)],{type:'application/json'}),'job-radar-backup.json');status.show('备份已生成，凭据不包含在内。');}catch(e){status.show(e.message,true);}}),field(d,'恢复备份文件',file),button(d,'校验并恢复',async()=>{try{if(!file.files?.[0])throw Error('请选择备份文件');if(file.files[0].size>38*1024*1024)throw Error('备份超过当前上传上限38MB');const archive=JSON.parse(await file.files[0].text());await api.request('/workspace/restore',{method:'POST',body:{archive}});status.show('备份验证通过，工作区已恢复。请重新打开页面。');}catch(e){status.show('恢复失败：'+e.message,true);}}),status.node);return root;}
+import { el, button, field, downloadBlob } from "./dom.js";
+import { feedback } from "./feedback.js";
+export function backupPanel({ document: d, api }) {
+  const status = feedback(d),
+    root = el(d, "section", { className: "card stack" }),
+    format = el(
+      d,
+      "select",
+      { "aria-label": "导出格式" },
+      ["json", "csv", "md"].map((v) =>
+        el(d, "option", { value: v }, v.toUpperCase()),
+      ),
+    ),
+    file = el(d, "input", {
+      type: "file",
+      accept: ".json",
+      "aria-label": "选择工作区备份",
+    });
+  root.append(
+    el(d, "h2", {}, "备份与导出"),
+    el(
+      d,
+      "p",
+      { className: "muted" },
+      "备份保留岗位、简历、目标和人工记录。恢复会先备份当前工作区，并验证内容完整性。",
+    ),
+    el(
+      d,
+      "div",
+      { className: "row" },
+      format,
+      button(d, "导出岗位与投递记录", async () => {
+        try {
+          downloadBlob(
+            d,
+            await api.download("/exports?format=" + format.value),
+            "job-radar." + format.value,
+          );
+          status.show("导出已生成");
+        } catch (e) {
+          status.show(e.message, true);
+        }
+      }),
+    ),
+    button(d, "下载工作区备份", async () => {
+      try {
+        const archive = await api.request("/workspace/backup", {
+          method: "POST",
+          body: {},
+        });
+        downloadBlob(
+          d,
+          new Blob([JSON.stringify(archive, null, 2)], {
+            type: "application/json",
+          }),
+          "job-radar-backup.json",
+        );
+        status.show("备份已生成，凭据不包含在内。");
+      } catch (e) {
+        status.show(e.message, true);
+      }
+    }),
+    field(d, "恢复备份文件", file),
+    button(d, "校验并恢复", async () => {
+      try {
+        if (!file.files?.[0]) throw Error("请选择备份文件");
+        if (file.files[0].size > 38 * 1024 * 1024)
+          throw Error("备份超过当前上传上限38MB");
+        const archive = JSON.parse(await file.files[0].text());
+        await api.request("/workspace/restore", {
+          method: "POST",
+          body: { archive },
+        });
+        status.show("备份验证通过，工作区已恢复。请重新打开页面。");
+      } catch (e) {
+        status.show("恢复失败：" + e.message, true);
+      }
+    }),
+    status.node,
+  );
+  return root;
+}

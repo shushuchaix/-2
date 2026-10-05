@@ -1,59 +1,84 @@
 // 文本归一化与岗位去重
-import { decodeEntities, stripPrivateUse } from './html.mjs';
-import {resolveJobIdentity,relateJobs} from '../domain/identity.mjs';
+import { decodeEntities, stripPrivateUse } from "./html.mjs";
+import { resolveJobIdentity, relateJobs } from "../domain/identity.mjs";
 
 /**
  * 字段清洗：解码 HTML 实体 + 去掉图标字体私有区字符 + 压缩空白。
  * 招聘站常用图标字体渲染薪资/规模，会在数据里留下 &#xf69b 这类噪声。
  */
-export function sanitizeText(s = '') {
-  return stripPrivateUse(decodeEntities(String(s ?? '')))
-    .replace(/[\s\u3000]+/g, ' ')
+export function sanitizeText(s = "") {
+  return stripPrivateUse(decodeEntities(String(s ?? "")))
+    .replace(/[\s\u3000]+/g, " ")
     .trim();
 }
 
 /** 归一化用于比较的字符串：去空白、标点、全角转半角、转小写 */
-export function normKey(s = '') {
+export function normKey(s = "") {
   return String(s)
-    .replace(/[\uFF01-\uFF5E]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-    .replace(/[\s\u3000]+/g, '')
-    .replace(/[()[\]{}（）【】《》<>「」『』,，.。;；:：!！?？'"“”‘’`~～@#$%^&*_+=|\\/、\-—–]/g, '')
+    .replace(/[\uFF01-\uFF5E]/g, (c) =>
+      String.fromCharCode(c.charCodeAt(0) - 0xfee0),
+    )
+    .replace(/[\s\u3000]+/g, "")
+    .replace(
+      /[()[\]{}（）【】《》<>「」『』,，.。;；:：!！?？'"“”‘’`~～@#$%^&*_+=|\\/、\-—–]/g,
+      "",
+    )
     .toLowerCase();
 }
 
 /** 清洗岗位标题：去实体噪声与常见前缀后缀 */
-export function cleanTitle(title = '') {
+export function cleanTitle(title = "") {
   return sanitizeText(title)
-    .replace(/^[\[【(（]\s*(急招|热招|高薪|急聘|诚聘)\s*[\]】)）]\s*/g, '')
-    .replace(/[\s\-_|·]+$/g, '')
+    .replace(/^[\[【(（]\s*(急招|热招|高薪|急聘|诚聘)\s*[\]】)）]\s*/g, "")
+    .replace(/[\s\-_|·]+$/g, "")
     .trim();
 }
 
 /** 城市名归一化：'省-石家庄市' → '石家庄'；'北京 朝阳 朝外' → '北京' */
-export function normCity(raw = '') {
+export function normCity(raw = "") {
   let s = String(raw).trim();
-  if (!s) return '';
-  if (s.includes('-')) {
-    const parts = s.split('-').map((x) => x.trim()).filter(Boolean);
+  if (!s) return "";
+  if (s.includes("-")) {
+    const parts = s
+      .split("-")
+      .map((x) => x.trim())
+      .filter(Boolean);
     s = parts[parts.length - 1] || s;
   }
   s = s.split(/[\s,，/]+/)[0] || s;
-  s = s.replace(/[市省区县]$/g, '');
-  return s.replace(/自治州$|地区$|特别行政区$/, '').trim();
+  s = s.replace(/[市省区县]$/g, "");
+  return s.replace(/自治州$|地区$|特别行政区$/, "").trim();
 }
 
 /** 大区归一：把区县合并回主要城市（用于城市匹配） */
-const CITY_ALIAS = new Map(Object.entries({
-  北京市: '北京', 上海市: '上海', 天津市: '天津', 重庆市: '重庆',
-  深圳市: '深圳', 广州市: '广州', 杭州市: '杭州', 南京市: '南京',
-  成都市: '成都', 武汉市: '武汉', 西安市: '西安', 苏州市: '苏州',
-  长沙市: '长沙', 郑州市: '郑州', 青岛市: '青岛', 合肥市: '合肥',
-  厦门市: '厦门', 宁波市: '宁波', 无锡市: '无锡', 佛山市: '佛山',
-}));
+const CITY_ALIAS = new Map(
+  Object.entries({
+    北京市: "北京",
+    上海市: "上海",
+    天津市: "天津",
+    重庆市: "重庆",
+    深圳市: "深圳",
+    广州市: "广州",
+    杭州市: "杭州",
+    南京市: "南京",
+    成都市: "成都",
+    武汉市: "武汉",
+    西安市: "西安",
+    苏州市: "苏州",
+    长沙市: "长沙",
+    郑州市: "郑州",
+    青岛市: "青岛",
+    合肥市: "合肥",
+    厦门市: "厦门",
+    宁波市: "宁波",
+    无锡市: "无锡",
+    佛山市: "佛山",
+  }),
+);
 
-export function cityCanon(raw = '') {
+export function cityCanon(raw = "") {
   const c = normCity(raw);
-  return CITY_ALIAS.get(c) || CITY_ALIAS.get(c + '市') || c;
+  return CITY_ALIAS.get(c) || CITY_ALIAS.get(c + "市") || c;
 }
 
 /** 判断岗位城市是否命中用户偏好（含"全国/不限/远程"视为命中） */
@@ -103,7 +128,7 @@ export function dedupeJobs(jobs) {
   const kept = [];
   for (const j of jobs) {
     const key = jobKey(j);
-    if (byUrl.has(key) && relateJobs(byUrl.get(key),j).relation==='same') {
+    if (byUrl.has(key) && relateJobs(byUrl.get(key), j).relation === "same") {
       mergeInto(byUrl.get(key), j);
       continue;
     }
@@ -120,7 +145,7 @@ export function dedupeJobs(jobs) {
     for (let k = i + 1; k < kept.length; k++) {
       if (used[k]) continue;
       const other = kept[k];
-      if (relateJobs(base,other).relation==='same') {
+      if (relateJobs(base, other).relation === "same") {
         used[k] = true;
         mergeInto(base, other);
       }
@@ -131,29 +156,46 @@ export function dedupeJobs(jobs) {
 }
 
 function richness(j) {
-  return (j.description ? 400 : 0) + (j.skills?.length || 0) * 8 + (j.tags?.length || 0) * 3 + (j.salary ? 10 : 0) + (j.summary ? 20 : 0);
+  return (
+    (j.description ? 400 : 0) +
+    (j.skills?.length || 0) * 8 +
+    (j.tags?.length || 0) * 3 +
+    (j.salary ? 10 : 0) +
+    (j.summary ? 20 : 0)
+  );
 }
 
 function mergeInto(target, src) {
   if (richness(src) > richness(target)) {
     const keepSource = target.sources || [target.source];
     Object.assign(target, src);
-    target.sources = [...new Set([...(src.sources || [src.source]), ...keepSource])];
+    target.sources = [
+      ...new Set([...(src.sources || [src.source]), ...keepSource]),
+    ];
   } else {
-    target.sources = [...new Set([...(target.sources || [target.source]), ...(src.sources || [src.source])])];
+    target.sources = [
+      ...new Set([
+        ...(target.sources || [target.source]),
+        ...(src.sources || [src.source]),
+      ]),
+    ];
   }
-  target.skills = [...new Set([...(target.skills || []), ...(src.skills || [])])];
+  target.skills = [
+    ...new Set([...(target.skills || []), ...(src.skills || [])]),
+  ];
   target.tags = [...new Set([...(target.tags || []), ...(src.tags || [])])];
-  if (!target.description && src.description) target.description = src.description;
+  if (!target.description && src.description)
+    target.description = src.description;
   if (!target.summary && src.summary) target.summary = src.summary;
   if (!target.salary && src.salary) target.salary = src.salary;
-  if (!target.publishTime && src.publishTime) target.publishTime = src.publishTime;
+  if (!target.publishTime && src.publishTime)
+    target.publishTime = src.publishTime;
 }
 
 /** 截断长文本，按字符数 */
 export function truncate(s, n) {
-  const str = String(s ?? '');
-  return str.length <= n ? str : str.slice(0, n) + '…';
+  const str = String(s ?? "");
+  return str.length <= n ? str : str.slice(0, n) + "…";
 }
 
 /** 把数组按固定大小切块 */
@@ -167,17 +209,19 @@ export function chunk(arr, size) {
 export async function pool(items, limit, worker) {
   const results = new Array(items.length);
   let cursor = 0;
-  const runners = new Array(Math.max(1, Math.min(limit, items.length))).fill(0).map(async () => {
-    for (;;) {
-      const idx = cursor++;
-      if (idx >= items.length) return;
-      try {
-        results[idx] = await worker(items[idx], idx);
-      } catch (e) {
-        results[idx] = { __error: e?.message || String(e) };
+  const runners = new Array(Math.max(1, Math.min(limit, items.length)))
+    .fill(0)
+    .map(async () => {
+      for (;;) {
+        const idx = cursor++;
+        if (idx >= items.length) return;
+        try {
+          results[idx] = await worker(items[idx], idx);
+        } catch (e) {
+          results[idx] = { __error: e?.message || String(e) };
+        }
       }
-    }
-  });
+    });
   await Promise.all(runners);
   return results;
 }

@@ -1,4 +1,84 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {uiFixture} from '../helpers/ui-fixture.mjs';import {mountJobsPage} from '../../public/js/pages/jobs.js';import {formatSalary,safeExternalUrl} from '../../public/js/format.js';
-const record={jobId:'j1',title:'<img src=x onerror=alert(1)>',kind:'notice',company:'合成公司',description:'<script>danger()</script>招聘公告正文'.repeat(50),sourceId:'synthetic',url:'javascript:alert(1)',cities:['深圳'],salary:{min:200,max:300,unit:'day',currency:'CNY'}};
-test('hostile job content is text and unknown evidence remains visible',async()=>{const job={jobId:'j1',canonical:record,firstSeen:'2026-10-05',lastSeen:'2026-10-05',lifecycle:'observed',deadlinePassed:false};const f=uiFixture(p=>p==='/targets'?{targets:[]}:p.startsWith('/jobs?')?{items:[{...record,job,application:{status:'new'},evaluation:null}],total:1,page:1,pageSize:30}:p==='/jobs/j1'?{job,observations:[],evaluations:[],application:{status:'new',note:''},relatedJobs:[]}:{});const page=mountJobsPage(f);await page.ready;assert.equal(f.root.querySelectorAll('img,script').length,0);f.root.querySelector('[data-job-id]').click();await f.settle();assert.ok(f.root.textContent.includes('招聘公告'));assert.ok(f.root.textContent.includes('待核实'));assert.ok(f.root.textContent.includes('发布日期：未提供'));assert.equal(f.root.querySelectorAll('a[href^="javascript:"]').length,0);assert.ok(f.root.querySelector('[role="dialog"]'));page.destroy();});
-test('salary units urls and query failures retain honest semantics',async()=>{assert.equal(formatSalary({min:200,max:300,unit:'day',currency:'CNY'}),'200–300 元/日');assert.equal(formatSalary(null),'薪资未提供');assert.equal(safeExternalUrl('javascript:alert(1)'),null);assert.equal(safeExternalUrl('https://example.com/a'),'https://example.com/a');assert.equal(safeExternalUrl('https://user:secret@example.com'),null);const f=uiFixture(p=>p==='/targets'?{targets:[]}:Promise.reject(Error('服务不可用')));const page=mountJobsPage(f);await page.ready;assert.ok(f.root.textContent.includes('服务不可用'));page.destroy();});
+import test from "node:test";
+import assert from "node:assert/strict";
+import { uiFixture } from "../helpers/ui-fixture.mjs";
+import { mountJobsPage } from "../../public/js/pages/jobs.js";
+import { formatSalary, safeExternalUrl } from "../../public/js/format.js";
+const record = {
+  jobId: "j1",
+  title: "<img src=x onerror=alert(1)>",
+  kind: "notice",
+  company: "合成公司",
+  description: "<script>danger()</script>招聘公告正文".repeat(50),
+  sourceId: "synthetic",
+  url: "javascript:alert(1)",
+  cities: ["深圳"],
+  salary: { min: 200, max: 300, unit: "day", currency: "CNY" },
+};
+test("hostile job content is text and unknown evidence remains visible", async () => {
+  const job = {
+    jobId: "j1",
+    canonical: record,
+    firstSeen: "2026-10-05",
+    lastSeen: "2026-10-05",
+    lifecycle: "observed",
+    deadlinePassed: false,
+  };
+  const f = uiFixture((p) =>
+    p === "/targets"
+      ? { targets: [] }
+      : p.startsWith("/jobs?")
+        ? {
+            items: [
+              {
+                ...record,
+                job,
+                application: { status: "new" },
+                evaluation: null,
+              },
+            ],
+            total: 1,
+            page: 1,
+            pageSize: 30,
+          }
+        : p === "/jobs/j1"
+          ? {
+              job,
+              observations: [],
+              evaluations: [],
+              application: { status: "new", note: "" },
+              relatedJobs: [],
+            }
+          : {},
+  );
+  const page = mountJobsPage(f);
+  await page.ready;
+  assert.equal(f.root.querySelectorAll("img,script").length, 0);
+  f.root.querySelector("[data-job-id]").click();
+  await f.settle();
+  assert.ok(f.root.textContent.includes("招聘公告"));
+  assert.ok(f.root.textContent.includes("待核实"));
+  assert.ok(f.root.textContent.includes("发布日期：未提供"));
+  assert.equal(f.root.querySelectorAll('a[href^="javascript:"]').length, 0);
+  assert.ok(f.root.querySelector('[role="dialog"]'));
+  page.destroy();
+});
+test("salary units urls and query failures retain honest semantics", async () => {
+  assert.equal(
+    formatSalary({ min: 200, max: 300, unit: "day", currency: "CNY" }),
+    "200–300 元/日",
+  );
+  assert.equal(formatSalary(null), "薪资未提供");
+  assert.equal(safeExternalUrl("javascript:alert(1)"), null);
+  assert.equal(
+    safeExternalUrl("https://example.com/a"),
+    "https://example.com/a",
+  );
+  assert.equal(safeExternalUrl("https://user:secret@example.com"), null);
+  const f = uiFixture((p) =>
+    p === "/targets" ? { targets: [] } : Promise.reject(Error("服务不可用")),
+  );
+  const page = mountJobsPage(f);
+  await page.ready;
+  assert.ok(f.root.textContent.includes("服务不可用"));
+  page.destroy();
+});

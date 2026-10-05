@@ -26,7 +26,6 @@ try {
   // 复用 DSH 自带的 js-yaml（本项目的依赖里没有 YAML 库）
   const require = createRequire(import.meta.url);
   const candidates = [
-    'C:/Users/31069/.dsh/profiles/node_modules/js-yaml/index.js',
     'js-yaml',
   ];
   let yaml = null;
@@ -160,7 +159,7 @@ check('Caddy：设置了请求体上限', /max_size\s+\d+MB/.test(caddy));
 
 /* ---------- 6. 前端资源完整性（CSP 禁止内联脚本，故必须独立文件） ---------- */
 console.log('\n=== 6. 前端资源 ===');
-for (const f of ['index.html', 'app.js', 'style.css', 'login.html', 'login.js']) {
+for (const f of ['index.html','app.js','style.css','login.html','login.js','js/main.js','js/pages/workbench.js','js/pages/jobs.js','js/pages/applications.js','js/pages/profiles.js','js/pages/settings.js','styles/tokens.css','styles/layout.css','styles/components.css']) {
   check(`public/${f} 存在`, fs.existsSync(path.join(ROOT, 'public', f)));
 }
 const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');

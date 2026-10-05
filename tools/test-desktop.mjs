@@ -71,7 +71,7 @@ try {
   check('会话接口返回数据目录', s.dataDir === dataDir, String(s.dataDir));
   check('返回 DeepSeek 配置状态', typeof s.deepseekConfigured === 'boolean', `deepseekConfigured=${s.deepseekConfigured}`);
 
-  for (const f of ['/app.js', '/style.css', '/login.js', '/login']) {
+  for (const f of ['/app.js','/style.css','/login.js','/login','/js/main.js','/js/pages/workbench.js','/styles/tokens.css']) {
     const r = await fetch(`${appUrl}${f}`);
     check(`静态资源 ${f}`, r.status === 200, `HTTP ${r.status}`);
   }

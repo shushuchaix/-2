@@ -1,7 +1,79 @@
-export const STATUS_LABELS={new:'未处理',seen:'已看过',interested:'感兴趣',applied:'已投递',interviewing:'面试中',offer:'已录用',rejected:'未通过',ignored:'已忽略'};
-export const QUALIFICATION_LABELS={pass:'符合已知要求',fail:'不符合明确要求',unknown:'待核实'};
-export const KIND_LABELS={job:'岗位',recruitment_notice:'招聘公告',notice:'招聘公告',company_campaign:'公司招聘窗口'};
-export function formatSalary(salary){if(!salary)return '薪资未提供';if(typeof salary==='string')return salary;const units={day:'日',month:'月',year:'年',hour:'小时',daily:'日',monthly:'月',yearly:'年',hourly:'小时'};const range=salary.min!=null&&salary.max!=null&&salary.min!==salary.max?salary.min+'–'+salary.max:salary.min??salary.max;if(range==null)return salary.raw||'薪资未提供';if(!units[salary.unit])return salary.raw||String(range)+'（单位未提供）';return range+' '+(!salary.currency||salary.currency==='CNY'?'元':salary.currency)+'/'+units[salary.unit];}
-export function safeExternalUrl(value){try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}}
-export function formatDate(value){if(!value)return '未提供';if(/^\d{4}-\d{2}-\d{2}$/.test(value))return value;const date=new Date(value);return Number.isFinite(date.getTime())?date.toLocaleString('zh-CN',{hour12:false}):'未提供';}
-export function localDate(value){if(!value)return '';if(/^\d{4}-\d{2}-\d{2}$/.test(value))return value;const date=new Date(value);return [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');}
+export const STATUS_LABELS = {
+  new: "未处理",
+  seen: "已看过",
+  interested: "感兴趣",
+  applied: "已投递",
+  interviewing: "面试中",
+  offer: "已录用",
+  rejected: "未通过",
+  ignored: "已忽略",
+};
+export const QUALIFICATION_LABELS = {
+  pass: "符合已知要求",
+  fail: "不符合明确要求",
+  unknown: "待核实",
+};
+export const KIND_LABELS = {
+  job: "岗位",
+  recruitment_notice: "招聘公告",
+  notice: "招聘公告",
+  company_campaign: "公司招聘窗口",
+};
+export function formatSalary(salary) {
+  if (!salary) return "薪资未提供";
+  if (typeof salary === "string") return salary;
+  const units = {
+    day: "日",
+    month: "月",
+    year: "年",
+    hour: "小时",
+    daily: "日",
+    monthly: "月",
+    yearly: "年",
+    hourly: "小时",
+  };
+  const range =
+    salary.min != null && salary.max != null && salary.min !== salary.max
+      ? salary.min + "–" + salary.max
+      : (salary.min ?? salary.max);
+  if (range == null) return salary.raw || "薪资未提供";
+  if (!units[salary.unit])
+    return salary.raw || String(range) + "（单位未提供）";
+  return (
+    range +
+    " " +
+    (!salary.currency || salary.currency === "CNY" ? "元" : salary.currency) +
+    "/" +
+    units[salary.unit]
+  );
+}
+export function safeExternalUrl(value) {
+  try {
+    const u = new URL(value);
+    return ["http:", "https:"].includes(u.protocol) &&
+      !u.username &&
+      !u.password
+      ? u.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+export function formatDate(value) {
+  if (!value) return "未提供";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleString("zh-CN", { hour12: false })
+    : "未提供";
+}
+export function localDate(value) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}

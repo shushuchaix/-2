@@ -1,4 +1,12 @@
-# 🎯 简历岗位雷达 · Resume Job Radar
+# 简历岗位雷达 v2 · 个人求职工作台
+
+新版提供工作台、岗位库、投递进度、简历与目标、来源设置五页。Web / CLI / Electron 共用版本化工作区；确认画像后可按新版本重评分，人工投递记录独立保留。旧参数和 v1 API 继续可用。详见 [v2 升级指南](docs/v2-upgrade-guide.md)。
+
+桌面开发安装：`npm ci --ignore-scripts` → `node tools/fetch-electron.mjs` → `npm run dist:desktop`。下载器验证官方 SHA-256；正式包保留 sandbox/contextIsolation，桌面密钥使用系统加密。
+
+---
+
+# 使用与兼容参数
 
 **根据大学生简历关键词，自动去全网匹配对口岗位。**
 

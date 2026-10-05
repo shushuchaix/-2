@@ -1,4 +1,146 @@
-import {el,field,list} from './dom.js';
-export function targetForm({document:d,profiles=[],target={},onSave}){const form=el(d,'form',{id:'targetForm'}),profile=el(d,'select',{id:'targetProfile'},profiles.map(p=>el(d,'option',{value:p.revisionId},(p.profile.name||'画像')+' · '+p.revisionId))),roles=el(d,'input',{id:'targetRoles',value:(target.roles||[]).join('、')}),cityMode=el(d,'select',{id:'cityMode'},[['any','不限城市'],['from_profile','从画像取值'],['selected','指定城市']].map(([v,t])=>el(d,'option',{value:v},t))),cities=el(d,'input',{id:'targetCities',value:(target.cities||[]).join('、')}),degree=el(d,'select',{id:'degreePolicy'},el(d,'option',{value:'eligibility'},'按本人学历判断资格'),el(d,'option',{value:'minimum_requirement'},'只看要求至少达到指定学历的岗位')),minDegree=el(d,'select',{id:'minDegree'},['大专','本科','硕士','博士'].map(x=>el(d,'option',{value:x},x))),coverage=el(d,'select',{id:'coverageMode'},el(d,'option',{value:'standard'},'标准 · 12站点 / 120请求'),el(d,'option',{value:'broad'},'广泛 · 24站点 / 240请求')),sources=el(d,'input',{id:'targetSources',value:(target.sourceIds||[]).join('、')}),year=el(d,'input',{id:'targetYear',value:target.graduationYear||'',type:'number'}),types=['campus','internship','social','unknown'].map((v,i)=>el(d,'label',{className:'inline-check'},el(d,'input',{type:'checkbox',name:'jobType',value:v,checked:(target.jobTypes||['campus','internship']).includes(v)}),['校招','实习','社招','未标类型'][i])),save=el(d,'button',{type:'submit',className:'primary',id:'saveTarget',disabled:!profiles.length},target.targetId?'保存目标新版本':'保存检索目标');
-profile.value=target.profileRevisionId||profiles.at(-1)?.revisionId||'';cityMode.value=target.cityMode||'any';degree.value=target.degreePolicy||'eligibility';coverage.value=target.coverageMode||'standard';minDegree.value=target.minDegree||'本科';form.append(field(d,'使用的画像版本',profile),field(d,'求职方向（逗号分隔，最多使用前6个查询词）',roles),el(d,'div',{className:'grid'},field(d,'城市范围',cityMode),field(d,'指定城市',cities),field(d,'学历口径',degree),field(d,'最低要求学历',minDegree),field(d,'届别',year),field(d,'覆盖预算',coverage)),el(d,'div',{className:'row'},types),field(d,'来源 ID（留空使用所有可用来源）',sources),save);
-form.addEventListener('submit',async e=>{e.preventDefault();if(!profile.value)return;await onSave({...target,profileRevisionId:profile.value,roles:list(roles.value),cityMode:cityMode.value,cities:cityMode.value==='selected'?list(cities.value):[],degreePolicy:degree.value,minDegree:degree.value==='minimum_requirement'?minDegree.value:null,jobTypes:types.map(l=>l.querySelector('input')).filter(x=>x.checked).map(x=>x.value),sourceIds:list(sources.value),coverageMode:coverage.value,graduationYear:year.value?Number(year.value):null});});return form;}
+import { el, field, list } from "./dom.js";
+export function targetForm({
+  document: d,
+  profiles = [],
+  target = {},
+  onSave,
+}) {
+  const form = el(d, "form", { id: "targetForm" }),
+    profile = el(
+      d,
+      "select",
+      { id: "targetProfile" },
+      profiles.map((p) =>
+        el(
+          d,
+          "option",
+          { value: p.revisionId },
+          (p.profile.name || "画像") + " · " + p.revisionId,
+        ),
+      ),
+    ),
+    roles = el(d, "input", {
+      id: "targetRoles",
+      value: (target.roles || []).join("、"),
+    }),
+    cityMode = el(
+      d,
+      "select",
+      { id: "cityMode" },
+      [
+        ["any", "不限城市"],
+        ["from_profile", "从画像取值"],
+        ["selected", "指定城市"],
+      ].map(([v, t]) => el(d, "option", { value: v }, t)),
+    ),
+    cities = el(d, "input", {
+      id: "targetCities",
+      value: (target.cities || []).join("、"),
+    }),
+    degree = el(
+      d,
+      "select",
+      { id: "degreePolicy" },
+      el(d, "option", { value: "eligibility" }, "按本人学历判断资格"),
+      el(
+        d,
+        "option",
+        { value: "minimum_requirement" },
+        "只看要求至少达到指定学历的岗位",
+      ),
+    ),
+    minDegree = el(
+      d,
+      "select",
+      { id: "minDegree" },
+      ["大专", "本科", "硕士", "博士"].map((x) =>
+        el(d, "option", { value: x }, x),
+      ),
+    ),
+    coverage = el(
+      d,
+      "select",
+      { id: "coverageMode" },
+      el(d, "option", { value: "standard" }, "标准 · 12站点 / 120请求"),
+      el(d, "option", { value: "broad" }, "广泛 · 24站点 / 240请求"),
+    ),
+    sources = el(d, "input", {
+      id: "targetSources",
+      value: (target.sourceIds || []).join("、"),
+    }),
+    year = el(d, "input", {
+      id: "targetYear",
+      value: target.graduationYear || "",
+      type: "number",
+    }),
+    types = ["campus", "internship", "social", "unknown"].map((v, i) =>
+      el(
+        d,
+        "label",
+        { className: "inline-check" },
+        el(d, "input", {
+          type: "checkbox",
+          name: "jobType",
+          value: v,
+          checked: (target.jobTypes || ["campus", "internship"]).includes(v),
+        }),
+        ["校招", "实习", "社招", "未标类型"][i],
+      ),
+    ),
+    save = el(
+      d,
+      "button",
+      {
+        type: "submit",
+        className: "primary",
+        id: "saveTarget",
+        disabled: !profiles.length,
+      },
+      target.targetId ? "保存目标新版本" : "保存检索目标",
+    );
+  profile.value = target.profileRevisionId || profiles.at(-1)?.revisionId || "";
+  cityMode.value = target.cityMode || "any";
+  degree.value = target.degreePolicy || "eligibility";
+  coverage.value = target.coverageMode || "standard";
+  minDegree.value = target.minDegree || "本科";
+  form.append(
+    field(d, "使用的画像版本", profile),
+    field(d, "求职方向（逗号分隔，最多使用前6个查询词）", roles),
+    el(
+      d,
+      "div",
+      { className: "grid" },
+      field(d, "城市范围", cityMode),
+      field(d, "指定城市", cities),
+      field(d, "学历口径", degree),
+      field(d, "最低要求学历", minDegree),
+      field(d, "届别", year),
+      field(d, "覆盖预算", coverage),
+    ),
+    el(d, "div", { className: "row" }, types),
+    field(d, "来源 ID（留空使用所有可用来源）", sources),
+    save,
+  );
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!profile.value) return;
+    await onSave({
+      ...target,
+      profileRevisionId: profile.value,
+      roles: list(roles.value),
+      cityMode: cityMode.value,
+      cities: cityMode.value === "selected" ? list(cities.value) : [],
+      degreePolicy: degree.value,
+      minDegree:
+        degree.value === "minimum_requirement" ? minDegree.value : null,
+      jobTypes: types
+        .map((l) => l.querySelector("input"))
+        .filter((x) => x.checked)
+        .map((x) => x.value),
+      sourceIds: list(sources.value),
+      coverageMode: coverage.value,
+      graduationYear: year.value ? Number(year.value) : null,
+    });
+  });
+  return form;
+}

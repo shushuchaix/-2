@@ -5,13 +5,13 @@
 //
 // 解法：详情页的 <title> 是明文，且混淆是「一码点对一字符」的等长替换。
 // 因此抓少量详情页做「已知明文」样本，即可反推映射表，进而解码同批次全部标题。
-import fs from 'node:fs';
-import path from 'node:path';
-import { DATA_ROOT } from '../config.mjs';
+import fs from "node:fs";
+import path from "node:path";
+import { DATA_ROOT } from "../config.mjs";
 
 const PUA_RE = /[\uE000-\uF8FF]/;
 
-export function hasPua(s = '') {
+export function hasPua(s = "") {
   return PUA_RE.test(String(s));
 }
 
@@ -45,8 +45,8 @@ export function learnFromPair(obf, plain, map) {
 
 /** 用映射表解码；未覆盖的私有区字符原样保留（显示时会被剥离） */
 export function decodeWithMap(text, map) {
-  if (!text) return '';
-  let out = '';
+  if (!text) return "";
+  let out = "";
   for (const ch of String(text)) {
     if (PUA_RE.test(ch)) {
       const m = map.get(ch);
@@ -67,11 +67,11 @@ export function coverage(text, map) {
 }
 
 /* ------------------------- 映射表持久化 ------------------------- */
-const FILE = path.join(DATA_ROOT, 'font-map.json');
+const FILE = path.join(DATA_ROOT, "font-map.json");
 
 export function loadPersistedMap() {
   try {
-    const raw = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(FILE, "utf8"));
     const map = new Map(Object.entries(raw.map || {}));
     map.__savedAt = raw.savedAt;
     map.__conflicts = raw.conflicts || 0;
@@ -84,12 +84,24 @@ export function loadPersistedMap() {
 export function persistMap(map) {
   const clean = {};
   for (const [k, v] of map) {
-    if (k.startsWith('__')) continue;
+    if (k.startsWith("__")) continue;
     clean[k] = v;
   }
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify({ savedAt: new Date().toISOString(), size: Object.keys(clean).length, map: clean }, null, 2), 'utf8');
+    fs.writeFileSync(
+      FILE,
+      JSON.stringify(
+        {
+          savedAt: new Date().toISOString(),
+          size: Object.keys(clean).length,
+          map: clean,
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
     return true;
   } catch {
     return false;
@@ -98,6 +110,6 @@ export function persistMap(map) {
 
 export function mapSize(map) {
   let n = 0;
-  for (const k of map.keys()) if (!k.startsWith('__')) n++;
+  for (const k of map.keys()) if (!k.startsWith("__")) n++;
   return n;
 }

@@ -1,7 +1,63 @@
-export function el(document,tag,attrs={},...children){const node=document.createElement(tag);for(const [key,value] of Object.entries(attrs)){if(key.startsWith('on'))node.addEventListener(key.slice(2).toLowerCase(),value);else if(key==='className')node.className=value;else if(['value','checked','disabled'].includes(key))node[key]=value;else if(value!=null)node.setAttribute(key,String(value));}for(const child of children.flat(Infinity)){if(child==null)continue;node.append(typeof child==='object'?child:document.createTextNode(String(child)));}return node;}
-export const list=value=>String(value||'').split(/[,，、;；\n]/).map(x=>x.trim()).filter(Boolean);
-export function field(document,label,node,hint){return el(document,'label',{className:'field'},el(document,'span',{},label),node,hint?el(document,'small',{},hint):null);}
-export function button(document,text,onClick,attrs={}){return el(document,'button',{type:'button',onClick,...attrs},text);}
-export function latest(items,key){const map=new Map();for(const item of items)if(!map.has(item[key])||item.revision>map.get(item[key]).revision)map.set(item[key],item);return [...map.values()];}
-export function message(root,text,error=false){root.replaceChildren(el(root.ownerDocument,'p',{role:error?'alert':'status',className:error?'feedback error':'feedback'},text));}
-export function downloadBlob(document,blob,name){const url=URL.createObjectURL(blob),a=el(document,'a',{href:url,download:name});a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export function el(document, tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key.startsWith("on"))
+      node.addEventListener(key.slice(2).toLowerCase(), value);
+    else if (key === "className") node.className = value;
+    else if (["value", "checked", "disabled"].includes(key)) node[key] = value;
+    else if (value != null) node.setAttribute(key, String(value));
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child == null) continue;
+    node.append(
+      typeof child === "object"
+        ? child
+        : document.createTextNode(String(child)),
+    );
+  }
+  return node;
+}
+export const list = (value) =>
+  String(value || "")
+    .split(/[,，、;；\n]/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+export function field(document, label, node, hint) {
+  return el(
+    document,
+    "label",
+    { className: "field" },
+    el(document, "span", {}, label),
+    node,
+    hint ? el(document, "small", {}, hint) : null,
+  );
+}
+export function button(document, text, onClick, attrs = {}) {
+  return el(document, "button", { type: "button", onClick, ...attrs }, text);
+}
+export function latest(items, key) {
+  const map = new Map();
+  for (const item of items)
+    if (!map.has(item[key]) || item.revision > map.get(item[key]).revision)
+      map.set(item[key], item);
+  return [...map.values()];
+}
+export function message(root, text, error = false) {
+  root.replaceChildren(
+    el(
+      root.ownerDocument,
+      "p",
+      {
+        role: error ? "alert" : "status",
+        className: error ? "feedback error" : "feedback",
+      },
+      text,
+    ),
+  );
+}
+export function downloadBlob(document, blob, name) {
+  const url = URL.createObjectURL(blob),
+    a = el(document, "a", { href: url, download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

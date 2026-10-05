@@ -2,9 +2,9 @@
 //
 // 公众号文章是散文体：一篇可能是单公司公告，也可能是「9月校招信息汇编」这种多公司合集，
 // 甚至还可能只是经验分享。因此必须让 LLM 判断体裁并逐岗位抽取，不能假定「一文一岗」。
-import { chunk, normKey, pool, sanitizeText, truncate } from '../util/text.mjs';
-import { normalizeDate } from '../util/html.mjs';
-import { extractTechTerms } from '../util/skills.mjs';
+import { chunk, normKey, pool, sanitizeText, truncate } from "../util/text.mjs";
+import { normalizeDate } from "../util/html.mjs";
+import { extractTechTerms } from "../util/skills.mjs";
 
 const SYSTEM = `你是招聘信息抽取助手，负责从中文微信公众号文章中抽取校园招聘 / 实习岗位。
 
@@ -44,13 +44,19 @@ const SCHEMA = `{
  * 纯图片海报（校招公告常见）正文极短但图很多，LLM 也读不出内容，直接用标题作为线索
  */
 export function triageArticle(article) {
-  const text = article.description || '';
+  const text = article.description || "";
   const images = article.extra?.imageCount || 0;
-  if (!article.url) return { expandable: false, reason: '未取到文章地址' };
-  if (article.extra?.unavailable) return { expandable: false, reason: article.extra.unavailable };
-  if (text.length < 120 && images >= 3) return { expandable: false, reason: `纯图片公告（${images} 张图，${text.length} 字）` };
-  if (text.length < 120) return { expandable: false, reason: `正文过短（${text.length} 字）` };
-  return { expandable: true, reason: '' };
+  if (!article.url) return { expandable: false, reason: "未取到文章地址" };
+  if (article.extra?.unavailable)
+    return { expandable: false, reason: article.extra.unavailable };
+  if (text.length < 120 && images >= 3)
+    return {
+      expandable: false,
+      reason: `纯图片公告（${images} 张图，${text.length} 字）`,
+    };
+  if (text.length < 120)
+    return { expandable: false, reason: `正文过短（${text.length} 字）` };
+  return { expandable: true, reason: "" };
 }
 
 /**
@@ -59,35 +65,44 @@ export function triageArticle(article) {
  * LLM 面对「招聘岗位详见附件」这类汇总文章时，容易把指引语当成岗位名，
  * 于是产出「详见招聘简章」「点击查看详情」这种没有信息量的条目。
  */
-const PLACEHOLDER_TITLE = /^(详见|见附件|点击|查看|更多|其他|若干|详情|附件|招聘简章|招聘详情|公告原文|阅读原文|扫码|见下表|如下|待定|不限)/;
+const PLACEHOLDER_TITLE =
+  /^(详见|见附件|点击|查看|更多|其他|若干|详情|附件|招聘简章|招聘详情|公告原文|阅读原文|扫码|见下表|如下|待定|不限)/;
 
 export function isPlaceholderTitle(title) {
   const t = sanitizeText(title);
   if (!t || t.length < 2) return true;
   if (PLACEHOLDER_TITLE.test(t)) return true;
-  if (/^(详见|参见|点击|查看)/.test(t) && /简章|详情|附件|链接|原文|公告/.test(t)) return true;
+  if (
+    /^(详见|参见|点击|查看)/.test(t) &&
+    /简章|详情|附件|链接|原文|公告/.test(t)
+  )
+    return true;
   return false;
 }
 
 /** 岗位条目 → 统一 Job 结构 */
 function positionToJob(article, pos, articleResult) {
-  const company = sanitizeText(pos.company) || sanitizeText(articleResult.company) || '';
-  const account = article.extra?.account || '';
+  const company =
+    sanitizeText(pos.company) || sanitizeText(articleResult.company) || "";
+  const account = article.extra?.account || "";
   const title = sanitizeText(pos.title) || article.title;
   // 岗位类型以文章实际措辞为准：公众号里混着大量社招，一律按标题猜「校招」会误导应届生
   const rawType = sanitizeText(pos.jobType);
-  const jobType = /实习/.test(rawType) || /实习/.test(title)
-    ? '实习'
-    : /校招|校园|应届/.test(rawType) || /校招|校园招聘|应届/.test(title)
-      ? '校招'
-      : /社招|社会招聘/.test(rawType)
-        ? '社招'
-        : '';
+  const jobType =
+    /实习/.test(rawType) || /实习/.test(title)
+      ? "实习"
+      : /校招|校园|应届/.test(rawType) || /校招|校园招聘|应届/.test(title)
+        ? "校招"
+        : /社招|社会招聘/.test(rawType)
+          ? "社招"
+          : "";
   const extra = {
     account,
     articleTitle: article.extra?.articleTitle || article.title,
     batch: sanitizeText(articleResult.batch),
-    deadline: normalizeDate(articleResult.deadline || '') || sanitizeText(articleResult.deadline),
+    deadline:
+      normalizeDate(articleResult.deadline || "") ||
+      sanitizeText(articleResult.deadline),
     applyMethod: sanitizeText(articleResult.applyMethod),
     headcount: sanitizeText(pos.headcount),
     major: sanitizeText(pos.major),
@@ -98,18 +113,26 @@ function positionToJob(article, pos, articleResult) {
   // 在 400+ 条岗位里会被系统性压低而进不了短名单（实习僧当初踩过同样的坑）。
   // 这里只从「该岗位自身」的字段反推，不掺入整篇正文，避免多公司汇总文章里技能张冠李戴。
   const skills = extractTechTerms(
-    [title, company, sanitizeText(pos.major), sanitizeText(pos.summary), sanitizeText(pos.education)].filter(Boolean).join(' '),
+    [
+      title,
+      company,
+      sanitizeText(pos.major),
+      sanitizeText(pos.summary),
+      sanitizeText(pos.education),
+    ]
+      .filter(Boolean)
+      .join(" "),
   );
 
   return {
     id: `wechat:${normKey(company)}|${normKey(title)}|${normKey(pos.city)}`,
-    source: 'wechat',
+    source: "wechat",
     sourceName: `${article.sourceName}`,
-    sources: ['wechat'],
+    sources: ["wechat"],
     title,
     company,
     city: sanitizeText(pos.city),
-    district: '',
+    district: "",
     salary: sanitizeText(pos.salary),
     education: sanitizeText(pos.education),
     // 经验要求会参与「应届生适配度」评分：写明 3 年以上的岗位会被显著降权
@@ -121,7 +144,7 @@ function positionToJob(article, pos, articleResult) {
       ...(extra.deadline ? [`截止 ${extra.deadline}`] : []),
       ...(account ? [`公众号：${account}`] : []),
     ],
-    publishTime: article.publishTime || '',
+    publishTime: article.publishTime || "",
     url: article.url,
     summary: sanitizeText(pos.summary),
     description: buildDescription(article, pos, extra),
@@ -133,39 +156,50 @@ function positionToJob(article, pos, articleResult) {
 
 function buildDescription(article, pos, extra) {
   const lines = [];
-  lines.push(`【来源】微信公众号「${extra.account || '未知'}」：${extra.articleTitle}`);
+  lines.push(
+    `【来源】微信公众号「${extra.account || "未知"}」：${extra.articleTitle}`,
+  );
   if (extra.batch) lines.push(`【批次】${extra.batch}`);
   if (extra.applyMethod) lines.push(`【投递方式】${extra.applyMethod}`);
   if (extra.deadline) lines.push(`【截止时间】${extra.deadline}`);
   const details = [
-    pos.city ? `工作城市：${sanitizeText(pos.city)}` : '',
-    pos.education ? `学历要求：${sanitizeText(pos.education)}` : '',
-    pos.major ? `专业要求：${sanitizeText(pos.major)}` : '',
-    pos.salary ? `薪资：${sanitizeText(pos.salary)}` : '',
-    pos.headcount ? `招聘人数：${sanitizeText(pos.headcount)}` : '',
+    pos.city ? `工作城市：${sanitizeText(pos.city)}` : "",
+    pos.education ? `学历要求：${sanitizeText(pos.education)}` : "",
+    pos.major ? `专业要求：${sanitizeText(pos.major)}` : "",
+    pos.salary ? `薪资：${sanitizeText(pos.salary)}` : "",
+    pos.headcount ? `招聘人数：${sanitizeText(pos.headcount)}` : "",
   ].filter(Boolean);
-  if (details.length) lines.push(`【岗位信息】${details.join('；')}`);
+  if (details.length) lines.push(`【岗位信息】${details.join("；")}`);
   if (pos.summary) lines.push(`【要求概述】${sanitizeText(pos.summary)}`);
   // 附上原文片段，便于人工核对
-  const excerpt = truncate((article.description || '').replace(/\s+/g, ' '), 900);
+  const excerpt = truncate(
+    (article.description || "").replace(/\s+/g, " "),
+    900,
+  );
   if (excerpt) lines.push(`【公告原文摘录】${excerpt}`);
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 /**
  * 批量把公众号文章展开为结构化岗位
  * @returns {{ jobs: object[], expanded: number, skipped: number, noJob: number }}
  */
-export async function expandArticles(llm, profile, articles, { maxExpand = 5, concurrency = 3, log = () => {}, signal } = {}) {
+export async function expandArticles(
+  llm,
+  profile,
+  articles,
+  { maxExpand = 5, concurrency = 3, log = () => {}, signal } = {},
+) {
   const candidates = articles.slice(0, maxExpand);
-  if (candidates.length === 0) return { jobs: [], expanded: 0, skipped: 0, noJob: 0 };
+  if (candidates.length === 0)
+    return { jobs: [], expanded: 0, skipped: 0, noJob: 0 };
 
   const profileBrief = [
-    `目标岗位：${(profile.targetRoles || []).join('、') || '未说明'}`,
-    `学历：${profile.degree || '未知'}｜专业：${profile.major || '未知'}｜毕业年份：${profile.graduationYear || '未知'}`,
-    `期望城市：${(profile.preferredCities || []).join('、') || '不限'}`,
-    `技能关键词：${(profile.keywords || []).slice(0, 25).join('、')}`,
-  ].join('\n');
+    `目标岗位：${(profile.targetRoles || []).join("、") || "未说明"}`,
+    `学历：${profile.degree || "未知"}｜专业：${profile.major || "未知"}｜毕业年份：${profile.graduationYear || "未知"}`,
+    `期望城市：${(profile.preferredCities || []).join("、") || "不限"}`,
+    `技能关键词：${(profile.keywords || []).slice(0, 25).join("、")}`,
+  ].join("\n");
 
   const jobs = [];
   let expanded = 0;
@@ -178,13 +212,21 @@ export async function expandArticles(llm, profile, articles, { maxExpand = 5, co
       const text = truncate(article.description, 6000);
       const res = await llm.chatJson(
         SYSTEM,
-        `## 求职者画像（用于判断相关性，不影响抽取忠实度）\n${profileBrief}\n\n## 文章标题\n${article.title}\n\n## 公众号\n${article.extra?.account || '未知'}\n\n## 文章正文\n${text}\n\n请按下面结构输出 JSON：\n${SCHEMA}`,
+        `## 求职者画像（用于判断相关性，不影响抽取忠实度）\n${profileBrief}\n\n## 文章标题\n${article.title}\n\n## 公众号\n${article.extra?.account || "未知"}\n\n## 文章正文\n${text}\n\n请按下面结构输出 JSON：\n${SCHEMA}`,
         { temperature: 0.1, maxTokens: 2200, signal },
       );
 
-      if (!res || res.isRecruiting === false || !Array.isArray(res.positions) || res.positions.length === 0) {
+      if (
+        !res ||
+        res.isRecruiting === false ||
+        !Array.isArray(res.positions) ||
+        res.positions.length === 0
+      ) {
         noJob++;
-        article.extra = { ...(article.extra || {}), expandedResult: 'not_recruiting' };
+        article.extra = {
+          ...(article.extra || {}),
+          expandedResult: "not_recruiting",
+        };
         return;
       }
 
@@ -195,31 +237,80 @@ export async function expandArticles(llm, profile, articles, { maxExpand = 5, co
       if (usable.length === 0) {
         // 整篇都是「详见招聘简章」这类指引语，说明文章只给了线索没给岗位
         noJob++;
-        article.extra = { ...(article.extra || {}), expandedResult: 'no_concrete_position', dropped };
+        article.extra = {
+          ...(article.extra || {}),
+          expandedResult: "no_concrete_position",
+          dropped,
+        };
         return;
       }
       for (const p of usable) {
-        if (!text.includes(p.title) || !p.requirementsExcerpt || !text.includes(p.requirementsExcerpt)) continue;
+        if (
+          !text.includes(p.title) ||
+          !p.requirementsExcerpt ||
+          !text.includes(p.requirementsExcerpt)
+        )
+          continue;
         const derived = positionToJob(article, p, res);
-        jobs.push({...derived, sourceId:article.sourceId,siteId:article.siteId,identityScope:article.identityScope,sourceRecordId:String(article.sourceRecordId||article.url)+':position:'+normKey(p.title+' '+(p.company||article.company||'')+' '+(p.city||'')),kind:'job',description:p.requirementsExcerpt,derivedFrom:article.sourceRecordId||article.url,evidence:[{field:'title',excerpt:p.title,url:article.url},{field:'description',excerpt:p.requirementsExcerpt,url:article.url}]});
+        jobs.push({
+          ...derived,
+          sourceId: article.sourceId,
+          siteId: article.siteId,
+          identityScope: article.identityScope,
+          sourceRecordId:
+            String(article.sourceRecordId || article.url) +
+            ":position:" +
+            normKey(
+              p.title +
+                " " +
+                (p.company || article.company || "") +
+                " " +
+                (p.city || ""),
+            ),
+          kind: "job",
+          description: p.requirementsExcerpt,
+          derivedFrom: article.sourceRecordId || article.url,
+          evidence: [
+            { field: "title", excerpt: p.title, url: article.url },
+            {
+              field: "description",
+              excerpt: p.requirementsExcerpt,
+              url: article.url,
+            },
+          ],
+        });
       }
       expanded++;
-      article.extra = { ...(article.extra || {}), expandedResult: 'ok', positions: usable.length, dropped };
+      article.extra = {
+        ...(article.extra || {}),
+        expandedResult: "ok",
+        positions: usable.length,
+        dropped,
+      };
       log(
         `  「${truncate(article.extra?.articleTitle || article.title, 28)}」抽出 ${usable.length} 个岗位` +
-          (dropped ? `（过滤掉 ${dropped} 条占位描述）` : ''),
+          (dropped ? `（过滤掉 ${dropped} 条占位描述）` : ""),
       );
     } catch (e) {
-      if(signal?.aborted)throw e;
-      article.extra = { ...(article.extra || {}), expandedResult: `failed: ${e.message}` };
+      if (signal?.aborted) throw e;
+      article.extra = {
+        ...(article.extra || {}),
+        expandedResult: `failed: ${e.message}`,
+      };
       log(`  文章抽取失败：${e.message}`);
     } finally {
       done++;
-      if (done % 3 === 0 || done === candidates.length) log(`公众号文章抽取进度 ${done}/${candidates.length}`);
+      if (done % 3 === 0 || done === candidates.length)
+        log(`公众号文章抽取进度 ${done}/${candidates.length}`);
     }
   });
 
-  return { jobs, expanded, skipped: articles.length - candidates.length, noJob };
+  return {
+    jobs,
+    expanded,
+    skipped: articles.length - candidates.length,
+    noJob,
+  };
 }
 
 export { chunk };

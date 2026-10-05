@@ -1,2 +1,64 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {uiFixture} from '../helpers/ui-fixture.mjs';import {mountWorkbenchPage} from '../../public/js/pages/workbench.js';
-test('no target guides confirmation and partial runs show real counts',async()=>{const f=uiFixture(p=>p==='/targets'?{targets:[{targetId:'t1',revisionId:'t1@1',revision:1,profileRevisionId:'p1@1',enabled:true,roles:['软件开发']}]}:p.startsWith('/jobs?')?{items:[],total:0}:p==='/runs'?{runId:'r1',status:'queued'}:p==='/runs/r1'?{runId:'r1',status:'partial',counts:{newForTarget:2},coverage:[{status:'failed',siteId:'s1'}],issues:[],usage:{}}:{runs:[]});f.api.streamRun=async(id,{onEvent})=>{const event={runId:id,seq:1,type:'done',payload:{status:'partial',counts:{newForTarget:2}}};await onEvent(event);await onEvent(event);};const page=mountWorkbenchPage(f);await page.ready;f.root.querySelector('#startRun').click();await f.settle();assert.ok(f.root.textContent.includes('部分来源失败'));assert.equal(f.store.getState().run.counts.newForTarget,2);assert.equal(f.root.querySelector('#cancelRun').disabled,true);page.destroy();const empty=uiFixture(p=>p==='/targets'?{targets:[]}:p.startsWith('/jobs?')?{items:[],total:0}:{runs:[]});const ep=mountWorkbenchPage(empty);await ep.ready;assert.ok(empty.root.textContent.includes('先确认简历'));ep.destroy();});
+import test from "node:test";
+import assert from "node:assert/strict";
+import { uiFixture } from "../helpers/ui-fixture.mjs";
+import { mountWorkbenchPage } from "../../public/js/pages/workbench.js";
+test("no target guides confirmation and partial runs show real counts", async () => {
+  const f = uiFixture((p) =>
+    p === "/targets"
+      ? {
+          targets: [
+            {
+              targetId: "t1",
+              revisionId: "t1@1",
+              revision: 1,
+              profileRevisionId: "p1@1",
+              enabled: true,
+              roles: ["软件开发"],
+            },
+          ],
+        }
+      : p.startsWith("/jobs?")
+        ? { items: [], total: 0 }
+        : p === "/runs"
+          ? { runId: "r1", status: "queued" }
+          : p === "/runs/r1"
+            ? {
+                runId: "r1",
+                status: "partial",
+                counts: { newForTarget: 2 },
+                coverage: [{ status: "failed", siteId: "s1" }],
+                issues: [],
+                usage: {},
+              }
+            : { runs: [] },
+  );
+  f.api.streamRun = async (id, { onEvent }) => {
+    const event = {
+      runId: id,
+      seq: 1,
+      type: "done",
+      payload: { status: "partial", counts: { newForTarget: 2 } },
+    };
+    await onEvent(event);
+    await onEvent(event);
+  };
+  const page = mountWorkbenchPage(f);
+  await page.ready;
+  f.root.querySelector("#startRun").click();
+  await f.settle();
+  assert.ok(f.root.textContent.includes("部分来源失败"));
+  assert.equal(f.store.getState().run.counts.newForTarget, 2);
+  assert.equal(f.root.querySelector("#cancelRun").disabled, true);
+  page.destroy();
+  const empty = uiFixture((p) =>
+    p === "/targets"
+      ? { targets: [] }
+      : p.startsWith("/jobs?")
+        ? { items: [], total: 0 }
+        : { runs: [] },
+  );
+  const ep = mountWorkbenchPage(empty);
+  await ep.ready;
+  assert.ok(empty.root.textContent.includes("先确认简历"));
+  ep.destroy();
+});

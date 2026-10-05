@@ -1,14 +1,20 @@
-import {contentHash} from '../infrastructure/storage/repository.mjs';
-import { sourceFetch as fetch } from './request-context.mjs';
+import { contentHash } from "../infrastructure/storage/repository.mjs";
+import { sourceFetch as fetch } from "./request-context.mjs";
 // 实习僧适配器（校招/实习主战场）
 // 通道：列表页 Nuxt 内嵌载荷（函数序列化形式，需执行还原）→ interns.data[]
 //
 // 注意：实习僧用「每次请求随机生成的图标字体」渲染岗位标题，
 // 列表数据里留下的是私有区码点。本模块通过抓少量详情页（<title> 为明文）
 // 反推字体映射表，从而解码同批次全部标题，详见 fontmap.mjs。
-import { evalInlinePayload, htmlToText, parseRelativeDate, decodeEntities, stripPrivateUse } from '../util/html.mjs';
-import { cityCanon, cleanTitle, sanitizeText, sleep } from '../util/text.mjs';
-import { extractTechTerms } from '../util/skills.mjs';
+import {
+  evalInlinePayload,
+  htmlToText,
+  parseRelativeDate,
+  decodeEntities,
+  stripPrivateUse,
+} from "../util/html.mjs";
+import { cityCanon, cleanTitle, sanitizeText, sleep } from "../util/text.mjs";
+import { extractTechTerms } from "../util/skills.mjs";
 import {
   hasPua,
   learnFromPair,
@@ -17,30 +23,30 @@ import {
   loadPersistedMap,
   persistMap,
   mapSize,
-} from './fontmap.mjs';
+} from "./fontmap.mjs";
 
 export const meta = {
-  id: 'shixiseng',
-  name: '实习僧',
-  homepage: 'https://www.shixiseng.com',
+  id: "shixiseng",
+  name: "实习僧",
+  homepage: "https://www.shixiseng.com",
   supportsCityFilter: true,
 };
 
 const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 function defaultHeaders() {
   return {
-    'User-Agent': UA,
-    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.6',
+    "User-Agent": UA,
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.6",
   };
 }
 
-export function buildListUrl(keyword, page = 1, city = '全国') {
+export function buildListUrl(keyword, page = 1, city = "全国") {
   const params = new URLSearchParams({ keyword });
-  if (city && city !== '全国') params.set('city', city);
-  if (page > 1) params.set('page', String(page));
+  if (city && city !== "全国") params.set("city", city);
+  if (page > 1) params.set("page", String(page));
   return `https://www.shixiseng.com/interns?${params.toString()}`;
 }
 
@@ -48,24 +54,42 @@ export function buildListUrl(keyword, page = 1, city = '全国') {
 function findInternList(nuxt) {
   const roots = Array.isArray(nuxt?.data) ? nuxt.data : [nuxt];
   for (const root of roots) {
-    if (!root || typeof root !== 'object') continue;
+    if (!root || typeof root !== "object") continue;
     for (const value of Object.values(root)) {
-      if (!value || typeof value !== 'object') continue;
+      if (!value || typeof value !== "object") continue;
       const data = value.data;
-      if (Array.isArray(data) && data.length && data[0] && typeof data[0] === 'object' && 'uuid' in data[0]) {
+      if (
+        Array.isArray(data) &&
+        data.length &&
+        data[0] &&
+        typeof data[0] === "object" &&
+        "uuid" in data[0]
+      ) {
         return data;
       }
-      if (Array.isArray(value.list) && value.list.length && 'uuid' in (value.list[0] || {})) return value.list;
+      if (
+        Array.isArray(value.list) &&
+        value.list.length &&
+        "uuid" in (value.list[0] || {})
+      )
+        return value.list;
     }
   }
   const stack = [nuxt];
   const seen = new Set();
   while (stack.length) {
     const cur = stack.pop();
-    if (!cur || typeof cur !== 'object' || seen.has(cur)) continue;
+    if (!cur || typeof cur !== "object" || seen.has(cur)) continue;
     seen.add(cur);
     if (Array.isArray(cur)) {
-      if (cur.length && cur[0] && typeof cur[0] === 'object' && 'uuid' in cur[0] && 'cname' in cur[0]) return cur;
+      if (
+        cur.length &&
+        cur[0] &&
+        typeof cur[0] === "object" &&
+        "uuid" in cur[0] &&
+        "cname" in cur[0]
+      )
+        return cur;
       stack.push(...cur.slice(0, 40));
     } else {
       stack.push(...Object.values(cur).slice(0, 60));
@@ -81,7 +105,7 @@ function salaryText(item) {
   if (has(min) && has(max) && min !== max) return `${min}-${max}元/天`;
   if (has(max)) return `${max}元/天`;
   if (has(min)) return `${min}元/天`;
-  return '';
+  return "";
 }
 
 /**
@@ -107,14 +131,14 @@ function salaryFontHints(item) {
 
 /** scale/month_num/day 字段是图标字体编码，解码后为空 → 返回空串 */
 function stripIconFont(v) {
-  if (v === null || v === undefined) return '';
+  if (v === null || v === undefined) return "";
   const s = stripPrivateUse(decodeEntities(String(v))).trim();
-  return /[0-9]/.test(s) ? s : '';
+  return /[0-9]/.test(s) ? s : "";
 }
 
 export function normalizeIntern(item) {
   if (!item || !item.name) return null;
-  const uuid = item.uuid || '';
+  const uuid = item.uuid || "";
   const titleRaw = decodeEntities(String(item.name)); // 可能含私有区码点
   const obfuscated = hasPua(titleRaw);
   const readable = stripPrivateUse(titleRaw);
@@ -122,14 +146,22 @@ export function normalizeIntern(item) {
   const tags = [
     ...(Array.isArray(item.i_tags) ? item.i_tags : []),
     ...(Array.isArray(item.c_tags) ? item.c_tags : []),
-  ].filter((s) => typeof s === 'string' && s.trim());
-  const hope = Array.isArray(item.hope_you) ? item.hope_you.filter((s) => typeof s === 'string') : [];
+  ].filter((s) => typeof s === "string" && s.trim());
+  const hope = Array.isArray(item.hope_you)
+    ? item.hope_you.filter((s) => typeof s === "string")
+    : [];
 
   // 实习僧列表接口的 skill 字段常为空；若留空会在与其它源比较时被系统性压低，
   // 因此从标题/标签/要求文本反推技能词，保证各源评分口径一致。
-  let skills = Array.isArray(item.skill) ? item.skill.filter((s) => typeof s === 'string' && s.trim()) : [];
+  let skills = Array.isArray(item.skill)
+    ? item.skill.filter((s) => typeof s === "string" && s.trim())
+    : [];
   if (skills.length === 0) {
-    skills = extractTechTerms([readable, item.cname, item.industry, ...tags, ...hope].filter(Boolean).join(' '));
+    skills = extractTechTerms(
+      [readable, item.cname, item.industry, ...tags, ...hope]
+        .filter(Boolean)
+        .join(" "),
+    );
   }
 
   return {
@@ -145,18 +177,20 @@ export function normalizeIntern(item) {
     titleCoverage: obfuscated ? 0 : 1,
     fontHints: salaryFontHints(item),
     company: sanitizeText(item.cname),
-    city: cityCanon(item.city || ''),
-    district: '',
+    city: cityCanon(item.city || ""),
+    district: "",
     salary: salaryText(item),
     education: sanitizeText(item.degree),
-    experience: '',
-    jobType: item.type === 'intern' ? '实习' : sanitizeText(item.type),
+    experience: "",
+    jobType: item.type === "intern" ? "实习" : sanitizeText(item.type),
     skills,
     tags: [...new Set(tags.map(sanitizeText).filter(Boolean))],
-    publishTime: parseRelativeDate(item.refresh || ''),
-    url: uuid ? `https://www.shixiseng.com/intern/${uuid}` : '',
-    summary: hope.length ? hope.map(sanitizeText).filter(Boolean).join('；') : '',
-    description: '',
+    publishTime: parseRelativeDate(item.refresh || ""),
+    url: uuid ? `https://www.shixiseng.com/intern/${uuid}` : "",
+    summary: hope.length
+      ? hope.map(sanitizeText).filter(Boolean).join("；")
+      : "",
+    description: "",
     extra: {
       uuid,
       industry: sanitizeText(item.industry),
@@ -170,30 +204,55 @@ export function normalizeIntern(item) {
   };
 }
 
-export async function fetchListPage(keyword, page = 1, { city = '全国', timeoutMs = 25000 } = {}) {
+export async function fetchListPage(
+  keyword,
+  page = 1,
+  { city = "全国", timeoutMs = 25000 } = {},
+) {
   const url = buildListUrl(keyword, page, city);
-  const res = await fetch(url, { headers: defaultHeaders(), redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+  const res = await fetch(url, {
+    headers: defaultHeaders(),
+    redirect: "follow",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
   if (!res.ok) throw new Error(`实习僧列表页 HTTP ${res.status}`);
   const html = await res.text();
 
   let list = [];
-  const nuxt = evalInlinePayload(html, '__NUXT__');
+  const nuxt = evalInlinePayload(html, "__NUXT__");
   if (nuxt) list = findInternList(nuxt);
 
   if (!list.length && !nuxt) {
-    const uuids = [...new Set([...html.matchAll(/shixiseng\.com\/intern\/(inn_[a-zA-Z0-9]+)/g)].map((m) => m[1]))];
-    list = uuids.map((uuid) => ({ uuid, name: '', cname: '' }));
-    if (!list.length) throw Error('parse_error: 实习僧列表缺少岗位数据');
+    const uuids = [
+      ...new Set(
+        [...html.matchAll(/shixiseng\.com\/intern\/(inn_[a-zA-Z0-9]+)/g)].map(
+          (m) => m[1],
+        ),
+      ),
+    ];
+    list = uuids.map((uuid) => ({ uuid, name: "", cname: "" }));
+    if (!list.length) throw Error("parse_error: 实习僧列表缺少岗位数据");
   }
 
   const jobs = list
     .map(normalizeIntern)
     .filter((j) => j && (j.title || j.titleObfuscated))
-    .map((j) => ({ ...j, queryKeyword: keyword, fontScope: contentHash(html) }));
+    .map((j) => ({
+      ...j,
+      queryKeyword: keyword,
+      fontScope: contentHash(html),
+    }));
   return { jobs, url, raw: list.length };
 }
 
-export async function search({ keyword, city = '全国', maxPages = 3, delayMs = 800, log = () => {}, signal } = {}) {
+export async function search({
+  keyword,
+  city = "全国",
+  maxPages = 3,
+  delayMs = 800,
+  log = () => {},
+  signal,
+} = {}) {
   const collected = [];
   const errors = [];
   const seen = new Set();
@@ -222,29 +281,33 @@ export async function search({ keyword, city = '全国', maxPages = 3, delayMs =
 
 /** 从详情页 <title> 推出候选明文标题 */
 export function titleCandidatesFromDetail(html) {
-  const raw = (html.match(/<title>([^<]*)<\/title>/) || [, ''])[1].trim();
-  if (!raw) return { candidates: [], raw: '' };
-  const base = raw.replace(/\s*[-–|｜]\s*实习僧\s*$/, '').trim();
+  const raw = (html.match(/<title>([^<]*)<\/title>/) || [, ""])[1].trim();
+  if (!raw) return { candidates: [], raw: "" };
+  const base = raw.replace(/\s*[-–|｜]\s*实习僧\s*$/, "").trim();
   const cands = new Set();
   const suit = (s) => s && s.length >= 2 && !hasPua(s);
 
   // 形式一：{职位}实习招聘-{公司}实习生招聘
-  const segs = base.split(/[-–|｜]/).map((s) => s.trim()).filter(Boolean);
+  const segs = base
+    .split(/[-–|｜]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (segs.length >= 2) {
-    const titlePart = segs.slice(0, -1).join('-');
-    for (const suf of ['实习生招聘', '实习招聘', '招聘']) {
-      if (titlePart.endsWith(suf)) cands.add(titlePart.slice(0, -suf.length).trim());
+    const titlePart = segs.slice(0, -1).join("-");
+    for (const suf of ["实习生招聘", "实习招聘", "招聘"]) {
+      if (titlePart.endsWith(suf))
+        cands.add(titlePart.slice(0, -suf.length).trim());
     }
     cands.add(titlePart);
   }
   // 形式二：整串直接剥后缀
-  for (const suf of ['实习生招聘', '实习招聘', '招聘']) {
+  for (const suf of ["实习生招聘", "实习招聘", "招聘"]) {
     if (base.endsWith(suf)) cands.add(base.slice(0, -suf.length).trim());
   }
   cands.add(base);
   for (const seg of segs) {
     cands.add(seg);
-    for (const suf of ['实习生招聘', '实习招聘', '招聘']) {
+    for (const suf of ["实习生招聘", "实习招聘", "招聘"]) {
       if (seg.endsWith(suf)) cands.add(seg.slice(0, -suf.length).trim());
     }
   }
@@ -254,7 +317,11 @@ export function titleCandidatesFromDetail(html) {
 /** 抓详情页并解析出明文标题与公司 */
 export async function fetchPlainTitle(job, { timeoutMs = 20000 } = {}) {
   if (!job?.url) return null;
-  const res = await fetch(job.url, { headers: defaultHeaders(), redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+  const res = await fetch(job.url, {
+    headers: defaultHeaders(),
+    redirect: "follow",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const html = await res.text();
   const { candidates, raw } = titleCandidatesFromDetail(html);
@@ -265,7 +332,16 @@ export async function fetchPlainTitle(job, { timeoutMs = 20000 } = {}) {
  * 修复一批实习僧岗位的混淆标题。
  * 策略：贪心挑选能覆盖最多「未学到的码点」的样本 → 抓详情页学习映射 → 解码全部。
  */
-async function repairTitleScope(jobs, { maxSamples = 6, concurrency = 3, log = () => {}, signal, useCache = true } = {}) {
+async function repairTitleScope(
+  jobs,
+  {
+    maxSamples = 6,
+    concurrency = 3,
+    log = () => {},
+    signal,
+    useCache = true,
+  } = {},
+) {
   const targets = jobs.filter((j) => j.titleObfuscated);
   if (!targets.length) return { learned: 0, repaired: 0, samples: 0, total: 0 };
 
@@ -280,7 +356,8 @@ async function repairTitleScope(jobs, { maxSamples = 6, concurrency = 3, log = (
       hintLearned += learnFromPair(obf, plain, sessionMap);
     }
   }
-  if (hintLearned > 0) log(`字体映射：从薪资字段免费学到 ${hintLearned} 个字符`);
+  if (hintLearned > 0)
+    log(`字体映射：从薪资字段免费学到 ${hintLearned} 个字符`);
 
   // --- 贪心选样（样本优先覆盖本次与缓存都未覆盖的码点）---
   const chosen = [];
@@ -290,7 +367,8 @@ async function repairTitleScope(jobs, { maxSamples = 6, concurrency = 3, log = (
     let bestIdx = -1;
     let bestScore = 0;
     pending.forEach((j, i) => {
-      const score = new Set([...j.titleRaw].filter((c) => !covered.has(c))).size;
+      const score = new Set([...j.titleRaw].filter((c) => !covered.has(c)))
+        .size;
       if (score > bestScore) {
         bestScore = score;
         bestIdx = i;
@@ -334,7 +412,9 @@ async function repairTitleScope(jobs, { maxSamples = 6, concurrency = 3, log = (
     const agreement = 1 - conflicts / Math.max(1, sessionMap.size);
     if (agreement < 0.8) {
       cacheDropped = true;
-      log(`字体映射：缓存与本次实测冲突 ${conflicts} 处（一致率 ${(agreement * 100).toFixed(0)}%），已丢弃缓存重建`);
+      log(
+        `字体映射：缓存与本次实测冲突 ${conflicts} 处（一致率 ${(agreement * 100).toFixed(0)}%），已丢弃缓存重建`,
+      );
     }
   }
 
@@ -343,7 +423,9 @@ async function repairTitleScope(jobs, { maxSamples = 6, concurrency = 3, log = (
 
   const learned = Math.max(0, mapSize(map) - before);
   if (mapSize(sessionMap) > 0) {
-    log(`字体映射：本次学到 ${mapSize(sessionMap)} 个字符，可用映射表 ${mapSize(map)} 个（样本 ${fetched} 个）`);
+    log(
+      `字体映射：本次学到 ${mapSize(sessionMap)} 个字符，可用映射表 ${mapSize(map)} 个（样本 ${fetched} 个）`,
+    );
     // Response-specific maps are not reused by another response.
   }
 
@@ -353,9 +435,12 @@ async function repairTitleScope(jobs, { maxSamples = 6, concurrency = 3, log = (
     const cov = coverage(j.titleRaw, map);
     j.titleCoverage = Number(cov.toFixed(2));
     const decoded = decodeWithMap(j.titleRaw, map);
-    const withBoxes = decoded.replace(/[\uE000-\uF8FF]/g, '□');
+    const withBoxes = decoded.replace(/[\uE000-\uF8FF]/g, "□");
     j.titleDecoded = decoded;
-    const meaningful = stripPrivateUse(withBoxes).replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '');
+    const meaningful = stripPrivateUse(withBoxes).replace(
+      /[^\u4e00-\u9fa5A-Za-z0-9]/g,
+      "",
+    );
     if (cov >= 0.999) {
       j.title = cleanTitle(stripPrivateUse(decoded));
       j.titleRepaired = true;
@@ -366,49 +451,64 @@ async function repairTitleScope(jobs, { maxSamples = 6, concurrency = 3, log = (
     }
     // 仍不可读则保留检索关键词，交给调用方兜底
     if (!j.title || j.title.length < 2) {
-      j.title = `${j.queryKeyword || '实习'}（标题混淆，请打开原页查看）`;
+      j.title = `${j.queryKeyword || "实习"}（标题混淆，请打开原页查看）`;
       j.titleRepaired = false;
     }
   }
 
-  return { learned, repaired, samples: fetched, total: targets.length, mapSize: mapSize(map), cacheDropped };
+  return {
+    learned,
+    repaired,
+    samples: fetched,
+    total: targets.length,
+    mapSize: mapSize(map),
+    cacheDropped,
+  };
 }
 
 /** 实习僧详情页：抽取 JD 正文 */
 export async function fetchDetail(job, { timeoutMs = 20000 } = {}) {
-  if (!job?.url) return { description: '' };
+  if (!job?.url) return { description: "" };
   try {
-    const res = await fetch(job.url, { headers: defaultHeaders(), redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(job.url, {
+      headers: defaultHeaders(),
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
 
     // 详情页标题是明文，可顺带修复标题
-    let plainTitle = '';
+    let plainTitle = "";
     const { candidates } = titleCandidatesFromDetail(html);
     if (candidates.length) plainTitle = candidates[0];
 
-    const nuxt = evalInlinePayload(html, '__NUXT__');
-    let desc = '';
+    const nuxt = evalInlinePayload(html, "__NUXT__");
+    let desc = "";
     if (nuxt) {
       const stack = [nuxt];
       const seen = new Set();
       while (stack.length && !desc) {
         const cur = stack.pop();
-        if (!cur || typeof cur !== 'object' || seen.has(cur)) continue;
+        if (!cur || typeof cur !== "object" || seen.has(cur)) continue;
         seen.add(cur);
         for (const [k, v] of Object.entries(cur)) {
-          if (typeof v === 'string' && v.length > 120 && /职责|要求|岗位|工作内容|任职/.test(v)) {
-            desc = htmlToText(v.replace(/\\n/g, '\n'));
+          if (
+            typeof v === "string" &&
+            v.length > 120 &&
+            /职责|要求|岗位|工作内容|任职/.test(v)
+          ) {
+            desc = htmlToText(v.replace(/\\n/g, "\n"));
             break;
           }
-          if (typeof v === 'object') stack.push(v);
+          if (typeof v === "object") stack.push(v);
         }
       }
     }
     if (!desc) desc = htmlToText(html).slice(0, 2500);
     return { description: desc, plainTitle };
   } catch (e) {
-    return { description: '', error: e.message };
+    return { description: "", error: e.message };
   }
 }
 
@@ -417,19 +517,37 @@ async function pool(items, limit, worker) {
   const results = new Array(items.length);
   let cursor = 0;
   await Promise.all(
-    new Array(Math.max(1, Math.min(limit, items.length))).fill(0).map(async () => {
-      for (;;) {
-        const idx = cursor++;
-        if (idx >= items.length) return;
-        try {
-          results[idx] = await worker(items[idx], idx);
-        } catch (e) {
-          results[idx] = { __error: e?.message || String(e) };
+    new Array(Math.max(1, Math.min(limit, items.length)))
+      .fill(0)
+      .map(async () => {
+        for (;;) {
+          const idx = cursor++;
+          if (idx >= items.length) return;
+          try {
+            results[idx] = await worker(items[idx], idx);
+          } catch (e) {
+            results[idx] = { __error: e?.message || String(e) };
+          }
         }
-      }
-    }),
+      }),
   );
   return results;
 }
 
-export async function repairTitles(jobs,options={}) {const groups=new Map();for(const job of jobs){const scope=job.fontScope||job.id||job.url||Symbol();if(!groups.has(scope))groups.set(scope,[]);groups.get(scope).push(job);}const totals={learned:0,repaired:0,samples:0,total:0};for(const group of groups.values()){const result=await repairTitleScope(group,{...options,useCache:false});for(const key of Object.keys(totals))totals[key]+=result[key]||0;}return totals;}
+export async function repairTitles(jobs, options = {}) {
+  const groups = new Map();
+  for (const job of jobs) {
+    const scope = job.fontScope || job.id || job.url || Symbol();
+    if (!groups.has(scope)) groups.set(scope, []);
+    groups.get(scope).push(job);
+  }
+  const totals = { learned: 0, repaired: 0, samples: 0, total: 0 };
+  for (const group of groups.values()) {
+    const result = await repairTitleScope(group, {
+      ...options,
+      useCache: false,
+    });
+    for (const key of Object.keys(totals)) totals[key] += result[key] || 0;
+  }
+  return totals;
+}

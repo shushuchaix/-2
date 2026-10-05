@@ -1,14 +1,69 @@
-import fs from 'node:fs/promises';import path from 'node:path';import {randomUUID} from 'node:crypto';
-import {contentHash} from './repository.mjs';import {writeAtomicJson} from './atomic.mjs';import {assertWorkspace} from '../../domain/contracts.mjs';import {redactBusiness} from '../../domain/redact.mjs';
-export async function createBackup({repository,clock=repository.clock}) {
- const workspace=redactBusiness(await repository.read()),runSnapshots={};for(const run of Object.values(workspace.runs))if(run.snapshotRef){const snapshot=redactBusiness(await repository.readRunSnapshot(run.runId));if(contentHash(snapshot)!==run.snapshotRef.hash)throw Error('Snapshot hash mismatch '+run.runId);runSnapshots[run.runId]=snapshot;}
- const manifest={version:1,schemaVersion:2,createdAt:new Date(clock.now()).toISOString(),workspaceHash:contentHash(workspace),snapshots:Object.fromEntries(Object.entries(runSnapshots).map(([id,s])=>[id,contentHash(s)]))};const filename=path.join(repository.dataDir,'backups','workspace-'+Date.now()+'-'+randomUUID()+'.json');await writeAtomicJson(filename,{manifest,workspace,runSnapshots});return {path:filename,manifest};
+import fs from "node:fs/promises";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { contentHash } from "./repository.mjs";
+import { writeAtomicJson } from "./atomic.mjs";
+import { assertWorkspace } from "../../domain/contracts.mjs";
+import { redactBusiness } from "../../domain/redact.mjs";
+export async function createBackup({ repository, clock = repository.clock }) {
+  const workspace = redactBusiness(await repository.read()),
+    runSnapshots = {};
+  for (const run of Object.values(workspace.runs))
+    if (run.snapshotRef) {
+      const snapshot = redactBusiness(
+        await repository.readRunSnapshot(run.runId),
+      );
+      if (contentHash(snapshot) !== run.snapshotRef.hash)
+        throw Error("Snapshot hash mismatch " + run.runId);
+      runSnapshots[run.runId] = snapshot;
+    }
+  const manifest = {
+    version: 1,
+    schemaVersion: 2,
+    createdAt: new Date(clock.now()).toISOString(),
+    workspaceHash: contentHash(workspace),
+    snapshots: Object.fromEntries(
+      Object.entries(runSnapshots).map(([id, s]) => [id, contentHash(s)]),
+    ),
+  };
+  const filename = path.join(
+    repository.dataDir,
+    "backups",
+    "workspace-" + Date.now() + "-" + randomUUID() + ".json",
+  );
+  await writeAtomicJson(filename, { manifest, workspace, runSnapshots });
+  return { path: filename, manifest };
 }
-export async function restoreBackup({repository,archivePath}) {
- const archive=JSON.parse(await fs.readFile(archivePath,'utf8'));if(archive.manifest?.version!==1)throw Error('Unsupported backup manifest');assertWorkspace(archive.workspace);
- if(contentHash(archive.workspace)!==archive.manifest.workspaceHash)throw Error('Backup workspace hash mismatch');const snapshots=archive.runSnapshots||{};
- for(const [id,snapshot] of Object.entries(snapshots)){if(!/^[A-Za-z0-9_-]{1,160}$/.test(id))throw Error('Unsafe snapshot path');if(contentHash(snapshot)!==archive.manifest.snapshots?.[id])throw Error('Backup snapshot hash mismatch');}
- for(const run of Object.values(archive.workspace.runs))if(run.snapshotRef){if(run.snapshotRef.path!=='runs-v2/'+run.runId+'.json'||!snapshots[run.runId]||contentHash(snapshots[run.runId])!==run.snapshotRef.hash)throw Error('Invalid snapshot reference/hash');}
- await createBackup({repository});for(const [id,snapshot] of Object.entries(snapshots))await repository.writeRunSnapshot(id,snapshot);
- const result=await repository.mutateWorkspace(w=>{const revision=w.revision;Object.assign(w,redactBusiness(archive.workspace));w.revision=revision;return {recovered:true};});return {revision:result.revision,recovered:true};
+export async function restoreBackup({ repository, archivePath }) {
+  const archive = JSON.parse(await fs.readFile(archivePath, "utf8"));
+  if (archive.manifest?.version !== 1)
+    throw Error("Unsupported backup manifest");
+  assertWorkspace(archive.workspace);
+  if (contentHash(archive.workspace) !== archive.manifest.workspaceHash)
+    throw Error("Backup workspace hash mismatch");
+  const snapshots = archive.runSnapshots || {};
+  for (const [id, snapshot] of Object.entries(snapshots)) {
+    if (!/^[A-Za-z0-9_-]{1,160}$/.test(id)) throw Error("Unsafe snapshot path");
+    if (contentHash(snapshot) !== archive.manifest.snapshots?.[id])
+      throw Error("Backup snapshot hash mismatch");
+  }
+  for (const run of Object.values(archive.workspace.runs))
+    if (run.snapshotRef) {
+      if (
+        run.snapshotRef.path !== "runs-v2/" + run.runId + ".json" ||
+        !snapshots[run.runId] ||
+        contentHash(snapshots[run.runId]) !== run.snapshotRef.hash
+      )
+        throw Error("Invalid snapshot reference/hash");
+    }
+  await createBackup({ repository });
+  for (const [id, snapshot] of Object.entries(snapshots))
+    await repository.writeRunSnapshot(id, snapshot);
+  const result = await repository.mutateWorkspace((w) => {
+    const revision = w.revision;
+    Object.assign(w, redactBusiness(archive.workspace));
+    w.revision = revision;
+    return { recovered: true };
+  });
+  return { revision: result.revision, recovered: true };
 }

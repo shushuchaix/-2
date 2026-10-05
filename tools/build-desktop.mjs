@@ -103,6 +103,7 @@ const t0 = Date.now();
 
 /* ------------------------------ 1. 清理 ------------------------------ */
 stage('清理输出目录');
+for(const target of [OUT_DIR,TMP])if(!path.resolve(target).startsWith(path.resolve(ROOT)+path.sep)||path.resolve(target)===path.resolve(ROOT))throw Error('Unsafe build cleanup path');
 fs.rmSync(OUT_DIR, { recursive: true, force: true });
 fs.rmSync(TMP, { recursive: true, force: true });
 fs.mkdirSync(OUT_DIR, { recursive: true });

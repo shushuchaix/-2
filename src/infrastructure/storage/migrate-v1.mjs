@@ -1,27 +1,226 @@
-import fs from 'node:fs/promises';import path from 'node:path';
-import { contentHash } from './repository.mjs';import { writeAtomicJson } from './atomic.mjs';
-import { resolveJobIdentity,relateJobs } from '../../domain/identity.mjs';import { normalizeRecord } from '../../domain/record.mjs';import { APPLICATION_STATUSES } from '../../domain/contracts.mjs';
-export async function migrateV1({dataDir,repository,dryRun=false}) {
- const inputs=[];let index=null;
- try{const body=await fs.readFile(path.join(dataDir,'job-index.json'),'utf8');inputs.push({path:'job-index.json',body});try{index=JSON.parse(body);if(index.version!==1||!index.jobs||Array.isArray(index.jobs))throw Error('unsupported index');}catch(e){throw Error('Corrupt legacy index: '+e.message);}}catch(e){if(e.code!=='ENOENT')throw e;}
- const names=await fs.readdir(path.join(dataDir,'runs')).catch(e=>{if(e.code==='ENOENT')return [];throw e;});
- const runs=[],skipped=[];for(const name of names.filter(n=>n.endsWith('.json')).sort()){const body=await fs.readFile(path.join(dataDir,'runs',name),'utf8');inputs.push({path:'runs/'+name,body});try{const run=JSON.parse(body);if(!Array.isArray(run.jobs||run.results))throw Error('no jobs array');runs.push({...run,jobs:run.jobs||run.results});}catch(e){skipped.push({file:name,reason:e.message});}}
- if(!inputs.length)return {status:'no_legacy',counts:{jobs:0},conflicts:[],skipped,backupPath:null,manifestPath:null};
- const hash=contentHash(inputs);const current=await repository.read();if(current.migration?.inputHash===hash)return {...current.migration,status:'already_migrated'};
- if(current.migration)throw Error('Legacy inputs changed after migration; resolve explicitly');
- const jobs={},observations={},evaluations={},aliases={};const at=new Date(repository.clock.now()).toISOString();
- const ingest=(input,runId,seenAt)=>{if(!input?.title||!input.url)return;const r=normalizeRecord(input);let identity;try{identity=resolveJobIdentity(r);}catch(e){skipped.push({file:runId,reason:e.message});return;}
- let id='j-'+contentHash(identity.key).slice(0,24);if(jobs[id]&&relateJobs(jobs[id].canonical,r).relation!=='same')id+='-'+contentHash([r.cities,r.jobType,r.graduationYear,r.title]).slice(0,12);
- const job=jobs[id]||{jobId:id,kind:r.kind,canonical:r,sourceRefs:[{sourceId:r.sourceId,siteId:r.siteId,url:r.url}],identityAliases:identity.aliases,firstSeen:input.firstSeen||seenAt,lastSeen:input.lastSeen||seenAt,targetFirstSeen:{},lifecycle:'unknown',lifecycleEvidence:[],deadlinePassed:false,duplicateGroupIds:[]};job.canonical={...r,description:r.description||job.canonical.description};job.firstSeen=(input.firstSeen||seenAt)<job.firstSeen?(input.firstSeen||seenAt):job.firstSeen;job.lastSeen=seenAt>job.lastSeen?seenAt:job.lastSeen;jobs[id]=job;
- if(input.id)aliases[input.id]=[...new Set([...(aliases[input.id]||[]),id])];const oid='o-'+contentHash([runId,id,r]).slice(0,24);observations[oid]={observationId:oid,jobId:id,runId,sourceId:r.sourceId,siteId:r.siteId,observedAt:seenAt,record:r,contentHash:contentHash(r)};
- if(typeof input.score==='number'){const eid='legacy-'+contentHash([runId,id,input.score]).slice(0,24);evaluations[eid]={evaluationId:eid,jobId:id,profileRevisionId:null,targetRevisionId:null,jdHash:contentHash(r.description||''),score:input.score,status:'legacy',recommendation:'insufficient',evidence:[],gaps:['旧版评分未重新核验']};}};
- for(const run of runs)for(const j of run.jobs)ingest(j,run.runId||'legacy',run.createdAt||at);
- for(const j of Object.values(index?.jobs||{}))ingest(j,'legacy-index',j.lastSeen||at);
- const applications={},conflicts=[];for(const [oldId,rec] of Object.entries(index?.jobs||{})){const ids=aliases[oldId]||[];if(ids.length>1)conflicts.push({legacyId:oldId,jobIds:ids,reason:'ambiguous_legacy_identity'});if(!ids.length)continue;const id=ids.length===1?ids[0]:'legacy:'+oldId;applications[id]={jobId:id,status:APPLICATION_STATUSES.includes(rec.status)?rec.status:'new',note:String(rec.note||''),resumeRevisionId:null,appliedAt:rec.appliedAt||null,followUpAt:null,events:[{type:'migration',at,legacyId:oldId}],legacyJobIds:ids};}
- const summary={status:dryRun?'preview':'migrated',inputHash:hash,version:1,counts:{jobs:Object.keys(jobs).length,runs:runs.length,applications:Object.keys(applications).length},conflicts,skipped,backupPath:path.join(dataDir,'backups','v1-'+hash.slice(0,16)),manifestPath:null};summary.manifestPath=path.join(summary.backupPath,'manifest.json');
- if(dryRun)return summary;
- await fs.mkdir(summary.backupPath,{recursive:true});for(const input of inputs){const p=path.join(summary.backupPath,input.path);await fs.mkdir(path.dirname(p),{recursive:true});await fs.writeFile(p,input.body,{flag:'wx'}).catch(async e=>{if(e.code!=='EEXIST')throw e;if(await fs.readFile(p,'utf8')!==input.body)throw Error('Backup conflict');});}
- await writeAtomicJson(summary.manifestPath,{version:1,inputHash:hash,files:inputs.map(i=>({path:i.path,hash:contentHash(i.body)})),counts:summary.counts,conflicts,skipped});
- await repository.mutateWorkspace(w=>{if(w.migration?.inputHash===hash)return;if(w.migration)throw Error('Concurrent migration conflict');Object.assign(w.jobs,jobs);Object.assign(w.observations,observations);Object.assign(w.evaluations,evaluations);Object.assign(w.applications,applications);Object.assign(w.identityAliases,aliases);w.migration=summary;for(const s of skipped)w.recoveryRecords.push({type:'migration_issue',...s,at});for(const run of runs){const id=run.runId||'legacy-'+contentHash(run).slice(0,16);w.runs[id]={runId:id,status:'completed',stage:'legacy',startedAt:run.createdAt||null,finishedAt:run.createdAt||null,counts:{returned:run.jobs.length},coverage:[],issues:[],snapshotRef:null,legacy:true};}});
- return summary;
+import fs from "node:fs/promises";
+import path from "node:path";
+import { contentHash } from "./repository.mjs";
+import { writeAtomicJson } from "./atomic.mjs";
+import { resolveJobIdentity, relateJobs } from "../../domain/identity.mjs";
+import { normalizeRecord } from "../../domain/record.mjs";
+import { APPLICATION_STATUSES } from "../../domain/contracts.mjs";
+export async function migrateV1({ dataDir, repository, dryRun = false }) {
+  const inputs = [];
+  let index = null;
+  try {
+    const body = await fs.readFile(
+      path.join(dataDir, "job-index.json"),
+      "utf8",
+    );
+    inputs.push({ path: "job-index.json", body });
+    try {
+      index = JSON.parse(body);
+      if (index.version !== 1 || !index.jobs || Array.isArray(index.jobs))
+        throw Error("unsupported index");
+    } catch (e) {
+      throw Error("Corrupt legacy index: " + e.message);
+    }
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+  }
+  const names = await fs.readdir(path.join(dataDir, "runs")).catch((e) => {
+    if (e.code === "ENOENT") return [];
+    throw e;
+  });
+  const runs = [],
+    skipped = [];
+  for (const name of names.filter((n) => n.endsWith(".json")).sort()) {
+    const body = await fs.readFile(path.join(dataDir, "runs", name), "utf8");
+    inputs.push({ path: "runs/" + name, body });
+    try {
+      const run = JSON.parse(body);
+      if (!Array.isArray(run.jobs || run.results)) throw Error("no jobs array");
+      runs.push({ ...run, jobs: run.jobs || run.results });
+    } catch (e) {
+      skipped.push({ file: name, reason: e.message });
+    }
+  }
+  if (!inputs.length)
+    return {
+      status: "no_legacy",
+      counts: { jobs: 0 },
+      conflicts: [],
+      skipped,
+      backupPath: null,
+      manifestPath: null,
+    };
+  const hash = contentHash(inputs);
+  const current = await repository.read();
+  if (current.migration?.inputHash === hash)
+    return { ...current.migration, status: "already_migrated" };
+  if (current.migration)
+    throw Error("Legacy inputs changed after migration; resolve explicitly");
+  const jobs = {},
+    observations = {},
+    evaluations = {},
+    aliases = {};
+  const at = new Date(repository.clock.now()).toISOString();
+  const ingest = (input, runId, seenAt) => {
+    if (!input?.title || !input.url) return;
+    const r = normalizeRecord(input);
+    let identity;
+    try {
+      identity = resolveJobIdentity(r);
+    } catch (e) {
+      skipped.push({ file: runId, reason: e.message });
+      return;
+    }
+    let id = "j-" + contentHash(identity.key).slice(0, 24);
+    if (jobs[id] && relateJobs(jobs[id].canonical, r).relation !== "same")
+      id +=
+        "-" +
+        contentHash([r.cities, r.jobType, r.graduationYear, r.title]).slice(
+          0,
+          12,
+        );
+    const job = jobs[id] || {
+      jobId: id,
+      kind: r.kind,
+      canonical: r,
+      sourceRefs: [{ sourceId: r.sourceId, siteId: r.siteId, url: r.url }],
+      identityAliases: identity.aliases,
+      firstSeen: input.firstSeen || seenAt,
+      lastSeen: input.lastSeen || seenAt,
+      targetFirstSeen: {},
+      lifecycle: "unknown",
+      lifecycleEvidence: [],
+      deadlinePassed: false,
+      duplicateGroupIds: [],
+    };
+    job.canonical = {
+      ...r,
+      description: r.description || job.canonical.description,
+    };
+    job.firstSeen =
+      (input.firstSeen || seenAt) < job.firstSeen
+        ? input.firstSeen || seenAt
+        : job.firstSeen;
+    job.lastSeen = seenAt > job.lastSeen ? seenAt : job.lastSeen;
+    jobs[id] = job;
+    if (input.id)
+      aliases[input.id] = [...new Set([...(aliases[input.id] || []), id])];
+    const oid = "o-" + contentHash([runId, id, r]).slice(0, 24);
+    observations[oid] = {
+      observationId: oid,
+      jobId: id,
+      runId,
+      sourceId: r.sourceId,
+      siteId: r.siteId,
+      observedAt: seenAt,
+      record: r,
+      contentHash: contentHash(r),
+    };
+    if (typeof input.score === "number") {
+      const eid =
+        "legacy-" + contentHash([runId, id, input.score]).slice(0, 24);
+      evaluations[eid] = {
+        evaluationId: eid,
+        jobId: id,
+        profileRevisionId: null,
+        targetRevisionId: null,
+        jdHash: contentHash(r.description || ""),
+        score: input.score,
+        status: "legacy",
+        recommendation: "insufficient",
+        evidence: [],
+        gaps: ["旧版评分未重新核验"],
+      };
+    }
+  };
+  for (const run of runs)
+    for (const j of run.jobs)
+      ingest(j, run.runId || "legacy", run.createdAt || at);
+  for (const j of Object.values(index?.jobs || {}))
+    ingest(j, "legacy-index", j.lastSeen || at);
+  const applications = {},
+    conflicts = [];
+  for (const [oldId, rec] of Object.entries(index?.jobs || {})) {
+    const ids = aliases[oldId] || [];
+    if (ids.length > 1)
+      conflicts.push({
+        legacyId: oldId,
+        jobIds: ids,
+        reason: "ambiguous_legacy_identity",
+      });
+    if (!ids.length) continue;
+    const id = ids.length === 1 ? ids[0] : "legacy:" + oldId;
+    applications[id] = {
+      jobId: id,
+      status: APPLICATION_STATUSES.includes(rec.status) ? rec.status : "new",
+      note: String(rec.note || ""),
+      resumeRevisionId: null,
+      appliedAt: rec.appliedAt || null,
+      followUpAt: null,
+      events: [{ type: "migration", at, legacyId: oldId }],
+      legacyJobIds: ids,
+    };
+  }
+  const summary = {
+    status: dryRun ? "preview" : "migrated",
+    inputHash: hash,
+    version: 1,
+    counts: {
+      jobs: Object.keys(jobs).length,
+      runs: runs.length,
+      applications: Object.keys(applications).length,
+    },
+    conflicts,
+    skipped,
+    backupPath: path.join(dataDir, "backups", "v1-" + hash.slice(0, 16)),
+    manifestPath: null,
+  };
+  summary.manifestPath = path.join(summary.backupPath, "manifest.json");
+  if (dryRun) return summary;
+  await fs.mkdir(summary.backupPath, { recursive: true });
+  for (const input of inputs) {
+    const p = path.join(summary.backupPath, input.path);
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, input.body, { flag: "wx" }).catch(async (e) => {
+      if (e.code !== "EEXIST") throw e;
+      if ((await fs.readFile(p, "utf8")) !== input.body)
+        throw Error("Backup conflict");
+    });
+  }
+  await writeAtomicJson(summary.manifestPath, {
+    version: 1,
+    inputHash: hash,
+    files: inputs.map((i) => ({ path: i.path, hash: contentHash(i.body) })),
+    counts: summary.counts,
+    conflicts,
+    skipped,
+  });
+  await repository.mutateWorkspace((w) => {
+    if (w.migration?.inputHash === hash) return;
+    if (w.migration) throw Error("Concurrent migration conflict");
+    Object.assign(w.jobs, jobs);
+    Object.assign(w.observations, observations);
+    Object.assign(w.evaluations, evaluations);
+    Object.assign(w.applications, applications);
+    Object.assign(w.identityAliases, aliases);
+    w.migration = summary;
+    for (const s of skipped)
+      w.recoveryRecords.push({ type: "migration_issue", ...s, at });
+    for (const run of runs) {
+      const id = run.runId || "legacy-" + contentHash(run).slice(0, 16);
+      w.runs[id] = {
+        runId: id,
+        status: "completed",
+        stage: "legacy",
+        startedAt: run.createdAt || null,
+        finishedAt: run.createdAt || null,
+        counts: { returned: run.jobs.length },
+        coverage: [],
+        issues: [],
+        snapshotRef: null,
+        legacy: true,
+      };
+    }
+  });
+  return summary;
 }

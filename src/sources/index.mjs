@@ -1,30 +1,50 @@
-import {withSourceContext} from './request-context.mjs';
-import {createRequestClient} from '../infrastructure/http/client.mjs';
-import {createSourceBudget} from '../infrastructure/http/budget.mjs';
+import { withSourceContext } from "./request-context.mjs";
+import { createRequestClient } from "../infrastructure/http/client.mjs";
+import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 // 岗位源统一调度：并行拉取 → 归一化 → 去重合并
-import * as zhaopin from './zhaopin.mjs';
-import * as shixiseng from './shixiseng.mjs';
-import * as searchapi from './searchapi.mjs';
-import * as wechat from './wechat.mjs';
-import * as nowcoder from './nowcoder.mjs';
-import * as university from './university.mjs';
-import * as chenyun from './chenyun.mjs';
-import * as jiuyeqiao from './jiuyeqiao.mjs';
-import { dedupeJobs, pool, cityMatches } from '../util/text.mjs';
+import * as zhaopin from "./zhaopin.mjs";
+import * as shixiseng from "./shixiseng.mjs";
+import * as searchapi from "./searchapi.mjs";
+import * as wechat from "./wechat.mjs";
+import * as nowcoder from "./nowcoder.mjs";
+import * as university from "./university.mjs";
+import * as chenyun from "./chenyun.mjs";
+import * as jiuyeqiao from "./jiuyeqiao.mjs";
+import { dedupeJobs, pool, cityMatches } from "../util/text.mjs";
 
-export const SOURCES = { zhaopin, shixiseng, searchapi, wechat, nowcoder, university, chenyun, jiuyeqiao };
+export const SOURCES = {
+  zhaopin,
+  shixiseng,
+  searchapi,
+  wechat,
+  nowcoder,
+  university,
+  chenyun,
+  jiuyeqiao,
+};
 
 /**
  * 构造「城市 × 关键词」检索计划。
  * 首选城市覆盖全部关键词；其余城市只取前几个关键词，避免请求量随城市数线性膨胀。
  */
-export function buildSearchPlan(titleKeywords, cities, { maxCities = 2, secondaryCityKeywords = 2 } = {}) {
+export function buildSearchPlan(
+  titleKeywords,
+  cities,
+  { maxCities = 2, secondaryCityKeywords = 2 } = {},
+) {
   if (!cities || cities.length === 0) {
-    return titleKeywords.map((keyword) => ({ city: '全国', keyword, primary: true }));
+    return titleKeywords.map((keyword) => ({
+      city: "全国",
+      keyword,
+      primary: true,
+    }));
   }
   const plan = [];
   cities.slice(0, Math.max(1, maxCities)).forEach((city, ci) => {
-    const kws = ci === 0 ? titleKeywords : titleKeywords.slice(0, Math.max(1, secondaryCityKeywords));
+    const kws =
+      ci === 0
+        ? titleKeywords
+        : titleKeywords.slice(0, Math.max(1, secondaryCityKeywords));
     for (const keyword of kws) plan.push({ city, keyword, primary: ci === 0 });
   });
   return plan;
@@ -53,7 +73,16 @@ async function collectLegacyJobs({
 } = {}) {
   const jobs = [];
   const errors = [];
-  const stats = { zhaopin: 0, shixiseng: 0, web: 0, wechat: 0, nowcoder: 0, university: 0, chenyun: 0, jiuyeqiao: 0 };
+  const stats = {
+    zhaopin: 0,
+    shixiseng: 0,
+    web: 0,
+    wechat: 0,
+    nowcoder: 0,
+    university: 0,
+    chenyun: 0,
+    jiuyeqiao: 0,
+  };
   // 公众号文章是散文体，不能直接当岗位用，要单独交给 LLM 抽取
   let articles = [];
 
@@ -65,7 +94,9 @@ async function collectLegacyJobs({
   if (plan.length) {
     const byCity = new Map();
     for (const p of plan) byCity.set(p.city, (byCity.get(p.city) || 0) + 1);
-    log(`检索计划：${[...byCity.entries()].map(([c, n]) => `${c}×${n}词`).join(' + ')}`);
+    log(
+      `检索计划：${[...byCity.entries()].map(([c, n]) => `${c}×${n}词`).join(" + ")}`,
+    );
   }
 
   const tasks = [];
@@ -150,13 +181,13 @@ async function collectLegacyJobs({
       log(`搜索通道失败：${e.message}`);
     }
   } else if (cfg.sources.searchApi.enabled) {
-    log('未配置搜索 API Key，跳过全网搜索通道（仅使用智联/实习僧直连数据）');
+    log("未配置搜索 API Key，跳过全网搜索通道（仅使用智联/实习僧直连数据）");
   }
 
   // 微信公众号校招公告：产出的是「文章线索」，后续由 LLM 抽取具体岗位
   if (cfg.sources.wechat?.enabled && wechatQueries.length) {
     try {
-      log(`微信公众号检索词：${wechatQueries.join('｜')}`);
+      log(`微信公众号检索词：${wechatQueries.join("｜")}`);
       const r = await wechat.collectWechat({
         keywords: wechatQueries,
         roleKeywords,
@@ -183,7 +214,7 @@ async function collectLegacyJobs({
   if (cfg.sources.nowcoder?.enabled) {
     try {
       const r = await nowcoder.collect({
-        targetYear: cfg.filters?.graduationYear || '',
+        targetYear: cfg.filters?.graduationYear || "",
         includeSchedule: cfg.sources.nowcoder.includeSchedule !== false,
         maxSchedule: cfg.sources.nowcoder.maxSchedule ?? 6,
         log,
@@ -250,7 +281,9 @@ async function collectLegacyJobs({
         keywords: titleKeywords,
         // 不显式给 hosts 时，优先选与简历学校同名的晨云站点
         profile,
-        hosts: cfg.sources.chenyun.hosts?.length ? cfg.sources.chenyun.hosts : null,
+        hosts: cfg.sources.chenyun.hosts?.length
+          ? cfg.sources.chenyun.hosts
+          : null,
         maxHosts: cfg.sources.chenyun.maxHosts ?? 2,
         maxPages: cfg.sources.chenyun.maxPages ?? 6,
         maxDetail: cfg.sources.chenyun.maxDetail ?? 12,
@@ -305,9 +338,20 @@ async function collectLegacyJobs({
   }
 
   const deduped = dedupeJobs(filtered);
-  log(`采集完成：原始 ${jobs.length} 条 → 城市过滤后 ${filtered.length} 条 → 去重后 ${deduped.length} 条`);
+  log(
+    `采集完成：原始 ${jobs.length} 条 → 城市过滤后 ${filtered.length} 条 → 去重后 ${deduped.length} 条`,
+  );
   if (articles.length) log(`公众号公告 ${articles.length} 篇待抽取岗位`);
   return { jobs: deduped, articles, errors, stats, rawCount: jobs.length };
 }
 
-export async function collectJobs(options={}) {const budget=options.budget||createSourceBudget({maxRequests:120,maxDetails:20});const request=options.request||createRequestClient({budget,signal:options.signal});return withSourceContext({request,signal:options.signal,cfg:options.cfg},()=>collectLegacyJobs(options));}
+export async function collectJobs(options = {}) {
+  const budget =
+    options.budget || createSourceBudget({ maxRequests: 120, maxDetails: 20 });
+  const request =
+    options.request || createRequestClient({ budget, signal: options.signal });
+  return withSourceContext(
+    { request, signal: options.signal, cfg: options.cfg },
+    () => collectLegacyJobs(options),
+  );
+}

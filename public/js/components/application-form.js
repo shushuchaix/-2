@@ -1,2 +1,113 @@
-import {el,field} from './dom.js';import {feedback} from './feedback.js';import {STATUS_LABELS,localDate,formatDate} from '../format.js';
-export function applicationForm({document:d,application,profiles=[],onSave}){let current=application;const form=el(d,'form',{id:'applicationForm'}),status=feedback(d),selection=el(d,'select',{id:'applicationStatus'},Object.entries(STATUS_LABELS).map(([v,t])=>el(d,'option',{value:v},t))),note=el(d,'textarea',{id:'applicationNote',rows:5},current.note||''),resume=el(d,'select',{id:'applicationResume'},el(d,'option',{value:''},'未记录'),profiles.map(p=>el(d,'option',{value:p.revisionId},(p.profile.name||'画像')+' · '+p.revisionId))),applied=el(d,'input',{id:'appliedAt',type:'date',value:localDate(current.appliedAt)}),follow=el(d,'input',{id:'followUpAt',type:'date',value:localDate(current.followUpAt)}),save=el(d,'button',{type:'submit',className:'primary'},'保存投递记录'),history=el(d,'div',{className:'prose'});selection.value=current.status;resume.value=current.resumeRevisionId||'';const renderHistory=()=>{history.textContent=(current.events||[]).map(e=>formatDate(e.at)+' · '+Object.entries(e.changes||{}).map(([k,v])=>k+': '+(v.from??'空')+' → '+(v.to??'空')).join('；')).join('\n');};renderHistory();form.append(field(d,'投递状态',selection),field(d,'备注（可以清空）',note),field(d,'使用的简历版本',resume),el(d,'div',{className:'grid'},field(d,'投递日期',applied),field(d,'下次跟进日期',follow)),save,status.node,el(d,'h3',{},'变更历史'),history);form.addEventListener('submit',async e=>{e.preventDefault();save.disabled=true;try{const updated=await onSave({status:selection.value,note:note.value,resumeRevisionId:resume.value||null,appliedAt:applied.value||null,followUpAt:follow.value||null});current=updated;renderHistory();status.show('投递记录已保存');}catch(e){selection.value=current.status;status.show('保存失败：'+e.message,true);}finally{save.disabled=false;}});return form;}
+import { el, field } from "./dom.js";
+import { feedback } from "./feedback.js";
+import { STATUS_LABELS, localDate, formatDate } from "../format.js";
+export function applicationForm({
+  document: d,
+  application,
+  profiles = [],
+  onSave,
+}) {
+  let current = application;
+  const form = el(d, "form", { id: "applicationForm" }),
+    status = feedback(d),
+    selection = el(
+      d,
+      "select",
+      { id: "applicationStatus" },
+      Object.entries(STATUS_LABELS).map(([v, t]) =>
+        el(d, "option", { value: v }, t),
+      ),
+    ),
+    note = el(
+      d,
+      "textarea",
+      { id: "applicationNote", rows: 5 },
+      current.note || "",
+    ),
+    resume = el(
+      d,
+      "select",
+      { id: "applicationResume" },
+      el(d, "option", { value: "" }, "未记录"),
+      profiles.map((p) =>
+        el(
+          d,
+          "option",
+          { value: p.revisionId },
+          (p.profile.name || "画像") + " · " + p.revisionId,
+        ),
+      ),
+    ),
+    applied = el(d, "input", {
+      id: "appliedAt",
+      type: "date",
+      value: localDate(current.appliedAt),
+    }),
+    follow = el(d, "input", {
+      id: "followUpAt",
+      type: "date",
+      value: localDate(current.followUpAt),
+    }),
+    save = el(
+      d,
+      "button",
+      { type: "submit", className: "primary" },
+      "保存投递记录",
+    ),
+    history = el(d, "div", { className: "prose" });
+  selection.value = current.status;
+  resume.value = current.resumeRevisionId || "";
+  const renderHistory = () => {
+    history.textContent = (current.events || [])
+      .map(
+        (e) =>
+          formatDate(e.at) +
+          " · " +
+          Object.entries(e.changes || {})
+            .map(
+              ([k, v]) => k + ": " + (v.from ?? "空") + " → " + (v.to ?? "空"),
+            )
+            .join("；"),
+      )
+      .join("\n");
+  };
+  renderHistory();
+  form.append(
+    field(d, "投递状态", selection),
+    field(d, "备注（可以清空）", note),
+    field(d, "使用的简历版本", resume),
+    el(
+      d,
+      "div",
+      { className: "grid" },
+      field(d, "投递日期", applied),
+      field(d, "下次跟进日期", follow),
+    ),
+    save,
+    status.node,
+    el(d, "h3", {}, "变更历史"),
+    history,
+  );
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    save.disabled = true;
+    try {
+      const updated = await onSave({
+        status: selection.value,
+        note: note.value,
+        resumeRevisionId: resume.value || null,
+        appliedAt: applied.value || null,
+        followUpAt: follow.value || null,
+      });
+      current = updated;
+      renderHistory();
+      status.show("投递记录已保存");
+    } catch (e) {
+      selection.value = current.status;
+      status.show("保存失败：" + e.message, true);
+    } finally {
+      save.disabled = false;
+    }
+  });
+  return form;
+}

@@ -1,13 +1,84 @@
-import test from 'node:test';import assert from 'node:assert/strict';import announcements from '../../src/sources/adapters/official-announcements.mjs';import yingjiesheng from '../../src/sources/adapters/yingjiesheng.mjs';
-const ctx=request=>({sites:[{siteId:'public-test',name:'合成研究所',origin:'https://research.example.org',template:{listUrl:'https://research.example.org/recruit/',linkRule:'.list li a',dateRule:'.info',bodyRule:'#body',pathPrefix:'/recruit/'}}],queries:[{keyword:'',pageLimit:1}],request,targetSnapshot:{cities:[]},clock:{now:Date.now}});
-test('official notices preserve relative links dates and attachments without inventing jobs',async()=>{const list='<ul class="list"><li><a href="2026/notice-1.html">2027应届招聘公告</a><span>2026-09-01</span></li><li><a href="news.html">平台宣传新闻</a></li><li><a href="missing.html">人才招聘启事</a><span>09-02</span></li></ul>';
- const context=ctx(async()=>({status:200,text:list,headers:{}}));const r=await announcements.collect(context);assert.equal(r.records.length,2);assert.ok(r.records.every(j=>j.kind==='recruitment_notice'));assert.equal(r.records[0].publishedAt,'2026-09-01T00:00:00.000Z');assert.equal(r.records[1].publishedAt,null);
- context.request=async()=>({status:200,text:'<h1>2027应届招聘公告</h1><p class="info">发布时间：2026-09-01</p><div id="body"><p>招聘工程师，本科及以上，负责设备维护。请通过官方入口投递，详见原招聘公告。</p><a href="/files/岗位表.pdf">岗位表</a></div>',headers:{}});const detail=await announcements.fetchDetail(r.records[0],context);assert.ok(detail.description.includes('本科'));assert.equal(detail.attachments[0].url,'https://research.example.org/files/%E5%B2%97%E4%BD%8D%E8%A1%A8.pdf');
+import test from "node:test";
+import assert from "node:assert/strict";
+import announcements from "../../src/sources/adapters/official-announcements.mjs";
+import yingjiesheng from "../../src/sources/adapters/yingjiesheng.mjs";
+const ctx = (request) => ({
+  sites: [
+    {
+      siteId: "public-test",
+      name: "合成研究所",
+      origin: "https://research.example.org",
+      template: {
+        listUrl: "https://research.example.org/recruit/",
+        linkRule: ".list li a",
+        dateRule: ".info",
+        bodyRule: "#body",
+        pathPrefix: "/recruit/",
+      },
+    },
+  ],
+  queries: [{ keyword: "", pageLimit: 1 }],
+  request,
+  targetSnapshot: { cities: [] },
+  clock: { now: Date.now },
 });
-test('campus deadlines remain company campaigns and WAF pages are explicit',async()=>{const context={...ctx(async()=>({status:200,text:'<table><tr><td><a href="/job-1.html">合成公司2027校园招聘</a></td><td>2026-12-30</td></tr></table>',headers:{}})),sites:[{siteId:'yingjiesheng',origin:'https://www.yingjiesheng.com'}]};const r=await yingjiesheng.collect(context);assert.equal(r.records[0].kind,'company_campaign');assert.equal(r.records[0].deadlineAt,'2026-12-30T00:00:00.000Z');context.request=async()=>({status:200,text:'<title>验证码</title><p>人机验证</p>',headers:{}});const bad=await yingjiesheng.collect(context);assert.equal(bad.issues[0].code,'captcha');});
-test('static notice archives stay truncated and campaign hosts require a domain boundary',async()=>{
- const notices=await announcements.collect(ctx(async()=>({status:200,text:'<ul class="list"><li><a href="post.html">招聘公告</a></li></ul>',headers:{}})));
- assert.equal(notices.coverage[0].truncated,true);
- const context={...ctx(async()=>({status:200,text:'<table><tr><td><a href="https://notyingjiesheng.com/post">错误来源</a><a href="https://www.yingjiesheng.com/job-1.html">真实网申窗口</a></td></tr></table>',headers:{}})),sites:[{siteId:'yingjiesheng',origin:'https://www.yingjiesheng.com'}]};
- assert.equal((await yingjiesheng.collect(context)).records.length,1);
+test("official notices preserve relative links dates and attachments without inventing jobs", async () => {
+  const list =
+    '<ul class="list"><li><a href="2026/notice-1.html">2027应届招聘公告</a><span>2026-09-01</span></li><li><a href="news.html">平台宣传新闻</a></li><li><a href="missing.html">人才招聘启事</a><span>09-02</span></li></ul>';
+  const context = ctx(async () => ({ status: 200, text: list, headers: {} }));
+  const r = await announcements.collect(context);
+  assert.equal(r.records.length, 2);
+  assert.ok(r.records.every((j) => j.kind === "recruitment_notice"));
+  assert.equal(r.records[0].publishedAt, "2026-09-01T00:00:00.000Z");
+  assert.equal(r.records[1].publishedAt, null);
+  context.request = async () => ({
+    status: 200,
+    text: '<h1>2027应届招聘公告</h1><p class="info">发布时间：2026-09-01</p><div id="body"><p>招聘工程师，本科及以上，负责设备维护。请通过官方入口投递，详见原招聘公告。</p><a href="/files/岗位表.pdf">岗位表</a></div>',
+    headers: {},
+  });
+  const detail = await announcements.fetchDetail(r.records[0], context);
+  assert.ok(detail.description.includes("本科"));
+  assert.equal(
+    detail.attachments[0].url,
+    "https://research.example.org/files/%E5%B2%97%E4%BD%8D%E8%A1%A8.pdf",
+  );
+});
+test("campus deadlines remain company campaigns and WAF pages are explicit", async () => {
+  const context = {
+    ...ctx(async () => ({
+      status: 200,
+      text: '<table><tr><td><a href="/job-1.html">合成公司2027校园招聘</a></td><td>2026-12-30</td></tr></table>',
+      headers: {},
+    })),
+    sites: [{ siteId: "yingjiesheng", origin: "https://www.yingjiesheng.com" }],
+  };
+  const r = await yingjiesheng.collect(context);
+  assert.equal(r.records[0].kind, "company_campaign");
+  assert.equal(r.records[0].deadlineAt, "2026-12-30T00:00:00.000Z");
+  context.request = async () => ({
+    status: 200,
+    text: "<title>验证码</title><p>人机验证</p>",
+    headers: {},
+  });
+  const bad = await yingjiesheng.collect(context);
+  assert.equal(bad.issues[0].code, "captcha");
+});
+test("static notice archives stay truncated and campaign hosts require a domain boundary", async () => {
+  const notices = await announcements.collect(
+    ctx(async () => ({
+      status: 200,
+      text: '<ul class="list"><li><a href="post.html">招聘公告</a></li></ul>',
+      headers: {},
+    })),
+  );
+  assert.equal(notices.coverage[0].truncated, true);
+  const context = {
+    ...ctx(async () => ({
+      status: 200,
+      text: '<table><tr><td><a href="https://notyingjiesheng.com/post">错误来源</a><a href="https://www.yingjiesheng.com/job-1.html">真实网申窗口</a></td></tr></table>',
+      headers: {},
+    })),
+    sites: [{ siteId: "yingjiesheng", origin: "https://www.yingjiesheng.com" }],
+  };
+  assert.equal((await yingjiesheng.collect(context)).records.length, 1);
 });

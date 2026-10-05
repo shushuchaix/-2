@@ -1,10 +1,18 @@
 // 本地 Web 服务：静态页面 + NDJSON 流式 API + 结果持久化/导出
 // 公网部署形态：密码登录鉴权 + 安全响应头 + 并发与每日配额闸门
-import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { loadConfig, ensureDataDirs, assertSafeExposure, ROOT, DATA_ROOT, IS_DESKTOP, maskKey } from './config.mjs';
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  loadConfig,
+  ensureDataDirs,
+  assertSafeExposure,
+  ROOT,
+  DATA_ROOT,
+  IS_DESKTOP,
+  maskKey,
+} from "./config.mjs";
 import {
   SessionManager,
   LoginGuard,
@@ -15,37 +23,38 @@ import {
   clearCookie,
   clientIp,
   isSecureRequest,
-} from './auth.mjs';
-import { RunGate } from './limits.mjs';
-import { DeepSeek } from './llm/deepseek.mjs';
-import { extractResumeText, looksLikeResume } from './resume/extract-text.mjs';
-import {createApplicationContext} from './application/context.mjs';
-import {handleV2Request} from './server/routes-v2.mjs';
-import {handleV1Request} from './server/routes-v1.mjs';
-import {readJsonBody as readValidatedJsonBody} from './server/validation.mjs';
-import {VERSION} from './version.mjs';
-import { exportResult } from './export.mjs';
-import * as zhaopin from './sources/zhaopin.mjs';
-import * as shixiseng from './sources/shixiseng.mjs';
-import * as wechat from './sources/wechat.mjs';
-import * as nowcoder from './sources/nowcoder.mjs';
-import * as university from './sources/university.mjs';
-import * as chenyun from './sources/chenyun.mjs';
-import * as jiuyeqiao from './sources/jiuyeqiao.mjs';
-import * as store from './store.mjs';
+} from "./auth.mjs";
+import { RunGate } from "./limits.mjs";
+import { DeepSeek } from "./llm/deepseek.mjs";
+import { extractResumeText, looksLikeResume } from "./resume/extract-text.mjs";
+import { createApplicationContext } from "./application/context.mjs";
+import { handleV2Request } from "./server/routes-v2.mjs";
+import { handleV1Request } from "./server/routes-v1.mjs";
+import { readJsonBody as readValidatedJsonBody } from "./server/validation.mjs";
+import { VERSION } from "./version.mjs";
+import { exportResult } from "./export.mjs";
+import * as zhaopin from "./sources/zhaopin.mjs";
+import * as shixiseng from "./sources/shixiseng.mjs";
+import * as wechat from "./sources/wechat.mjs";
+import * as nowcoder from "./sources/nowcoder.mjs";
+import * as university from "./sources/university.mjs";
+import * as chenyun from "./sources/chenyun.mjs";
+import * as jiuyeqiao from "./sources/jiuyeqiao.mjs";
+import * as store from "./store.mjs";
 
-const PUBLIC_DIR = path.join(ROOT, 'public');
+const PUBLIC_DIR = path.join(ROOT, "public");
 const MAX_BODY = 40 * 1024 * 1024;
 
 const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.png': 'image/png',
-  '.woff2': 'font/woff2',
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".png": "image/png",
+  ".woff2": "font/woff2",
 };
 
 /* --------------------------- 响应工具 --------------------------- */
@@ -53,25 +62,28 @@ const MIME = {
 function securityHeaders(req, cfg, extra = {}) {
   const https = isSecureRequest(req, cfg.server.trustProxy);
   const headers = {
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'no-referrer',
-    'Permissions-Policy': 'geolocation=(), microphone=(), camera=(), payment=()',
-    'Content-Security-Policy':
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy":
+      "geolocation=(), microphone=(), camera=(), payment=()",
+    "Content-Security-Policy":
       "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
-    'Cross-Origin-Opener-Policy': 'same-origin',
+    "Cross-Origin-Opener-Policy": "same-origin",
     ...extra,
   };
-  if (https) headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+  if (https)
+    headers["Strict-Transport-Security"] =
+      "max-age=31536000; includeSubDomains";
   return headers;
 }
 
 function sendJson(req, res, cfg, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store',
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
     ...securityHeaders(req, cfg),
   });
   res.end(body);
@@ -81,7 +93,7 @@ function readBody(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
-    req.on('data', (c) => {
+    req.on("data", (c) => {
       size += c.length;
       if (size > limit) {
         reject(new Error(`请求体过大（>${(limit / 1048576).toFixed(0)}MB）`));
@@ -90,8 +102,8 @@ function readBody(req, limit = MAX_BODY) {
       }
       chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
   });
 }
 
@@ -99,39 +111,52 @@ async function readJsonBody(req) {
   const buf = await readBody(req);
   if (!buf.length) return {};
   try {
-    return JSON.parse(buf.toString('utf8'));
+    return JSON.parse(buf.toString("utf8"));
   } catch (e) {
     throw new Error(`请求体不是合法 JSON：${e.message}`);
   }
 }
 
 function serveStatic(req, res, cfg, pathname, { allowMissing = false } = {}) {
-  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
+  const rel =
+    pathname === "/"
+      ? "index.html"
+      : decodeURIComponent(pathname).replace(/^\/+/, "");
   const resolved = path.resolve(path.join(PUBLIC_DIR, rel));
-  if (resolved!==path.resolve(PUBLIC_DIR)&&!resolved.startsWith(path.resolve(PUBLIC_DIR)+path.sep)) {
-    sendJson(req, res, cfg, 403, { error: '非法路径' });
+  if (
+    resolved !== path.resolve(PUBLIC_DIR) &&
+    !resolved.startsWith(path.resolve(PUBLIC_DIR) + path.sep)
+  ) {
+    sendJson(req, res, cfg, 403, { error: "非法路径" });
     return;
   }
   fs.readFile(resolved, (err, data) => {
     if (err) {
       if (allowMissing) {
-        sendJson(req, res, cfg, 404, { error: '资源不存在' });
+        sendJson(req, res, cfg, 404, { error: "资源不存在" });
         return;
       }
-      fs.readFile(path.join(PUBLIC_DIR, 'index.html'), (e2, html) => {
+      fs.readFile(path.join(PUBLIC_DIR, "index.html"), (e2, html) => {
         if (e2) {
-          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-          res.end('404 Not Found');
+          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("404 Not Found");
           return;
         }
-        res.writeHead(200, { 'Content-Type': MIME['.html'], ...securityHeaders(req, cfg) });
+        res.writeHead(200, {
+          "Content-Type": MIME[".html"],
+          ...securityHeaders(req, cfg),
+        });
         res.end(html);
       });
       return;
     }
     const ext = path.extname(resolved);
-    const cache = ext === '.html' ? 'no-cache' : 'public, max-age=300';
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cache, ...securityHeaders(req, cfg) });
+    const cache = ext === ".html" ? "no-cache" : "public, max-age=300";
+    res.writeHead(200, {
+      "Content-Type": MIME[ext] || "application/octet-stream",
+      "Cache-Control": cache,
+      ...securityHeaders(req, cfg),
+    });
     res.end(data);
   });
 }
@@ -145,11 +170,15 @@ function originAllowed(req, cfg) {
   if (!origin) return true; // 非浏览器客户端（curl / 脚本）
   try {
     const o = new URL(origin);
-    const host = String(req.headers.host || '').toLowerCase();
+    const host = String(req.headers.host || "").toLowerCase();
     if (o.host.toLowerCase() === host) return true;
     if (cfg.server.publicUrl) {
       try {
-        if (new URL(cfg.server.publicUrl).host.toLowerCase() === o.host.toLowerCase()) return true;
+        if (
+          new URL(cfg.server.publicUrl).host.toLowerCase() ===
+          o.host.toLowerCase()
+        )
+          return true;
       } catch {
         /* publicUrl 配错则忽略 */
       }
@@ -162,13 +191,18 @@ function originAllowed(req, cfg) {
 
 /* ------------------------------ 服务 ------------------------------ */
 
-export function createServer(cfg, {dataDir=process.env.RJR_DATA_DIR||DATA_ROOT, dependencies={}}={}) {
+export function createServer(
+  cfg,
+  { dataDir = process.env.RJR_DATA_DIR || DATA_ROOT, dependencies = {} } = {},
+) {
   const llm = new DeepSeek(cfg);
   const exposure = assertSafeExposure(cfg);
 
   // 鉴权上下文：公网监听必须有口令；本地环回访问可免登录，方便自用
-  const passwordHash = cfg.__envAuthPassword ? hashPassword(cfg.__envAuthPassword) : cfg.auth.passwordHash;
-  const authRequired = cfg.auth.mode !== 'none' && Boolean(passwordHash);
+  const passwordHash = cfg.__envAuthPassword
+    ? hashPassword(cfg.__envAuthPassword)
+    : cfg.auth.passwordHash;
+  const authRequired = cfg.auth.mode !== "none" && Boolean(passwordHash);
   const sessions = new SessionManager({
     secret: cfg.__authSecret,
     ttlMs: (Number(cfg.auth.sessionTtlHours) || 168) * 3600 * 1000,
@@ -185,10 +219,15 @@ export function createServer(cfg, {dataDir=process.env.RJR_DATA_DIR||DATA_ROOT, 
     dailyGlobal: cfg.limits.dailyGlobal,
     dailyPerIp: cfg.limits.dailyPerIp,
     perIpCooldownMs: cfg.limits.perIpCooldownMs,
-    storageFile: path.join(dataDir, 'quota.json'),
+    storageFile: path.join(dataDir, "quota.json"),
   });
 
-  const ready=createApplicationContext({cfg,dataDir,dependencies:{...dependencies,runGate:gate}});ready.catch(()=>{});
+  const ready = createApplicationContext({
+    cfg,
+    dataDir,
+    dependencies: { ...dependencies, runGate: gate },
+  });
+  ready.catch(() => {});
 
   function sessionOf(req) {
     const cookies = parseCookies(req);
@@ -208,24 +247,26 @@ export function createServer(cfg, {dataDir=process.env.RJR_DATA_DIR||DATA_ROOT, 
   }
 
   const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const { pathname } = url;
     const ip = clientIp(req, cfg.server.trustProxy);
     const secure = isSecureRequest(req, cfg.server.trustProxy);
 
     try {
       /* ---------------- 登录页（无需鉴权） ---------------- */
-      if (pathname === '/login' && req.method === 'GET') {
-        return serveStatic(req, res, cfg, '/login.html', { allowMissing: true });
+      if (pathname === "/login" && req.method === "GET") {
+        return serveStatic(req, res, cfg, "/login.html", {
+          allowMissing: true,
+        });
       }
 
       /* ---------------- 会话状态（无需鉴权，供前端判断跳转） ---------------- */
-      if (pathname === '/api/session' && req.method === 'GET') {
+      if (pathname === "/api/session" && req.method === "GET") {
         const authed = isAuthed(req);
         return sendJson(req, res, cfg, 200, {
           authenticated: authed,
           authRequired,
-          exposure: exposure.publicBind ? 'public' : 'local',
+          exposure: exposure.publicBind ? "public" : "local",
           quota: authed ? gate.peek(ip) : null,
           allowUserKey: Boolean(cfg.deepseek.allowUserKey),
           // 桌面外壳据此切换交互：免登录、自带 Key 本地持久化、指向数据目录
@@ -236,57 +277,77 @@ export function createServer(cfg, {dataDir=process.env.RJR_DATA_DIR||DATA_ROOT, 
       }
 
       /* ---------------- 登录 / 登出 ---------------- */
-      if (pathname === '/api/login' && req.method === 'POST') {
-        if (!authRequired) return sendJson(req, res, cfg, 200, { ok: true, message: '当前未启用鉴权' });
-        if (!originAllowed(req, cfg)) return sendJson(req, res, cfg, 403, { error: '请求来源不被允许' });
+      if (pathname === "/api/login" && req.method === "POST") {
+        if (!authRequired)
+          return sendJson(req, res, cfg, 200, {
+            ok: true,
+            message: "当前未启用鉴权",
+          });
+        if (!originAllowed(req, cfg))
+          return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
 
         const guard = loginGuard.check(ip);
         if (!guard.allowed) {
           const mins = Math.ceil(guard.retryAfterMs / 60000);
-          return sendJson(req, res, cfg, 429, { error: `登录尝试过于频繁，请 ${mins} 分钟后再试` });
+          return sendJson(req, res, cfg, 429, {
+            error: `登录尝试过于频繁，请 ${mins} 分钟后再试`,
+          });
         }
 
         const body = await readJsonBody(req);
-        const password = String(body.password || '');
-        if (!password) return sendJson(req, res, cfg, 400, { error: '请输入访问密码' });
+        const password = String(body.password || "");
+        if (!password)
+          return sendJson(req, res, cfg, 400, { error: "请输入访问密码" });
 
         if (!verifyPassword(password, passwordHash)) {
           const lockedUntil = loginGuard.fail(ip);
-          const left = lockedUntil ? 0 : Math.max(0, (Number(cfg.auth.maxLoginFails) || 5) - 1);
+          const left = lockedUntil
+            ? 0
+            : Math.max(0, (Number(cfg.auth.maxLoginFails) || 5) - 1);
           return sendJson(req, res, cfg, 401, {
-            error: lockedUntil ? '密码错误次数过多，账号已临时锁定' : `密码错误${left ? `，还可尝试 ${left} 次` : ''}`,
+            error: lockedUntil
+              ? "密码错误次数过多，账号已临时锁定"
+              : `密码错误${left ? `，还可尝试 ${left} 次` : ""}`,
           });
         }
 
         loginGuard.succeed(ip);
         const { token } = sessions.issue({ ip });
         res.writeHead(200, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Set-Cookie': buildSetCookie(sessions.cookieName, token, { maxAge: sessions.ttlMs, secure }),
-          'Cache-Control': 'no-store',
+          "Content-Type": "application/json; charset=utf-8",
+          "Set-Cookie": buildSetCookie(sessions.cookieName, token, {
+            maxAge: sessions.ttlMs,
+            secure,
+          }),
+          "Cache-Control": "no-store",
           ...securityHeaders(req, cfg),
         });
         return res.end(JSON.stringify({ ok: true }));
       }
 
-      if (pathname === '/api/logout' && req.method === 'POST') {
+      if (pathname === "/api/logout" && req.method === "POST") {
         res.writeHead(200, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Set-Cookie': clearCookie(sessions.cookieName),
-          'Cache-Control': 'no-store',
+          "Content-Type": "application/json; charset=utf-8",
+          "Set-Cookie": clearCookie(sessions.cookieName),
+          "Cache-Control": "no-store",
           ...securityHeaders(req, cfg),
         });
         return res.end(JSON.stringify({ ok: true }));
       }
 
       /* ---------------- 健康检查 ---------------- */
-      if (pathname === '/api/health' && req.method === 'GET') {
+      if (pathname === "/api/health" && req.method === "GET") {
         const authed = isAuthed(req);
-        const base = { ok: true, version: VERSION, authRequired, authenticated: authed };
+        const base = {
+          ok: true,
+          version: VERSION,
+          authRequired,
+          authenticated: authed,
+        };
         if (!authed) return sendJson(req, res, cfg, 200, base);
         return sendJson(req, res, cfg, 200, {
           ...base,
-          exposure: exposure.publicBind ? 'public' : 'local',
+          exposure: exposure.publicBind ? "public" : "local",
           deepseek: {
             configured: llm.available,
             source: cfg.__deepseekKeySource,
@@ -302,22 +363,47 @@ export function createServer(cfg, {dataDir=process.env.RJR_DATA_DIR||DATA_ROOT, 
               .map(([k]) => k),
           },
           sources: {
-            zhaopin: { enabled: cfg.sources.zhaopin.enabled, name: zhaopin.meta.name, maxPages: cfg.sources.zhaopin.maxPages },
-            shixiseng: { enabled: cfg.sources.shixiseng.enabled, name: shixiseng.meta.name, maxPages: cfg.sources.shixiseng.maxPages },
-            nowcoder: { enabled: cfg.sources.nowcoder?.enabled !== false, name: nowcoder.meta.name },
+            zhaopin: {
+              enabled: cfg.sources.zhaopin.enabled,
+              name: zhaopin.meta.name,
+              maxPages: cfg.sources.zhaopin.maxPages,
+            },
+            shixiseng: {
+              enabled: cfg.sources.shixiseng.enabled,
+              name: shixiseng.meta.name,
+              maxPages: cfg.sources.shixiseng.maxPages,
+            },
+            nowcoder: {
+              enabled: cfg.sources.nowcoder?.enabled !== false,
+              name: nowcoder.meta.name,
+            },
             university: {
               enabled: cfg.sources.university?.enabled !== false,
               name: university.meta.name,
-              hosts: (cfg.sources.university?.hosts?.length || 0) + university.DEFAULT_HOSTS.length,
+              hosts:
+                (cfg.sources.university?.hosts?.length || 0) +
+                university.DEFAULT_HOSTS.length,
             },
             chenyun: {
               enabled: cfg.sources.chenyun?.enabled !== false,
               name: chenyun.meta.name,
-              hosts: (cfg.sources.chenyun?.hosts?.length || 0) + chenyun.CHENYUN_HOSTS.length,
+              hosts:
+                (cfg.sources.chenyun?.hosts?.length || 0) +
+                chenyun.CHENYUN_HOSTS.length,
             },
-            jiuyeqiao: { enabled: cfg.sources.jiuyeqiao?.enabled !== false, name: jiuyeqiao.meta.name },
-            wechat: { enabled: cfg.sources.wechat?.enabled !== false, name: wechat.meta.name, maxQueries: cfg.sources.wechat?.maxQueries },
-            searchApi: { enabled: cfg.sources.searchApi.enabled, maxQueries: cfg.sources.searchApi.maxQueries },
+            jiuyeqiao: {
+              enabled: cfg.sources.jiuyeqiao?.enabled !== false,
+              name: jiuyeqiao.meta.name,
+            },
+            wechat: {
+              enabled: cfg.sources.wechat?.enabled !== false,
+              name: wechat.meta.name,
+              maxQueries: cfg.sources.wechat?.maxQueries,
+            },
+            searchApi: {
+              enabled: cfg.sources.searchApi.enabled,
+              maxQueries: cfg.sources.searchApi.maxQueries,
+            },
           },
           match: cfg.match,
           filters: cfg.filters,
@@ -326,39 +412,73 @@ export function createServer(cfg, {dataDir=process.env.RJR_DATA_DIR||DATA_ROOT, 
       }
 
       /* ---------------- 以下接口全部需要鉴权 ---------------- */
-      if (pathname.startsWith('/api/') && !isAuthed(req)) {
-        return sendJson(req, res, cfg, 401, { error: '未登录或登录已过期，请先登录', needLogin: true });
+      if (pathname.startsWith("/api/") && !isAuthed(req)) {
+        return sendJson(req, res, cfg, 401, {
+          error: "未登录或登录已过期，请先登录",
+          needLogin: true,
+        });
       }
-      if (pathname === '/' && authRequired && !isAuthed(req)) {
-        res.writeHead(302, { Location: '/login', ...securityHeaders(req, cfg) });
+      if (pathname === "/" && authRequired && !isAuthed(req)) {
+        res.writeHead(302, {
+          Location: "/login",
+          ...securityHeaders(req, cfg),
+        });
         return res.end();
       }
       // 变更类请求做来源校验
-      if (['POST', 'DELETE', 'PUT', 'PATCH'].includes(req.method) && !originAllowed(req, cfg)) {
-        return sendJson(req, res, cfg, 403, { error: '请求来源不被允许' });
+      if (
+        ["POST", "DELETE", "PUT", "PATCH"].includes(req.method) &&
+        !originAllowed(req, cfg)
+      ) {
+        return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
       }
 
-      if(pathname.startsWith('/api/')){
-        const app=await ready;
-        const context={...app,http:{json:(request,response,status,data)=>sendJson(request,response,cfg,status,data),readJson:readValidatedJsonBody,ip:request=>clientIp(request,cfg.server.trustProxy)}};
-        for(const [name,value] of Object.entries(securityHeaders(req,cfg)))res.setHeader(name,value);
-        if(await handleV2Request(req,res,context)||await handleV1Request(req,res,context))return;
+      if (pathname.startsWith("/api/")) {
+        const app = await ready;
+        const context = {
+          ...app,
+          http: {
+            json: (request, response, status, data) =>
+              sendJson(request, response, cfg, status, data),
+            readJson: readValidatedJsonBody,
+            ip: (request) => clientIp(request, cfg.server.trustProxy),
+          },
+        };
+        for (const [name, value] of Object.entries(securityHeaders(req, cfg)))
+          res.setHeader(name, value);
+        if (
+          (await handleV2Request(req, res, context)) ||
+          (await handleV1Request(req, res, context))
+        )
+          return;
       }
 
       /* ---------------- 静态资源 ---------------- */
-      if (pathname.startsWith('/api/')) {
-        return sendJson(req, res, cfg, 404, { error: `未知接口 ${req.method} ${pathname}` });
+      if (pathname.startsWith("/api/")) {
+        return sendJson(req, res, cfg, 404, {
+          error: `未知接口 ${req.method} ${pathname}`,
+        });
       }
-      if (req.method === 'GET' || req.method === 'HEAD') {
+      if (req.method === "GET" || req.method === "HEAD") {
         return serveStatic(req, res, cfg, pathname);
       }
 
-      return sendJson(req, res, cfg, 404, { error: '未知接口' });
+      return sendJson(req, res, cfg, 404, { error: "未知接口" });
     } catch (e) {
       if (!res.headersSent) {
-        const storage=/ENOSPC|EACCES|EPERM|EROFS/.test(e.code||'');
-        const status=e.status||(/not found|未找到|does not exist/i.test(e.message)?404:/Invalid|Private|Missing|forbidden|required|referenced|mismatch/i.test(e.message)?400:500);
-        sendJson(req, res, cfg, status, { error: storage?'存储写入失败':e.message || String(e) });
+        const storage = /ENOSPC|EACCES|EPERM|EROFS/.test(e.code || "");
+        const status =
+          e.status ||
+          (/not found|未找到|does not exist/i.test(e.message)
+            ? 404
+            : /Invalid|Private|Missing|forbidden|required|referenced|mismatch/i.test(
+                  e.message,
+                )
+              ? 400
+              : 500);
+        sendJson(req, res, cfg, status, {
+          error: storage ? "存储写入失败" : e.message || String(e),
+        });
       } else {
         try {
           res.end();
@@ -373,7 +493,9 @@ export function createServer(cfg, {dataDir=process.env.RJR_DATA_DIR||DATA_ROOT, 
 }
 
 /* ------------------------------ 启动 ------------------------------ */
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain =
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 /**
  * 启动服务。抽成函数是为了让 start-public.mjs 等启动器也能复用，
@@ -387,57 +509,75 @@ export function startServer() {
   try {
     ctx = createServer(cfg);
   } catch (e) {
-    console.error('\n  ✖ 启动被拒绝\n');
-    console.error('  ' + e.message.split('\n').join('\n  '));
-    console.error('');
+    console.error("\n  ✖ 启动被拒绝\n");
+    console.error("  " + e.message.split("\n").join("\n  "));
+    console.error("");
     process.exit(1);
   }
 
   const { server, gate, authRequired, exposure } = ctx;
   const port = Number(process.env.PORT) || cfg.server.port || 3210;
-  const host = cfg.server.host || '127.0.0.1';
+  const host = cfg.server.host || "127.0.0.1";
 
   server.listen(port, host, () => {
-    const shown = cfg.server.publicUrl || `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`;
-    console.log('');
-    console.log('  ┌──────────────────────────────────────────────┐');
-    console.log('  │   简历岗位雷达 · Resume Job Radar            │');
-    console.log('  └──────────────────────────────────────────────┘');
-    console.log('');
+    const shown =
+      cfg.server.publicUrl ||
+      `http://${host === "0.0.0.0" ? "localhost" : host}:${port}`;
+    console.log("");
+    console.log("  ┌──────────────────────────────────────────────┐");
+    console.log("  │   简历岗位雷达 · Resume Job Radar            │");
+    console.log("  └──────────────────────────────────────────────┘");
+    console.log("");
     console.log(`  访问地址：${shown}`);
     if (exposure.publicBind) {
       console.log(`  暴露范围：${host}（公网/局域网可达）`);
-      console.log(`  鉴权状态：${authRequired ? '已启用密码登录' : '⚠ 未启用（已由 ALLOW_PUBLIC_NO_AUTH 显式放行）'}`);
-      console.log(`  配额限制：并发 ${gate.maxConcurrent}，每日全站 ${gate.dailyGlobal} 次 / 每 IP ${gate.dailyPerIp} 次`);
-      if (cfg.server.trustProxy) console.log('  代理信任：已开启（按 X-Forwarded-For 识别访客 IP）');
-      else console.log('  代理信任：未开启（若部署在 nginx/Caddy 之后请设置 TRUST_PROXY=1，否则所有访客会被当成同一个 IP）');
+      console.log(
+        `  鉴权状态：${authRequired ? "已启用密码登录" : "⚠ 未启用（已由 ALLOW_PUBLIC_NO_AUTH 显式放行）"}`,
+      );
+      console.log(
+        `  配额限制：并发 ${gate.maxConcurrent}，每日全站 ${gate.dailyGlobal} 次 / 每 IP ${gate.dailyPerIp} 次`,
+      );
+      if (cfg.server.trustProxy)
+        console.log("  代理信任：已开启（按 X-Forwarded-For 识别访客 IP）");
+      else
+        console.log(
+          "  代理信任：未开启（若部署在 nginx/Caddy 之后请设置 TRUST_PROXY=1，否则所有访客会被当成同一个 IP）",
+        );
     } else {
-      console.log('  暴露范围：仅本机');
-      console.log(`  鉴权状态：${authRequired ? '已启用密码登录' : '未启用（本地自用模式，auth.mode 可为 "none" 或留空口令）'}`);
+      console.log("  暴露范围：仅本机");
+      console.log(
+        `  鉴权状态：${authRequired ? "已启用密码登录" : '未启用（本地自用模式，auth.mode 可为 "none" 或留空口令）'}`,
+      );
     }
-    console.log(`  DeepSeek：${cfg.deepseek.apiKey ? `已配置（${cfg.deepseek.model}，来源 ${cfg.__deepseekKeySource}）` : '未配置（将使用离线规则模式）'}`);
-    console.log(`  全网搜索：${cfg.__activeSearchProvider || '未配置（仅使用智联/实习僧直连）'}`);
-    console.log('');
-    console.log('  按 Ctrl+C 停止服务');
-    console.log('');
+    console.log(
+      `  DeepSeek：${cfg.deepseek.apiKey ? `已配置（${cfg.deepseek.model}，来源 ${cfg.__deepseekKeySource}）` : "未配置（将使用离线规则模式）"}`,
+    );
+    console.log(
+      `  全网搜索：${cfg.__activeSearchProvider || "未配置（仅使用智联/实习僧直连）"}`,
+    );
+    console.log("");
+    console.log("  按 Ctrl+C 停止服务");
+    console.log("");
   });
 
-  server.on('error', (e) => {
-    if (e.code === 'EADDRINUSE') {
-      console.error(`\n  端口 ${port} 已被占用。请设置环境变量 PORT 换一个端口，例如：\n    set PORT=3211 && npm start\n`);
+  server.on("error", (e) => {
+    if (e.code === "EADDRINUSE") {
+      console.error(
+        `\n  端口 ${port} 已被占用。请设置环境变量 PORT 换一个端口，例如：\n    set PORT=3211 && npm start\n`,
+      );
     } else {
-      console.error('\n  服务启动失败：', e.message, '\n');
+      console.error("\n  服务启动失败：", e.message, "\n");
     }
     process.exit(1);
   });
 
   const shutdown = () => {
-    console.log('\n  正在关闭服务…');
+    console.log("\n  正在关闭服务…");
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   return { server, cfg, ctx };
 }

@@ -1,2 +1,26 @@
-export const ROUTES=['/workbench','/jobs','/applications','/profiles','/settings'];
-export function createRouter({window=globalThis.window,onRoute}){const read=()=>{const path=window.location.hash.slice(1);onRoute(ROUTES.includes(path)?path:'/workbench');};return {start(){window.addEventListener('hashchange',read);read();},navigate(path){window.location.hash='#'+(ROUTES.includes(path)?path:'/workbench');},stop(){window.removeEventListener('hashchange',read);}};}
+export const ROUTES = [
+  "/workbench",
+  "/jobs",
+  "/applications",
+  "/profiles",
+  "/settings",
+];
+export function createRouter({ window = globalThis.window, onRoute }) {
+  const read = () => {
+    const path = window.location.hash.slice(1);
+    onRoute(ROUTES.includes(path) ? path : "/workbench");
+  };
+  return {
+    start() {
+      window.addEventListener("hashchange", read);
+      read();
+    },
+    navigate(path) {
+      window.location.hash =
+        "#" + (ROUTES.includes(path) ? path : "/workbench");
+    },
+    stop() {
+      window.removeEventListener("hashchange", read);
+    },
+  };
+}

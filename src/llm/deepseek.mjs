@@ -1,125 +1,27 @@
-// DeepSeek 客户端：JSON 模式、重试、并发限制、用量统计
-import { pool, sleep } from '../util/text.mjs';
-
-export class DeepSeekError extends Error {
-  constructor(message, { status, body } = {}) {
-    super(message);
-    this.name = 'DeepSeekError';
-    this.status = status;
-    this.body = body;
-  }
-}
-
+import {pool} from '../util/text.mjs';
+import {setTimeout as delay} from 'node:timers/promises';
+import {createModelBudget} from './budget.mjs';
+export class DeepSeekError extends Error {constructor(message,{status,body}={}){super(message);this.name='DeepSeekError';this.status=status;this.body=body;}}
 export class DeepSeek {
-  constructor(cfg) {
-    this.apiKey = cfg.deepseek.apiKey;
-    this.baseUrl = (cfg.deepseek.baseUrl || 'https://api.deepseek.com').replace(/\/$/, '');
-    this.model = cfg.deepseek.model || 'deepseek-chat';
-    this.concurrency = Math.max(1, Number(cfg.deepseek.concurrency) || 4);
-    this.timeoutMs = Number(cfg.deepseek.timeoutMs) || 120000;
-    this.usage = { calls: 0, promptTokens: 0, completionTokens: 0, failures: 0 };
-    this._noJsonMode = false;
+ constructor(cfg,{signal,budget=createModelBudget(),transport=globalThis.fetch,retryDelayMs}={}){const c=cfg.deepseek||{};this.apiKey=c.apiKey;this.baseUrl=(c.baseUrl||'https://api.deepseek.com').replace(/\/$/,'');this.model=c.model||'deepseek-chat';this.concurrency=Math.max(1,Number(c.concurrency)||4);this.timeoutMs=Number(c.timeoutMs)||120000;this.signal=signal;this.budget=budget;this.transport=transport;this.retryDelayMs=retryDelayMs;this.usage={calls:0,promptTokens:0,completionTokens:0,failures:0};this._noJsonMode=false;}
+ get available(){return Boolean(this.apiKey);}
+ assertAvailable(){if(!this.available)throw new DeepSeekError('未配置模型 API Key。');}
+ async _request(messages,{temperature=0.2,maxTokens=4000,json=false,retries=3,signal}={}){
+  this.assertAvailable();const combined=[this.signal,signal].filter(Boolean);const caller=combined.length?AbortSignal.any(combined):undefined;let lastError;const limit=Math.max(0,Math.min(3,Number(retries)||0));
+  for(let attempt=0;attempt<=limit;attempt++){
+   caller?.throwIfAborted();this.budget.claimRequest();const body={model:this.model,messages,temperature,max_tokens:Math.max(1,Math.min(Number(maxTokens)||4000,this.budget.snapshot().maxOutputTokens)),stream:false};if(json&&!this._noJsonMode)body.response_format={type:'json_object'};
+   let retry=false;
+   try{const requestSignal=AbortSignal.any([...(caller?[caller]:[]),AbortSignal.timeout(this.timeoutMs)]);const response=await this.transport(this.baseUrl+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+this.apiKey},body:JSON.stringify(body),signal:requestSignal});
+    if(!response.ok){const text=await response.text().catch(()=>'');if(json&&!this._noJsonMode&&response.status===400&&/response_format|json_object/i.test(text)){this._noJsonMode=true;attempt--;continue;}const error=new DeepSeekError('模型 HTTP '+response.status,{status:response.status});if(response.status!==429&&response.status<500)throw error;lastError=error;retry=true;}
+    else{const data=await response.json();this.usage.calls++;this.usage.promptTokens+=data.usage?.prompt_tokens||0;this.usage.completionTokens+=data.usage?.completion_tokens||0;const content=data.choices?.[0]?.message?.content;if(content)return {content,finish:data.choices[0].finish_reason,raw:data};lastError=new DeepSeekError('模型返回空内容');retry=true;}
+   }catch(error){if(caller?.aborted||error.name==='AbortError'||error.code==='model_budget_exhausted')throw error;if(error instanceof DeepSeekError&&error.status&&error.status!==429&&error.status<500)throw error;lastError=error;retry=true;}
+   if(retry&&attempt<limit)await delay(this.retryDelayMs??Math.min(20000,1000*2**attempt),undefined,{signal:caller});
   }
-
-  get available() {
-    return Boolean(this.apiKey);
-  }
-
-  assertAvailable() {
-    if (!this.available) {
-      throw new DeepSeekError(
-        '未配置 DeepSeek API Key。请在 config.json 的 deepseek.apiKey 填入密钥，或设置环境变量 DEEPSEEK_API_KEY。',
-      );
-    }
-  }
-
-  async _request(messages, { temperature = 0.2, maxTokens = 4000, json = false, retries = 3 } = {}) {
-    this.assertAvailable();
-    let lastErr;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      const body = {
-        model: this.model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        stream: false,
-      };
-      if (json && !this._noJsonMode) body.response_format = { type: 'json_object' };
-
-      try {
-        const res = await fetch(`${this.baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(this.timeoutMs),
-        });
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          // 某些模型不支持 response_format：降级重试一次
-          if (json && !this._noJsonMode && res.status === 400 && /response_format|json_object/i.test(text)) {
-            this._noJsonMode = true;
-            attempt--;
-            continue;
-          }
-          // 限流 / 服务端错误 → 退避重试
-          if (res.status === 429 || res.status >= 500) {
-            lastErr = new DeepSeekError(`DeepSeek 返回 ${res.status}`, { status: res.status, body: text.slice(0, 500) });
-            await sleep(Math.min(20000, 1200 * 2 ** attempt) + Math.random() * 500);
-            continue;
-          }
-          throw new DeepSeekError(`DeepSeek 返回 ${res.status}: ${text.slice(0, 300)}`, { status: res.status, body: text.slice(0, 800) });
-        }
-
-        const data = await res.json();
-        this.usage.calls++;
-        if (data.usage) {
-          this.usage.promptTokens += data.usage.prompt_tokens || 0;
-          this.usage.completionTokens += data.usage.completion_tokens || 0;
-        }
-        const content = data.choices?.[0]?.message?.content ?? '';
-        const finish = data.choices?.[0]?.finish_reason;
-        if (!content) {
-          lastErr = new DeepSeekError(`DeepSeek 返回空内容 (finish_reason=${finish})`);
-          await sleep(800 * (attempt + 1));
-          continue;
-        }
-        return { content, finish, raw: data };
-      } catch (e) {
-        if (e instanceof DeepSeekError && e.status && e.status !== 429 && e.status < 500) throw e;
-        lastErr = e;
-        if (attempt < retries) {
-          await sleep(Math.min(20000, 1000 * 2 ** attempt) + Math.random() * 400);
-          continue;
-        }
-      }
-    }
-    this.usage.failures++;
-    throw lastErr || new DeepSeekError('DeepSeek 调用失败（已重试）');
-  }
-
-  /** 纯文本补全 */
-  async chat(system, user, opts = {}) {
-    const messages = [];
-    if (system) messages.push({ role: 'system', content: system });
-    messages.push({ role: 'user', content: user });
-    const { content } = await this._request(messages, opts);
-    return content;
-  }
-
-  /** JSON 补全：自动从 ```json 围栏或多余文本中提取对象/数组 */
-  async chatJson(system, user, opts = {}) {
-    const content = await this.chat(system, user, { ...opts, json: true });
-    return parseJsonLoose(content);
-  }
-
-  /** 批量并发执行（受限并发） */
-  async mapPool(items, worker) {
-    return pool(items, this.concurrency, worker);
-  }
+  this.usage.failures++;throw lastError||new DeepSeekError('模型调用失败');
+ }
+ async chat(system,user,opts={}){const messages=[];if(system)messages.push({role:'system',content:system});messages.push({role:'user',content:user});return (await this._request(messages,opts)).content;}
+ async chatJson(system,user,opts={}){const content=await this.chat(system,user,{...opts,json:true});try{return parseJsonLoose(content);}catch{if(opts.repair===false)throw new DeepSeekError('模型 JSON 格式无效');const repaired=await this.chat('将输入转换为有效JSON，不添加或改写事实；只输出JSON。',String(content).slice(0,30000),{...opts,json:true,retries:0});try{return parseJsonLoose(repaired);}catch{throw new DeepSeekError('模型 JSON 格式修复失败');}}}
+ async mapPool(items,worker){return pool(items,this.concurrency,worker);}
 }
 
 /** 宽松 JSON 解析：容忍围栏、前后缀说明文字、尾随逗号 */

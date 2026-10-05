@@ -100,13 +100,13 @@ export function normalizeProfile(raw = {}) {
 }
 
 /** 调用 LLM 分析简历 */
-export async function analyzeResume(llm, resumeText, { log = () => {} } = {}) {
+export async function analyzeResume(llm, resumeText, { log = () => {}, signal } = {}) {
   const text = resumeText.length > 12000 ? resumeText.slice(0, 12000) + '\n…（简历过长已截断）' : resumeText;
   log('正在调用 DeepSeek 解析简历画像…');
   const raw = await llm.chatJson(
     SYSTEM,
     `请分析下面这份大学生简历，输出如下结构的 JSON：\n${SCHEMA_HINT}\n\n=== 简历原文开始 ===\n${text}\n=== 简历原文结束 ===`,
-    { temperature: 0.15, maxTokens: 3000 },
+    { temperature: 0.15, maxTokens: 3000, signal },
   );
   const profile = normalizeProfile(raw);
   log(`画像提取完成：${profile.targetRoles.join('、') || '未识别目标岗位'}；关键词 ${profile.keywords.length} 个`);

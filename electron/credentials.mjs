@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { assertInput } from "../public/js/validation-rules.js";
 import path from "node:path";
 import { writeAtomicJson } from "../src/infrastructure/storage/atomic.mjs";
 export function createCredentialService({ dataDir, safeStorage }) {
@@ -30,13 +31,7 @@ export function createCredentialService({ dataDir, safeStorage }) {
     available,
     async save(provider, key) {
       validate(provider);
-      if (
-        typeof key !== "string" ||
-        key.length < 16 ||
-        key.length > 512 ||
-        /[\r\n]/.test(key)
-      )
-        throw Error("Invalid credential length");
+      assertInput("key", { userApiKey: key }, { required: true });
       if (!available()) throw Error("OS encryption unavailable");
       return mutate(async () => {
         const data = await read();

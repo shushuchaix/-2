@@ -1,4 +1,5 @@
 import { validatePublicUrl } from "../infrastructure/http/public-url.mjs";
+import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
@@ -55,7 +56,16 @@ export function createSourceService({
       return result;
     },
     async saveSourceConfig(input) {
-      if (!registry.get(input.sourceId)) throw Error("Source not found");
+      if (!registry.get(input.sourceId))
+        throw inputError({ sourceId: "招聘来源已不存在，请刷新后重新选择。" });
+      assertInput("sourceConfig", input.config || {});
+      const schema = registry.get(input.sourceId).configSchema;
+      for (const [key, value] of Object.entries(input.config || {})) {
+        if (!Object.hasOwn(schema, key))
+          throw inputError({ [key]: "此来源不支持该设置项。" });
+        if (typeof value !== schema[key])
+          throw inputError({ [key]: "设置格式不正确，请按该来源的要求填写。" });
+      }
       const config = redactBusiness(input.config || {});
       return (
         await repository.mutateWorkspace((w) => {
@@ -65,14 +75,23 @@ export function createSourceService({
       ).result;
     },
     async addSite(input) {
+      assertInput("site", input, {
+        sourceIds: registry.list().map((p) => p.id),
+      });
       if (
         !registry.get(input.providerId) ||
         !input.siteId ||
         !input.evidenceUrl
       )
         throw Error("Site provider and ownership evidence required");
-      validatePublicUrl(input.origin);
-      validatePublicUrl(input.evidenceUrl);
+      for (const key of ["origin", "evidenceUrl"])
+        try {
+          validatePublicUrl(input[key]);
+        } catch {
+          throw inputError({
+            [key]: "请使用不含凭据、可公开访问的 HTTP 或 HTTPS 网址。",
+          });
+        }
       const site = {
         ...redactBusiness(input),
         status: "candidate",
@@ -82,8 +101,11 @@ export function createSourceService({
         try {
           loadSiteCatalog({ customSites: [...w.settings.customSites, site] });
         } catch (error) {
-          error.status = 400;
-          throw error;
+          throw inputError({
+            siteId: /Duplicate/.test(error.message)
+              ? "站点编号已存在，请换一个编号。"
+              : "站点资料检查未通过，请核对来源、名称和归属证据链接。",
+          });
         }
         w.settings.customSites.push(site);
       });

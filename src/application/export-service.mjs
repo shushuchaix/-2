@@ -1,8 +1,11 @@
 import { createJobService } from "./job-service.mjs";
+import { assertInput } from "../../public/js/validation-rules.js";
 import { redactBusiness, csvCell } from "../domain/redact.mjs";
 export function createExportService({ repository }) {
   return {
     async export({ format = "json", filters = {} } = {}) {
+      assertInput("export", { format: format === "markdown" ? "md" : format });
+      assertInput("filters", filters);
       if (format === "md") format = "markdown";
       const snapshot = await repository.read();
       const service = createJobService({

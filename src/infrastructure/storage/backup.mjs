@@ -54,9 +54,8 @@ export async function createBackup({ repository, clock = repository.clock }) {
   await writeAtomicJson(filename, { manifest, workspace, runSnapshots });
   return { path: filename, manifest };
 }
-export async function restoreBackup({ repository, archivePath }) {
-  const archive = JSON.parse(await fs.readFile(archivePath, "utf8"));
-  if (archive.manifest?.version !== 1)
+export function validateBackupArchive(archive) {
+  if (archive?.manifest?.version !== 1)
     throw Error("Unsupported backup manifest");
   assertWorkspace(archive.workspace);
   if (contentHash(archive.workspace) !== archive.manifest.workspaceHash)
@@ -76,6 +75,13 @@ export async function restoreBackup({ repository, archivePath }) {
       )
         throw Error("Invalid snapshot reference/hash");
     }
+  return archive;
+}
+export async function restoreBackup({ repository, archivePath }) {
+  const archive = validateBackupArchive(
+    JSON.parse(await fs.readFile(archivePath, "utf8")),
+  );
+  const snapshots = archive.runSnapshots || {};
   await createBackup({ repository });
   for (const [id, snapshot] of Object.entries(snapshots))
     await repository.writeRunSnapshot(id, snapshot);

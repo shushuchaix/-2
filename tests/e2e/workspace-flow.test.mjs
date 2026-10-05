@@ -37,7 +37,15 @@ test("personal workflow survives restart and exports human records in Markdown",
     }),
     context = await f.ctx.ready,
     result = await context.runService.waitForRun(started.data.runId);
-  assert.equal(result.run.status, "partial");
+  assert.equal(
+    result.run.status,
+    "partial",
+    JSON.stringify({
+      issues: result.run.issues,
+      coverage: result.run.coverage,
+      counts: result.run.counts,
+    }),
+  );
   const jobs = await f.call("/api/v2/jobs");
   assert.equal(jobs.data.total, 1);
   const id = jobs.data.items[0].jobId;

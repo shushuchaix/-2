@@ -1,6 +1,7 @@
 // 本地 Web 服务：静态页面 + NDJSON 流式 API + 结果持久化/导出
 // 公网部署形态：密码登录鉴权 + 安全响应头 + 并发与每日配额闸门
 import http from "node:http";
+import { assertInput } from "../public/js/validation-rules.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -298,9 +299,8 @@ export function createServer(
         }
 
         const body = await readJsonBody(req);
-        const password = String(body.password || "");
-        if (!password)
-          return sendJson(req, res, cfg, 400, { error: "请输入访问密码" });
+        assertInput("login", body);
+        const password = body.password;
 
         if (!verifyPassword(password, passwordHash)) {
           const lockedUntil = loginGuard.fail(ip);
@@ -308,6 +308,10 @@ export function createServer(
             ? 0
             : Math.max(0, (Number(cfg.auth.maxLoginFails) || 5) - 1);
           return sendJson(req, res, cfg, 401, {
+            code: "authentication_failed",
+            fieldErrors: lockedUntil
+              ? undefined
+              : { password: "访问密码不正确，请核对后重试。" },
             error: lockedUntil
               ? "密码错误次数过多，账号已临时锁定"
               : `密码错误${left ? `，还可尝试 ${left} 次` : ""}`,
@@ -480,7 +484,19 @@ export function createServer(
               ? 400
               : 500);
         sendJson(req, res, cfg, status, {
-          error: storage ? "存储写入失败" : e.message || String(e),
+          error: storage
+            ? "存储写入失败，请检查可用空间和目录写入权限后重试。"
+            : status >= 500
+              ? "服务处理失败，请稍后重试；如持续出现，请提供错误编号。"
+              : e.message || "请求未通过检查。",
+          code: storage
+            ? "storage_write_failed"
+            : status >= 500
+              ? "system_error"
+              : e.code || "request_failed",
+          ...(e.fieldErrors && status < 500
+            ? { fieldErrors: e.fieldErrors }
+            : {}),
         });
       } else {
         try {

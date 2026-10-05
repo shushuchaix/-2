@@ -1,4 +1,5 @@
 import { APPLICATION_STATUSES } from "../domain/contracts.mjs";
+import { assertInput, inputError } from "../../public/js/validation-rules.js";
 export function invalid(message, status = 400) {
   const error = Error(message);
   error.status = status;
@@ -56,13 +57,7 @@ export function filters(params) {
   for (const key of ["page", "pageSize"])
     if (params.has(key)) {
       const raw = params.get(key);
-      if (
-        !/^[1-9]\d*$/.test(raw) ||
-        !Number.isSafeInteger(Number(raw)) ||
-        (key === "pageSize" && Number(raw) > 200)
-      )
-        invalid("Invalid pagination");
-      result[key] = Number(raw);
+      result[key] = raw;
     }
   for (const key of [
     "search",
@@ -75,34 +70,20 @@ export function filters(params) {
     "recommendation",
   ])
     if (params.has(key)) result[key] = params.get(key);
-  if (result.search?.length > 2000) invalid("Search too long");
-  if (result.status && !APPLICATION_STATUSES.includes(result.status))
-    invalid("Invalid application status");
-  if (
-    result.kind &&
-    !["job", "recruitment_notice", "company_campaign"].includes(result.kind)
-  )
-    invalid("Invalid kind");
-  if (
-    result.qualification &&
-    !["pass", "fail", "unknown"].includes(result.qualification)
-  )
-    invalid("Invalid qualification");
-  if (params.has("since")) result.since = date(params.get("since"));
+  if (params.has("since")) result.since = params.get("since");
   if (params.has("cities"))
     result.cities = params
       .get("cities")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+  assertInput("filters", result);
+  for (const key of ["page", "pageSize"])
+    if (Object.hasOwn(result, key)) result[key] = Number(result[key]);
   return result;
 }
 export function applicationPatch(input) {
-  object(input);
-  for (const key of ["appliedAt", "followUpAt"])
-    if (Object.hasOwn(input, key)) date(input[key]);
-  if (input.resumeRevisionId !== undefined && input.resumeRevisionId !== null)
-    identifier(input.resumeRevisionId, { revision: true });
+  assertInput("application", input);
   return input;
 }
 export async function readJsonBody(req, limit = 40 * 1024 * 1024) {
@@ -139,10 +120,10 @@ export async function readJsonBody(req, limit = 40 * 1024 * 1024) {
   return object(value);
 }
 export function userCredentials(input, cfg) {
-  const key = String(input.userApiKey || "").trim();
+  assertInput("key", { userApiKey: input.userApiKey });
+  const key = input.userApiKey || "";
   if (key) {
     if (!cfg.deepseek.allowUserKey) invalid("本站不允许使用自带API Key", 403);
-    if (!/^sk-[A-Za-z0-9_-]{16,}$/.test(key)) invalid("自带API Key格式不正确");
   }
   return key ? { userApiKey: key } : {};
 }

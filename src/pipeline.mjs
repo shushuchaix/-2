@@ -127,7 +127,10 @@ export async function createLegacyRunInput({
         )
         .map(([id]) => id)
     : [];
-  const sourceIds = options.sourceIds || [...oldSelected, ...extra];
+  const sourceIds = options.sourceIds || [
+    ...oldSelected.filter((id) => context.registry.get(id)),
+    ...extra,
+  ];
   const saved = await context.workspaceService.saveProfile({
     text,
     profile: {

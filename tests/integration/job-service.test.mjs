@@ -21,8 +21,14 @@ test("recollection retains application history and empty note clears", async (t)
   await s.updateApplication(id, { note: "" });
   assert.equal((await s.getJob(id)).application.note, "");
   assert.equal((await s.getJob(id)).application.events.length, 3);
-  await assert.rejects(s.updateApplication(id, { status: "bad" }), /status/i);
-  await assert.rejects(s.updateApplication(id, { followUpAt: "bad" }), /date/i);
+  await assert.rejects(
+    s.updateApplication(id, { status: "bad" }),
+    (e) => e.status === 400 && !!e.fieldErrors.status,
+  );
+  await assert.rejects(
+    s.updateApplication(id, { followUpAt: "bad" }),
+    (e) => e.status === 400 && !!e.fieldErrors.followUpAt,
+  );
 });
 test("conflicting identities retain both records and manual links never merge them", async (t) => {
   const repository = await tempRepository(t),

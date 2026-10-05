@@ -1,11 +1,12 @@
 import { readAllJobs } from "../jobs-data.js";
-import { el, button, latest } from "../components/dom.js";
+import { el, button, latest, field } from "../components/dom.js";
 import { feedback } from "../components/feedback.js";
 import { runProgress } from "../components/run-progress.js";
 import { renderJobList } from "../components/job-list.js";
 import { openJobDetail } from "../components/job-detail.js";
 import { temporaryCredentials } from "../credentials.js";
 import { localDate } from "../format.js";
+import { bindValidation } from "../components/form-validation.js";
 const terminal = new Set([
   "completed",
   "partial",
@@ -30,7 +31,8 @@ export function mountWorkbenchPage({ root, api, store }) {
     stats = el(d, "div", { className: "stats" }),
     progress = el(d, "section", { className: "card" }),
     jobs = el(d, "section", { className: "stack" }),
-    history = el(d, "section", { className: "card" });
+    history = el(d, "section", { className: "card" }),
+    toolbar = el(d, "form", { className: "card toolbar" });
   const temporaryKey = el(d, "input", {
     type: "password",
     autocomplete: "off",
@@ -39,6 +41,7 @@ export function mountWorkbenchPage({ root, api, store }) {
   });
   let targets = [],
     destroyed = false,
+    starting = false,
     streamController,
     runId,
     dialog,
@@ -48,18 +51,16 @@ export function mountWorkbenchPage({ root, api, store }) {
       d,
       "更新招聘来源",
       async () => {
+        if (starting || start.disabled || !validation.check()) return;
         const targetRevisionId = select.value;
+        const body = runValues();
+        starting = true;
         start.disabled = true;
+        status.show("");
         try {
           const run = await api.request("/runs", {
             method: "POST",
-            body: {
-              targetRevisionId,
-              mode: mode.value,
-              ...(temporaryKey.value
-                ? { userApiKey: temporaryKey.value }
-                : temporaryCredentials.get()),
-            },
+            body,
           });
           temporaryKey.value = "";
           if (destroyed || select.value !== targetRevisionId) return;
@@ -68,8 +69,10 @@ export function mountWorkbenchPage({ root, api, store }) {
           void connect(runId);
         } catch (e) {
           if (destroyed || select.value !== targetRevisionId) return;
-          status.show(e.message, true);
+          validation.show(e);
           start.disabled = false;
+        } finally {
+          starting = false;
         }
       },
       { className: "primary", id: "startRun" },
@@ -105,16 +108,7 @@ export function mountWorkbenchPage({ root, api, store }) {
       ),
     ),
     status.node,
-    el(
-      d,
-      "section",
-      { className: "card toolbar" },
-      select,
-      mode,
-      temporaryKey,
-      start,
-      cancel,
-    ),
+    toolbar,
     stats,
     el(
       d,
@@ -124,6 +118,48 @@ export function mountWorkbenchPage({ root, api, store }) {
       jobs,
     ),
   );
+  toolbar.append(
+    field(d, "当前检索目标", select, "必选；使用已保存且启用的检索目标。"),
+    field(
+      d,
+      "评价模式",
+      mode,
+      "规则模式无需 Key；模型辅助使用已配置密钥或本次临时 Key。",
+    ),
+    field(
+      d,
+      "本次更新临时模型密钥",
+      temporaryKey,
+      "可空，使用已配置密钥；最多 512 字符，不含空白或换行，支持兼容服务商 Key。规则模式不发送密钥。",
+    ),
+    start,
+    cancel,
+  );
+  const runValues = () => ({
+    targetRevisionId: select.value,
+    mode: mode.value,
+    ...(mode.value === "rules"
+      ? {}
+      : temporaryKey.value
+        ? { userApiKey: temporaryKey.value }
+        : temporaryCredentials.get()),
+  });
+  const validation = bindValidation(toolbar, {
+    kind: "run",
+    fields: { targetRevisionId: select, mode, userApiKey: temporaryKey },
+    values: runValues,
+    options: () => ({ targetRevisionIds: targets.map((t) => t.revisionId) }),
+  });
+  const updateMode = () => {
+    temporaryKey.disabled = mode.value === "rules";
+    validation.clear();
+  };
+  mode.addEventListener("change", updateMode);
+  updateMode();
+  toolbar.addEventListener("submit", (e) => {
+    e.preventDefault();
+    start.click();
+  });
   async function loadJobs() {
     const request = ++loading;
     try {

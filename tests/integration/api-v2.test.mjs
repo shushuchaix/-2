@@ -16,7 +16,7 @@ test("v2 creates real revisions persistent run jobs applications and business ba
   const f = await apiFixture(t),
     p = await f.call("/api/v2/profiles", {
       profile: profile(),
-      text: "合成确认画像",
+      text: "合成确认画像：本科软件工程专业，掌握 Java 开发，拥有项目经验，期望北京工作。",
     });
   assert.equal(p.response.status, 201);
   const tar = await f.call("/api/v2/targets", {

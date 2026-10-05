@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { parseHTML } from "linkedom";
 import { validatePublicUrl } from "../infrastructure/http/public-url.mjs";
 import { htmlToText } from "../util/html.mjs";
@@ -24,7 +25,15 @@ export function createImportService({
 }) {
   return {
     async import(input) {
-      const url = input.url ? validatePublicUrl(input.url) : null;
+      assertInput("import", input);
+      let url = null;
+      try {
+        url = input.url ? validatePublicUrl(input.url) : null;
+      } catch {
+        throw inputError({
+          url: "招聘链接需为公开的 HTTP 或 HTTPS 网址，不能包含凭据或内网地址。",
+        });
+      }
       const network = platform(url);
       let text = String(input.text || "").trim(),
         title = input.title?.trim();
@@ -58,7 +67,9 @@ export function createImportService({
         );
       }
       if (!text || text.length > 60000)
-        throw Error("Import text required, maximum 60000 characters");
+        throw inputError({
+          text: "未获得有效正文，或正文超过 60000 字符；请检查链接或直接粘贴正文。",
+        });
       title ||= text.split(/\r?\n/)[0].slice(0, 200);
       const at = new Date(clock.now()).toISOString();
       const record = baseRecord({

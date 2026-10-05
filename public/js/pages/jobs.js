@@ -14,6 +14,7 @@ export function mountJobsPage({ root, api, store }) {
     queryController,
     requestId = 0,
     filters = {},
+    activeFilters,
     page = 1,
     dialog;
   root.replaceChildren(
@@ -102,8 +103,10 @@ export function mountJobsPage({ root, api, store }) {
       );
       status.show("");
     } catch (e) {
-      if (!destroyed && e.name !== "AbortError")
+      if (!destroyed && id === requestId && e.name !== "AbortError") {
+        if (e.fieldErrors) activeFilters?.showError(e);
         status.show("读取失败：" + e.message, true);
+      }
     }
   }
   const ready = (async () => {
@@ -127,6 +130,7 @@ export function mountJobsPage({ root, api, store }) {
           void load();
         },
       });
+      activeFilters = f;
       f.target.value = store.getState().targetRevisionId || "";
       filters = f.values();
       filterRoot.replaceChildren(f.node);

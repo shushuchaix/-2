@@ -1,5 +1,10 @@
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import {
+  assertInput,
+  inputError,
+  isCalendarDate,
+} from "../../public/js/validation-rules.js";
+import {
   assertSourceRecord,
   APPLICATION_STATUSES,
 } from "../domain/contracts.mjs";
@@ -7,8 +12,7 @@ import { normalizeRecord } from "../domain/record.mjs";
 import { resolveJobIdentity, relateJobs } from "../domain/identity.mjs";
 import { deriveLifecycle } from "../domain/lifecycle.mjs";
 const date = (v) => {
-  if (typeof v !== "string" || !Number.isFinite(Date.parse(v)))
-    throw Error("Invalid date");
+  if (!isCalendarDate(v)) throw Error("Invalid date");
   return v;
 };
 export function resolveStoredJobId(w, id) {
@@ -278,6 +282,7 @@ export function createJobService({ repository, clock = repository.clock }) {
       ).result;
     },
     async queryJobs(filters = {}) {
+      assertInput("filters", filters);
       const w = await repository.read();
       let items = Object.values(w.jobs).map((job) => {
         const evaluations = Object.values(w.evaluations)
@@ -389,6 +394,7 @@ export function createJobService({ repository, clock = repository.clock }) {
       };
     },
     async listUnresolvedApplications(filters = {}) {
+      assertInput("filters", filters);
       const w = await repository.read();
       const items = Object.values(w.applications)
         .filter((a) => !w.jobs[a.jobId] && a.legacyJobIds?.length > 1)
@@ -424,6 +430,7 @@ export function createJobService({ repository, clock = repository.clock }) {
       };
     },
     async updateApplication(id, patch) {
+      assertInput("application", patch);
       return (
         await repository.mutateWorkspace((w) => {
           if (!(w.applications[id]?.legacyJobIds?.length > 1 && !w.jobs[id]))
@@ -463,7 +470,9 @@ export function createJobService({ repository, clock = repository.clock }) {
                   .flat()
                   .some((p) => p.revisionId === value)
               )
-                throw Error("Invalid resume revision");
+                throw inputError({
+                  resumeRevisionId: "简历版本已不存在，请重新选择。",
+                });
               if (current[key] !== value)
                 changes[key] = { from: current[key], to: value };
               current[key] = value;
@@ -480,11 +489,16 @@ export function createJobService({ repository, clock = repository.clock }) {
       ).result;
     },
     async linkJobs(a, b) {
+      assertInput("link", { jobId: b }, { selfId: a });
       return (
         await repository.mutateWorkspace((w) => {
           a = resolveStoredJobId(w, a);
-          b = resolveStoredJobId(w, b);
-          if (a === b) throw Error("Cannot link job to itself");
+          try {
+            b = resolveStoredJobId(w, b);
+          } catch {
+            throw inputError({ jobId: "未找到该岗位，请核对岗位编号。" });
+          }
+          if (a === b) throw inputError({ jobId: "不能将岗位关联到自身。" });
           group(w, a, b, true);
           return { linked: [a, b] };
         })

@@ -29,7 +29,7 @@ const APP_ROOT = path.resolve(
 );
 const IS_DEV = !app.isPackaged;
 const APP_TITLE = "简历岗位雷达";
-// 自检模式：只启动内置服务并断言关键行为，不创建窗口，便于自动化验证
+// 自检模式：使用隐藏窗口验证内置服务、真实渲染器和预加载桥接。
 const SELF_TEST = process.argv.includes("--self-test");
 if (SELF_TEST) {
   const isolated = path.join(resolveDataDir(), "electron-self-test-session");
@@ -319,6 +319,7 @@ async function runSelfTest() {
       width: 1440,
       height: 1000,
       webPreferences: {
+        backgroundThrottling: false,
         preload: path.join(APP_ROOT, "electron", "preload.cjs"),
         sandbox: true,
         contextIsolation: true,
@@ -386,6 +387,29 @@ async function runSelfTest() {
       }
       check("桌面页面 " + route, loaded);
     }
+    const validation = await mainWindow.webContents.executeJavaScript(`(()=>{
+      const budget=document.querySelector('input[type="number"]');
+      if(!budget) return {invalid:false,corrected:false};
+      budget.value='';
+      budget.closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+      return {invalid:budget.getAttribute('aria-invalid')==='true' && document.activeElement===budget && budget.value==='' && !!document.querySelector('.validation-summary:not([hidden])')};
+    })()`);
+    check("桌面填写错误提示、输入保留与聚焦", validation.invalid);
+    await mainWindow.webContents.executeJavaScript(
+      "new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
+    );
+    fs.writeFileSync(
+      path.join(dataDir, "desktop-validation.png"),
+      (await mainWindow.webContents.capturePage()).toPNG(),
+    );
+    check(
+      "桌面修改后清除字段错误",
+      await mainWindow.webContents.executeJavaScript(`(()=>{
+      const budget=document.querySelector('input[type="number"]');
+      budget.value='0';budget.dispatchEvent(new Event('input',{bubbles:true}));
+      return !budget.hasAttribute('aria-invalid') && budget.value==='0';
+    })()`),
+    );
     await mainWindow.webContents.executeJavaScript(
       "location.hash='#/workbench'",
     );
@@ -490,7 +514,15 @@ if (!gotLock) {
     try {
       await boot();
     } catch (e) {
-      if(SELF_TEST){console.error(e.stack);fs.writeFileSync(path.join(resolveDataDir(),'desktop-self-test.json'),JSON.stringify({failed:1,error:e.message,stack:e.stack}));app.exit(1);return;}
+      if (SELF_TEST) {
+        console.error(e.stack);
+        fs.writeFileSync(
+          path.join(resolveDataDir(), "desktop-self-test.json"),
+          JSON.stringify({ failed: 1, error: e.message, stack: e.stack }),
+        );
+        app.exit(1);
+        return;
+      }
       dialog.showErrorBox(
         "启动失败",
         `${e.message}\n\n如果是端口或文件权限问题，请尝试删除数据目录后重试：\n${resolveDataDir()}`,

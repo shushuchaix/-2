@@ -29,15 +29,24 @@ export function createApiClient({
 } = {}) {
   async function response(path, options = {}) {
     const { body, ...rest } = options;
-    const res = await fetchImpl("/api/v2" + path, {
-      ...rest,
-      credentials: "same-origin",
-      headers: {
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-        ...rest.headers,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let res;
+    try {
+      res = await fetchImpl("/api/v2" + path, {
+        ...rest,
+        credentials: "same-origin",
+        headers: {
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+          ...rest.headers,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (error) {
+      if (error.name === "AbortError" || rest.signal?.aborted) throw error;
+      throw Object.assign(
+        Error("连接失败，请检查网络或确认软件服务仍在运行后重试。"),
+        { code: "network_error" },
+      );
+    }
     if (!res.ok) {
       let data = {};
       try {
@@ -46,6 +55,24 @@ export function createApiClient({
       if (res.status === 401) onAuthRequired();
       const error = Error(data.error || "请求失败（" + res.status + "）");
       error.status = res.status;
+      error.code =
+        data.code ||
+        (res.status === 403
+          ? "permission_denied"
+          : res.status >= 500
+            ? "system_error"
+            : "request_failed");
+      if (
+        data.fieldErrors &&
+        typeof data.fieldErrors === "object" &&
+        !Array.isArray(data.fieldErrors)
+      )
+        error.fieldErrors = Object.fromEntries(
+          Object.entries(data.fieldErrors).filter(
+            ([k, v]) =>
+              k.length <= 160 && typeof v === "string" && v.length <= 2000,
+          ),
+        );
       throw error;
     }
     return res;

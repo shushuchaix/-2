@@ -386,7 +386,7 @@ try {
   r = await api('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ resumeText: '张三 本科 计算机 2026届 Java Spring Boot MySQL Redis 项目 实习', userApiKey: 'not-a-key' }),
+    body: JSON.stringify({ resumeText: '张三 本科 计算机 2026届 Java Spring Boot MySQL Redis 项目 实习', userApiKey: 'invalid key with spaces' }),
   });
   check('非法自带 Key 被拒绝', r.status === 400, `HTTP ${r.status}`);
 

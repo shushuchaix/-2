@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 const array = (v, name) => {
   if (!Array.isArray(v) || v.some((x) => typeof x !== "string" || !x.trim()))
@@ -11,6 +12,8 @@ export function legacyCityMode(cities) {
 export function createWorkspaceService({
   repository,
   clock = repository.clock,
+  sourceIds,
+  siteIds,
 }) {
   const now = () => new Date(clock.now()).toISOString();
   const revision = (w, key, id) =>
@@ -19,6 +22,7 @@ export function createWorkspaceService({
       .find((r) => r.revisionId === id) || null;
   return {
     async saveProfile(input) {
+      assertInput("profile", input, { partial: true });
       return (
         await repository.mutateWorkspace((w) => {
           const profileId = input.profileId || "p-" + randomUUID();
@@ -27,7 +31,6 @@ export function createWorkspaceService({
             ? Math.max(...list.map((r) => r.revision)) + 1
             : 1;
           const text = String(input.text || "");
-          if (text.length > 200000) throw Error("Profile text too large");
           const overrides = structuredClone(input.overrides || {});
           const profile = {
             ...structuredClone(input.profile || input),
@@ -52,10 +55,20 @@ export function createWorkspaceService({
       ).result;
     },
     async saveTarget(input) {
+      assertInput("target", input, { nativeTypes: true });
       return (
         await repository.mutateWorkspace((w) => {
+          assertInput("target", input, {
+            nativeTypes: true,
+            sourceIds:
+              typeof sourceIds === "function" ? sourceIds() : sourceIds,
+            siteIds: typeof siteIds === "function" ? siteIds(w) : siteIds,
+          });
           const profile = revision(w, "profiles", input.profileRevisionId);
-          if (!profile) throw Error("Profile revision does not exist");
+          if (!profile)
+            throw inputError({
+              profileRevisionId: "画像版本已不存在，请重新选择。",
+            });
           const targetId = input.targetId || "t-" + randomUUID();
           const list = w.targets[targetId] || [];
           const number = list.length
@@ -88,9 +101,6 @@ export function createWorkspaceService({
           if (!["standard", "broad"].includes(coverageMode))
             throw Error("Invalid coverage mode");
           const budgets = structuredClone(input.budgets || {});
-          for (const [k, v] of Object.entries(budgets))
-            if (!Number.isSafeInteger(v) || v < 1)
-              throw Error("Invalid budget " + k);
           const item = {
             targetId,
             revision: number,

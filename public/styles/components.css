@@ -86,6 +86,50 @@ textarea {
 .error {
   color: var(--danger);
 }
+.field-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+.validation-summary {
+  background: #fff4f4;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 15px;
+  overflow-wrap: anywhere;
+}
+.validation-summary p {
+  margin: 0 0 6px;
+}
+.validation-summary ul {
+  margin: 0;
+  padding-left: 22px;
+}
+.validation-summary button {
+  display: inline;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  text-align: left;
+  text-decoration: underline;
+}
+[hidden] {
+  display: none !important;
+}
 .job-title {
   font-size: 17px;
   color: var(--ink);

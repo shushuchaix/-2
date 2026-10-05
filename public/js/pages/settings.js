@@ -4,6 +4,7 @@ import { sourceTable } from "../components/source-table.js";
 import { modelSettings } from "../components/model-settings.js";
 import { backupPanel } from "../components/backup-panel.js";
 import { jobImport } from "../components/job-import.js";
+import { bindValidation } from "../components/form-validation.js";
 export function mountSettingsPage({ root, api, desktopBridge }) {
   const d = root.ownerDocument,
     status = feedback(d),
@@ -58,30 +59,77 @@ export function mountSettingsPage({ root, api, desktopBridge }) {
             { className: "muted" },
             "添加后先记为候选，只有取得有效详情样本才成为可用来源。",
           ),
-          field(d, "来源适配器", provider),
-          field(d, "站点 ID", siteId),
-          field(d, "站点名称", name),
-          field(d, "公开站点地址", origin),
-          field(d, "归属证据链接", evidence),
+          field(
+            d,
+            "来源适配器",
+            provider,
+            "必选；选择能解析此站点的招聘来源适配器。",
+          ),
+          field(
+            d,
+            "站点 ID",
+            siteId,
+            "必填且不能重复；字母、数字、下划线或短横线，最多 160 字符。",
+          ),
+          field(d, "站点名称", name, "必填；清晰的站点名称，最多 200 字符。"),
+          field(
+            d,
+            "公开站点地址",
+            origin,
+            "必填；公开 http(s) 地址，不含用户名或密码，不能指向本机或内网。",
+          ),
+          field(
+            d,
+            "归属证据链接",
+            evidence,
+            "必填；可证明站点归属的公开 http(s) 链接。",
+          ),
           el(d, "button", { type: "submit" }, "保存候选站点"),
         );
+      const values = () => ({
+        siteId: siteId.value.trim(),
+        name: name.value.trim(),
+        providerId: provider.value,
+        origin: origin.value.trim(),
+        evidenceUrl: evidence.value.trim(),
+        category: "custom",
+      });
+      const validation = bindValidation(custom, {
+        kind: "site",
+        fields: {
+          providerId: provider,
+          siteId,
+          name,
+          origin,
+          evidenceUrl: evidence,
+        },
+        values,
+        options: () => ({
+          sourceIds: catalog.sources.map((s) => s.sourceId),
+          siteIds: catalog.sites.map((s) => s.siteId),
+        }),
+      });
+      let saving = false;
       custom.addEventListener("submit", async (e) => {
         e.preventDefault();
+        if (saving || !validation.check()) return;
+        saving = true;
+        const save = custom.querySelector("button");
+        const site = values();
+        save.disabled = true;
+        status.show("");
         try {
           await api.request("/sources/sites", {
             method: "POST",
-            body: {
-              siteId: siteId.value,
-              name: name.value,
-              providerId: provider.value,
-              origin: origin.value,
-              evidenceUrl: evidence.value,
-              category: "custom",
-            },
+            body: site,
           });
+          catalog.sites.push(site);
           status.show("候选站点已保存，重新打开设置页检查。");
         } catch (e) {
-          status.show("保存失败：" + e.message, true);
+          validation.show(e);
+        } finally {
+          saving = false;
+          save.disabled = false;
         }
       });
       sourcesRoot.replaceChildren(

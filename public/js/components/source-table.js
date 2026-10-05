@@ -1,5 +1,6 @@
 import { el, button } from "./dom.js";
 import { formatDate } from "../format.js";
+import { bindValidation } from "./form-validation.js";
 const labels = {
   ready: "可自动采集",
   candidate: "目录候选，未验证正文",
@@ -14,20 +15,65 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
   for (const source of sources) {
     const sourceSites = sites.filter((s) => s.providerId === source.sourceId),
       checkbox = el(d, "input", {
+        id: "sourceEnabled-" + source.sourceId,
         type: "checkbox",
         checked: source.config?.enabled !== false,
+        "aria-describedby": "sourceHint-" + source.sourceId,
       });
-    checkbox.addEventListener("change", async () => {
+    const configForm = el(d, "form"),
+      save = el(d, "button", { type: "submit" }, "保存来源设置"),
+      stateMessage = el(d, "p", {
+        className: "feedback",
+        "aria-live": "polite",
+      });
+    configForm.append(
+      el(d, "label", { className: "inline-check" }, checkbox, "启用此来源"),
+      el(
+        d,
+        "small",
+        { id: "sourceHint-" + source.sourceId },
+        "修改后自动保存；若失败，勾选会保留，可点击按钮重试。",
+      ),
+      save,
+      stateMessage,
+    );
+    const validation = bindValidation(configForm, {
+      kind: "sourceConfig",
+      fields: { enabled: checkbox },
+      values: () => ({ enabled: checkbox.checked }),
+      options: () => ({ sourceId: source.sourceId }),
+    });
+    async function saveConfig() {
+      if (save.disabled || !validation.check()) return;
+      save.disabled = true;
+      checkbox.disabled = true;
+      stateMessage.textContent = "正在保存来源设置…";
+      stateMessage.className = "feedback";
       try {
+        const config = { ...source.config, enabled: checkbox.checked };
         await api.request("/sources/" + source.sourceId + "/settings", {
           method: "PUT",
-          body: { config: { ...source.config, enabled: checkbox.checked } },
+          body: { config },
         });
+        source.config = config;
+        validation.clear();
+        stateMessage.textContent = "来源设置已保存";
         status.show("来源设置已保存");
       } catch (e) {
-        checkbox.checked = !checkbox.checked;
-        status.show("保存失败：" + e.message, true);
+        checkbox.disabled = false;
+        validation.show(e);
+        stateMessage.textContent = "来源设置未保存。勾选已保留，请重试。";
+        stateMessage.className = "feedback error";
+        status.show("来源设置未保存：" + e.message, true);
+      } finally {
+        save.disabled = false;
+        checkbox.disabled = false;
       }
+    }
+    checkbox.addEventListener("change", saveConfig);
+    configForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void saveConfig();
     });
     const section = el(
       d,
@@ -44,7 +90,7 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
           sourceSites.length +
           " 目录站点",
       ),
-      el(d, "label", { className: "inline-check" }, checkbox, "启用此来源"),
+      configForm,
       el(
         d,
         "small",

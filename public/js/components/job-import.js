@@ -1,5 +1,6 @@
 import { el, field } from "./dom.js";
 import { feedback } from "./feedback.js";
+import { bindValidation } from "./form-validation.js";
 export function jobImport({ document: d, api, onImported }) {
   const form = el(d, "form", { className: "card" }),
     status = feedback(d),
@@ -19,28 +20,48 @@ export function jobImport({ document: d, api, onImported }) {
       { className: "muted" },
       "保留来源链接与账号。社交平台链接需要正文或授权接口；导入后按公告展示。",
     ),
-    field(d, "来源链接", url),
-    field(d, "标题", title),
-    field(d, "发布账号", account),
-    field(d, "招聘正文", text),
-    field(d, "备注", note),
+    field(
+      d,
+      "来源链接",
+      url,
+      "可空；与正文至少填写一项。填写时使用公开 http(s) 链接，不含用户名或密码。",
+    ),
+    field(d, "标题", title, "可空，自动使用正文首行；最多 200 字符。"),
+    field(d, "发布账号", account, "可空；公号或发布账号名称，最多 200 字符。"),
+    field(
+      d,
+      "招聘正文",
+      text,
+      "普通网页有来源链接时可空；微信、微博、抖音需粘贴正文，最多 60,000 字符。",
+    ),
+    field(d, "备注", note, "可空；仅用于我的记录，最多 20,000 字符。"),
     el(d, "button", { type: "submit" }, "导入"),
     status.node,
   );
+  const values = () => ({
+    url: url.value.trim() || undefined,
+    title: title.value.trim(),
+    text: text.value,
+    account: account.value.trim(),
+    note: note.value,
+  });
+  const validation = bindValidation(form, {
+    kind: "import",
+    fields: { url, title, account, text, note },
+    values,
+  });
+  let busy = false;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (busy || !validation.check()) return;
     const save = form.querySelector("button");
+    busy = true;
     save.disabled = true;
+    status.show("");
     try {
       const result = await api.request("/imports", {
         method: "POST",
-        body: {
-          url: url.value || undefined,
-          title: title.value,
-          text: text.value,
-          account: account.value,
-          note: note.value,
-        },
+        body: values(),
       });
       status.show(
         (result.jobIds.length ? "已导入。" : "未导入。") +
@@ -48,8 +69,9 @@ export function jobImport({ document: d, api, onImported }) {
       );
       if (result.jobIds.length) await onImported?.();
     } catch (e) {
-      status.show("导入失败：" + e.message, true);
+      validation.show(e);
     } finally {
+      busy = false;
       save.disabled = false;
     }
   });

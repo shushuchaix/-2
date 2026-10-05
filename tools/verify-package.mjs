@@ -28,7 +28,7 @@ let bad = 0;
 
 /* ---------- ① 新代码在不在 ---------- */
 console.log('【① 新代码是否已打包】');
-for (const f of ['src/sources/university.mjs','src/match/campus.mjs','src/sources/nowcoder.mjs','src/application/context.mjs','src/application/run-service.mjs','src/infrastructure/storage/repository.mjs','src/domain/ontology.json','src/sources/catalog/universities.json','public/js/main.js','public/js/pages/profiles.js','public/js/pages/jobs.js','public/js/pages/applications.js','public/js/pages/settings.js','public/js/pages/workbench.js','public/styles/tokens.css','electron/preload.cjs','electron/credentials.mjs','node_modules/acorn/package.json','node_modules/linkedom/package.json']) {
+for (const f of ['src/sources/university.mjs','src/match/campus.mjs','src/sources/nowcoder.mjs','src/application/context.mjs','src/application/run-service.mjs','src/infrastructure/storage/repository.mjs','src/domain/ontology.json','src/sources/catalog/universities.json','public/js/main.js','public/js/pages/profiles.js','public/js/pages/jobs.js','public/js/pages/applications.js','public/js/pages/settings.js','public/js/pages/workbench.js','public/js/validation-rules.js','public/js/components/form-validation.js','public/styles/tokens.css','electron/preload.cjs','electron/credentials.mjs','node_modules/acorn/package.json','node_modules/linkedom/package.json']) {
   const ok = files.includes(f);
   if (!ok) bad++;
   console.log(`${ok ? '✅' : '❌'} ${f}`);

@@ -4,7 +4,7 @@ import { uiFixture } from "../helpers/ui-fixture.mjs";
 import { submit } from "../helpers/dom.mjs";
 import { mountApplicationsPage } from "../../public/js/pages/applications.js";
 import { localDate } from "../../public/js/format.js";
-test("application note clears and failed save leaves authoritative status", async () => {
+test("application note clears and failed save retains unsaved input while stored status stays unchanged", async () => {
   let saved = { status: "applied", note: "旧备注", events: [] },
     fail = false;
   const f = uiFixture((p, o) => {
@@ -50,7 +50,8 @@ test("application note clears and failed save leaves authoritative status", asyn
   submit(f.document, f.root.querySelector("#applicationForm"));
   await f.settle();
   assert.equal(saved.status, "applied");
-  assert.ok(f.root.textContent.includes("保存失败"));
+  assert.ok(f.root.textContent.includes("未保存"));
+  assert.equal(f.root.querySelector("#applicationStatus").value, "offer");
   assert.equal(localDate("2026-10-05"), "2026-10-05");
   page.destroy();
 });

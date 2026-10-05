@@ -64,7 +64,7 @@ test("imports retain social provenance without fetching prohibited platform bodi
   });
   await assert.rejects(
     service.import({ url: "http://127.0.0.1/x", text: "招聘" }),
-    /private|address/i,
+    (e) => e.status === 400 && !!e.fieldErrors.url,
   );
   const result = await service.import({
     url: "https://mp.weixin.qq.com/s/abc",

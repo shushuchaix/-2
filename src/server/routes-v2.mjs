@@ -8,6 +8,7 @@ import {
   invalid,
 } from "./validation.mjs";
 import { writeRunEventStream } from "./event-stream.mjs";
+import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { extractResumeText } from "../resume/extract-text.mjs";
 import { analyzeResumeOffline } from "../resume/offline.mjs";
 import { normalizeProfile, analyzeResume } from "../resume/profile.mjs";
@@ -41,18 +42,36 @@ export async function handleV2Request(req, res, context) {
       warnings = [],
       format = "text";
     if (input.base64) {
-      const extracted = await extractResumeText(
-        Buffer.from(
-          String(input.base64).replace(/^data:[^;]+;base64,/, ""),
-          "base64",
-        ),
-        String(input.filename || "resume.txt"),
-      );
+      let extracted;
+      try {
+        extracted = await extractResumeText(
+          Buffer.from(
+            String(input.base64).replace(/^data:[^;]+;base64,/, ""),
+            "base64",
+          ),
+          String(input.filename || "resume.txt"),
+        );
+      } catch (error) {
+        if (error.code === "pdf_no_extractable_text") {
+          error.fieldErrors = { file: error.message };
+          throw error;
+        }
+        throw inputError({
+          file: "文件读取失败，请确认文件完整、未加密且为支持的简历格式；也可以清除文件后粘贴正文。",
+        });
+      }
       text = extracted.text;
       warnings = extracted.warnings || [];
       format = extracted.format;
     }
-    text = resumeText(text);
+    try {
+      text = resumeText(text);
+    } catch (error) {
+      error.fieldErrors = {
+        [input.base64 ? "file" : "resumeText"]: error.message,
+      };
+      throw error;
+    }
     let profile = normalizeProfile(analyzeResumeOffline(text));
     if (input.mode === "ai") {
       const client = context.modelFactory({
@@ -127,7 +146,7 @@ export async function handleV2Request(req, res, context) {
     else if (method === "POST") {
       const input = await body();
       if (input.targetId) identifier(input.targetId);
-      identifier(input.profileRevisionId, { revision: true });
+      assertInput("target", input);
       send(201, await workspace.saveTarget(input));
     } else return false;
     return true;
@@ -160,14 +179,16 @@ export async function handleV2Request(req, res, context) {
       });
     else if (method === "POST") {
       const input = await body();
-      identifier(input.targetRevisionId, { revision: true });
+      assertInput("run", input);
       send(
         202,
         await runs.startRun({
           targetRevisionId: input.targetRevisionId,
           mode: input.mode || "rules",
           credentials: {
-            ...userCredentials(input, context.cfg),
+            ...(input.mode === "rules" || !input.mode
+              ? {}
+              : userCredentials(input, context.cfg)),
             ip: http.ip(req),
           },
         }),
@@ -252,7 +273,7 @@ export async function handleV2Request(req, res, context) {
       );
     } else if (match[2] === "links" && ["POST", "DELETE"].includes(method)) {
       const input = await body(),
-        other = jobIdentifier(input.jobId);
+        other = assertInput("link", input, { selfId: id }).jobId;
       send(
         200,
         await (method === "POST"
@@ -289,8 +310,7 @@ export async function handleV2Request(req, res, context) {
   }
   if (route === "/sources/sites" && method === "POST") {
     const input = await body();
-    identifier(input.siteId);
-    identifier(input.providerId);
+    assertInput("site", input);
     send(201, await context.sourceService.addSite(input));
     return true;
   }

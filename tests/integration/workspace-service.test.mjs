@@ -9,17 +9,17 @@ test("profile and target revisions are immutable and references prevent deletion
   const repository = await tempRepository(t);
   const s = createWorkspaceService({ repository });
   const a = await s.saveProfile({
-    text: "合成简历",
+    text: "合成简历：本科消防工程专业，拥有工程实践项目经验，期望在北京从事安全工程工作。",
     profile: { major: "消防工程", cities: ["北京"] },
     overrides: { major: "安全工程" },
   });
   const b = await s.saveProfile({
     profileId: a.profileId,
-    text: "更新",
+    text: "更新简历：本科软件工程专业，掌握 Java 开发，拥有项目经验，期望从事软件开发工作。",
     profile: { major: "软件工程" },
   });
   assert.notEqual(a.revisionId, b.revisionId);
-  assert.equal((await s.getProfileRevision(a.revisionId)).text, "合成简历");
+  assert.equal((await s.getProfileRevision(a.revisionId)).text, a.text);
   assert.equal(a.profile.major, "安全工程");
   const target = await s.saveTarget({
     profileRevisionId: a.revisionId,
@@ -33,7 +33,7 @@ test("profile and target revisions are immutable and references prevent deletion
   await assert.rejects(s.deleteProfileRevision(a.revisionId), /referenced/i);
   await assert.rejects(
     s.saveTarget({ profileRevisionId: "absent@1", roles: ["岗位"] }),
-    /profile/i,
+    (e) => e.status === 400 && !!e.fieldErrors.profileRevisionId,
   );
   assert.equal(
     (

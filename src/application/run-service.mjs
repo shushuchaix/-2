@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
@@ -496,11 +497,22 @@ export function createRunService({
   }
   const service = {
     async startRun({ targetRevisionId, mode = "rules", credentials = {} }) {
+      assertInput("run", {
+        targetRevisionId,
+        mode,
+        userApiKey: credentials.userApiKey,
+      });
+      if (mode === "rules") {
+        const { userApiKey, ...rest } = credentials;
+        credentials = rest;
+      }
       if (!["rules", "ai", "auto"].includes(mode))
         throw Error("Invalid run mode");
       const target = await workspaceService.getTargetRevision(targetRevisionId);
       if (!target || !target.enabled)
-        throw Error("Enabled target revision required");
+        throw inputError({
+          targetRevisionId: "请选择仍然存在且已启用的搜索目标。",
+        });
       const profile = await workspaceService.getProfileRevision(
         target.profileRevisionId,
       );

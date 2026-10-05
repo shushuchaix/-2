@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { DATA_ROOT } from "../config.mjs";
@@ -9,6 +10,7 @@ import { writeAtomicJson } from "../infrastructure/storage/atomic.mjs";
 import {
   createBackup,
   restoreBackup,
+  validateBackupArchive,
 } from "../infrastructure/storage/backup.mjs";
 import { createWorkspaceService } from "./workspace-service.mjs";
 import { createJobService } from "./job-service.mjs";
@@ -38,9 +40,20 @@ export async function createApplicationContext({
     repository,
   });
   const recovery = await recoverWorkspace(repository);
-  const workspaceService = createWorkspaceService({ repository }),
-    jobService = createJobService({ repository }),
-    registry = dependencies.registry || createDefaultSourceRegistry();
+  const registry = dependencies.registry || createDefaultSourceRegistry();
+  const workspaceService = createWorkspaceService({
+      repository,
+      sourceIds: () => [
+        ...registry.list().map((p) => p.id),
+        "legacy-no-sources",
+      ],
+      siteIds: (w) =>
+        (
+          dependencies.catalog ||
+          loadSiteCatalog({ customSites: w.settings.customSites })
+        ).map((s) => s.siteId),
+    }),
+    jobService = createJobService({ repository });
   const requestFactory =
     dependencies.requestFactory ||
     ((options) =>
@@ -140,6 +153,7 @@ export async function createApplicationContext({
       };
     },
     async saveSettings(input) {
+      assertInput("settings", input, { nativeTypes: true });
       if (input.budgets) {
         const limits = {
           maxModelRequests: 20,
@@ -198,19 +212,38 @@ export async function createApplicationContext({
       return JSON.parse(await fs.readFile(result.path, "utf8"));
     },
     async restore(archive) {
+      try {
+        validateBackupArchive(archive);
+      } catch {
+        throw inputError({
+          file: "备份格式或完整性检查未通过，请选择软件导出的完整备份文件。",
+        });
+      }
       if (
         (await runService.listRuns()).some((r) =>
           ["queued", "running"].includes(r.status),
         )
       )
-        throw Error("Active run prevents workspace restore");
+        throw inputError(
+          { file: "有任务正在运行，请等任务结束后再恢复备份。" },
+          "当前不能恢复备份。",
+          409,
+        );
       const archivePath = path.join(
         repository.dataDir,
         "backups",
         "restore-" + randomUUID() + ".json",
       );
       await writeAtomicJson(archivePath, archive);
-      return restoreBackup({ repository, archivePath });
+      try {
+        return await restoreBackup({ repository, archivePath });
+      } catch (error) {
+        if (error.code && /ENOSPC|EACCES|EPERM|EROFS|EIO/.test(error.code))
+          throw error;
+        throw inputError({
+          file: "备份格式或完整性检查未通过，请选择软件导出的完整备份文件。",
+        });
+      }
     },
   };
   return context;

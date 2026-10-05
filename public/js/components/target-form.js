@@ -1,8 +1,10 @@
 import { el, field, list } from "./dom.js";
+import { bindValidation } from "./form-validation.js";
 export function targetForm({
   document: d,
   profiles = [],
   target = {},
+  sourceIds = [],
   onSave,
 }) {
   const form = el(d, "form", { id: "targetForm" }),
@@ -98,49 +100,136 @@ export function targetForm({
       },
       target.targetId ? "保存目标新版本" : "保存检索目标",
     );
+  const typeGroup = el(
+    d,
+    "fieldset",
+    { id: "targetJobTypes", className: "field" },
+    el(d, "legend", {}, "招聘类型"),
+    el(d, "div", { className: "row" }, types),
+    el(d, "small", {}, "必选至少一项；选择校招、实习、社招或未标类型。"),
+  );
   profile.value = target.profileRevisionId || profiles.at(-1)?.revisionId || "";
   cityMode.value = target.cityMode || "any";
   degree.value = target.degreePolicy || "eligibility";
   coverage.value = target.coverageMode || "standard";
   minDegree.value = target.minDegree || "本科";
   form.append(
-    field(d, "使用的画像版本", profile),
-    field(d, "求职方向（逗号分隔，最多使用前6个查询词）", roles),
+    field(
+      d,
+      "使用的画像版本",
+      profile,
+      "必选已保存的画像版本；没有画像时请先确认并保存简历。",
+    ),
+    field(
+      d,
+      "求职方向（逗号分隔，最多使用前6个查询词）",
+      roles,
+      "必填至少一项；逗号或顿号分隔，最多 100 项，每项最多 200 字符。",
+    ),
     el(
       d,
       "div",
       { className: "grid" },
-      field(d, "城市范围", cityMode),
-      field(d, "指定城市", cities),
-      field(d, "学历口径", degree),
-      field(d, "最低要求学历", minDegree),
-      field(d, "届别", year),
-      field(d, "覆盖预算", coverage),
+      field(d, "城市范围", cityMode, "必选；指定城市时需填写至少一座城市。"),
+      field(
+        d,
+        "指定城市",
+        cities,
+        "指定城市模式必填；逗号或顿号分隔，最多 100 项，每项最多 200 字符。其他模式不提交此项。",
+      ),
+      field(
+        d,
+        "学历口径",
+        degree,
+        "必选；按本人学历判断，或指定最低岗位要求。",
+      ),
+      field(
+        d,
+        "最低要求学历",
+        minDegree,
+        "指定最低要求模式必选；其他模式不使用此项。",
+      ),
+      field(
+        d,
+        "届别",
+        year,
+        "可空时沿用画像年份；填写 1900–2100 之间的四位毕业年份，例如 2027。",
+      ),
+      field(
+        d,
+        "覆盖预算",
+        coverage,
+        "必选标准或广泛；来源采集仍受任务预算限制。",
+      ),
     ),
-    el(d, "div", { className: "row" }, types),
-    field(d, "来源 ID（留空使用所有可用来源）", sources),
+    typeGroup,
+    field(
+      d,
+      "来源 ID（留空使用所有可用来源）",
+      sources,
+      "可空；逗号或顿号分隔，需为数据源页面中已存在的来源 ID。",
+    ),
     save,
   );
+  const values = () => ({
+    ...target,
+    profileRevisionId: profile.value,
+    roles: list(roles.value),
+    cityMode: cityMode.value,
+    cities: cityMode.value === "selected" ? list(cities.value) : [],
+    degreePolicy: degree.value,
+    minDegree: degree.value === "minimum_requirement" ? minDegree.value : null,
+    jobTypes: types
+      .map((l) => l.querySelector("input"))
+      .filter((x) => x.checked)
+      .map((x) => x.value),
+    sourceIds: list(sources.value),
+    coverageMode: coverage.value,
+    graduationYear: year.value,
+  });
+  const validation = bindValidation(form, {
+    kind: "target",
+    fields: {
+      profileRevisionId: profile,
+      roles,
+      cityMode,
+      cities,
+      degreePolicy: degree,
+      minDegree,
+      graduationYear: year,
+      jobTypes: typeGroup,
+      sourceIds: sources,
+      coverageMode: coverage,
+    },
+    values,
+    options: () => ({
+      profileRevisionIds: profiles.map((p) => p.revisionId),
+      sourceIds,
+    }),
+  });
+  const updateDependentFields = () => {
+    cities.disabled = cityMode.value !== "selected";
+    minDegree.disabled = degree.value !== "minimum_requirement";
+  };
+  cityMode.addEventListener("change", updateDependentFields);
+  degree.addEventListener("change", updateDependentFields);
+  updateDependentFields();
+  let busy = false;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (!profile.value) return;
-    await onSave({
-      ...target,
-      profileRevisionId: profile.value,
-      roles: list(roles.value),
-      cityMode: cityMode.value,
-      cities: cityMode.value === "selected" ? list(cities.value) : [],
-      degreePolicy: degree.value,
-      minDegree:
-        degree.value === "minimum_requirement" ? minDegree.value : null,
-      jobTypes: types
-        .map((l) => l.querySelector("input"))
-        .filter((x) => x.checked)
-        .map((x) => x.value),
-      sourceIds: list(sources.value),
-      coverageMode: coverage.value,
-      graduationYear: year.value ? Number(year.value) : null,
-    });
+    if (busy || !validation.check()) return;
+    busy = true;
+    save.disabled = true;
+    const input = values();
+    input.graduationYear = year.value ? Number(year.value) : null;
+    try {
+      await onSave(input);
+    } catch (e) {
+      validation.show(e);
+    } finally {
+      busy = false;
+      save.disabled = !profiles.length;
+    }
   });
   return form;
 }

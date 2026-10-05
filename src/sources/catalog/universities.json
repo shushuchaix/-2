@@ -226,9 +226,27 @@
       "detail": true
     },
     "evidenceUrl": "https://seu.91job.org.cn/sub-station/home/10286",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T04:45:46.609Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000753133",
+        "title": "制造工艺工程师",
+        "url": "https://seu.91job.org.cn/sub-station/jobDetails?xxdm=10286&zpgwid=1000000000753133",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000753169",
+        "title": "采购工程师",
+        "url": "https://seu.91job.org.cn/sub-station/jobDetails?xxdm=10286&zpgwid=1000000000753169",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-hhu",
@@ -247,9 +265,27 @@
       "detail": true
     },
     "evidenceUrl": "https://hhu.91job.org.cn/sub-station/home/10294",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T04:45:50.322Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000756221",
+        "title": "行政专员岗位",
+        "url": "https://hhu.91job.org.cn/sub-station/jobDetails?xxdm=10294&zpgwid=1000000000756221",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000756220",
+        "title": "土木工程师岗位",
+        "url": "https://hhu.91job.org.cn/sub-station/jobDetails?xxdm=10294&zpgwid=1000000000756220",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-nuaa",

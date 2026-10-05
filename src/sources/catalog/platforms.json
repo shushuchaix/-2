@@ -91,8 +91,26 @@
       "discovery": false
     },
     "evidenceUrl": "https://www.ncss.cn/student/jobs/index.html",
-    "verifiedAt": null,
-    "status": "candidate"
+    "verifiedAt": "2026-10-05T04:45:41.550Z",
+    "status": "ready",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "SLaDB8f5H72xoPf8Xxek6Q",
+        "title": "中国银行股份有限公司2027年全球校园招聘公告",
+        "url": "https://www.ncss.cn/student/jobs/SLaDB8f5H72xoPf8Xxek6Q/detail.html",
+        "kind": "recruitment_notice",
+        "jobType": "campus",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "4HEEGonbAKUNtGACviFDsy",
+        "title": "炼油化工装置仪表管理储备岗",
+        "url": "https://www.ncss.cn/student/jobs/4HEEGonbAKUNtGACviFDsy/detail.html",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "yingjiesheng",

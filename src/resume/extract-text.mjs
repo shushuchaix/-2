@@ -73,8 +73,17 @@ export async function extractResumeText(buffer, filename = "") {
 
   if (ext === "pdf" || isPdfMagic) {
     const result = await parsePdf(buffer);
+    const text = cleanupResumeText(result.text);
+    if (!text) {
+      const error = new Error(
+        "PDF没有可提取的文字，可能是图片型或扫描件。当前版本不支持OCR，请改用文字版PDF、DOCX或TXT，或清除已选文件后粘贴简历正文。",
+      );
+      error.code = "pdf_no_extractable_text";
+      error.status = 400;
+      throw error;
+    }
     return {
-      text: cleanupResumeText(result.text),
+      text,
       format: "pdf",
       warnings: result.warnings,
       parserVersion: "pdf-2",

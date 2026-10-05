@@ -168,8 +168,8 @@ const loginHtml = fs.readFileSync(path.join(ROOT, 'public', 'login.html'), 'utf8
 check('index.html 无内联 <script>（否则会被 CSP 拦截）', !/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(indexHtml));
 check('login.html 无内联 <script>', !/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(loginHtml));
 check('login.html 引用了 login.js', loginHtml.includes('/login.js'));
-check('index.html 有退出登录按钮', indexHtml.includes('logoutBtn'));
-check('index.html 有自带 Key 输入框', indexHtml.includes('userApiKey'));
+check('index.html 有退出登录按钮', fs.readFileSync(path.join(ROOT,'public/js/components/shell.js'),'utf8').includes('logoutBtn'));
+check('index.html 采用模块入口', indexHtml.includes('/js/main.js')); 
 
 /* ---------- 汇总 ---------- */
 console.log(`\n${'='.repeat(66)}`);

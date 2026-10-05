@@ -21,7 +21,7 @@ jobs:
       # 只装生产依赖：测试套件在 Node 里跑，不需要 Electron。
       # Electron 的 postinstall 要下载 ~130MB 运行时，CI 里没必要。
       - name: 安装依赖
-        run: npm install --omit=dev --ignore-scripts
+        run: npm ci --ignore-scripts
 
       # 离线套件：不依赖外部站点，任何网络抖动都不该让它失败
       - name: 离线测试（鉴权/配额/导出/调度/打分/过滤）

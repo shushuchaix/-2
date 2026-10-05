@@ -9,6 +9,7 @@ import { evaluateRules } from "../domain/ranking.mjs";
 import { expandArticles } from "../match/article.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
 import { hasLiveOwner } from "../infrastructure/storage/process-owner.mjs";
+import { recordSourceHealth } from "./source-health.mjs";
 const terminal = new Set([
   "completed",
   "partial",
@@ -245,6 +246,57 @@ export function createRunService({
           }
         }
       await stage("details");
+      async function saveSourceHealth() {
+        if (!coverage.length) return;
+        await repository.mutateWorkspace((w) => {
+          const keys = [
+            ...new Set(coverage.map((c) => c.sourceId + "/" + c.siteId)),
+          ];
+          for (const key of keys) {
+            const entries = coverage.filter(
+              (c) => c.sourceId + "/" + c.siteId === key,
+            );
+            const { sourceId, siteId } = entries[0];
+            const samples = Object.values(w.observations).filter((o) => {
+              const r = o.fields || o.record;
+              return (
+                o.runId === id &&
+                o.sourceId === sourceId &&
+                o.siteId === siteId &&
+                r?.title &&
+                r?.url &&
+                r?.description?.trim().length >= 30
+              );
+            });
+            if (samples.length)
+              recordSourceHealth(
+                w,
+                { sourceId, siteId, status: "ready" },
+                clock.now(),
+              );
+            recordSourceHealth(
+              w,
+              {
+                sourceId,
+                siteId,
+                runId: id,
+                sampleCount: new Set(samples.map((o) => o.jobId)).size,
+                status: entries.some((c) => c.status === "failed")
+                  ? "unavailable"
+                  : samples.length
+                    ? "ready"
+                    : "empty",
+                issues: issues.filter(
+                  (i) =>
+                    i.sourceId === sourceId &&
+                    (!i.siteId || i.siteId === siteId),
+                ),
+              },
+              clock.now(),
+            );
+          }
+        });
+      }
       let workspaceNow = await repository.read();
       const ordered = [...jobIds]
         .map((jobId) => ({ jobId, ...workspaceNow.jobs[jobId].canonical }))
@@ -286,6 +338,7 @@ export function createRunService({
         }
         if (detail?.description) await ingest([detail]);
       }
+      await saveSourceHealth();
       await stage("expanding");
       workspaceNow = await repository.read();
       const notices = [...jobIds]

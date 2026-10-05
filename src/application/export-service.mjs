@@ -4,18 +4,48 @@ export function createExportService({ repository }) {
   return {
     async export({ format = "json", filters = {} } = {}) {
       if (format === "md") format = "markdown";
-      const service = createJobService({ repository });
+      const snapshot = await repository.read();
+      const service = createJobService({
+        repository: { ...repository, read: async () => snapshot },
+      });
       const result = await service.queryJobs({
         ...filters,
         page: 1,
         pageSize: 200,
       });
       const items = [...result.items];
-      for (let page = 2; items.length < result.total; page++)
+      for (let page = 2; items.length < result.total; page++) {
+        const next = await service.queryJobs({
+          ...filters,
+          page,
+          pageSize: 200,
+        });
+        if (!next.items.length) break;
+        items.push(...next.items);
+      }
+      if (
+        !Object.keys(filters).some(
+          (k) =>
+            !["status", "search", "page", "pageSize"].includes(k) && filters[k],
+        )
+      ) {
+        const unresolved = await service.listUnresolvedApplications(filters);
         items.push(
-          ...(await service.queryJobs({ ...filters, page, pageSize: 200 }))
-            .items,
+          ...unresolved.items.map(({ application, candidateJobs }) => ({
+            jobId: application.jobId,
+            title: "待确认旧记录",
+            company: null,
+            cities: [],
+            sourceId: "legacy",
+            url: null,
+            salary: null,
+            application,
+            evaluation: null,
+            unresolved: true,
+            candidateJobIds: candidateJobs.map((j) => j.jobId),
+          })),
         );
+      }
       const rows = redactBusiness(items);
       if (format === "json")
         return {
@@ -38,6 +68,7 @@ export function createExportService({ repository }) {
         "投递日期",
         "跟进日期",
         "简历版本",
+        "待确认候选岗位",
       ];
       const values = rows.map((i) => [
         i.jobId,
@@ -63,6 +94,7 @@ export function createExportService({ repository }) {
         i.application.appliedAt,
         i.application.followUpAt,
         i.application.resumeRevisionId,
+        i.candidateJobIds?.join(" / "),
       ]);
       if (format === "csv")
         return {

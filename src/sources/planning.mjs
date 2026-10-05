@@ -47,10 +47,12 @@ export function buildCollectionPlan({
       reason = "source_not_selected";
     else if (sourceOverrides[site.providerId]?.enabled === false)
       reason = "disabled";
-    else if ((h?.status || site.status) !== "ready")
-      reason = h?.status || site.status;
     else if (h?.backoffUntil && Date.parse(h.backoffUntil) > Date.now())
       reason = "backoff";
+    else if (
+      !(site.status === "ready" || h?.status === "ready" || h?.lastSuccessAt)
+    )
+      reason = h?.status || site.status;
     if (reason) {
       skipped.push({
         sourceId: site.providerId,

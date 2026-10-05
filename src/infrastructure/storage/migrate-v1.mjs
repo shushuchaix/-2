@@ -5,6 +5,7 @@ import { writeAtomicJson } from "./atomic.mjs";
 import { resolveJobIdentity, relateJobs } from "../../domain/identity.mjs";
 import { normalizeRecord } from "../../domain/record.mjs";
 import { APPLICATION_STATUSES } from "../../domain/contracts.mjs";
+import { redactBusiness } from "../../domain/redact.mjs";
 export async function migrateV1({ dataDir, repository, dryRun = false }) {
   const inputs = [];
   let index = null;
@@ -36,7 +37,10 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
     try {
       const run = JSON.parse(body);
       if (!Array.isArray(run.jobs || run.results)) throw Error("no jobs array");
-      runs.push({ ...run, jobs: run.jobs || run.results });
+      const runId = run.runId || "legacy-" + contentHash(run).slice(0, 16);
+      if (!/^[A-Za-z0-9_-]{1,160}$/.test(runId))
+        throw Error("Unsafe legacy run id");
+      runs.push({ ...run, runId, jobs: run.jobs || run.results });
     } catch (e) {
       skipped.push({ file: name, reason: e.message });
     }
@@ -64,6 +68,23 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
   const ingest = (input, runId, seenAt) => {
     if (!input?.title || !input.url) return;
     const r = normalizeRecord(input);
+    for (const key of [
+      "status",
+      "note",
+      "appliedAt",
+      "followUpAt",
+      "resumeRevisionId",
+      "events",
+      "tracking",
+      "score",
+      "ruleScore",
+      "verdict",
+      "reason",
+      "scoreHistory",
+      "matchReason",
+      "matchedKeywords",
+    ])
+      delete r[key];
     let identity;
     try {
       identity = resolveJobIdentity(r);
@@ -71,7 +92,16 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
       skipped.push({ file: runId, reason: e.message });
       return;
     }
-    let id = "j-" + contentHash(identity.key).slice(0, 24);
+    const matches = [
+      ...new Set(identity.aliases.flatMap((alias) => aliases[alias] || [])),
+    ].filter((id) => relateJobs(jobs[id].canonical, r).relation === "same");
+    let id =
+      matches.find(
+        (id) => resolveJobIdentity(jobs[id].canonical).key === identity.key,
+      ) ||
+      (matches.length === 1
+        ? matches[0]
+        : "j-" + contentHash(identity.key).slice(0, 24));
     if (jobs[id] && relateJobs(jobs[id].canonical, r).relation !== "same")
       id +=
         "-" +
@@ -95,6 +125,14 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
     };
     job.canonical = {
       ...r,
+      ...(identity.strength !== "strong" &&
+      resolveJobIdentity(job.canonical).strength === "strong"
+        ? Object.fromEntries(
+            ["sourceId", "siteId", "identityScope", "sourceRecordId"].map(
+              (k) => [k, job.canonical[k]],
+            ),
+          )
+        : {}),
       description: r.description || job.canonical.description,
     };
     job.firstSeen =
@@ -103,8 +141,11 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
         : job.firstSeen;
     job.lastSeen = seenAt > job.lastSeen ? seenAt : job.lastSeen;
     jobs[id] = job;
-    if (input.id)
-      aliases[input.id] = [...new Set([...(aliases[input.id] || []), id])];
+    job.identityAliases = [
+      ...new Set([...job.identityAliases, ...identity.aliases]),
+    ];
+    for (const alias of [...job.identityAliases, input.id].filter(Boolean))
+      aliases[alias] = [...new Set([...(aliases[alias] || []), id])];
     const oid = "o-" + contentHash([runId, id, r]).slice(0, 24);
     observations[oid] = {
       observationId: oid,
@@ -195,6 +236,26 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
     conflicts,
     skipped,
   });
+  const legacyRuns = {};
+  for (const run of runs) {
+    const id = run.runId;
+    const metadata = {
+      runId: id,
+      status: "completed",
+      stage: "legacy",
+      startedAt: run.createdAt || null,
+      finishedAt: run.createdAt || null,
+      counts: { returned: run.jobs.length },
+      coverage: [],
+      issues: [],
+      legacy: true,
+    };
+    const snapshotRef = await repository.writeRunSnapshot(id, {
+      run: metadata,
+      legacyResult: redactBusiness(run),
+    });
+    legacyRuns[id] = { ...metadata, snapshotRef };
+  }
   await repository.mutateWorkspace((w) => {
     if (w.migration?.inputHash === hash) return;
     if (w.migration) throw Error("Concurrent migration conflict");
@@ -206,21 +267,7 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
     w.migration = summary;
     for (const s of skipped)
       w.recoveryRecords.push({ type: "migration_issue", ...s, at });
-    for (const run of runs) {
-      const id = run.runId || "legacy-" + contentHash(run).slice(0, 16);
-      w.runs[id] = {
-        runId: id,
-        status: "completed",
-        stage: "legacy",
-        startedAt: run.createdAt || null,
-        finishedAt: run.createdAt || null,
-        counts: { returned: run.jobs.length },
-        coverage: [],
-        issues: [],
-        snapshotRef: null,
-        legacy: true,
-      };
-    }
+    Object.assign(w.runs, legacyRuns);
   });
   return summary;
 }

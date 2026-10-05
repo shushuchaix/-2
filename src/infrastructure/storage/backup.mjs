@@ -8,7 +8,7 @@ import { redactBusiness } from "../../domain/redact.mjs";
 export async function createBackup({ repository, clock = repository.clock }) {
   const workspace = redactBusiness(await repository.read()),
     runSnapshots = {};
-  for (const run of Object.values(workspace.runs))
+  for (const run of Object.values(workspace.runs)) {
     if (run.snapshotRef) {
       const snapshot = redactBusiness(
         await repository.readRunSnapshot(run.runId),
@@ -16,7 +16,27 @@ export async function createBackup({ repository, clock = repository.clock }) {
       if (contentHash(snapshot) !== run.snapshotRef.hash)
         throw Error("Snapshot hash mismatch " + run.runId);
       runSnapshots[run.runId] = snapshot;
+    } else if (run.legacy) {
+      if (!/^[A-Za-z0-9_-]{1,160}$/.test(run.runId))
+        throw Error("Unsafe legacy run id");
+      const legacyResult = redactBusiness(
+        JSON.parse(
+          await fs.readFile(
+            path.join(repository.dataDir, "runs", run.runId + ".json"),
+            "utf8",
+          ),
+        ),
+      );
+      if (!Array.isArray(legacyResult.jobs || legacyResult.results))
+        throw Error("Invalid legacy run archive");
+      const snapshot = { run: { ...run, snapshotRef: null }, legacyResult };
+      runSnapshots[run.runId] = snapshot;
+      run.snapshotRef = {
+        path: "runs-v2/" + run.runId + ".json",
+        hash: contentHash(snapshot),
+      };
     }
+  }
   const manifest = {
     version: 1,
     schemaVersion: 2,
@@ -63,6 +83,28 @@ export async function restoreBackup({ repository, archivePath }) {
     const revision = w.revision;
     Object.assign(w, redactBusiness(archive.workspace));
     w.revision = revision;
+    const at = new Date(repository.clock.now()).toISOString();
+    for (const run of Object.values(w.runs)) {
+      if (!["queued", "running"].includes(run.status)) continue;
+      run.status = "interrupted";
+      run.stage = "finished";
+      run.finishedAt = at;
+      run.ownerPid = null;
+      run.cancelRequestedAt = null;
+      run.snapshotRef = null;
+      run.issues = [
+        ...(run.issues || []),
+        {
+          code: "restored_unfinished_run",
+          message: "恢复的未完成任务已中断；已保存事实保留，请重新更新来源。",
+        },
+      ];
+      w.recoveryRecords.push({
+        type: "restored_unfinished_run",
+        runId: run.runId,
+        at,
+      });
+    }
     return { recovered: true };
   });
   return { revision: result.revision, recovered: true };

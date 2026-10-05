@@ -46,6 +46,12 @@ export function createJobService({ repository, clock = repository.clock }) {
           for (const input of records) {
             const record = normalizeRecord(input);
             for (const key of [
+              "status",
+              "note",
+              "appliedAt",
+              "followUpAt",
+              "resumeRevisionId",
+              "events",
               "score",
               "ruleScore",
               "verdict",
@@ -58,12 +64,22 @@ export function createJobService({ repository, clock = repository.clock }) {
               delete record[key];
             assertSourceRecord(record);
             const identity = resolveJobIdentity(record);
-            const candidates = (w.identityAliases[identity.key] || [])
+            const candidates = [
+              ...new Set(
+                identity.aliases.flatMap(
+                  (alias) => w.identityAliases[alias] || [],
+                ),
+              ),
+            ]
               .map((id) => w.jobs[id])
               .filter(Boolean);
-            let stored = candidates.find(
+            const matches = candidates.filter(
               (j) => relateJobs(j.canonical, record).relation === "same",
             );
+            let stored =
+              matches.find(
+                (j) => resolveJobIdentity(j.canonical).key === identity.key,
+              ) || (matches.length === 1 ? matches[0] : null);
             if (!stored) {
               let jobId = "j-" + contentHash(identity.key).slice(0, 24);
               if (w.jobs[jobId])
@@ -104,6 +120,17 @@ export function createJobService({ repository, clock = repository.clock }) {
             const id = stored.jobId;
             stored.canonical = {
               ...record,
+              ...(identity.strength !== "strong" &&
+              resolveJobIdentity(stored.canonical).strength === "strong"
+                ? Object.fromEntries(
+                    [
+                      "sourceId",
+                      "siteId",
+                      "identityScope",
+                      "sourceRecordId",
+                    ].map((k) => [k, stored.canonical[k]]),
+                  )
+                : {}),
               description: record.description || stored.canonical.description,
             };
             stored.lastSeen =
@@ -127,7 +154,12 @@ export function createJobService({ repository, clock = repository.clock }) {
               )
             )
               stored.sourceRefs.push(ref);
-            for (const alias of [...identity.aliases, input.id].filter(Boolean))
+            stored.identityAliases = [
+              ...new Set([...stored.identityAliases, ...identity.aliases]),
+            ];
+            for (const alias of [...stored.identityAliases, input.id].filter(
+              Boolean,
+            ))
               w.identityAliases[alias] = [
                 ...new Set([...(w.identityAliases[alias] || []), id]),
               ];
@@ -253,7 +285,12 @@ export function createJobService({ repository, clock = repository.clock }) {
             (e) =>
               e.jobId === job.jobId &&
               (!filters.targetRevisionId ||
-                e.targetRevisionId === filters.targetRevisionId),
+                e.targetRevisionId === filters.targetRevisionId) &&
+              (!filters.targetId ||
+                (w.targets[filters.targetId] || []).some(
+                  (t) => t.revisionId === e.targetRevisionId,
+                ) ||
+                e.targetRevisionId?.startsWith(filters.targetId + "@")),
           )
           .sort((a, b) =>
             String(b.createdAt || "").localeCompare(a.createdAt || ""),
@@ -271,7 +308,8 @@ export function createJobService({ repository, clock = repository.clock }) {
           evaluation: evaluations[0] || null,
         };
       });
-      if (filters.targetRevisionId) items = items.filter((i) => i.evaluation);
+      if (filters.targetRevisionId && !filters.targetId)
+        items = items.filter((i) => i.evaluation);
       if (filters.targetId)
         items = items.filter((i) => i.job.targetFirstSeen[filters.targetId]);
       if (filters.status)
@@ -345,12 +383,51 @@ export function createJobService({ repository, clock = repository.clock }) {
           events: [],
         },
         relatedJobs: [...relatedIds].map((i) => w.jobs[i]).filter(Boolean),
+        unresolvedApplications: Object.values(w.applications).filter(
+          (a) => !w.jobs[a.jobId] && a.legacyJobIds?.includes(id),
+        ),
+      };
+    },
+    async listUnresolvedApplications(filters = {}) {
+      const w = await repository.read();
+      const items = Object.values(w.applications)
+        .filter((a) => !w.jobs[a.jobId] && a.legacyJobIds?.length > 1)
+        .filter((a) => !filters.status || a.status === filters.status)
+        .filter(
+          (a) =>
+            !filters.search ||
+            [a.jobId, a.note]
+              .join(" ")
+              .toLowerCase()
+              .includes(String(filters.search).toLowerCase()),
+        )
+        .map((application) => ({
+          application,
+          candidateJobs: application.legacyJobIds
+            .map((id) => w.jobs[id])
+            .filter(Boolean),
+        }));
+      return { items, total: items.length };
+    },
+    async getApplication(id) {
+      const w = await repository.read();
+      const a = w.applications[id];
+      if (a && !w.jobs[id] && a.legacyJobIds?.length > 1)
+        return {
+          application: a,
+          candidateJobs: a.legacyJobIds.map((j) => w.jobs[j]).filter(Boolean),
+          unresolved: true,
+        };
+      return {
+        application: (await this.getJob(id)).application,
+        unresolved: false,
       };
     },
     async updateApplication(id, patch) {
       return (
         await repository.mutateWorkspace((w) => {
-          id = resolveStoredJobId(w, id);
+          if (!(w.applications[id]?.legacyJobIds?.length > 1 && !w.jobs[id]))
+            id = resolveStoredJobId(w, id);
           const current = w.applications[id] || {
             jobId: id,
             status: "new",

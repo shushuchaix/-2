@@ -21,6 +21,7 @@ export function createStore(initial = {}) {
           ...state,
           selectedTargetId: action.id,
           targetRevisionId: action.revisionId || null,
+          run: null,
           jobs: { items: [], total: 0 },
           jobsRequestId: state.jobsRequestId + 1,
         };

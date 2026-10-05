@@ -42,17 +42,19 @@ export function mountWorkbenchPage({ root, api, store }) {
     streamController,
     runId,
     dialog,
-    loading = 0;
+    loading = 0,
+    historyLoading = 0;
   const start = button(
       d,
       "更新招聘来源",
       async () => {
+        const targetRevisionId = select.value;
         start.disabled = true;
         try {
           const run = await api.request("/runs", {
             method: "POST",
             body: {
-              targetRevisionId: select.value,
+              targetRevisionId,
               mode: mode.value,
               ...(temporaryKey.value
                 ? { userApiKey: temporaryKey.value }
@@ -60,10 +62,12 @@ export function mountWorkbenchPage({ root, api, store }) {
             },
           });
           temporaryKey.value = "";
+          if (destroyed || select.value !== targetRevisionId) return;
           runId = run.runId;
           store.dispatch({ type: "run-start", runId });
           void connect(runId);
         } catch (e) {
+          if (destroyed || select.value !== targetRevisionId) return;
           status.show(e.message, true);
           start.disabled = false;
         }
@@ -124,7 +128,10 @@ export function mountWorkbenchPage({ root, api, store }) {
     const request = ++loading;
     try {
       const target = targets.find((t) => t.revisionId === select.value),
-        data = await readAllJobs(api, { targetId: target?.targetId });
+        data = await readAllJobs(api, {
+          targetId: target?.targetId,
+          targetRevisionId: target?.revisionId,
+        });
       if (destroyed || request !== loading) return;
       const today = localDate(new Date().toISOString()),
         until = localDate(new Date(Date.now() + 7 * 86400000).toISOString()),
@@ -195,25 +202,35 @@ export function mountWorkbenchPage({ root, api, store }) {
   }
   async function connect(id) {
     streamController?.abort();
-    streamController = new AbortController();
+    const controller = new AbortController(),
+      targetRevisionId = select.value;
+    streamController = controller;
+    const current = () =>
+      !destroyed &&
+      !controller.signal.aborted &&
+      streamController === controller &&
+      select.value === targetRevisionId;
     cancel.disabled = false;
     start.disabled = true;
     status.show("任务在服务端运行，关闭页面后会继续。");
     try {
       await api.streamRun(id, {
         afterSeq: store.getState().run?.lastSeq || 0,
-        signal: streamController.signal,
-        onEvent: (e) => store.dispatch({ type: "run-event", event: e }),
+        signal: controller.signal,
+        onEvent: (e) => {
+          if (current()) store.dispatch({ type: "run-event", event: e });
+        },
       });
-      if (destroyed) return;
+      if (!current()) return;
       const run = await api.request("/runs/" + id);
+      if (!current()) return;
       progress.replaceChildren(runProgress({ document: d, run }));
       cancel.disabled = true;
       start.disabled = false;
       await loadJobs();
       await loadHistory();
     } catch (e) {
-      if (!destroyed && e.name !== "AbortError") {
+      if (current() && e.name !== "AbortError") {
         status.show(
           "连接中断：" + e.message + "。点击重新连接读取任务状态。",
           true,
@@ -228,11 +245,18 @@ export function mountWorkbenchPage({ root, api, store }) {
     cancel.disabled = terminal.has(state.run.status);
   });
   async function loadHistory() {
+    const request = ++historyLoading,
+      targetRevisionId = select.value;
     const result = await api.request(
       "/runs?targetId=" +
         (targets.find((t) => t.revisionId === select.value)?.targetId || ""),
     );
-    if (destroyed) return;
+    if (
+      destroyed ||
+      request !== historyLoading ||
+      select.value !== targetRevisionId
+    )
+      return [];
     history.replaceChildren(
       el(d, "h2", {}, "最近更新"),
       ...(result.runs || []).slice(0, 5).map((r) =>
@@ -246,14 +270,33 @@ export function mountWorkbenchPage({ root, api, store }) {
     return result.runs || [];
   }
   select.addEventListener("change", async () => {
+    streamController?.abort();
+    runId = null;
+    cancel.disabled = true;
+    start.disabled = false;
+    status.show("");
+    progress.replaceChildren(runProgress({ document: d, run: null }));
     const t = targets.find((t) => t.revisionId === select.value);
     store.dispatch({
       type: "target",
       id: t.targetId,
       revisionId: t.revisionId,
     });
-    await loadJobs();
-    await loadHistory();
+    const revisionId = select.value;
+    try {
+      await loadJobs();
+      const runs = await loadHistory();
+      if (destroyed || select.value !== revisionId) return;
+      const active = runs.find((r) => !terminal.has(r.status));
+      if (active) {
+        runId = active.runId;
+        store.dispatch({ type: "run-start", runId });
+        void connect(runId);
+      }
+    } catch (e) {
+      if (!destroyed && select.value === revisionId)
+        status.show(e.message, true);
+    }
   });
   const ready = (async () => {
     try {

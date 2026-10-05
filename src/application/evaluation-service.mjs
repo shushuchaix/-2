@@ -202,7 +202,7 @@ export function createEvaluationService({
           ? {
               evaluationId: e.evaluationId,
               score: e.score,
-              qualification: e.qualification.status,
+              qualification: e.qualification?.status || "unknown",
               profileRevisionId: e.profileRevisionId,
               targetRevisionId: e.targetRevisionId,
             }

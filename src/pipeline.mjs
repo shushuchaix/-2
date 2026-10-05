@@ -381,6 +381,8 @@ export async function loadRun(runId, { context, cfg } = {}) {
   const run = (await context.repository.read()).runs[runId];
   if (!run || run.deletedAt) return null;
   if (run.legacy) {
+    if (run.snapshotRef)
+      return (await context.repository.readRunSnapshot(runId)).legacyResult;
     try {
       return JSON.parse(
         await fs.readFile(
@@ -409,14 +411,12 @@ export async function listRuns(limit = 50, { context, cfg } = {}) {
   context ||= await getDefaultApplicationContext(
     cfg || (await import("./config.mjs")).loadConfig({ quiet: true }),
   );
-  return (await context.runService.listRuns())
-    .slice(0, limit)
-    .map((run) => ({
-      runId: run.runId,
-      createdAt: run.createdAt || run.startedAt,
-      returned: run.counts.returned ?? run.counts.deduplicated ?? 0,
-      targetRoles: run.targetSnapshot?.roles || [],
-      cities: run.targetSnapshot?.cities || [],
-      size: 0,
-    }));
+  return (await context.runService.listRuns()).slice(0, limit).map((run) => ({
+    runId: run.runId,
+    createdAt: run.createdAt || run.startedAt,
+    returned: run.counts.returned ?? run.counts.deduplicated ?? 0,
+    targetRoles: run.targetSnapshot?.roles || [],
+    cities: run.targetSnapshot?.cities || [],
+    size: 0,
+  }));
 }

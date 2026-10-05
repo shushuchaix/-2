@@ -37,7 +37,13 @@ export function resolveJobIdentity(record) {
   if (id !== null && id !== undefined && String(id) !== "") {
     const key =
       "id:" + JSON.stringify([sourceOf(record), scopeOf(record), String(id)]);
-    return { key, strength: "strong", aliases: [key] };
+    return {
+      key,
+      strength: "strong",
+      aliases: record.url
+        ? [key, "url:" + canonicalizeSourceUrl(record.url, record.urlPolicy)]
+        : [key],
+    };
   }
   if (record.url) {
     const key = "url:" + canonicalizeSourceUrl(record.url, record.urlPolicy);
@@ -97,7 +103,12 @@ export function relateJobs(a, b) {
     conflicts.push("different_levels");
   if (a.kind && b.kind && a.kind !== b.kind) conflicts.push("different_kinds");
   if (conflicts.length) return { relation: "distinct", reasons: conflicts };
-  if (x.key === y.key && x.strength !== "weak")
+  if (
+    (x.key === y.key && x.strength !== "weak") ||
+    x.aliases.some(
+      (alias) => alias.startsWith("url:") && y.aliases.includes(alias),
+    )
+  )
     return { relation: "same", reasons: ["canonical_url"] };
   if (
     normalized(a.company) &&

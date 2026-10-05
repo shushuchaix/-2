@@ -262,6 +262,14 @@ export async function handleV2Request(req, res, context) {
     } else return false;
     return true;
   }
+  if (route === "/applications/unresolved" && method === "GET") {
+    send(200, await jobs.listUnresolvedApplications(filters(url.searchParams)));
+    return true;
+  }
+  if ((match = route.match(/^\/applications\/([^/]+)$/)) && method === "GET") {
+    send(200, await jobs.getApplication(jobIdentifier(decode(match[1]))));
+    return true;
+  }
   if ((match = route.match(/^\/applications\/([^/]+)$/)) && method === "PUT") {
     send(
       200,
@@ -284,6 +292,16 @@ export async function handleV2Request(req, res, context) {
     identifier(input.siteId);
     identifier(input.providerId);
     send(201, await context.sourceService.addSite(input));
+    return true;
+  }
+  if (
+    (match = route.match(/^\/sources\/sites\/([^/]+)$/)) &&
+    method === "DELETE"
+  ) {
+    send(
+      200,
+      await context.sourceService.removeSite(identifier(decode(match[1]))),
+    );
     return true;
   }
   if (

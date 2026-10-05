@@ -1,0 +1,328 @@
+{
+  "ref": "3547885",
+  "mode": "legacy-pure-rules",
+  "network": "blocked",
+  "scenarios": [
+    {
+      "profileId": "software",
+      "ranked": [
+        {
+          "jobId": "s1",
+          "score": 98,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "high"
+        },
+        {
+          "jobId": "s9",
+          "score": 88,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "high"
+        },
+        {
+          "jobId": "s7",
+          "score": 72,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s2",
+          "score": 60,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s4",
+          "score": 28,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s3",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s5",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s6",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s8",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s10",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        }
+      ],
+      "metrics": {
+        "precisionAt10": 0.1,
+        "ndcgAt10": 0.9680147827042069,
+        "qualificationConfusion": {
+          "pass": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 6
+          },
+          "fail": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 3
+          },
+          "unknown": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 1
+          }
+        },
+        "incompleteHighRecommendationRate": 0
+      }
+    },
+    {
+      "profileId": "fire",
+      "ranked": [
+        {
+          "jobId": "s3",
+          "score": 98,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "high"
+        },
+        {
+          "jobId": "s8",
+          "score": 52,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s9",
+          "score": 31,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s1",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s2",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s4",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s5",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s6",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s10",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s7",
+          "score": 15,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        }
+      ],
+      "metrics": {
+        "precisionAt10": 0.1,
+        "ndcgAt10": 0.9610012895088121,
+        "qualificationConfusion": {
+          "pass": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 6
+          },
+          "fail": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 3
+          },
+          "unknown": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 1
+          }
+        },
+        "incompleteHighRecommendationRate": 0
+      }
+    },
+    {
+      "profileId": "mechanical",
+      "ranked": [
+        {
+          "jobId": "s5",
+          "score": 98,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "high"
+        },
+        {
+          "jobId": "s9",
+          "score": 31,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s1",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s2",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s3",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s4",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s6",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s8",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s10",
+          "score": 27,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        },
+        {
+          "jobId": "s7",
+          "score": 15,
+          "qualification": {
+            "status": "unknown"
+          },
+          "recommendation": "consider"
+        }
+      ],
+      "metrics": {
+        "precisionAt10": 0.1,
+        "ndcgAt10": 0.9680147827042069,
+        "qualificationConfusion": {
+          "pass": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 6
+          },
+          "fail": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 3
+          },
+          "unknown": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 1
+          }
+        },
+        "incompleteHighRecommendationRate": 0
+      }
+    }
+  ]
+}

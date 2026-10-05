@@ -17,17 +17,35 @@
       ]
     },
     "evidenceUrl": "https://www.ict.ac.cn/rczp/202510/t20251015_7989499.html",
-    "verifiedAt": null,
-    "status": "candidate",
+    "verifiedAt": "2026-10-05T04:49:37.101Z",
+    "status": "ready",
     "template": {
       "listUrl": "https://www.ict.ac.cn/rczp/",
-      "linkRule": "a",
+      "linkRule": ".list-tab ul li a",
       "titleRule": "h1",
       "dateRule": null,
       "bodyRule": ".textxl",
       "pathPrefix": "/rczp/",
       "category": "public"
-    }
+    },
+    "probeEvidence": [
+      {
+        "sourceRecordId": "https://www.ict.ac.cn/rczp/202510/t20251015_7989499.html",
+        "title": "中国科学院计算技术研究所2026年度招聘",
+        "url": "https://www.ict.ac.cn/rczp/202510/t20251015_7989499.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "https://www.ict.ac.cn/rczp/202508/t20250826_7915535.html",
+        "title": "中国科学院计算技术研究所公开招聘启事",
+        "url": "https://www.ict.ac.cn/rczp/202508/t20250826_7915535.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "public-iscas",
@@ -47,17 +65,35 @@
       ]
     },
     "evidenceUrl": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260717_8251365.html",
-    "verifiedAt": null,
-    "status": "candidate",
+    "verifiedAt": "2026-10-05T04:49:42.357Z",
+    "status": "ready",
     "template": {
       "listUrl": "https://www.iscas.ac.cn/rcdw/rczp/",
-      "linkRule": "a",
+      "linkRule": "#content.subpage-news-list > li > a",
       "titleRule": "h1",
       "dateRule": null,
       "bodyRule": ".article-content",
       "pathPrefix": "/rcdw/rczp/",
       "category": "public"
-    }
+    },
+    "probeEvidence": [
+      {
+        "sourceRecordId": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260717_8251365.html",
+        "title": "中国科学院软件研究所2026年度校园招聘启事",
+        "url": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260717_8251365.html",
+        "kind": "recruitment_notice",
+        "jobType": "campus",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260729_8256777.html",
+        "title": "中国科学院软件研究所基础软件与系统重点实验室主任招聘启事",
+        "url": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260729_8256777.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "public-iop",
@@ -77,17 +113,35 @@
       ]
     },
     "evidenceUrl": "https://www.iop.cas.cn/zszp/zp/202608/t20260817_8261008.html",
-    "verifiedAt": null,
-    "status": "candidate",
+    "verifiedAt": "2026-10-05T04:49:46.078Z",
+    "status": "ready",
     "template": {
       "listUrl": "https://www.iop.cas.cn/zszp/zp/",
-      "linkRule": "a",
+      "linkRule": "#news_box .row .col-news-title a",
       "titleRule": "h1",
       "dateRule": "#news_sub_title",
       "bodyRule": ".news_content",
       "pathPrefix": "/zszp/zp/",
       "category": "public"
-    }
+    },
+    "probeEvidence": [
+      {
+        "sourceRecordId": "https://www.iop.cas.cn/zszp/zp/202301/t20230118_6601431.html",
+        "title": "中国科学院物理研究所海内外杰出人才招聘通知（长期有效）",
+        "url": "https://www.iop.cas.cn/zszp/zp/202301/t20230118_6601431.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "https://www.iop.cas.cn/zszp/zp/202608/t20260817_8261008.html",
+        "title": "中国科学院物理研究所2027年度管理岗位招聘启事",
+        "url": "https://www.iop.cas.cn/zszp/zp/202608/t20260817_8261008.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "public-gibh",
@@ -107,17 +161,35 @@
       ]
     },
     "evidenceUrl": "https://gibh.cas.cn/rczp/202609/t20260904_8278624.html",
-    "verifiedAt": null,
-    "status": "candidate",
+    "verifiedAt": "2026-10-05T04:49:50.798Z",
+    "status": "ready",
     "template": {
       "listUrl": "https://gibh.cas.cn/rczp/index.html",
-      "linkRule": "a",
+      "linkRule": "#content > li .box-s > a.box-title",
       "titleRule": "h1",
-      "dateRule": null,
+      "dateRule": ".qtinfo",
       "bodyRule": "#zoom",
       "pathPrefix": "/rczp/",
       "category": "public"
-    }
+    },
+    "probeEvidence": [
+      {
+        "sourceRecordId": "https://gibh.cas.cn/rczp/202609/t20260915_8283173.html",
+        "title": "CLAF工程办公室招聘宣传科普文书岗",
+        "url": "https://gibh.cas.cn/rczp/202609/t20260915_8283173.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "https://gibh.cas.cn/rczp/202601/t20260128_8119834.html",
+        "title": "信息化与数据中心岗位招聘启事（中心主任岗）",
+        "url": "https://gibh.cas.cn/rczp/202601/t20260128_8119834.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "public-las",
@@ -137,17 +209,35 @@
       ]
     },
     "evidenceUrl": "https://las.cas.cn/edu/rczp/202605/t20260525_8208837.html",
-    "verifiedAt": null,
-    "status": "candidate",
+    "verifiedAt": "2026-10-05T04:49:54.933Z",
+    "status": "ready",
     "template": {
       "listUrl": "https://las.cas.cn/edu/rczp/",
-      "linkRule": "a",
+      "linkRule": ".list-news #content > li > a",
       "titleRule": "h1",
-      "dateRule": null,
+      "dateRule": ".qtinfo",
       "bodyRule": "#zoom",
       "pathPrefix": "/edu/rczp/",
       "category": "public"
-    }
+    },
+    "probeEvidence": [
+      {
+        "sourceRecordId": "https://las.cas.cn/edu/rczp/202607/t20260701_8236359.html",
+        "title": "中国科学院文献情报中心项目聘用工作人员招聘启事",
+        "url": "https://las.cas.cn/edu/rczp/202607/t20260701_8236359.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "https://las.cas.cn/edu/rczp/202607/t20260701_8236356.html",
+        "title": "中国科学院文献情报中心劳务派遣工作人员招聘启事",
+        "url": "https://las.cas.cn/edu/rczp/202607/t20260701_8236356.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "public-ipe",
@@ -167,16 +257,34 @@
       ]
     },
     "evidenceUrl": "https://ipe.cas.cn/rcdw/rczp/202608/t20260818_8261766.html",
-    "verifiedAt": null,
-    "status": "candidate",
+    "verifiedAt": "2026-10-05T04:49:59.381Z",
+    "status": "ready",
     "template": {
       "listUrl": "https://ipe.cas.cn/rcdw/rczp/index.html",
-      "linkRule": "a",
+      "linkRule": "#content.list_grup > li.list-tit > a",
       "titleRule": "h1",
       "dateRule": ".info",
       "bodyRule": "#content",
       "pathPrefix": "/rcdw/rczp/",
       "category": "public"
-    }
+    },
+    "probeEvidence": [
+      {
+        "sourceRecordId": "https://ipe.cas.cn/rcdw/rczp/202511/t20251118_8013644.html",
+        "title": "中国科学院过程工程所2026年招聘启事",
+        "url": "https://ipe.cas.cn/rcdw/rczp/202511/t20251118_8013644.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "https://ipe.cas.cn/rcdw/rczp/202105/t20210519_6029515.html",
+        "title": "中国科学院过程工程研究所海内外高层次人才招聘启事",
+        "url": "https://ipe.cas.cn/rcdw/rczp/202105/t20210519_6029515.html",
+        "kind": "recruitment_notice",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   }
 ]

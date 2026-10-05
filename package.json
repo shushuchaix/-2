@@ -54,6 +54,7 @@
   },
   "dependencies": {
     "acorn": "8.18.0",
+    "linkedom": "0.18.13",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {

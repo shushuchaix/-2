@@ -86,6 +86,8 @@ export function createRunService({
     };
     let plan, budget, client, modelBudget;
     let checking = false;
+    // Keep an active run alive until it observes cross-entry cancellation.
+    // The finally block releases this handle when execution reaches a terminal state.
     const cancellationPoll = setInterval(async () => {
       if (checking) return;
       checking = true;
@@ -97,7 +99,6 @@ export function createRunService({
         checking = false;
       }
     }, 500);
-    cancellationPoll.unref();
     async function ingest(records) {
       try {
         const result = await jobService.ingestRecords({ runId: id, records });

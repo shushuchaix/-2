@@ -4,6 +4,7 @@
   min-height: 100vh;
 }
 .sidebar {
+  min-width: 0;
   background: var(--surface);
   border-right: 1px solid var(--line);
   padding: 30px 20px;
@@ -89,6 +90,8 @@ main {
 }
 .stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 18px;
 }
 .row {
@@ -147,7 +150,7 @@ th {
 }
 @media (max-width: 900px) {
   #app {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .sidebar {
     position: static;
@@ -178,7 +181,7 @@ th {
   }
   .grid,
   .board {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));

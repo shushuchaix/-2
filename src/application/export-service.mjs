@@ -3,6 +3,7 @@ import { redactBusiness, csvCell } from "../domain/redact.mjs";
 export function createExportService({ repository }) {
   return {
     async export({ format = "json", filters = {} } = {}) {
+      if (format === "md") format = "markdown";
       const service = createJobService({ repository });
       const result = await service.queryJobs({
         ...filters,
@@ -34,6 +35,9 @@ export function createExportService({ repository }) {
         "备注",
         "资格",
         "匹配分",
+        "投递日期",
+        "跟进日期",
+        "简历版本",
       ];
       const values = rows.map((i) => [
         i.jobId,
@@ -43,10 +47,22 @@ export function createExportService({ repository }) {
         typeof i.salary === "object" ? i.salary?.raw : i.salary,
         i.sourceId,
         i.url,
-        i.application.status,
+        {
+          new: "未处理",
+          seen: "已看过",
+          interested: "感兴趣",
+          applied: "已投递",
+          interviewing: "面试中",
+          offer: "已录用",
+          rejected: "未通过",
+          ignored: "已忽略",
+        }[i.application.status] || i.application.status,
         i.application.note,
         i.evaluation?.qualification?.status,
         i.evaluation?.score,
+        i.application.appliedAt,
+        i.application.followUpAt,
+        i.application.resumeRevisionId,
       ]);
       if (format === "csv")
         return {

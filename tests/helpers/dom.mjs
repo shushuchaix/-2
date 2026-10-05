@@ -3,6 +3,17 @@ export function createTestDocument(html = '<main id="root"></main>') {
   const document = parseHTML(
     "<!doctype html><html><body>" + html + "</body></html>",
   ).document;
+  const nativeProto = document.defaultView.Element.prototype;
+  if (!nativeProto.__nativeVariadic) {
+    const original = nativeProto.replaceChildren;
+    nativeProto.replaceChildren = function (...nodes) {
+      return original.apply(
+        this,
+        nodes.map((node) => (Array.isArray(node) ? String(node) : node)),
+      );
+    };
+    nativeProto.__nativeVariadic = true;
+  }
   const proto = Object.getPrototypeOf(document.createElement("select"));
   if (!Object.getOwnPropertyDescriptor(proto, "value")?.set)
     Object.defineProperty(proto, "value", {

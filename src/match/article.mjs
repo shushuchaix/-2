@@ -116,6 +116,7 @@ function positionToJob(article, pos, articleResult) {
     [
       title,
       company,
+      pos.requirementsExcerpt,
       sanitizeText(pos.major),
       sanitizeText(pos.summary),
       sanitizeText(pos.education),
@@ -125,10 +126,10 @@ function positionToJob(article, pos, articleResult) {
   );
 
   return {
-    id: `wechat:${normKey(company)}|${normKey(title)}|${normKey(pos.city)}`,
-    source: "wechat",
+    id: `${article.sourceId || article.source || "wechat"}:${normKey(company)}|${normKey(title)}|${normKey(pos.city)}`,
+    source: article.sourceId || article.source || "wechat",
     sourceName: `${article.sourceName}`,
-    sources: ["wechat"],
+    sources: [article.sourceId || article.source || "wechat"],
     title,
     company,
     city: sanitizeText(pos.city),
@@ -246,12 +247,42 @@ export async function expandArticles(
       }
       for (const p of usable) {
         if (
+          typeof p.title !== "string" ||
           !text.includes(p.title) ||
-          !p.requirementsExcerpt ||
+          typeof p.requirementsExcerpt !== "string" ||
+          !p.requirementsExcerpt.trim() ||
           !text.includes(p.requirementsExcerpt)
         )
           continue;
-        const derived = positionToJob(article, p, res);
+        // Model output is untrusted. Keep a fact only when its literal value
+        // occurs in the source; an instruction in the prompt is not validation.
+        const literal = (value) => {
+          const clean = typeof value === "string" ? sanitizeText(value) : "";
+          return clean && text.includes(clean) ? clean : "";
+        };
+        const verified = {
+          ...p,
+          ...Object.fromEntries(
+            [
+              "company",
+              "city",
+              "education",
+              "major",
+              "experience",
+              "jobType",
+              "salary",
+              "headcount",
+              "summary",
+            ].map((field) => [field, literal(p[field])]),
+          ),
+        };
+        const verifiedArticle = Object.fromEntries(
+          ["company", "batch", "deadline", "applyMethod"].map((field) => [
+            field,
+            literal(res[field]),
+          ]),
+        );
+        const derived = positionToJob(article, verified, verifiedArticle);
         jobs.push({
           ...derived,
           sourceId: article.sourceId,
@@ -263,9 +294,9 @@ export async function expandArticles(
             normKey(
               p.title +
                 " " +
-                (p.company || article.company || "") +
+                (verified.company || verifiedArticle.company || "") +
                 " " +
-                (p.city || ""),
+                (verified.city || ""),
             ),
           kind: "job",
           description: p.requirementsExcerpt,

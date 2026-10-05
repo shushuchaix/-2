@@ -35,9 +35,12 @@ export function date(value) {
   if (value === null) return value;
   if (
     typeof value !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T/.test(value) ||
+    !/^\d{4}-\d{2}-\d{2}(?:$|T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$)/.test(
+      value,
+    ) ||
     !Number.isFinite(Date.parse(value)) ||
-    new Date(value).toISOString().slice(0, 10) !== value.slice(0, 10)
+    new Date(value.slice(0, 10) + "T00:00:00Z").toISOString().slice(0, 10) !==
+      value.slice(0, 10)
   )
     invalid("Invalid date");
   return value;

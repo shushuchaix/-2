@@ -38,6 +38,7 @@ export function validateModelResults(raw, { records }) {
       value.every((s) => typeof s === "string" && s.length <= 2000);
     const evidence =
       Array.isArray(row.evidence) &&
+      row.evidence.length > 0 &&
       row.evidence.every(
         (e) =>
           e &&

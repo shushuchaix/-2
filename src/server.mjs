@@ -151,7 +151,10 @@ function serveStatic(req, res, cfg, pathname, { allowMissing = false } = {}) {
       return;
     }
     const ext = path.extname(resolved);
-    const cache = ext === ".html" ? "no-cache" : "public, max-age=300";
+    // Stable asset URLs must revalidate when a new application version is installed.
+    const cache = [".html", ".js", ".mjs", ".css"].includes(ext)
+      ? "no-cache"
+      : "public, max-age=300";
     res.writeHead(200, {
       "Content-Type": MIME[ext] || "application/octet-stream",
       "Cache-Control": cache,

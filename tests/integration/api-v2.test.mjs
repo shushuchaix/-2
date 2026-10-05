@@ -3,6 +3,15 @@ import assert from "node:assert/strict";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 import { profile, target } from "../helpers/fixtures.mjs";
 import { VERSION } from "../../src/version.mjs";
+test("unversioned UI assets revalidate after an upgrade", async (t) => {
+  const f = await apiFixture(t);
+  for (const url of ["/", "/js/pages/workbench.js", "/styles/layout.css"]) {
+    const response = await fetch(f.origin + url);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-cache");
+    await response.text();
+  }
+});
 test("v2 creates real revisions persistent run jobs applications and business backup", async (t) => {
   const f = await apiFixture(t),
     p = await f.call("/api/v2/profiles", {

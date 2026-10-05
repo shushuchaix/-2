@@ -44,6 +44,7 @@ test("no target guides confirmation and partial runs show real counts", async ()
   };
   const page = mountWorkbenchPage(f);
   await page.ready;
+  assert.equal(f.root.querySelector("#workbenchTarget option")?.value, "t1@1");
   f.root.querySelector("#startRun").click();
   await f.settle();
   assert.ok(f.root.textContent.includes("部分来源失败"));

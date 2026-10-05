@@ -5,6 +5,11 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      live_sources:
+        description: "显式执行公网来源探针（外部站点结果独立于离线门槛）"
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -16,25 +21,22 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
-      # 只装生产依赖：测试套件在 Node 里跑，不需要 Electron。
+      # 安装锁定的测试依赖，不下载 Electron 运行时。
       # Electron 的 postinstall 要下载 ~130MB 运行时，CI 里没必要。
       - name: 安装依赖
         run: npm ci --ignore-scripts
 
       # 离线套件：不依赖外部站点，任何网络抖动都不该让它失败
-      - name: 离线测试（鉴权/配额/导出/调度/打分/过滤）
-        run: node tools/run-all-tests.mjs --skip-network
+      - name: 离线硬门槛（含 v2 全流程、迁移与恢复）
+        run: npm run test:offline
 
       # 联网套件：依赖智联/实习生/高校就业网等真实站点。
       # 这些站点会反爬、会抖动，所以单独一步并允许失败 —— 不让外部因素把 CI 弄红。
-      - name: 联网测试（数据源适配器）
-        run: node tools/run-all-tests.mjs
-        continue-on-error: true
-
-      - name: 数据源健康检查
-        run: node tools/check-sources.mjs
+      - name: 显式公网来源探针
+        if: github.event_name == 'workflow_dispatch' && inputs.live_sources
+        run: node tools/probe-sources-v2.mjs --report .cache/ci-source-readiness.md
         continue-on-error: true
 
       # 打包产物检查只在有 dist 时有意义；CI 里不打包（需要 Electron 运行时）

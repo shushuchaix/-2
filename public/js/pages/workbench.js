@@ -155,7 +155,7 @@ export function mountWorkbenchPage({ root, api, store }) {
           ["目标岗位记录", data.total],
         ];
       stats.replaceChildren(
-        counts.map(([name, n]) =>
+        ...counts.map(([name, n]) =>
           el(
             d,
             "div",
@@ -235,7 +235,7 @@ export function mountWorkbenchPage({ root, api, store }) {
     if (destroyed) return;
     history.replaceChildren(
       el(d, "h2", {}, "最近更新"),
-      (result.runs || []).slice(0, 5).map((r) =>
+      ...(result.runs || []).slice(0, 5).map((r) =>
         button(d, r.createdAt + " · " + r.status, () => {
           runId = r.runId;
           store.dispatch({ type: "run-start", runId });
@@ -282,7 +282,7 @@ export function mountWorkbenchPage({ root, api, store }) {
         return;
       }
       select.replaceChildren(
-        targets.map((t) =>
+        ...targets.map((t) =>
           el(
             d,
             "option",

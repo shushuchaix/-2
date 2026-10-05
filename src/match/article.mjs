@@ -33,7 +33,8 @@ const SCHEMA = `{
       "jobType": "校招 | 实习 | 社招 | 未说明（依据文章措辞判断，不要一律填校招）",
       "salary": "薪资，未提及留空",
       "headcount": "招聘人数，未提及留空",
-      "summary": "该岗位关键要求，60 字以内"
+      "summary": "该岗位关键要求，60 字以内",
+      "requirementsExcerpt": "对应岗位要求的正文原文，逐字摘录，不能改写"
     }
   ]
 }`;
@@ -155,7 +156,7 @@ function buildDescription(article, pos, extra) {
  * 批量把公众号文章展开为结构化岗位
  * @returns {{ jobs: object[], expanded: number, skipped: number, noJob: number }}
  */
-export async function expandArticles(llm, profile, articles, { maxExpand = 5, concurrency = 3, log = () => {} } = {}) {
+export async function expandArticles(llm, profile, articles, { maxExpand = 5, concurrency = 3, log = () => {}, signal } = {}) {
   const candidates = articles.slice(0, maxExpand);
   if (candidates.length === 0) return { jobs: [], expanded: 0, skipped: 0, noJob: 0 };
 
@@ -173,11 +174,12 @@ export async function expandArticles(llm, profile, articles, { maxExpand = 5, co
 
   await pool(candidates, concurrency, async (article) => {
     try {
+      signal?.throwIfAborted();
       const text = truncate(article.description, 6000);
       const res = await llm.chatJson(
         SYSTEM,
         `## 求职者画像（用于判断相关性，不影响抽取忠实度）\n${profileBrief}\n\n## 文章标题\n${article.title}\n\n## 公众号\n${article.extra?.account || '未知'}\n\n## 文章正文\n${text}\n\n请按下面结构输出 JSON：\n${SCHEMA}`,
-        { temperature: 0.1, maxTokens: 2200 },
+        { temperature: 0.1, maxTokens: 2200, signal },
       );
 
       if (!res || res.isRecruiting === false || !Array.isArray(res.positions) || res.positions.length === 0) {
@@ -196,7 +198,11 @@ export async function expandArticles(llm, profile, articles, { maxExpand = 5, co
         article.extra = { ...(article.extra || {}), expandedResult: 'no_concrete_position', dropped };
         return;
       }
-      for (const p of usable) jobs.push(positionToJob(article, p, res));
+      for (const p of usable) {
+        if (!text.includes(p.title) || !p.requirementsExcerpt || !text.includes(p.requirementsExcerpt)) continue;
+        const derived = positionToJob(article, p, res);
+        jobs.push({...derived, sourceId:article.sourceId,siteId:article.siteId,identityScope:article.identityScope,sourceRecordId:String(article.sourceRecordId||article.url)+':position:'+normKey(p.title+' '+(p.company||article.company||'')+' '+(p.city||'')),kind:'job',description:p.requirementsExcerpt,derivedFrom:article.sourceRecordId||article.url,evidence:[{field:'title',excerpt:p.title,url:article.url},{field:'description',excerpt:p.requirementsExcerpt,url:article.url}]});
+      }
       expanded++;
       article.extra = { ...(article.extra || {}), expandedResult: 'ok', positions: usable.length, dropped };
       log(
@@ -204,6 +210,7 @@ export async function expandArticles(llm, profile, articles, { maxExpand = 5, co
           (dropped ? `（过滤掉 ${dropped} 条占位描述）` : ''),
       );
     } catch (e) {
+      if(signal?.aborted)throw e;
       article.extra = { ...(article.extra || {}), expandedResult: `failed: ${e.message}` };
       log(`  文章抽取失败：${e.message}`);
     } finally {

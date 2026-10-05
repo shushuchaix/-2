@@ -9,5 +9,9 @@ export function createEvaluationService({repository,cache=new Map(),modelFactory
  await repository.mutateWorkspace(w=>{for(const e of completed){if(!w.jobs[e.jobId])throw Error('Job disappeared during evaluation');w.evaluations[e.evaluationId]=e;}});for(const e of completed){evaluations.push(e);if(['rules','ai'].includes(e.status))cache.set(e.cacheKey,structuredClone(e));}
  }
  return {evaluations,usage:{...budget.snapshot(),promptTokens:client?.usage?.promptTokens||0,completionTokens:client?.usage?.completionTokens||0},issues};
+ },async rescore(input){
+  const before=await repository.read(),ids=new Set(input.jobIds||[]);const previous=new Map();for(const evaluation of Object.values(before.evaluations).filter(e=>ids.has(e.jobId)).sort((a,b)=>String(a.createdAt).localeCompare(b.createdAt)))previous.set(evaluation.jobId,evaluation);
+  const result=await this.evaluate({...input,runId:null});const summary=e=>e?{evaluationId:e.evaluationId,score:e.score,qualification:e.qualification.status,profileRevisionId:e.profileRevisionId,targetRevisionId:e.targetRevisionId}:null;
+  return {...result,versions:{profileRevisionId:input.profileRevisionId,targetRevisionId:input.targetRevisionId},comparison:result.evaluations.map(e=>({jobId:e.jobId,before:summary(previous.get(e.jobId)),after:summary(e)}))};
  }};
 }

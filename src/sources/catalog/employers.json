@@ -14,9 +14,27 @@
       "detail": true
     },
     "evidenceUrl": "https://careers.tencent.com/m/zh-cn/termsservice.html",
-    "verifiedAt": null,
-    "status": "candidate",
-    "industry": "internet"
+    "verifiedAt": "2026-10-05T05:05:26.517Z",
+    "status": "ready",
+    "industry": "internet",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "2074756585305059328",
+        "title": "智能体套件-高级产品经理-CodeBuddy/WorkBuddy",
+        "url": "https://careers.tencent.com/jobdesc.html?postId=2074756585305059328",
+        "kind": "job",
+        "jobType": "social",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "2009274781974810624",
+        "title": "《王者万象棋》角色原画",
+        "url": "https://careers.tencent.com/jobdesc.html?postId=2009274781974810624",
+        "kind": "job",
+        "jobType": "social",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "bosch",
@@ -33,9 +51,28 @@
       "detail": true
     },
     "evidenceUrl": "https://www.bosch.com/careers/faq/",
-    "verifiedAt": null,
-    "status": "candidate",
-    "industry": "manufacturing"
+    "verifiedAt": "2026-10-05T05:05:29.949Z",
+    "status": "ready",
+    "industry": "manufacturing",
+    "country": "cn",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "744000153329829",
+        "title": "Regional Sales_MA",
+        "url": "https://jobs.smartrecruiters.com/BoschGroup/744000153329829-regional-sales-ma?oga=true",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "744000153329729",
+        "title": "Regional Sales_MA",
+        "url": "https://jobs.smartrecruiters.com/BoschGroup/744000153329729-regional-sales-ma?oga=true",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "huawei",
@@ -188,5 +225,46 @@
     "verifiedAt": null,
     "status": "candidate",
     "industry": "publishing"
+  },
+  {
+    "siteId": "canonical",
+    "providerId": "greenhouse",
+    "category": "employer",
+    "name": "Canonical",
+    "institutionUrl": "https://canonical.com/careers/all",
+    "origin": "https://boards-api.greenhouse.io",
+    "tenantId": "canonical",
+    "regions": [
+      "APAC"
+    ],
+    "majorFamilies": [
+      "software"
+    ],
+    "capabilities": {
+      "list": true,
+      "detail": true
+    },
+    "evidenceUrl": "https://canonical.com/careers/5569916",
+    "verifiedAt": "2026-10-05T05:05:30.081Z",
+    "status": "ready",
+    "industry": "software",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "5569916",
+        "title": "Accountant",
+        "url": "https://job-boards.greenhouse.io/canonical/jobs/5569916",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "7971310",
+        "title": "Accounts Payable Clerk",
+        "url": "https://job-boards.greenhouse.io/canonical/jobs/7971310",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   }
 ]

@@ -38,8 +38,10 @@ export function assertWorkspace(value) {
 export function assertSourceRecord(value) {
   if(!plain(value)||typeof value.sourceId!=='string'||!value.sourceId)throw new Error('Missing sourceId');
   if(typeof value.title!=='string'||!value.title.trim())throw new Error('Missing source title');
-  let url;try{url=new URL(value.url);}catch{throw new Error('Invalid source url');}
-  if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('Invalid source url');
+  if(!(value.sourceId==='manual'&&value.url===null)){
+    let url;try{url=new URL(value.url);}catch{throw new Error('Invalid source url');}
+    if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('Invalid source url');
+  }
   if(!JOB_KINDS.includes(value.kind)||!JOB_TYPES.includes(value.jobType))throw new Error('Invalid source kind/type');
   if(!Array.isArray(value.cities)||!Array.isArray(value.evidence))throw new Error('Invalid source evidence/cities');
   return value;

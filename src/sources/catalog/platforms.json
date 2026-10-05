@@ -91,7 +91,7 @@
       "discovery": false
     },
     "evidenceUrl": "https://www.ncss.cn/student/jobs/index.html",
-    "verifiedAt": "2026-10-05T04:45:41.550Z",
+    "verifiedAt": "2026-10-05T05:05:43.642Z",
     "status": "ready",
     "probeEvidence": [
       {
@@ -168,5 +168,45 @@
     "evidenceUrl": "https://mp.weixin.qq.com",
     "verifiedAt": null,
     "status": "candidate"
+  },
+  {
+    "siteId": "weibo",
+    "providerId": "weibo",
+    "category": "social_discovery",
+    "name": "微博招聘线索",
+    "institutionUrl": "https://weibo.com",
+    "origin": "https://weibo.com",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": false,
+      "discovery": true
+    },
+    "evidenceUrl": "https://weibo.com",
+    "verifiedAt": null,
+    "status": "candidate",
+    "accessStatus": "authorization_required"
+  },
+  {
+    "siteId": "douyin",
+    "providerId": "douyin",
+    "category": "social_discovery",
+    "name": "抖音招聘线索",
+    "institutionUrl": "https://www.douyin.com",
+    "origin": "https://www.douyin.com",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": false,
+      "discovery": true
+    },
+    "evidenceUrl": "https://www.douyin.com",
+    "verifiedAt": null,
+    "status": "candidate",
+    "accessStatus": "authorization_required"
   }
 ]

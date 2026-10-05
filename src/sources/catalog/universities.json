@@ -226,7 +226,7 @@
       "detail": true
     },
     "evidenceUrl": "https://seu.91job.org.cn/sub-station/home/10286",
-    "verifiedAt": "2026-10-05T04:45:46.609Z",
+    "verifiedAt": "2026-10-05T05:05:02.236Z",
     "status": "ready",
     "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
     "probeEvidence": [
@@ -265,7 +265,7 @@
       "detail": true
     },
     "evidenceUrl": "https://hhu.91job.org.cn/sub-station/home/10294",
-    "verifiedAt": "2026-10-05T04:45:50.322Z",
+    "verifiedAt": "2026-10-05T05:05:01.320Z",
     "status": "ready",
     "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
     "probeEvidence": [
@@ -304,9 +304,27 @@
       "detail": true
     },
     "evidenceUrl": "https://nuaa.91job.org.cn/sub-station/home/10287",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:01.640Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000756158",
+        "title": "雷达总体工程师",
+        "url": "https://nuaa.91job.org.cn/sub-station/jobDetails?xxdm=10287&zpgwid=1000000000756158",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000756156",
+        "title": "正合基业2027届校园大使招募",
+        "url": "https://nuaa.91job.org.cn/sub-station/jobDetails?xxdm=10287&zpgwid=1000000000756156",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njust",
@@ -325,9 +343,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njust.91job.org.cn/sub-station/home/10288",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:04.726Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000756149",
+        "title": "人力资源管培生",
+        "url": "https://njust.91job.org.cn/sub-station/jobDetails?xxdm=10288&zpgwid=1000000000756149",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000756148",
+        "title": "采购工程师",
+        "url": "https://njust.91job.org.cn/sub-station/jobDetails?xxdm=10288&zpgwid=1000000000756148",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njau",
@@ -346,9 +382,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njau.91job.org.cn/sub-station/home/10307",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:04.747Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000756184",
+        "title": "管培生",
+        "url": "https://njau.91job.org.cn/sub-station/jobDetails?xxdm=10307&zpgwid=1000000000756184",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000756156",
+        "title": "正合基业2027届校园大使招募",
+        "url": "https://njau.91job.org.cn/sub-station/jobDetails?xxdm=10307&zpgwid=1000000000756156",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njnu",
@@ -367,9 +421,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njnu.91job.org.cn/sub-station/home/10319",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:05.535Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000753384",
+        "title": "2027达能管培生招聘",
+        "url": "https://njnu.91job.org.cn/sub-station/jobDetails?xxdm=10319&zpgwid=1000000000753384",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000753381",
+        "title": "初高中教师",
+        "url": "https://njnu.91job.org.cn/sub-station/jobDetails?xxdm=10319&zpgwid=1000000000753381",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njtech",
@@ -388,9 +460,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njtech.91job.org.cn/sub-station/home/10291",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:10.821Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000756179",
+        "title": "技术支持工程师",
+        "url": "https://njtech.91job.org.cn/sub-station/jobDetails?xxdm=10291&zpgwid=1000000000756179",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000756178",
+        "title": "研发工程师",
+        "url": "https://njtech.91job.org.cn/sub-station/jobDetails?xxdm=10291&zpgwid=1000000000756178",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njupt",
@@ -409,9 +499,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njupt.91job.org.cn/sub-station/home/10293",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:08.240Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000753567",
+        "title": "结构工程师",
+        "url": "https://njupt.91job.org.cn/sub-station/jobDetails?xxdm=10293&zpgwid=1000000000753567",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000753564",
+        "title": "射频工程师",
+        "url": "https://njupt.91job.org.cn/sub-station/jobDetails?xxdm=10293&zpgwid=1000000000753564",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-nuist",
@@ -430,9 +538,27 @@
       "detail": true
     },
     "evidenceUrl": "https://nuist.91job.org.cn/sub-station/home/10300",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:09.399Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000753408",
+        "title": "中国农业银行河南省分行2027年度校园招聘",
+        "url": "https://nuist.91job.org.cn/sub-station/jobDetails?xxdm=10300&zpgwid=1000000000753408",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000753415",
+        "title": "安全工程师",
+        "url": "https://nuist.91job.org.cn/sub-station/jobDetails?xxdm=10300&zpgwid=1000000000753415",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njfu",
@@ -451,9 +577,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njfu.91job.org.cn/sub-station/home/10298",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:12.886Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000753704",
+        "title": "国家开发银行青海分行2027年校园招聘-信贷管理类、信息科技类",
+        "url": "https://njfu.91job.org.cn/sub-station/jobDetails?xxdm=10298&zpgwid=1000000000753704",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000753674",
+        "title": "水土保持岗",
+        "url": "https://njfu.91job.org.cn/sub-station/jobDetails?xxdm=10298&zpgwid=1000000000753674",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-cpu",
@@ -472,9 +616,27 @@
       "detail": true
     },
     "evidenceUrl": "https://cpu.91job.org.cn/sub-station/home/10316",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:12.833Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000755171",
+        "title": "生产工艺员（储备）",
+        "url": "https://cpu.91job.org.cn/sub-station/jobDetails?xxdm=10316&zpgwid=1000000000755171",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000755172",
+        "title": "食品研发专员",
+        "url": "https://cpu.91job.org.cn/sub-station/jobDetails?xxdm=10316&zpgwid=1000000000755172",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njmu",
@@ -493,9 +655,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njmu.91job.org.cn/sub-station/home/10312",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:14.124Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000753282",
+        "title": "SR方案经理(家禽)",
+        "url": "https://njmu.91job.org.cn/sub-station/jobDetails?xxdm=10312&zpgwid=1000000000753282",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000753277",
+        "title": "高级产品研发工程师（家禽方向）博士",
+        "url": "https://njmu.91job.org.cn/sub-station/jobDetails?xxdm=10312&zpgwid=1000000000753277",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njucm",
@@ -514,9 +694,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njucm.91job.org.cn/sub-station/home/10315",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:17.500Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000673440",
+        "title": "扬州大学附属医院高层次人才",
+        "url": "https://njucm.91job.org.cn/sub-station/jobDetails?xxdm=10315&zpgwid=1000000000673440",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000751214",
+        "title": "妇产科",
+        "url": "https://njucm.91job.org.cn/sub-station/jobDetails?xxdm=10315&zpgwid=1000000000751214",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-njue",
@@ -535,9 +733,27 @@
       "detail": true
     },
     "evidenceUrl": "https://njue.91job.org.cn/sub-station/home/10327",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:16.488Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000751809",
+        "title": "生产管理管培生",
+        "url": "https://njue.91job.org.cn/sub-station/jobDetails?xxdm=10327&zpgwid=1000000000751809",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000751936",
+        "title": "广州华立学院2026-2027学年专任教师招聘启事",
+        "url": "https://njue.91job.org.cn/sub-station/jobDetails?xxdm=10327&zpgwid=1000000000751936",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-nau",
@@ -556,9 +772,27 @@
       "detail": true
     },
     "evidenceUrl": "https://nau.91job.org.cn/sub-station/home/11287",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:17.782Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000756156",
+        "title": "正合基业2027届校园大使招募",
+        "url": "https://nau.91job.org.cn/sub-station/jobDetails?xxdm=11287&zpgwid=1000000000756156",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000756127",
+        "title": "会计",
+        "url": "https://nau.91job.org.cn/sub-station/jobDetails?xxdm=11287&zpgwid=1000000000756127",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-suda",
@@ -577,9 +811,27 @@
       "detail": true
     },
     "evidenceUrl": "https://suda.91job.org.cn/sub-station/home/10285",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:20.399Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000753384",
+        "title": "2027达能管培生招聘",
+        "url": "https://suda.91job.org.cn/sub-station/jobDetails?xxdm=10285&zpgwid=1000000000753384",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000749981",
+        "title": "工艺工程师",
+        "url": "https://suda.91job.org.cn/sub-station/jobDetails?xxdm=10285&zpgwid=1000000000749981",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-cczu",
@@ -598,9 +850,27 @@
       "detail": true
     },
     "evidenceUrl": "https://cczu.91job.org.cn/sub-station/home/10292",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:21.361Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000752137",
+        "title": "公考培训讲师",
+        "url": "https://cczu.91job.org.cn/sub-station/jobDetails?xxdm=10292&zpgwid=1000000000752137",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000752225",
+        "title": "楼宇服务工程师",
+        "url": "https://cczu.91job.org.cn/sub-station/jobDetails?xxdm=10292&zpgwid=1000000000752225",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-jiangnan",
@@ -619,9 +889,27 @@
       "detail": true
     },
     "evidenceUrl": "https://jiangnan.91job.org.cn/sub-station/home/10295",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:22.506Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000746434",
+        "title": "产品工程师",
+        "url": "https://jiangnan.91job.org.cn/sub-station/jobDetails?xxdm=10295&zpgwid=1000000000746434",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000746435",
+        "title": "FAE现场应用工程师",
+        "url": "https://jiangnan.91job.org.cn/sub-station/jobDetails?xxdm=10295&zpgwid=1000000000746435",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-ujs",
@@ -640,9 +928,27 @@
       "detail": true
     },
     "evidenceUrl": "https://ujs.91job.org.cn/sub-station/home/10299",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:25.620Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000756163",
+        "title": "机电工程师",
+        "url": "https://ujs.91job.org.cn/sub-station/jobDetails?xxdm=10299&zpgwid=1000000000756163",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000756162",
+        "title": "商务员/预算员",
+        "url": "https://ujs.91job.org.cn/sub-station/jobDetails?xxdm=10299&zpgwid=1000000000756162",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "91job-yzu",
@@ -661,9 +967,27 @@
       "detail": true
     },
     "evidenceUrl": "https://yzu.91job.org.cn/sub-station/home/11117",
-    "verifiedAt": null,
-    "status": "candidate",
-    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py"
+    "verifiedAt": "2026-10-05T05:05:25.700Z",
+    "status": "ready",
+    "candidateEvidence": "https://github.com/chidou59/workmaster/blob/main/backend/app/crawlers/schools.py",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "1000000000753556",
+        "title": "内控专员",
+        "url": "https://yzu.91job.org.cn/sub-station/jobDetails?xxdm=11117&zpgwid=1000000000753556",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "1000000000753567",
+        "title": "结构工程师",
+        "url": "https://yzu.91job.org.cn/sub-station/jobDetails?xxdm=11117&zpgwid=1000000000753567",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ]
   },
   {
     "siteId": "official-nju",

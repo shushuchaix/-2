@@ -47,7 +47,9 @@
     "deploy:check": "node tools/check-deploy-env.mjs",
     "recover": "node tools/recover-recycle.mjs",
     "test:web": "node tools/test-web.mjs",
-    "test:v2": "node tools/test-v2.mjs"
+    "test:v2": "node tools/test-v2.mjs",
+    "probe:sources": "node tools/probe-sources-v2.mjs",
+    "verify:catalog": "node tools/verify-source-catalog.mjs"
   },
   "engines": {
     "node": ">=20"

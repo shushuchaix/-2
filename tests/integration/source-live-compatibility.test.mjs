@@ -131,9 +131,12 @@ for (const primary of ["", '<div class="mainContent">提示</div>']) {
 
 test("NCSS continues to reject absent or insufficient requirements", async () => {
   const record = job({ sourceId: "ncss", siteId: "ncss" });
-  for (const html of [
-    "<p>没有正文结构的公开页面</p>",
-    '<div class="mainContent">提示</div><div class="jobdetail-box">短正文</div>',
+  for (const [html, code] of [
+    ["<p>没有正文结构的公开页面</p>", "parse_error"],
+    [
+      '<div class="mainContent">提示</div><div class="jobdetail-box">短正文</div>',
+      "detail_insufficient",
+    ],
   ]) {
     await assert.rejects(
       ncss.fetchDetail(
@@ -143,7 +146,7 @@ test("NCSS continues to reject absent or insufficient requirements", async () =>
           text: html,
         }),
       ),
-      { code: "parse_error" },
+      { code },
     );
   }
 });

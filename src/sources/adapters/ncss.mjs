@@ -98,15 +98,27 @@ export default createPagedProvider({
     const response = await ctx.request(r.url, { signal: ctx.signal });
     if (response.status !== 200)
       throw Error("NCSS detail HTTP " + response.status);
-    const body = [".mainContent", ".jobdetail-box"]
-      .map((selector) => ({
-        selector,
-        text: elementText(response.text, selector),
-      }))
-      .find((candidate) => candidate.text?.length >= 30);
+    const candidates = [".mainContent", ".jobdetail-box"].map((selector) => ({
+      selector,
+      text: elementText(response.text, selector),
+    }));
+    const title = String(r.title || "").replace(/\s+/g, "");
+    const body = candidates.find(
+      (candidate) =>
+        candidate.text?.length >= 30 &&
+        candidate.text.replace(/\s+/g, "") !== title,
+    );
     if (!body) {
-      const error = Error("parse_error: missing NCSS requirements");
-      error.code = "parse_error";
+      const insufficient = candidates.some(
+        (candidate) => candidate.text !== null,
+      );
+      const error = Error(
+        insufficient
+          ? "NCSS source body provides insufficient requirements"
+          : "parse_error: missing NCSS requirements",
+      );
+      error.code = insufficient ? "detail_insufficient" : "parse_error";
+      if (insufficient) error.retryable = false;
       throw error;
     }
     return {

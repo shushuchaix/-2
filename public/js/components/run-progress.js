@@ -17,17 +17,52 @@ const STAGE_LABELS = {
   evaluating: "评价岗位匹配",
   finished: "更新结束",
 };
-function issueText(issue) {
-  const operation = issue.operation || "";
-  const hints = /source|collect|detail|fetch|network|timeout/i.test(
-    operation + " " + issue.code,
+function runLabel(run) {
+  if (run.status !== "partial") return RUN_LABELS[run.status] || run.status;
+  const sourceFailed =
+    (run.coverage || []).some((entry) => entry.status === "failed") ||
+    (run.issues || []).some((issue) =>
+      /^(source_failed|unavailable|restricted|parse_error)$/.test(issue.code),
+    );
+  if (sourceFailed) return "部分来源失败";
+  if (
+    (run.coverage || []).some((entry) => entry.truncated) ||
+    (run.issues || []).some((issue) => issue.code === "budget_exhausted")
   )
-    ? "建议检查网络及该来源的可用状态，然后重试；查看更新日志了解失败操作。"
-    : /model|evaluat|ai/i.test(operation + " " + issue.code)
-      ? "建议检查模型设置，或使用规则模式重试；查看更新日志了解失败操作。"
-      : "查看更新日志了解失败操作和详细原因后重试。";
+    return "达到采集上限，结果未覆盖全部来源";
+  return "更新未全部完成";
+}
+export function runOutcomeText(run) {
+  const counts = run.counts || {};
+  return (
+    runLabel(run) +
+    "。" +
+    (counts.deduplicated == null
+      ? "已保存结果保留"
+      : "已保存 " + counts.deduplicated + " 条记录") +
+    (counts.shortlisted == null ? "" : "，候选 " + counts.shortlisted + " 条") +
+    "。"
+  );
+}
+function issueText(issue) {
+  const operation = (issue.operation || "") + " " + (issue.code || ""),
+    location = [issue.sourceId, issue.siteId].filter(Boolean).join(" / ");
+  const hints =
+    issue.code === "detail_insufficient"
+      ? "原网站未提供完整岗位要求，已保留列表信息。"
+      : issue.code === "budget_exhausted"
+        ? "本次达到采集预算或分页上限，已取得的列表信息已保留。"
+        : /model|evaluat|llm|(?:^|[.\s_-])ai(?:$|[.\s_-])/i.test(operation)
+          ? "建议检查模型设置，或使用规则模式重试；查看更新日志了解失败操作。"
+          : location ||
+              /source|collect|detail|fetch|network|timeout|unavailable|restricted|parse_error/i.test(
+                operation,
+              )
+            ? "建议检查网络及该来源的可用状态，然后重试；查看更新日志了解失败操作。"
+            : "查看更新日志了解失败操作和详细原因后重试。";
   return (
     issue.code +
+    (location ? "（" + location + "）" : "") +
     "：" +
     (issue.message || issue.siteId || "") +
     (issue.diagnosticId ? "（错误编号：" + issue.diagnosticId + "）" : "") +
@@ -50,16 +85,16 @@ export function runProgress({ document: d, run }) {
       d,
       "div",
       { className: "row" },
-      el(
-        d,
-        "span",
-        { className: "badge" },
-        RUN_LABELS[run.status] || run.status,
-      ),
+      el(d, "span", { className: "badge" }, runLabel(run)),
       run.degraded
         ? el(d, "span", { className: "badge" }, "部分模型评价已回退规则")
         : null,
     ),
+    ["completed", "partial", "failed", "cancelled", "interrupted"].includes(
+      run.status,
+    )
+      ? el(d, "p", {}, runOutcomeText(run))
+      : null,
     el(
       d,
       "p",

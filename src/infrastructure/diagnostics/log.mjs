@@ -8,6 +8,7 @@ const messages = {
   "run.source": "来源采集已返回。",
   "run.collect": "来源采集失败。",
   "run.detail": "岗位详情未取得，保留已有记录。",
+  "run.detail.insufficient": "原网站未提供完整岗位要求，已保留列表信息。",
   "run.ingest": "岗位记录处理失败。",
   "run.counts": "任务进度保存失败。",
   "run.events": "任务事件保存失败。",
@@ -171,11 +172,13 @@ function cleanEntry(event, error, clock) {
     diagnosticId: "d-" + randomUUID(),
     at: new Date(clock.now()).toISOString(),
     level:
-      error || event.level === "error"
-        ? "error"
-        : event.level === "warn"
-          ? "warn"
-          : "info",
+      error?.code === "detail_insufficient" && event.level !== "error"
+        ? "warn"
+        : error || event.level === "error"
+          ? "error"
+          : event.level === "warn"
+            ? "warn"
+            : "info",
     operation,
     message: messages[operation],
   };

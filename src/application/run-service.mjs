@@ -410,16 +410,24 @@ export function createRunService({
           detail = await provider.fetchDetail(record, context);
         } catch (error) {
           if (signal.aborted) throw error;
-          const entry = await diagnose("run.detail", error, {
-            sourceId: record.sourceId,
-            siteId: record.siteId,
-          });
+          const insufficient = error.code === "detail_insufficient";
+          const entry = await diagnose(
+            insufficient ? "run.detail.insufficient" : "run.detail",
+            error,
+            {
+              sourceId: record.sourceId,
+              siteId: record.siteId,
+            },
+          );
           issues.push({
             code: error.code || "detail_unavailable",
             sourceId: record.sourceId,
             siteId: record.siteId,
             jobId: record.jobId,
-            message: "详情未取得，保留已有事实。",
+            message: insufficient
+              ? "原网站未提供完整岗位要求，已保留列表信息。可打开原链接核查或补充招聘正文。"
+              : "详情未取得，保留已有事实。",
+            ...(insufficient ? { retryable: false } : {}),
             ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
           });
           if (error.status === 404)

@@ -14,12 +14,27 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
   const root = el(d, "div", { className: "source-list" });
   for (const source of sources) {
     const sourceSites = sites.filter((s) => s.providerId === source.sourceId),
+      currentHealth = (site) =>
+        site.health || source.health?.find((h) => h.siteId === site.siteId),
+      summary = el(d, "summary"),
       checkbox = el(d, "input", {
         id: "sourceEnabled-" + source.sourceId,
         type: "checkbox",
         checked: source.config?.enabled !== false,
         "aria-describedby": "sourceHint-" + source.sourceId,
       });
+    function updateSummary() {
+      summary.textContent =
+        source.name +
+        " · " +
+        sourceSites.filter(
+          (site) => (currentHealth(site)?.status || site.status) === "ready",
+        ).length +
+        " 可用 / " +
+        sourceSites.length +
+        " 目录站点";
+    }
+    updateSummary();
     const configForm = el(d, "form"),
       save = el(d, "button", { type: "submit" }, "保存来源设置"),
       stateMessage = el(d, "p", {
@@ -79,17 +94,7 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
       d,
       "details",
       { className: "source-row" },
-      el(
-        d,
-        "summary",
-        {},
-        source.name +
-          " · " +
-          sourceSites.filter((s) => s.status === "ready").length +
-          " 可用 / " +
-          sourceSites.length +
-          " 目录站点",
-      ),
+      summary,
       configForm,
       el(
         d,
@@ -105,8 +110,7 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
     for (const site of sourceSites.length
       ? sourceSites
       : [{ siteId: null, name: source.name, status: "candidate" }]) {
-      const health =
-          site.health || source.health?.find((h) => h.siteId === site.siteId),
+      const health = currentHealth(site),
         info = el(d, "div", { className: "card stack" }),
         state = el(
           d,
@@ -142,6 +146,8 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
                 "/sources/" + source.sourceId + "/probe",
                 { method: "POST", body: { siteId: site.siteId || undefined } },
               );
+              site.health = result;
+              updateSummary();
               state.textContent = labels[result.status] || result.status;
               attempt.textContent = "本次尝试：" + formatDate(result.checkedAt);
               if (result.status === "ready")

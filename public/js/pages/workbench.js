@@ -1,7 +1,7 @@
 import { readAllJobs } from "../jobs-data.js";
 import { el, button, latest, field } from "../components/dom.js";
 import { feedback } from "../components/feedback.js";
-import { runProgress } from "../components/run-progress.js";
+import { runProgress, runOutcomeText } from "../components/run-progress.js";
 import { diagnosticsPanel } from "../components/diagnostics-panel.js";
 import { renderJobList } from "../components/job-list.js";
 import { openJobDetail } from "../components/job-detail.js";
@@ -264,6 +264,11 @@ export function mountWorkbenchPage({ root, api, store }) {
       const run = await api.request("/runs/" + id);
       if (!current()) return;
       progress.replaceChildren(runProgress({ document: d, run }));
+      if (terminal.has(run.status))
+        status.show(
+          runOutcomeText(run),
+          ["failed", "interrupted"].includes(run.status),
+        );
       cancel.disabled = true;
       start.disabled = false;
       await loadJobs();
@@ -282,6 +287,13 @@ export function mountWorkbenchPage({ root, api, store }) {
     if (destroyed || !state.run) return;
     progress.replaceChildren(runProgress({ document: d, run: state.run }));
     cancel.disabled = terminal.has(state.run.status);
+    if (terminal.has(state.run.status)) {
+      status.show(
+        runOutcomeText(state.run),
+        ["failed", "interrupted"].includes(state.run.status),
+      );
+      start.disabled = false;
+    }
   });
   async function loadHistory() {
     const request = ++historyLoading,

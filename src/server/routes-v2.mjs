@@ -36,6 +36,30 @@ export async function handleV2Request(req, res, context) {
   const send = (status, data) => http.json(req, res, status, data),
     body = () => http.readJson(req);
   let match;
+  if (
+    ["/diagnostics/logs", "/diagnostics/logs/export"].includes(route) &&
+    method === "GET"
+  ) {
+    for (const key of url.searchParams.keys())
+      if (!["runId", "limit"].includes(key))
+        throw inputError({ filters: "日志查询包含不支持的条件。" });
+    const runId = url.searchParams.get("runId") || undefined;
+    if (runId) identifier(runId);
+    const rawLimit = url.searchParams.get("limit"),
+      limit = rawLimit == null ? 200 : Number(rawLimit);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200)
+      throw inputError({ limit: "最多查看 200 条日志，请填写 1–200 的整数。" });
+    if (route.endsWith("/export")) {
+      res.writeHead(200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Disposition":
+          'attachment; filename="job-radar-diagnostics.txt"',
+        "Cache-Control": "no-store",
+      });
+      res.end(await context.diagnostics.exportText({ runId, limit }));
+    } else send(200, await context.diagnostics.list({ runId, limit }));
+    return true;
+  }
   if (route === "/profiles/import-preview" && method === "POST") {
     const input = await body();
     let text = input.resumeText || input.text,

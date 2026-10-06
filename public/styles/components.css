@@ -267,3 +267,20 @@ progress {
 .login-error {
   color: var(--danger);
 }
+.diagnostics-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.diagnostics-list {
+  display: grid;
+  gap: 12px;
+  max-height: 480px;
+  overflow: auto;
+  min-width: 0;
+}
+.diagnostics-entry {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}

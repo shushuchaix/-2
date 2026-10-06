@@ -54,6 +54,10 @@ export function createApiClient({
       } catch {}
       if (res.status === 401) onAuthRequired();
       const error = Error(data.error || "请求失败（" + res.status + "）");
+      if (typeof data.diagnosticId === "string" && data.diagnosticId.length <= 160 && data.diagnosticId) {
+        error.diagnosticId = data.diagnosticId;
+        error.message += "（错误编号：" + data.diagnosticId + "）";
+      }
       error.status = res.status;
       error.code =
         data.code ||

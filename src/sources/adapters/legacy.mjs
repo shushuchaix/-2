@@ -113,8 +113,16 @@ export function createLegacyProvider(id, { collector } = {}) {
             },
           );
           ctx.signal?.throwIfAborted();
-          for (const message of result.errors || [])
-            issues.push(sourceIssue(message, id, site.siteId));
+          for (const message of result.errors || []) {
+            const entry = await ctx.reportError?.(
+              message instanceof Error ? message : Error(String(message)),
+              { sourceId: id, siteId: site.siteId },
+            );
+            issues.push({
+              ...sourceIssue(message, id, site.siteId),
+              ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
+            });
+          }
           const batch = (result.jobs || []).map((r) =>
             normalizeRecord({
               ...r,
@@ -146,9 +154,20 @@ export function createLegacyProvider(id, { collector } = {}) {
             ).toISOString(),
           });
         } catch (e) {
-          if (ctx.signal?.aborted || e.code === "workspace_write_failed")
+          if (
+            ctx.signal?.aborted ||
+            e.runFatal ||
+            e.code === "workspace_write_failed"
+          )
             throw e;
-          issues.push(sourceIssue(e, id, site.siteId));
+          const entry = await ctx.reportError?.(e, {
+            sourceId: id,
+            siteId: site.siteId,
+          });
+          issues.push({
+            ...sourceIssue(e, id, site.siteId),
+            ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
+          });
           coverage.push({
             sourceId: id,
             siteId: site.siteId,
@@ -203,14 +222,12 @@ export function createLegacyProvider(id, { collector } = {}) {
         sampleCount: result.records.length,
         checkedAt: new Date().toISOString(),
         issues: result.issues,
-        evidence: result.records
-          .slice(0, 2)
-          .map((r) => ({
-            url: r.url,
-            title: r.title,
-            sourceRecordId: r.sourceRecordId,
-            hasRequirements: !!r.description,
-          })),
+        evidence: result.records.slice(0, 2).map((r) => ({
+          url: r.url,
+          title: r.title,
+          sourceRecordId: r.sourceRecordId,
+          hasRequirements: !!r.description,
+        })),
       };
     },
   };

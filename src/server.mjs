@@ -42,6 +42,7 @@ import * as university from "./sources/university.mjs";
 import * as chenyun from "./sources/chenyun.mjs";
 import * as jiuyeqiao from "./sources/jiuyeqiao.mjs";
 import * as store from "./store.mjs";
+import { createDiagnosticsLog } from "./infrastructure/diagnostics/log.mjs";
 
 const PUBLIC_DIR = path.join(ROOT, "public");
 const MAX_BODY = 40 * 1024 * 1024;
@@ -199,6 +200,8 @@ export function createServer(
   cfg,
   { dataDir = process.env.RJR_DATA_DIR || DATA_ROOT, dependencies = {} } = {},
 ) {
+  const diagnostics =
+    dependencies.diagnostics || createDiagnosticsLog({ dataDir });
   const llm = new DeepSeek(cfg);
   const exposure = assertSafeExposure(cfg);
 
@@ -229,9 +232,14 @@ export function createServer(
   const ready = createApplicationContext({
     cfg,
     dataDir,
-    dependencies: { ...dependencies, runGate: gate },
+    dependencies: { ...dependencies, diagnostics, runGate: gate },
   });
-  ready.catch(() => {});
+  ready.catch((error) => {
+    void diagnostics.record(
+      { operation: "http.request", stage: "startup" },
+      error,
+    );
+  });
 
   function sessionOf(req) {
     const cookies = parseCookies(req);
@@ -472,17 +480,23 @@ export function createServer(
 
       return sendJson(req, res, cfg, 404, { error: "未知接口" });
     } catch (e) {
+      const diagnosticId =
+        e.diagnosticId ||
+        (await diagnostics.record({ operation: "http.request" }, e))
+          .diagnosticId;
       if (!res.headersSent) {
         const storage = /ENOSPC|EACCES|EPERM|EROFS/.test(e.code || "");
         const status =
           e.status ||
-          (/not found|未找到|does not exist/i.test(e.message)
-            ? 404
-            : /Invalid|Private|Missing|forbidden|required|referenced|mismatch/i.test(
-                  e.message,
-                )
-              ? 400
-              : 500);
+          (storage
+            ? 500
+            : /not found|未找到|does not exist/i.test(e.message)
+              ? 404
+              : /Invalid|Private|Missing|forbidden|required|referenced|mismatch/i.test(
+                    e.message,
+                  )
+                ? 400
+                : 500);
         sendJson(req, res, cfg, status, {
           error: storage
             ? "存储写入失败，请检查可用空间和目录写入权限后重试。"
@@ -497,6 +511,7 @@ export function createServer(
           ...(e.fieldErrors && status < 500
             ? { fieldErrors: e.fieldErrors }
             : {}),
+          diagnosticId,
         });
       } else {
         try {
@@ -508,7 +523,7 @@ export function createServer(
     }
   });
 
-  return { server, llm, gate, authRequired, exposure, ready };
+  return { server, llm, gate, authRequired, exposure, ready, diagnostics };
 }
 
 /* ------------------------------ 启动 ------------------------------ */

@@ -27,11 +27,15 @@ import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 import { DeepSeek } from "../llm/deepseek.mjs";
 import { RunGate } from "../limits.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
+import { createDiagnosticsLog } from "../infrastructure/diagnostics/log.mjs";
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
   dependencies = {},
 }) {
+  const diagnostics =
+    dependencies.diagnostics ||
+    createDiagnosticsLog({ dataDir, clock: dependencies.clock });
   const repository =
     dependencies.repository ||
     (await openWorkspaceRepository({ dataDir, clock: dependencies.clock }));
@@ -86,6 +90,7 @@ export async function createApplicationContext({
       storageFile: path.join(repository.dataDir, "quota.json"),
     });
   const runService = createRunService({
+    diagnostics,
     repository,
     workspaceService,
     jobService,
@@ -99,6 +104,7 @@ export async function createApplicationContext({
     config: cfg,
   });
   const sourceService = createSourceService({
+      diagnostics,
       repository,
       registry,
       requestFactory,
@@ -113,6 +119,7 @@ export async function createApplicationContext({
     }),
     exportService = createExportService({ repository });
   const context = {
+    diagnostics,
     cfg,
     repository,
     workspaceService,

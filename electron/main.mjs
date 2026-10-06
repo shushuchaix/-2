@@ -22,6 +22,7 @@ import {
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createDiagnosticsLog } from "../src/infrastructure/diagnostics/log.mjs";
 
 const APP_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -59,6 +60,7 @@ let mainWindow = null;
 let httpServer = null;
 let dataDir = "";
 let appUrl = "";
+let diagnostics;
 
 /* ------------------------------ 菜单 ------------------------------ */
 function buildMenu() {
@@ -83,6 +85,10 @@ function buildMenu() {
         {
           label: "打开历史结果目录",
           click: () => openTarget(path.join(dataDir, "runs")),
+        },
+        {
+          label: "打开运行日志目录",
+          click: () => openTarget(path.join(dataDir, "logs")),
         },
         { type: "separator" },
         { role: "quit", label: "退出" },
@@ -410,6 +416,55 @@ async function runSelfTest() {
       return !budget.hasAttribute('aria-invalid') && budget.value==='0';
     })()`),
     );
+    const logEntry = await diagnostics.record(
+      {
+        operation: "run.ingest",
+        runId: "r-desktop-log",
+        sourceId: "synthetic",
+        stage: "details",
+      },
+      Error("Missing source title"),
+    );
+    const logResponse = await fetch(
+      appUrl + "/api/v2/diagnostics/logs?runId=r-desktop-log",
+    );
+    const logData = await logResponse.json();
+    check(
+      "桌面日志写入与任务筛选",
+      logResponse.ok &&
+        logData.entries.some(
+          (entry) => entry.diagnosticId === logEntry.diagnosticId,
+        ) &&
+        fs.existsSync(path.join(dataDir, "logs", "application.log")),
+    );
+    await mainWindow.webContents.executeJavaScript(
+      "document.querySelector('.diagnostics-panel').open=true",
+    );
+    let logVisible = false;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      logVisible = await mainWindow.webContents.executeJavaScript(
+        "document.querySelector('.diagnostics-list')?.textContent.includes(" +
+          JSON.stringify(logEntry.diagnosticId) +
+          ")",
+      );
+      if (logVisible) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    check("桌面实际日志查看入口", logVisible);
+    const logExport = await fetch(
+      appUrl + "/api/v2/diagnostics/logs/export?runId=r-desktop-log",
+    );
+    check(
+      "桌面日志导出",
+      logExport.ok && (await logExport.text()).includes(logEntry.diagnosticId),
+    );
+    await mainWindow.webContents.executeJavaScript(
+      "document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
+    );
+    fs.writeFileSync(
+      path.join(dataDir, "desktop-logs.png"),
+      (await mainWindow.webContents.capturePage()).toPNG(),
+    );
     await mainWindow.webContents.executeJavaScript(
       "location.hash='#/workbench'",
     );
@@ -451,6 +506,8 @@ async function runSelfTest() {
 /* ------------------------------ 启动 ------------------------------ */
 async function boot() {
   dataDir = resolveDataDir();
+  diagnostics = createDiagnosticsLog({ dataDir });
+  await diagnostics.record({ operation: "desktop.start", stage: "startup" });
   process.env.RJR_DESKTOP = "1";
   process.env.RJR_DATA_DIR = dataDir;
 
@@ -485,7 +542,10 @@ async function boot() {
       cfg.deepseek.apiKey = key;
     },
   });
-  const { server, ready } = createServer(cfg, { dataDir });
+  const { server, ready } = createServer(cfg, {
+    dataDir,
+    dependencies: { diagnostics },
+  });
   await ready;
   const port = await listen(server);
   httpServer = server;
@@ -514,6 +574,11 @@ if (!gotLock) {
     try {
       await boot();
     } catch (e) {
+      diagnostics ||= createDiagnosticsLog({ dataDir: resolveDataDir() });
+      const diagnostic = await diagnostics.record(
+        { operation: "desktop.failure", stage: "startup" },
+        e,
+      );
       if (SELF_TEST) {
         console.error(e.stack);
         fs.writeFileSync(
@@ -525,7 +590,7 @@ if (!gotLock) {
       }
       dialog.showErrorBox(
         "启动失败",
-        `${e.message}\n\n如果是端口或文件权限问题，请尝试删除数据目录后重试：\n${resolveDataDir()}`,
+        `启动未完成，请检查数据目录的写入权限和磁盘空间。\n\n错误编号：${diagnostic.diagnosticId}\n日志目录：${path.join(resolveDataDir(), "logs")}\n请保留数据目录以便排查。`,
       );
       app.quit();
       return;

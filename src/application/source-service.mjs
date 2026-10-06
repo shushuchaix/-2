@@ -8,6 +8,7 @@ export function createSourceService({
   registry,
   repository,
   requestFactory,
+  diagnostics,
   clock = repository.clock,
 }) {
   return {
@@ -33,14 +34,53 @@ export function createSourceService({
       }).find((s) => s.siteId === siteId && s.providerId === sourceId);
       if (siteId && !site) throw Error("Site not found for provider");
       const budget = createSourceBudget({ maxRequests: 6, maxDetails: 2 });
-      const result = await provider.probe({
-        sites: site ? [site] : [],
-        queries: [{ keyword: "", pageLimit: 1 }],
-        targetSnapshot: { cities: [] },
-        clock,
-        budget,
-        request: requestFactory({ budget }),
+      const started = clock.now();
+      let result;
+      try {
+        result = await provider.probe({
+          sites: site ? [site] : [],
+          queries: [{ keyword: "", pageLimit: 1 }],
+          targetSnapshot: { cities: [] },
+          clock,
+          budget,
+          request: requestFactory({ budget }),
+          reportError: (error, context) =>
+            diagnostics?.record(
+              { operation: "source.probe", sourceId, siteId, ...context },
+              error,
+            ),
+        });
+      } catch (error) {
+        const entry = await diagnostics?.record(
+          {
+            operation: "source.probe",
+            sourceId,
+            siteId,
+            durationMs: clock.now() - started,
+          },
+          error,
+        );
+        if (entry) error.diagnosticId = entry.diagnosticId;
+        throw error;
+      }
+      await diagnostics?.record({
+        operation: "source.probe",
+        sourceId,
+        siteId,
+        code: result.status,
+        level: result.status === "ready" ? "info" : "warn",
+        durationMs: clock.now() - started,
       });
+      for (const issue of result.issues || []) {
+        if (issue.diagnosticId) continue;
+        const entry = await diagnostics?.record(
+          { operation: "source.probe", sourceId, siteId, code: issue.code },
+          Object.assign(Error(issue.message || issue.code), {
+            code: issue.code,
+          }),
+        );
+        if (entry) issue.diagnosticId = entry.diagnosticId;
+      }
       await repository.mutateWorkspace((d) => {
         const health = recordSourceHealth(
           d,
@@ -67,12 +107,17 @@ export function createSourceService({
           throw inputError({ [key]: "设置格式不正确，请按该来源的要求填写。" });
       }
       const config = redactBusiness(input.config || {});
-      return (
+      const saved = (
         await repository.mutateWorkspace((w) => {
           w.settings.sourceOverrides[input.sourceId] = config;
           return config;
         })
       ).result;
+      await diagnostics?.record({
+        operation: "source.settings",
+        sourceId: input.sourceId,
+      });
+      return saved;
     },
     async addSite(input) {
       assertInput("site", input, {

@@ -5,20 +5,27 @@ const date = (value) =>
   value && Number.isFinite(Date.parse(value))
     ? new Date(value).toISOString()
     : null;
-function normalize(row, site) {
+function normalize(row, site, previous = {}) {
+  const city = String(row.location?.name || "").trim();
   return baseRecord({
+    ...previous,
     id: row.id,
     sourceId: "greenhouse",
     siteId: site.siteId,
     scope: site.tenantId,
-    title: row.title,
-    company: row.company_name || site.name,
-    cities: row.location?.name ? [row.location.name] : [],
-    url: row.absolute_url,
-    description: htmlToText(decodeEntities(row.content || "")) || null,
-    publishedAt: date(row.first_published),
-    deadlineAt: date(row.application_deadline),
+    title: String(row.title || "").trim() || previous.title,
+    company:
+      String(row.company_name || "").trim() || previous.company || site.name,
+    cities: city ? [city] : previous.cities || [],
+    url: String(row.absolute_url || "").trim() || previous.url,
+    description:
+      htmlToText(decodeEntities(row.content || "")) ||
+      previous.description ||
+      null,
+    publishedAt: date(row.first_published) || previous.publishedAt || null,
+    deadlineAt: date(row.application_deadline) || previous.deadlineAt || null,
     evidence: [
+      ...(previous.evidence || []),
       {
         field: "description",
         source: "documented public Job Board API content",
@@ -94,6 +101,10 @@ export default createPagedProvider({
     );
     if (String(row.id) !== record.sourceRecordId)
       throw Error("Greenhouse detail identity mismatch");
-    return { ...record, ...normalize(row, site), detailStatus: "complete" };
+    return {
+      ...record,
+      ...normalize(row, site, record),
+      detailStatus: "complete",
+    };
   },
 });

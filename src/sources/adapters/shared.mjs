@@ -3,9 +3,13 @@ export function jsonResponse(response) {
   if (response.status === 401 || response.status === 403) {
     const e = Error("restricted: HTTP " + response.status);
     e.code = "restricted";
+    e.status = response.status;
     throw e;
   }
-  if (response.status !== 200) throw Error("HTTP " + response.status);
+  if (response.status !== 200)
+    throw Object.assign(Error("HTTP " + response.status), {
+      status: response.status,
+    });
   if (
     /captcha|人机验证|访问过于频繁|<title>[^<]*验证码/i.test(
       response.text?.slice(0, 1500) || "",
@@ -100,19 +104,35 @@ export function createPagedProvider({
               const response = await listPage(site, query, page, ctx);
               pages++;
               raw += response.raw ?? response.records.length;
-              issues.push(...(response.issues || []));
+              for (const issue of response.issues || []) {
+                const entry = await ctx.reportError?.(
+                  Object.assign(Error(issue.message || issue.code), {
+                    code: issue.code,
+                  }),
+                  { sourceId: id, siteId: site.siteId },
+                );
+                issues.push({
+                  ...issue,
+                  ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
+                });
+              }
               const batch = [];
               for (const record of response.records) {
                 try {
                   assertSourceRecord(record);
                   batch.push(record);
                 } catch (e) {
+                  const entry = await ctx.reportError?.(e, {
+                    sourceId: id,
+                    siteId: site.siteId,
+                  });
                   issues.push({
                     code: "invalid_record",
                     sourceId: id,
                     siteId: site.siteId,
                     message: e.message,
                     retryable: false,
+                    ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
                   });
                 }
               }
@@ -133,8 +153,16 @@ export function createPagedProvider({
               finishedAt: new Date().toISOString(),
             });
           } catch (e) {
-            if (ctx.signal?.aborted || e.code === "workspace_write_failed")
+            if (
+              ctx.signal?.aborted ||
+              e.runFatal ||
+              e.code === "workspace_write_failed"
+            )
               throw e;
+            const entry = await ctx.reportError?.(e, {
+              sourceId: id,
+              siteId: site.siteId,
+            });
             issues.push({
               code:
                 e.code ||
@@ -145,6 +173,7 @@ export function createPagedProvider({
               siteId: site.siteId,
               message: e.message,
               retryable: !e.code,
+              ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
             });
             coverage.push({
               sourceId: id,
@@ -200,12 +229,17 @@ export function createPagedProvider({
               record.description.trim().length >= 30,
           });
         } catch (e) {
+          const entry = await ctx.reportError?.(e, {
+            sourceId: id,
+            siteId: r.siteId,
+          });
           result.issues.push({
             code: e.code || "detail_unavailable",
             sourceId: id,
             siteId: r.siteId,
             message: e.message,
             retryable: false,
+            ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
           });
         }
       }

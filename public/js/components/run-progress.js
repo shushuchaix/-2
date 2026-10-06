@@ -8,6 +8,33 @@ export const RUN_LABELS = {
   cancelled: "已取消",
   interrupted: "进程中断，可重新更新",
 };
+const STAGE_LABELS = {
+  queued: "等待开始",
+  planning: "准备采集计划",
+  collecting: "采集招聘来源",
+  details: "读取招聘详情",
+  expanding: "整理与扩展岗位",
+  evaluating: "评价岗位匹配",
+  finished: "更新结束",
+};
+function issueText(issue) {
+  const operation = issue.operation || "";
+  const hints = /source|collect|detail|fetch|network|timeout/i.test(
+    operation + " " + issue.code,
+  )
+    ? "建议检查网络及该来源的可用状态，然后重试；查看更新日志了解失败操作。"
+    : /model|evaluat|ai/i.test(operation + " " + issue.code)
+      ? "建议检查模型设置，或使用规则模式重试；查看更新日志了解失败操作。"
+      : "查看更新日志了解失败操作和详细原因后重试。";
+  return (
+    issue.code +
+    "：" +
+    (issue.message || issue.siteId || "") +
+    (issue.diagnosticId ? "（错误编号：" + issue.diagnosticId + "）" : "") +
+    "\n" +
+    hints
+  );
+}
 export function runProgress({ document: d, run }) {
   if (!run)
     return el(d, "p", { className: "muted" }, "选择目标后更新招聘来源。");
@@ -38,7 +65,7 @@ export function runProgress({ document: d, run }) {
       "p",
       {},
       "阶段：" +
-        (run.stage || "queued") +
+        (STAGE_LABELS[run.stage || "queued"] || run.stage) +
         " · 新发现 " +
         (c.newForTarget || 0) +
         " 条",
@@ -97,9 +124,7 @@ export function runProgress({ document: d, run }) {
       d,
       "div",
       { className: "prose" },
-      (run.issues || [])
-        .map((i) => i.code + "：" + (i.message || i.siteId || ""))
-        .join("\n"),
+      (run.issues || []).map(issueText).join("\n"),
     ),
   );
 }

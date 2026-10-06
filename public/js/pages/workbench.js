@@ -2,6 +2,7 @@ import { readAllJobs } from "../jobs-data.js";
 import { el, button, latest, field } from "../components/dom.js";
 import { feedback } from "../components/feedback.js";
 import { runProgress } from "../components/run-progress.js";
+import { diagnosticsPanel } from "../components/diagnostics-panel.js";
 import { renderJobList } from "../components/job-list.js";
 import { openJobDetail } from "../components/job-detail.js";
 import { temporaryCredentials } from "../credentials.js";
@@ -32,6 +33,7 @@ export function mountWorkbenchPage({ root, api, store }) {
     progress = el(d, "section", { className: "card" }),
     jobs = el(d, "section", { className: "stack" }),
     history = el(d, "section", { className: "card" }),
+    diagnostics = diagnosticsPanel({ document: d, api }),
     toolbar = el(d, "form", { className: "card toolbar" });
   const temporaryKey = el(d, "input", {
     type: "password",
@@ -114,7 +116,7 @@ export function mountWorkbenchPage({ root, api, store }) {
       d,
       "div",
       { className: "grid" },
-      el(d, "div", { className: "stack" }, progress, history),
+      el(d, "div", { className: "stack" }, progress, diagnostics.node, history),
       jobs,
     ),
   );
@@ -237,6 +239,7 @@ export function mountWorkbenchPage({ root, api, store }) {
     }
   }
   async function connect(id) {
+    diagnostics.setRunId(id);
     streamController?.abort();
     const controller = new AbortController(),
       targetRevisionId = select.value;
@@ -308,6 +311,7 @@ export function mountWorkbenchPage({ root, api, store }) {
   select.addEventListener("change", async () => {
     streamController?.abort();
     runId = null;
+    diagnostics.setRunId(null);
     cancel.disabled = true;
     start.disabled = false;
     status.show("");
@@ -399,6 +403,7 @@ export function mountWorkbenchPage({ root, api, store }) {
       temporaryKey.value = "";
       streamController?.abort();
       unsubscribe();
+      diagnostics.destroy();
       dialog?.close();
       root.replaceChildren();
     },

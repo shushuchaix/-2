@@ -20,49 +20,59 @@ const description = (value) => {
       : String(data),
   );
 };
-function parseNotice(r, site) {
+function parseNotice(r, site, previous = {}) {
   const noticeId = String(r.zpggid);
+  const cities = String(r.gzcs || "")
+    .split(",")
+    .map((city) => city.trim())
+    .filter(Boolean);
   return baseRecord({
+    ...previous,
     id: "notice:" + noticeId,
     sourceId: id,
     siteId: site.siteId,
     scope: String(site.tenantId),
     kind: "recruitment_notice",
-    title: r.zpggbt,
+    title: String(r.zpggbt || "").trim() || previous.title,
     url:
+      previous.url ||
       site.origin +
-      "/web/wsjysc/lbxq/getZpggxq?zpggid=" +
-      encodeURIComponent(noticeId) +
-      "&xxdm=" +
-      encodeURIComponent(site.tenantId),
-    cities: String(r.gzcs || "")
-      .split(",")
-      .filter(Boolean),
-    description: description(r.zpggxq),
-    publishedAt: explicitDate(r.fbsj),
-    evidence: [{ field: "kind", sourceField: "getZpggPageList" }],
+        "/web/wsjysc/lbxq/getZpggxq?zpggid=" +
+        encodeURIComponent(noticeId) +
+        "&xxdm=" +
+        encodeURIComponent(site.tenantId),
+    cities: cities.length ? cities : previous.cities || [],
+    description: description(r.zpggxq) || previous.description || null,
+    publishedAt: explicitDate(r.fbsj) || previous.publishedAt || null,
+    evidence: [
+      ...(previous.evidence || []),
+      { field: "kind", sourceField: "getZpggPageList" },
+    ],
   });
 }
-function parse(r, site) {
+function parse(r, site, previous = {}) {
+  const city = String(r.gzdd || "").trim();
   return baseRecord({
+    ...previous,
     id: r.zpgwid,
     sourceId: id,
     siteId: site.siteId,
     scope: String(site.tenantId),
-    title: r.zwmc,
+    title: String(r.zwmc || "").trim() || previous.title,
     url:
+      previous.url ||
       site.origin +
-      "/sub-station/jobDetails?xxdm=" +
-      encodeURIComponent(site.tenantId) +
-      "&zpgwid=" +
-      encodeURIComponent(r.zpgwid),
-    company: r.dwmc || null,
-    cities: r.gzdd ? [r.gzdd] : [],
-    description: description(r.zwms),
-    degree: r.xlyq || null,
-    publishedAt: explicitDate(r.fbsj),
+        "/sub-station/jobDetails?xxdm=" +
+        encodeURIComponent(site.tenantId) +
+        "&zpgwid=" +
+        encodeURIComponent(r.zpgwid),
+    company: String(r.dwmc || "").trim() || previous.company || null,
+    cities: city ? [city] : previous.cities || [],
+    description: description(r.zwms) || previous.description || null,
+    degree: String(r.xlyq || "").trim() || previous.degree || null,
+    publishedAt: explicitDate(r.fbsj) || previous.publishedAt || null,
     salary:
-      typeof r.gzxz === "string"
+      typeof r.gzxz === "string" && r.gzxz.trim()
         ? {
             raw: r.gzxz,
             min: null,
@@ -70,9 +80,16 @@ function parse(r, site) {
             currency: "CNY",
             unit: "unknown",
           }
-        : null,
-    extra: { sourceExpiry: r.zwsxrq || null, major: r.xqzy || null },
-    evidence: [{ field: "description", sourceField: "zwms" }],
+        : previous.salary || null,
+    extra: {
+      ...previous.extra,
+      sourceExpiry: r.zwsxrq || previous.extra?.sourceExpiry || null,
+      major: r.xqzy || previous.extra?.major || null,
+    },
+    evidence: [
+      ...(previous.evidence || []),
+      { field: "description", sourceField: "zwms" },
+    ],
   });
 }
 const provider = createPagedProvider({
@@ -183,7 +200,7 @@ const provider = createPagedProvider({
       throw Error("parse_error: 91job detail identity");
     return {
       ...r,
-      ...(notice ? parseNotice(d.result, site) : parse(d.result, site)),
+      ...(notice ? parseNotice(d.result, site, r) : parse(d.result, site, r)),
       detailStatus: "complete",
     };
   },

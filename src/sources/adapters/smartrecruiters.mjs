@@ -12,38 +12,46 @@ function detailUrl(value, tenant, id) {
     throw Error("SmartRecruiters detail tenant mismatch");
   return expected;
 }
-function normalize(row, site) {
+function normalize(row, site, previous = {}) {
   if (row.company?.identifier && row.company.identifier !== site.tenantId)
     throw Error("SmartRecruiters company mismatch");
   const sections = row.jobAd?.sections || {};
+  const city = String(row.location?.city || "").trim();
+  const applyUrl = String(row.applyUrl || "").trim();
   return baseRecord({
+    ...previous,
     id: row.id,
     sourceId: "smartrecruiters",
     siteId: site.siteId,
     scope: site.tenantId,
-    title: row.name,
-    company: row.company?.name || site.name,
-    cities: row.location?.city ? [row.location.city] : [],
+    title: String(row.name || "").trim() || previous.title,
+    company:
+      String(row.company?.name || "").trim() || previous.company || site.name,
+    cities: city ? [city] : previous.cities || [],
     url:
-      row.applyUrl ||
+      applyUrl ||
+      previous.url ||
       "https://jobs.smartrecruiters.com/" +
         encodeURIComponent(site.tenantId) +
         "/" +
         encodeURIComponent(row.id),
-    applyUrl: row.applyUrl || null,
+    applyUrl: applyUrl || previous.applyUrl || null,
     description:
       Object.values(sections)
         .map((s) => htmlToText(s.text || ""))
         .filter(Boolean)
-        .join("\n") || null,
-    publishedAt: date(row.releasedDate),
+        .join("\n") ||
+      previous.description ||
+      null,
+    publishedAt: date(row.releasedDate) || previous.publishedAt || null,
     jobType: /intern/i.test(
       row.typeOfEmployment?.label || row.experienceLevel?.label || "",
     )
       ? "internship"
-      : "unknown",
+      : previous.jobType || "unknown",
     _detailUrl: detailUrl(row.ref, site.tenantId, row.id),
     evidence: [
+      ...(previous.evidence || []),
       {
         field: "publishedAt",
         source: "releasedDate",
@@ -96,6 +104,10 @@ export default createPagedProvider({
     );
     if (String(row.id) !== record.sourceRecordId)
       throw Error("SmartRecruiters detail identity mismatch");
-    return { ...record, ...normalize(row, site), detailStatus: "complete" };
+    return {
+      ...record,
+      ...normalize(row, site, record),
+      detailStatus: "complete",
+    };
   },
 });

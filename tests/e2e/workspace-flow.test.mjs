@@ -44,6 +44,13 @@ test("personal workflow survives restart and exports human records in Markdown",
       issues: result.run.issues,
       coverage: result.run.coverage,
       counts: result.run.counts,
+      ...(result.run.status === "failed"
+        ? {
+            diagnostics: (
+              await context.diagnostics.list({ runId: started.data.runId })
+            ).entries,
+          }
+        : {}),
     }),
   );
   const jobs = await f.call("/api/v2/jobs");

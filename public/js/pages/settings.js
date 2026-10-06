@@ -5,11 +5,13 @@ import { modelSettings } from "../components/model-settings.js";
 import { backupPanel } from "../components/backup-panel.js";
 import { jobImport } from "../components/job-import.js";
 import { bindValidation } from "../components/form-validation.js";
+import { diagnosticsPanel } from "../components/diagnostics-panel.js";
 export function mountSettingsPage({ root, api, desktopBridge }) {
   const d = root.ownerDocument,
     status = feedback(d),
     sourcesRoot = el(d, "section", { className: "card" }),
-    right = el(d, "div", { className: "stack" });
+    right = el(d, "div", { className: "stack" }),
+    diagnostics = diagnosticsPanel({ document: d, api });
   let destroyed = false,
     model;
   root.replaceChildren(
@@ -28,6 +30,7 @@ export function mountSettingsPage({ root, api, desktopBridge }) {
     ),
     status.node,
     el(d, "div", { className: "grid" }, sourcesRoot, right),
+    diagnostics.node,
   );
   const ready = (async () => {
     try {
@@ -167,6 +170,7 @@ export function mountSettingsPage({ root, api, desktopBridge }) {
     destroy() {
       destroyed = true;
       model?.destroy();
+      diagnostics.destroy();
       root.replaceChildren();
     },
   };

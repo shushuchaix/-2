@@ -31,6 +31,7 @@ export function createRunService({
   clock = repository.clock,
   catalog,
   config = {},
+  diagnostics,
 }) {
   const active = new Map(),
     now = () => new Date(clock.now()).toISOString();
@@ -85,7 +86,19 @@ export function createRunService({
       fallback: 0,
       newForTarget: 0,
     };
-    let plan, budget, client, modelBudget;
+    let plan,
+      budget,
+      client,
+      modelBudget,
+      currentStage = "queued";
+    async function diagnose(operation, error, context = {}) {
+      const entry = await diagnostics?.record(
+        { operation, runId: id, stage: currentStage, ...context },
+        error,
+      );
+      if (entry) error.diagnosticId = entry.diagnosticId;
+      return entry;
+    }
     let checking = false;
     // Keep an active run alive until it observes cross-entry cancellation.
     // The finally block releases this handle when execution reaches a terminal state.
@@ -101,6 +114,7 @@ export function createRunService({
       }
     }, 500);
     async function ingest(records) {
+      let operation = "run.ingest";
       try {
         const result = await jobService.ingestRecords({ runId: id, records });
         for (const jobId of result.jobIds) jobIds.add(jobId);
@@ -120,18 +134,43 @@ export function createRunService({
         }
         counts.deduplicated = jobIds.size;
         counts.newForTarget = newForTarget.size;
+        operation = "run.counts";
         await update(id, { counts: { ...counts } });
+        operation = "run.events";
         await emit(id, "batch", {
           jobIds: result.jobIds,
           counts: { ...counts },
         });
         return result;
       } catch (error) {
-        error.code = "workspace_write_failed";
+        await diagnose(operation, error, {
+          sourceId: records[0]?.sourceId,
+          siteId: records[0]?.siteId,
+          recordCount: records.length,
+        });
+        // Preserve the underlying code. Validation/program errors are not filesystem failures.
+        error.runFailureCode =
+          /^(?:EACCES|EPERM|ENOSPC|EROFS|EBUSY|EIO|EMFILE|ENFILE)$/.test(
+            error.code || "",
+          ) ||
+          /atomic\.|workspace\.(?:lock|read|previous|current)/.test(
+            error.storageOperation || "",
+          )
+            ? "workspace_write_failed"
+            : operation === "run.ingest"
+              ? "record_ingest_failed"
+              : "run_progress_failed";
+        error.runFatal = true;
         throw error;
       }
     }
     async function stage(name) {
+      currentStage = name;
+      await diagnostics?.record({
+        operation: "run.stage",
+        runId: id,
+        stage: name,
+      });
       await update(id, { stage: name, counts: { ...counts } });
       await emit(id, "stage", { stage: name });
     }
@@ -193,6 +232,12 @@ export function createRunService({
         clock,
         config,
         onBatch: ingest,
+        reportError: (error, context) =>
+          diagnose(
+            currentStage === "details" ? "run.detail" : "run.collect",
+            error,
+            context,
+          ),
       }));
       const rounds = Math.max(1, ...contexts.map((c) => c.queries.length));
       for (let round = 0; round < rounds; round++)
@@ -208,6 +253,7 @@ export function createRunService({
             });
             continue;
           }
+          const sourceStarted = clock.now();
           try {
             const result = await provider.collect({
               ...context,
@@ -225,15 +271,40 @@ export function createRunService({
               stats: result.stats,
               issues: result.issues,
             });
+            for (const code of [
+              ...new Set(result.issues.map((issue) => issue.code)),
+            ]
+              .filter(Boolean)
+              .concat(result.issues.length ? [] : [undefined]))
+              await diagnostics?.record({
+                operation: "run.source",
+                runId: id,
+                sourceId: provider.id,
+                siteId: context.sites[0].siteId,
+                stage: currentStage,
+                recordCount: result.records.length,
+                level: result.issues.length ? "warn" : "info",
+                code,
+                durationMs: clock.now() - sourceStarted,
+              });
           } catch (error) {
-            if (signal.aborted || error.code === "workspace_write_failed")
+            if (
+              signal.aborted ||
+              error.runFatal ||
+              error.code === "workspace_write_failed"
+            )
               throw error;
+            const entry = await diagnose("run.collect", error, {
+              sourceId: provider.id,
+              siteId: context.sites[0].siteId,
+            });
             const code = error.code || "source_unavailable";
             issues.push({
               code,
               sourceId: provider.id,
               siteId: context.sites[0].siteId,
               message: "来源采集未完成。",
+              ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
             });
             coverage.push({
               sourceId: provider.id,
@@ -323,12 +394,17 @@ export function createRunService({
           detail = await provider.fetchDetail(record, context);
         } catch (error) {
           if (signal.aborted) throw error;
+          const entry = await diagnose("run.detail", error, {
+            sourceId: record.sourceId,
+            siteId: record.siteId,
+          });
           issues.push({
             code: error.code || "detail_unavailable",
             sourceId: record.sourceId,
             siteId: record.siteId,
             jobId: record.jobId,
             message: "详情未取得，保留已有事实。",
+            ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
           });
           if (error.status === 404)
             detailEvidence.push({
@@ -435,13 +511,22 @@ export function createRunService({
           },
         });
       } else {
+        if (!error.diagnosticId) await diagnose("run.failed", error);
+        const code = error.runFailureCode || error.code || "run_failed";
         issues.push({
-          code: error.code || "run_failed",
-          message: "任务未完成，已保存的数据保留。",
+          code,
+          message:
+            code === "record_ingest_failed"
+              ? "岗位记录处理失败，已保存的数据保留。请查看更新日志。"
+              : code === "workspace_write_failed"
+                ? "工作区写入失败，请检查磁盘空间与目录权限，并查看更新日志。已保存的数据保留。"
+                : "任务未完成，已保存的数据保留。请查看更新日志。",
+          ...(error.diagnosticId ? { diagnosticId: error.diagnosticId } : {}),
+          stage: currentStage,
         });
         await update(id, {
           status:
-            error.code === "workspace_write_failed"
+            error.runFatal || error.code === "workspace_write_failed"
               ? "failed"
               : jobIds.size
                 ? "partial"
@@ -479,6 +564,7 @@ export function createRunService({
       snapshot.run = (await repository.read()).runs[id];
       snapshot.events = snapshot.run.events || [];
     } catch (error) {
+      const entry = await diagnose("run.snapshot", error);
       await update(id, {
         status: "failed",
         issues: [
@@ -486,6 +572,7 @@ export function createRunService({
           {
             code: "snapshot_failed",
             message: "运行快照未写入，恢复检查会报告缺失。",
+            ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
           },
         ],
         snapshotRef: null,
@@ -493,6 +580,18 @@ export function createRunService({
       await emit(id, "done", { status: "failed", counts });
       throw error;
     }
+    await diagnostics?.record({
+      operation: "run.finished",
+      runId: id,
+      stage: "finished",
+      code: snapshot.run.status,
+      level:
+        snapshot.run.status === "failed"
+          ? "error"
+          : snapshot.run.status === "partial"
+            ? "warn"
+            : "info",
+    });
     return snapshot;
   }
   const service = {
@@ -561,10 +660,18 @@ export function createRunService({
         throw error;
       }
       active.set(runId, frozen);
+      await diagnostics?.record({
+        operation: "run.started",
+        runId,
+        stage: "queued",
+      });
       frozen.promise = Promise.resolve()
         .then(() => execute(runId, frozen))
         .finally(() => active.delete(runId));
-      frozen.promise.catch(() => {});
+      frozen.promise.catch((error) => {
+        if (!error.diagnosticId)
+          void diagnostics?.record({ operation: "run.failed", runId }, error);
+      });
       return { runId, status: "queued" };
     },
     async getRun(runId) {

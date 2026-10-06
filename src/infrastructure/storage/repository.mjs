@@ -39,23 +39,35 @@ export async function openWorkspaceRepository({
   await read();
   let queue = Promise.resolve();
   const mutateWorkspace = (fn) => {
-    const operation = queue.then(() =>
-      withWorkspaceLock(dataDir, async () => {
-        const current = await read();
-        const draft = structuredClone(current);
-        const result = await fn(draft);
-        draft.revision = current.revision + 1;
-        assertWorkspace(draft);
-        if (current.revision > 0)
-          await writeAtomicJson(
-            path.join(dataDir, "workspace.v2.previous.json"),
-            current,
-            { fsAdapter },
-          );
-        await writeAtomicJson(filename, draft, { fsAdapter });
-        return { revision: draft.revision, result: structuredClone(result) };
-      }),
-    );
+    let phase = "lock";
+    const operation = queue
+      .then(() =>
+        withWorkspaceLock(dataDir, async () => {
+          phase = "read";
+          const current = await read();
+          const draft = structuredClone(current);
+          phase = "mutation";
+          const result = await fn(draft);
+          draft.revision = current.revision + 1;
+          phase = "validation";
+          assertWorkspace(draft);
+          phase = "previous";
+          if (current.revision > 0)
+            await writeAtomicJson(
+              path.join(dataDir, "workspace.v2.previous.json"),
+              current,
+              { fsAdapter },
+            );
+          phase = "current";
+          await writeAtomicJson(filename, draft, { fsAdapter });
+          phase = "result";
+          return { revision: draft.revision, result: structuredClone(result) };
+        }),
+      )
+      .catch((error) => {
+        error.storageOperation ||= "workspace." + phase;
+        throw error;
+      });
     queue = operation.catch(() => {});
     return operation;
   };

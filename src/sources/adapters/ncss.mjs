@@ -91,25 +91,31 @@ export default createPagedProvider({
       raw: d.data.list.length,
       hasMore:
         d.data.list.length >= 20 &&
-        Number(d.data.pagenation?.total || 0) > page * 20,
+        Number(d.data.pagenation?.count || 0) > page * 20,
     };
   },
   async detail(r, ctx) {
     const response = await ctx.request(r.url, { signal: ctx.signal });
     if (response.status !== 200)
       throw Error("NCSS detail HTTP " + response.status);
-    const description =
-      elementText(response.text, ".mainContent") ||
-      elementText(response.text, ".jobdetail-box");
-    if (!description || description.length < 30)
-      throw Error("parse_error: missing NCSS requirements");
+    const body = [".mainContent", ".jobdetail-box"]
+      .map((selector) => ({
+        selector,
+        text: elementText(response.text, selector),
+      }))
+      .find((candidate) => candidate.text?.length >= 30);
+    if (!body) {
+      const error = Error("parse_error: missing NCSS requirements");
+      error.code = "parse_error";
+      throw error;
+    }
     return {
       ...r,
-      description,
+      description: body.text,
       detailStatus: "complete",
       evidence: [
         ...r.evidence,
-        { field: "description", url: r.url, selector: ".mainContent" },
+        { field: "description", url: r.url, selector: body.selector },
       ],
     };
   },

@@ -38,7 +38,11 @@ export async function createApplicationContext({
     createDiagnosticsLog({ dataDir, clock: dependencies.clock });
   const repository =
     dependencies.repository ||
-    (await openWorkspaceRepository({ dataDir, clock: dependencies.clock }));
+    (await openWorkspaceRepository({
+      dataDir,
+      clock: dependencies.clock,
+      diagnostics,
+    }));
   const migration = await migrateV1({
     dataDir: repository.dataDir,
     repository,

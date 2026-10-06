@@ -20,6 +20,7 @@ const messages = {
   "desktop.start": "桌面程序已启动。",
   "desktop.failure": "桌面程序启动失败。",
   "storage.write": "工作区写入未完成。",
+  "storage.recovered": "文件短暂无法替换，自动重试后已保存。",
 };
 const token = (value) =>
   typeof value === "string" && /^[A-Za-z0-9_.@-]{1,160}$/.test(value)
@@ -35,6 +36,18 @@ const stages = new Set([
   "finished",
   "startup",
 ]);
+const safeResource = (value) =>
+  [
+    "workspace.v2.json",
+    "workspace.v2.previous.json",
+    ".workspace.lock",
+    "quota.json",
+  ].includes(value)
+    ? value
+    : /^r-[A-Za-z0-9_-]+\.json$/.test(String(value)) ||
+        value === "runs-v2/*.json"
+      ? "runs-v2/*.json"
+      : undefined;
 const errorMessages = [
   "Missing sourceId",
   "Missing source title",
@@ -81,16 +94,7 @@ export function diagnosticError(error, depth = 0) {
   const basename = path.basename(
     String(error.dest || error.path || "").replace(/\\/g, "/"),
   );
-  const resource = [
-    "workspace.v2.json",
-    "workspace.v2.previous.json",
-    ".workspace.lock",
-    "quota.json",
-  ].includes(basename)
-    ? basename
-    : /^r-[A-Za-z0-9_-]+\.json$/.test(basename)
-      ? "runs-v2/*.json"
-      : undefined;
+  const resource = safeResource(basename);
   return {
     name: names.includes(error.name) ? error.name : "Error",
     ...(code ? { code } : {}),
@@ -125,6 +129,11 @@ export function diagnosticError(error, depth = 0) {
       : {}),
     ...(token(error.storageOperation)
       ? { storageOperation: error.storageOperation }
+      : {}),
+    ...(Number.isSafeInteger(error.retryCount) &&
+    error.retryCount >= 0 &&
+    error.retryCount <= 6
+      ? { retryCount: error.retryCount }
       : {}),
   };
 }
@@ -173,9 +182,17 @@ function cleanEntry(event, error, clock) {
   for (const key of ["runId", "sourceId", "siteId", "code"])
     if (token(event[key])) result[key] = event[key];
   if (stages.has(event.stage)) result.stage = event.stage;
-  for (const key of ["durationMs", "recordCount", "httpStatus"])
+  for (const key of [
+    "durationMs",
+    "recordCount",
+    "httpStatus",
+    "retryCount",
+    "retryDelayMs",
+  ])
     if (Number.isSafeInteger(event[key]) && event[key] >= 0)
       result[key] = event[key];
+  if (safeResource(event.resource))
+    result.resource = safeResource(event.resource);
   if (error) result.error = diagnosticError(error);
   return result;
 }

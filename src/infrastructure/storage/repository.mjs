@@ -15,11 +15,24 @@ export async function openWorkspaceRepository({
   dataDir,
   fsAdapter = fs,
   clock = { now: () => Date.now() },
+  diagnostics,
 }) {
   if (!dataDir) throw Error("Missing data directory");
   dataDir = path.resolve(dataDir);
   await fsAdapter.mkdir(dataDir, { recursive: true });
   const filename = path.join(dataDir, "workspace.v2.json");
+  const write = (file, value) =>
+    writeAtomicJson(file, value, {
+      fsAdapter,
+      onRenameRecovery: diagnostics
+        ? (event) =>
+            diagnostics.record({
+              operation: "storage.recovered",
+              resource: path.basename(file),
+              ...event,
+            })
+        : undefined,
+    });
   const read = async () => {
     let raw;
     try {
@@ -53,13 +66,12 @@ export async function openWorkspaceRepository({
           assertWorkspace(draft);
           phase = "previous";
           if (current.revision > 0)
-            await writeAtomicJson(
+            await write(
               path.join(dataDir, "workspace.v2.previous.json"),
               current,
-              { fsAdapter },
             );
           phase = "current";
-          await writeAtomicJson(filename, draft, { fsAdapter });
+          await write(filename, draft);
           phase = "result";
           return { revision: draft.revision, result: structuredClone(result) };
         }),
@@ -94,7 +106,7 @@ export async function openWorkspaceRepository({
             throw Error("Run snapshot immutable");
         } catch (e) {
           if (e.code !== "ENOENT") throw e;
-          await writeAtomicJson(p, snapshot, { fsAdapter });
+          await write(p, snapshot);
         }
         return {
           path: path.relative(dataDir, p).split(path.sep).join("/"),

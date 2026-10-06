@@ -149,8 +149,14 @@ export function createWorkspaceService({
               (r) => r.targetSnapshot?.profileRevisionId === id,
             ) ||
             Object.values(w.applications).some((a) => a.resumeRevisionId === id)
-          )
-            throw Error("Profile revision referenced");
+          ) {
+            const message =
+              "该简历版本已被求职目标、历史更新任务或投递记录引用，不能删除。请保留该版本；如需修改简历，请创建新版本。";
+            throw Object.assign(
+              inputError({ profileRevisionId: message }, message, 409),
+              { code: "profile_revision_referenced" },
+            );
+          }
           for (const [key, list] of Object.entries(w.profiles)) {
             const kept = list.filter((r) => r.revisionId !== id);
             if (kept.length) w.profiles[key] = kept;

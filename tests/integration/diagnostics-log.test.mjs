@@ -182,6 +182,52 @@ test("invalid source records have a diagnosed ingest failure rather than a stora
   assert.match(cause.error.message, /Missing source title/);
 });
 
+test("failed source-progress persistence is fatal and is not blamed on the provider", async (t) => {
+  const f = await apiFixture(t),
+    app = await f.ctx.ready;
+  const p = await app.workspaceService.saveProfile({ profile: profile() });
+  const tar = await app.workspaceService.saveTarget({
+    ...target(),
+    profileRevisionId: p.revisionId,
+  });
+  const publish = app.eventHub.publish;
+  let failed = false;
+  app.eventHub.publish = (...args) => {
+    if (args[1] === "source" && !failed) {
+      failed = true;
+      throw Object.assign(Error("synthetic persistent replacement failure"), {
+        code: "EPERM",
+        syscall: "rename",
+        storageOperation: "atomic.rename",
+        dest: path.join(f.dataDir, "workspace.v2.json"),
+        retryCount: 6,
+      });
+    }
+    return publish(...args);
+  };
+  const { runId } = await app.runService.startRun({
+    targetRevisionId: tar.revisionId,
+  });
+  const result = await app.runService.waitForRun(runId);
+  assert.equal(result.run.status, "failed");
+  const issue = result.run.issues.find(
+    (i) => i.code === "workspace_write_failed",
+  );
+  assert.ok(issue, JSON.stringify(result.run.issues));
+  assert.ok(
+    !result.run.issues.some(
+      (i) => i.code === "EPERM" || i.code === "source_unavailable",
+    ),
+  );
+  const entries = (await app.diagnostics.list({ runId })).entries;
+  const cause = entries.find((e) => e.diagnosticId === issue.diagnosticId);
+  assert.equal(cause.operation, "run.failed");
+  assert.equal(cause.error.code, "EPERM");
+  assert.equal(cause.error.retryCount, 6);
+  assert.equal(cause.error.resource, "workspace.v2.json");
+  assert.ok(Object.keys((await app.repository.read()).jobs).length > 0);
+});
+
 test("atomic write preserves the primary failure and exposes the failed write phase", async () => {
   const primary = Object.assign(Error("rename denied"), { code: "EPERM" });
   const fsAdapter = {

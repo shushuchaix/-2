@@ -54,13 +54,14 @@ export default createPagedProvider({
     const data = payload(
       await ctx.request(api + "Query?" + params, { signal: ctx.signal }),
     );
-    if (!Array.isArray(data.Posts)) {
+    const posts = data.Count === 0 && data.Posts === null ? [] : data.Posts;
+    if (!Array.isArray(posts)) {
       const e = Error("Tencent Posts missing");
       e.code = "parse_error";
       throw e;
     }
     return {
-      records: data.Posts.map((row) => normalize(row, site)),
+      records: posts.map((row) => normalize(row, site)),
       hasMore: Number(data.Count) > page * 20,
     };
   },

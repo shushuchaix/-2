@@ -18,6 +18,13 @@ const terminal = new Set([
   "cancelled",
   "interrupted",
 ]);
+const isWorkspaceWriteFailure = (error) =>
+  /^(?:EACCES|EPERM|ENOSPC|EROFS|EBUSY|EIO|EMFILE|ENFILE)$/.test(
+    error.code || "",
+  ) ||
+  /atomic\.|workspace\.(?:lock|read|previous|current)/.test(
+    error.storageOperation || "",
+  );
 export function createRunService({
   repository,
   workspaceService,
@@ -35,32 +42,47 @@ export function createRunService({
 }) {
   const active = new Map(),
     now = () => new Date(clock.now()).toISOString();
+  async function persist(operation) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (isWorkspaceWriteFailure(error)) {
+        error.runFatal = true;
+        error.runFailureCode = "workspace_write_failed";
+      }
+      throw error;
+    }
+  }
   async function update(id, patch) {
     return (
-      await repository.mutateWorkspace((w) => {
-        const run = w.runs[id];
-        if (!run) throw Error("Run not found");
-        Object.assign(run, patch);
-        return run;
-      })
+      await persist(() =>
+        repository.mutateWorkspace((w) => {
+          const run = w.runs[id];
+          if (!run) throw Error("Run not found");
+          Object.assign(run, patch);
+          return run;
+        }),
+      )
     ).result;
   }
   async function emit(id, type, payload = {}) {
-    if (eventHub) return eventHub.publish(id, type, payload);
+    if (eventHub) return persist(() => eventHub.publish(id, type, payload));
     return (
-      await repository.mutateWorkspace((w) => {
-        const run = w.runs[id];
-        const event = {
-          schemaVersion: 2,
-          runId: id,
-          seq: ++run.lastSeq,
-          type,
-          at: now(),
-          payload,
-        };
-        run.events = [...(run.events || []), event].slice(-200);
-        return event;
-      })
+      await persist(() =>
+        repository.mutateWorkspace((w) => {
+          const run = w.runs[id];
+          const event = {
+            schemaVersion: 2,
+            runId: id,
+            seq: ++run.lastSeq,
+            type,
+            at: now(),
+            payload,
+          };
+          run.events = [...(run.events || []), event].slice(-200);
+          return event;
+        }),
+      )
     ).result;
   }
   async function execute(
@@ -149,17 +171,11 @@ export function createRunService({
           recordCount: records.length,
         });
         // Preserve the underlying code. Validation/program errors are not filesystem failures.
-        error.runFailureCode =
-          /^(?:EACCES|EPERM|ENOSPC|EROFS|EBUSY|EIO|EMFILE|ENFILE)$/.test(
-            error.code || "",
-          ) ||
-          /atomic\.|workspace\.(?:lock|read|previous|current)/.test(
-            error.storageOperation || "",
-          )
-            ? "workspace_write_failed"
-            : operation === "run.ingest"
-              ? "record_ingest_failed"
-              : "run_progress_failed";
+        error.runFailureCode = isWorkspaceWriteFailure(error)
+          ? "workspace_write_failed"
+          : operation === "run.ingest"
+            ? "record_ingest_failed"
+            : "run_progress_failed";
         error.runFatal = true;
         throw error;
       }

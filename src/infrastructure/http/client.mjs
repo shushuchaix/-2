@@ -37,6 +37,10 @@ export function createRequestClient({
     signal: defaultSignal,
   });
   return async function request(value, options = {}) {
+    const maxRetries =
+      options.maxRetries === undefined ? 2 : options.maxRetries;
+    if (!Number.isSafeInteger(maxRetries) || maxRetries < 0 || maxRetries > 2)
+      throw Error("Invalid retry limit");
     const signal =
       options.signal && defaultSignal
         ? AbortSignal.any([options.signal, defaultSignal])
@@ -107,7 +111,7 @@ export function createRequestClient({
       } catch (e) {
         if (signal?.aborted) throw abortError(signal);
         if (
-          retries < 2 &&
+          retries < maxRetries &&
           ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ECONNREFUSED"].includes(
             e.code,
           )
@@ -151,7 +155,10 @@ export function createRequestClient({
         url = next;
         continue;
       }
-      if ((response.status === 429 || response.status >= 500) && retries < 2) {
+      if (
+        (response.status === 429 || response.status >= 500) &&
+        retries < maxRetries
+      ) {
         retries++;
         const ra = response.headers["retry-after"];
         const delay = ra

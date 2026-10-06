@@ -139,6 +139,8 @@ const provider = createPagedProvider({
           headers: { "Content-Type": "application/json;charset=utf-8" },
           body: JSON.stringify(body),
           signal: ctx.signal,
+          maxRetries: 0,
+          timeoutMs: 12000,
         },
       ),
     );
@@ -190,7 +192,13 @@ const provider = createPagedProvider({
       notice ? r.sourceRecordId.slice(7) : r.sourceRecordId,
     );
     url.searchParams.set("xxdm", site.tenantId);
-    const d = jsonResponse(await ctx.request(url.href, { signal: ctx.signal }));
+    const d = jsonResponse(
+      await ctx.request(url.href, {
+        signal: ctx.signal,
+        maxRetries: 0,
+        timeoutMs: 12000,
+      }),
+    );
     if (
       d.success !== true ||
       Number(d.code) !== 200 ||

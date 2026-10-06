@@ -6,6 +6,65 @@ import { createScheduler } from "../../src/infrastructure/http/scheduler.mjs";
 const PUBLIC = "https://jobs.example.com/list";
 const dnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
 const scheduler = () => createScheduler({ minIntervalMs: 0 });
+test("per-request retry cap avoids repeated gateway and transport failures", async () => {
+  for (const transportFailure of [false, true]) {
+    let calls = 0,
+      waits = 0;
+    const budget = createSourceBudget({ maxRequests: 5 });
+    const request = createRequestClient({
+      budget,
+      dnsLookup,
+      scheduler: scheduler(),
+      clock: {
+        now: Date.now,
+        sleep: async () => {
+          waits++;
+        },
+      },
+      transport: async () => {
+        calls++;
+        if (transportFailure)
+          throw Object.assign(Error("timeout"), { code: "ETIMEDOUT" });
+        return { status: 504, headers: {}, text: "gateway timeout" };
+      },
+    });
+    if (transportFailure)
+      await assert.rejects(request(PUBLIC, { maxRetries: 0 }), {
+        code: "ETIMEDOUT",
+      });
+    else assert.equal((await request(PUBLIC, { maxRetries: 0 })).status, 504);
+    assert.equal(calls, 1);
+    assert.equal(waits, 0);
+    assert.equal(budget.snapshot().requests, 1);
+    if (transportFailure)
+      await assert.rejects(request(PUBLIC, { maxRetries: 1 }), {
+        code: "ETIMEDOUT",
+      });
+    else assert.equal((await request(PUBLIC, { maxRetries: 1 })).status, 504);
+    assert.equal(calls, 3);
+    assert.equal(waits, 1);
+    assert.equal(budget.snapshot().requests, 3);
+  }
+});
+
+test("invalid retry caps are rejected before network or cached results", async () => {
+  let calls = 0;
+  const request = createRequestClient({
+    dnsLookup,
+    scheduler: scheduler(),
+    transport: async () => {
+      calls++;
+      return { status: 200, headers: {}, text: "{}" };
+    },
+  });
+  await request(PUBLIC, { cacheKey: "example" });
+  for (const maxRetries of [-1, 3, 0.5, "0", null])
+    await assert.rejects(
+      request(PUBLIC, { maxRetries, cacheKey: "example" }),
+      /retry limit/i,
+    );
+  assert.equal(calls, 1);
+});
 test("retries and redirects count every actual attempt", async () => {
   let calls = 0;
   const statuses = [429, 503, 200],

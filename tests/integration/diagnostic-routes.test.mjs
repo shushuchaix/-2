@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { handleV2Request } from "../../src/server/routes-v2.mjs";
+import { createModelBudget } from "../../src/llm/budget.mjs";
 
 function routeFixture(diagnostics) {
   let result;
@@ -80,6 +81,7 @@ test("resume AI preview fallback has a safe diagnostic linked to its warning", a
     },
   });
   f.context.cfg = { deepseek: { apiKey: "" } };
+  f.context.createModelBudget = async () => createModelBudget();
   f.context.modelFactory = () => ({
     available: true,
     chatJson: async () => {

@@ -2,7 +2,7 @@
   "deepseek": {
     "apiKey": "sk-在这里填入你的DeepSeek密钥",
     "baseUrl": "https://api.deepseek.com",
-    "model": "deepseek-chat",
+    "model": "deepseek-flash",
     "concurrency": 4,
     "timeoutMs": 120000,
     "allowUserKey": true

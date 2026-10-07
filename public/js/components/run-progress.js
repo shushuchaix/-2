@@ -65,9 +65,13 @@ function issueText(issue, run) {
     location = [issue.sourceId, issue.siteId].filter(Boolean).join(" / ");
   const hints =
     issue.code === "model_budget_exhausted"
-      ? "本次模型请求达到 " +
-        (run.usage?.model?.maxRequests ?? 20) +
-        " 次上限，剩余岗位已保留规则评价。"
+      ? run.usage?.model?.costMode === "cny_upper_bound"
+        ? "本次模型费用预算已达到上限或不足以预留下一次调用（上限 ¥" +
+          money(run.usage.model.maxCostCny) +
+          "），剩余岗位已保留规则评价。"
+        : "本次模型请求达到 " +
+          (run.usage?.model?.maxRequests ?? 20) +
+          " 次上限，剩余岗位已保留规则评价。"
       : issue.code === "invalid_model_result" ||
           issue.code === "missing_model_result"
         ? "模型返回结果未通过结构或原文证据校验，已保留规则评价；具体校验原因见更新日志。"
@@ -96,6 +100,11 @@ function issueText(issue, run) {
     "\n" +
     hints
   );
+}
+function money(value) {
+  return Number.isFinite(value) && value >= 0
+    ? value.toFixed(6).replace(/\.?0+$/, "") || "0"
+    : "未提供";
 }
 function groupedIssues(issues) {
   const groups = new Map();
@@ -207,13 +216,35 @@ export function runProgress({ document: d, run }) {
         " · 详情 " +
         (source.details ?? 0) +
         (source.maxDetails != null ? " / " + source.maxDetails : "") +
-        " · 模型尝试 " +
+        (model.costMode === "cny_upper_bound"
+          ? " · 模型尝试（辅助上限） "
+          : " · 模型尝试 ") +
         (model.requests ?? 0) +
         " / " +
         (model.maxRequests ?? 20) +
         " · 输出 tokens " +
         (model.completionTokens ?? model.outputTokens ?? "未提供"),
     ),
+    model.costMode === "cny_upper_bound"
+      ? el(
+          d,
+          "p",
+          { className: "muted" },
+          "模型费用上界 ¥" +
+            money(model.costUpperBoundCny) +
+            " / ¥" +
+            money(model.maxCostCny) +
+            " · 正在进行的预留 ¥" +
+            money(model.reservedCostCny) +
+            " · 用量不确定的费用上界 ¥" +
+            money(model.uncertainCostCny) +
+            "（" +
+            (model.uncertainRequests ?? 0) +
+            " 次） · 已按用量计价 " +
+            (model.pricedRequests ?? 0) +
+            " 次。费用上界包含预留和不确定用量，不代表服务商最终账单。",
+        )
+      : null,
     el(
       d,
       "div",

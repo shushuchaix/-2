@@ -35,3 +35,20 @@ test("bulk saved-job rescore and bounded settings are available", async (t) => {
   );
   assert.equal(valid.data.budgets.maxModelRequests, 10);
 });
+
+test("target creation API accepts a verified currency budget", async (t) => {
+  const f = await apiFixture(t),
+    context = await f.ctx.ready,
+    p = await context.workspaceService.saveProfile({ profile: profile() });
+  await context.saveSettings({
+    model: { baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
+    budgets: { maxCostCny: 10 },
+  });
+  const response = await f.call("/api/v2/targets", {
+    ...target(),
+    profileRevisionId: p.revisionId,
+    budgets: { maxCostCny: 10 },
+  });
+  assert.equal(response.response.status, 201);
+  assert.equal(response.data.budgets.maxCostCny, 10);
+});

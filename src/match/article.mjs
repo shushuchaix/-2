@@ -188,7 +188,7 @@ function buildDescription(article, pos, extra) {
  */
 export async function expandArticles(
   llm,
-  profile,
+  _profile,
   articles,
   {
     maxExpand = 5,
@@ -203,13 +203,6 @@ export async function expandArticles(
   if (candidates.length === 0)
     return { jobs: [], expanded: 0, skipped: 0, noJob: 0, failed: 0 };
 
-  const profileBrief = [
-    `目标岗位：${(profile.targetRoles || []).join("、") || "未说明"}`,
-    `学历：${profile.degree || "未知"}｜专业：${profile.major || "未知"}｜毕业年份：${profile.graduationYear || "未知"}`,
-    `期望城市：${(profile.preferredCities || []).join("、") || "不限"}`,
-    `技能关键词：${(profile.keywords || []).slice(0, 25).join("、")}`,
-  ].join("\n");
-
   const jobs = [];
   let expanded = 0;
   let noJob = 0;
@@ -222,7 +215,7 @@ export async function expandArticles(
       const text = truncate(article.description, 6000);
       const res = await llm.chatJson(
         SYSTEM,
-        `## 求职者画像（用于判断相关性，不影响抽取忠实度）\n${profileBrief}\n\n## 文章标题\n${article.title}\n\n## 公众号\n${article.extra?.account || "未知"}\n\n## 文章正文\n${text}\n\n请按下面结构输出 JSON：\n${SCHEMA}`,
+        `## 文章标题\n${article.title}\n\n## 公众号\n${article.extra?.account || "未知"}\n\n## 文章正文\n${text}\n\n请按下面结构输出 JSON：\n${SCHEMA}`,
         { temperature: 0.1, maxTokens: 2200, signal, diagnosticContext },
       );
 

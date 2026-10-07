@@ -1,6 +1,6 @@
 import { pool } from "../util/text.mjs";
 import { setTimeout as delay } from "node:timers/promises";
-import { createModelBudget } from "./budget.mjs";
+import { createModelBudget, isOfficialDeepSeekFlash } from "./budget.mjs";
 import { randomUUID } from "node:crypto";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 function annotate(error, phase, requestId) {
@@ -40,11 +40,12 @@ export class DeepSeek {
     const c = cfg.deepseek || {};
     this.apiKey = c.apiKey;
     this.baseUrl = (c.baseUrl || "https://api.deepseek.com").replace(/\/$/, "");
-    this.model = c.model || "deepseek-chat";
+    this.model = c.model || "deepseek-flash";
     this.concurrency = Math.max(1, Number(c.concurrency) || 4);
     this.timeoutMs = Number(c.timeoutMs) || 120000;
     this.signal = signal;
     this.budget = budget;
+    this.budget.assertModel?.({ baseUrl: this.baseUrl, model: this.model });
     this.transport = transport;
     this.retryDelayMs = retryDelayMs;
     this.diagnostics = diagnostics;
@@ -85,9 +86,34 @@ export class DeepSeek {
       caller?.throwIfAborted();
       const requestId = "q-" + randomUUID(),
         started = Date.now();
+      const requestedOutput = Number(maxTokens),
+        body = {
+          model: this.model,
+          messages,
+          temperature,
+          max_tokens: Math.max(
+            1,
+            Math.min(
+              Math.floor(
+                Number.isFinite(requestedOutput) ? requestedOutput : 4000,
+              ),
+              this.budget.snapshot().maxOutputTokens,
+            ),
+          ),
+          stream: false,
+        };
+      if (isOfficialDeepSeekFlash({ baseUrl: this.baseUrl, model: this.model }))
+        body.thinking = { type: "disabled" };
+      if (json && !this._noJsonMode)
+        body.response_format = { type: "json_object" };
       physicalAttempt++;
+      let claim;
       try {
-        this.budget.claimRequest();
+        claim = this.budget.claimRequest({
+          baseUrl: this.baseUrl,
+          model: this.model,
+          maxOutputTokens: body.max_tokens,
+        });
       } catch (error) {
         annotate(error, "budget", requestId);
         await recordDiagnostic(
@@ -108,27 +134,13 @@ export class DeepSeek {
         );
         throw error;
       }
-      const body = {
-        model: this.model,
-        messages,
-        temperature,
-        max_tokens: Math.max(
-          1,
-          Math.min(
-            Number(maxTokens) || 4000,
-            this.budget.snapshot().maxOutputTokens,
-          ),
-        ),
-        stream: false,
-      };
-      if (json && !this._noJsonMode)
-        body.response_format = { type: "json_object" };
       let retry = false;
       let phase = "transport",
         outcome = "failed",
         httpStatus,
         requestSignal,
-        attemptError;
+        attemptError,
+        responseUsage;
       try {
         requestSignal = AbortSignal.any([
           ...(caller ? [caller] : []),
@@ -185,9 +197,18 @@ export class DeepSeek {
         } else {
           phase = "parse";
           const data = await response.json();
+          responseUsage = data.usage;
           this.usage.calls++;
-          this.usage.promptTokens += data.usage?.prompt_tokens || 0;
-          this.usage.completionTokens += data.usage?.completion_tokens || 0;
+          for (const [key, tokenKey] of [
+            ["promptTokens", "prompt_tokens"],
+            ["completionTokens", "completion_tokens"],
+          ])
+            if (
+              Number.isSafeInteger(responseUsage?.[tokenKey]) &&
+              responseUsage[tokenKey] >= 0 &&
+              Number.isSafeInteger(this.usage[key] + responseUsage[tokenKey])
+            )
+              this.usage[key] += responseUsage[tokenKey];
           const content = data.choices?.[0]?.message?.content;
           if (content) {
             outcome = "success";
@@ -231,6 +252,7 @@ export class DeepSeek {
         lastError = error;
         retry = true;
       } finally {
+        this.budget.settleRequest?.(claim, responseUsage);
         const code =
           outcome === "cancelled"
             ? "request_cancelled"

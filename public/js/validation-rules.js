@@ -8,6 +8,24 @@ const id = (v) =>
   !["__proto__", "constructor", "prototype"].includes(v);
 const revision = (v) =>
   typeof v === "string" && /^[A-Za-z0-9_-]{1,160}@[1-9][0-9]*$/.test(v);
+export function isVerifiedCostModel(model) {
+  if (model?.model !== "deepseek-flash") return false;
+  try {
+    const url = new URL(model.baseUrl);
+    return (
+      url.protocol === "https:" &&
+      url.hostname === "api.deepseek.com" &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      !url.search &&
+      !url.hash &&
+      ["/", "/v1", "/v1/"].includes(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
 export function isCalendarDate(v) {
   if (
     typeof v !== "string" ||
@@ -142,14 +160,40 @@ export function validateInput(kind, input, options = {}) {
       fail("budgets", "预算需为有效配置。");
       return;
     }
+    const clearingCost =
+      own(v, "maxCostCny") && v.maxCostCny === null && kind === "settings";
+    const moneyMode =
+      !clearingCost &&
+      ((own(v, "maxCostCny") && v.maxCostCny != null) ||
+        Number.isFinite(options.maxCostCny));
     const caps = {
-      maxModelRequests: 20,
+      maxModelRequests: moneyMode ? 1000 : 20,
       maxRequests: 240,
       maxDetails: 20,
       maxSites: 24,
     };
     for (const [k, val] of Object.entries(v)) {
-      if (!own(caps, k)) fail("budgets." + k, "不支持此预算项目。");
+      if (k === "maxCostCny") {
+        if (clearingCost) continue;
+        if (
+          blank(val) ||
+          (options.nativeTypes && typeof val !== "number") ||
+          (typeof val !== "number" && typeof val !== "string") ||
+          !/^\d+(?:\.\d{1,2})?$/.test(String(val)) ||
+          !Number.isFinite(Number(val)) ||
+          Number(val) < 0 ||
+          Number(val) > 10
+        )
+          fail(
+            "budgets.maxCostCny",
+            "请填写 0–10 元之间的金额，最多两位小数；0 表示不发起模型调用。",
+          );
+        else if (!isVerifiedCostModel({ ...options.model, ...input.model }))
+          fail(
+            "budgets.maxCostCny",
+            "费用预算仅支持已核实价格的官方 https://api.deepseek.com（可加 /v1）和 deepseek-flash 模型。兼容服务商请将费用留空，使用请求次数预算。",
+          );
+      } else if (!own(caps, k)) fail("budgets." + k, "不支持此预算项目。");
       else number("budgets." + k, val, caps[k]);
     }
   };

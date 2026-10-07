@@ -455,11 +455,11 @@ async function runSelfTest() {
       check("桌面页面 " + route, loaded);
     }
     const validation = await mainWindow.webContents.executeJavaScript(`(()=>{
-      const budget=document.querySelector('input[type="number"]');
+      const budget=[...document.querySelectorAll('input[type="number"]')].find(input=>!input.closest('[hidden]'));
       if(!budget) return {invalid:false,corrected:false};
-      budget.value='';
+      budget.value='11';
       budget.closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
-      return {invalid:budget.getAttribute('aria-invalid')==='true' && document.activeElement===budget && budget.value==='' && !!document.querySelector('.validation-summary:not([hidden])')};
+      return {invalid:budget.getAttribute('aria-invalid')==='true' && document.activeElement===budget && budget.value==='11' && !!document.querySelector('.validation-summary:not([hidden])')};
     })()`);
     check("桌面填写错误提示、输入保留与聚焦", validation.invalid);
     await mainWindow.webContents.executeJavaScript(
@@ -472,7 +472,7 @@ async function runSelfTest() {
     check(
       "桌面修改后清除字段错误",
       await mainWindow.webContents.executeJavaScript(`(()=>{
-      const budget=document.querySelector('input[type="number"]');
+      const budget=[...document.querySelectorAll('input[type="number"]')].find(input=>!input.closest('[hidden]'));
       budget.value='0';budget.dispatchEvent(new Event('input',{bubbles:true}));
       return !budget.hasAttribute('aria-invalid') && budget.value==='0';
     })()`),
@@ -533,12 +533,12 @@ async function runSelfTest() {
       (await mainWindow.webContents.capturePage()).toPNG(),
     );
     check(
-      "桌面预算回退、资格统计与重复提醒合并",
+      "桌面人民币费用、预算回退、资格统计与重复提醒合并",
       await mainWindow.webContents.executeJavaScript(`(async()=>{
         const {runProgress}=await import('/js/components/run-progress.js');
         const run={status:'partial',stage:'finished',degraded:true,
           counts:{deduplicated:12,shortlisted:7,eligible:1,qualificationUnknown:9,qualificationFailed:2,aiSuccess:2,fallback:10},
-          usage:{sources:{requests:4,maxRequests:120,details:3,maxDetails:20},model:{requests:2,maxRequests:2}},
+          usage:{sources:{requests:4,maxRequests:120,details:3,maxDetails:20},model:{requests:4,maxRequests:1000,maxCostCny:10,costUpperBoundCny:8.516608,reservedCostCny:0,uncertainCostCny:8.516608,uncertainRequests:4,pricedRequests:0,costMode:'cny_upper_bound'}},
           coverage:[{siteId:'synthetic',status:'complete',truncated:true,pages:1,truncationReason:'listing_only'}],
           issues:[{code:'model_budget_exhausted',affectedCount:8,diagnosticId:'d-budget-synthetic'},
             {code:'invalid_model_result',jobId:'j-1',diagnosticId:'d-validation-synthetic'},
@@ -548,7 +548,8 @@ async function runSelfTest() {
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
         const text=panel.textContent;
         return text.includes('资格待核实 9')&&text.includes('影响 8 条')&&text.includes('影响 2 条')&&
-          text.split('d-validation-synthetic').length===2&&!text.includes('检查模型设置')&&text.includes('详情 3 / 20');
+          text.split('d-validation-synthetic').length===2&&!text.includes('检查模型设置')&&text.includes('详情 3 / 20')&&
+          text.includes('模型费用上界 ¥8.516608 / ¥10')&&text.includes('用量不确定的费用上界 ¥8.516608');
       })()`),
     );
     fs.writeFileSync(

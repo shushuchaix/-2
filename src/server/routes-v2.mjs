@@ -12,7 +12,6 @@ import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { extractResumeText } from "../resume/extract-text.mjs";
 import { analyzeResumeOffline } from "../resume/offline.mjs";
 import { normalizeProfile, analyzeResume } from "../resume/profile.mjs";
-import { createModelBudget } from "../llm/budget.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 const decode = (value) => {
@@ -162,7 +161,7 @@ export async function handleV2Request(req, res, context) {
     let profile = normalizeProfile(analyzeResumeOffline(text));
     if (input.mode === "ai") {
       const client = context.modelFactory({
-        budget: createModelBudget(),
+        budget: await context.createModelBudget(),
         credentials: userCredentials(input, context.cfg),
         diagnosticContext: { requestId: http.requestId },
       });
@@ -251,7 +250,7 @@ export async function handleV2Request(req, res, context) {
     else if (method === "POST") {
       const input = await body();
       if (input.targetId) identifier(input.targetId);
-      assertInput("target", input);
+    assertInput("target", input, { model: context.cfg.deepseek });
       send(201, await workspace.saveTarget(input));
     } else return false;
     return true;
@@ -332,7 +331,7 @@ export async function handleV2Request(req, res, context) {
       client = ["ai", "auto"].includes(input.mode)
         ? context.modelFactory({
             credentials,
-            budget: createModelBudget(),
+            budget: await context.createModelBudget(),
             diagnosticContext: { requestId: http.requestId },
           })
         : undefined;
@@ -371,7 +370,7 @@ export async function handleV2Request(req, res, context) {
           input.mode === "ai"
             ? context.modelFactory({
                 credentials,
-                budget: createModelBudget(),
+                budget: await context.createModelBudget(),
                 diagnosticContext: { requestId: http.requestId },
               })
             : undefined;

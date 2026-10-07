@@ -14,6 +14,7 @@ export function createWorkspaceService({
   clock = repository.clock,
   sourceIds,
   siteIds,
+  modelConfig,
 }) {
   const now = () => new Date(clock.now()).toISOString();
   const revision = (w, key, id) =>
@@ -55,11 +56,14 @@ export function createWorkspaceService({
       ).result;
     },
     async saveTarget(input) {
-      assertInput("target", input, { nativeTypes: true });
+      const model =
+        typeof modelConfig === "function" ? modelConfig() : modelConfig;
+      assertInput("target", input, { nativeTypes: true, model });
       return (
         await repository.mutateWorkspace((w) => {
           assertInput("target", input, {
             nativeTypes: true,
+            model,
             sourceIds:
               typeof sourceIds === "function" ? sourceIds() : sourceIds,
             siteIds: typeof siteIds === "function" ? siteIds(w) : siteIds,

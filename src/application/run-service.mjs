@@ -5,7 +5,10 @@ import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
 import { buildCollectionPlan } from "../sources/planning.mjs";
 import { createSourceBudget } from "../infrastructure/http/budget.mjs";
-import { createModelBudget } from "../llm/budget.mjs";
+import {
+  createModelBudget,
+  createConfiguredModelBudget,
+} from "../llm/budget.mjs";
 import { evaluateRules } from "../domain/ranking.mjs";
 import { expandArticles } from "../match/article.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
@@ -91,7 +94,15 @@ export function createRunService({
   }
   async function execute(
     id,
-    { controller, permit, profileRevision, targetSnapshot, mode, credentials },
+    {
+      controller,
+      permit,
+      profileRevision,
+      targetSnapshot,
+      mode,
+      credentials,
+      modelConfig,
+    },
   ) {
     const signal = controller.signal,
       jobIds = new Set(),
@@ -279,6 +290,7 @@ export function createRunService({
                 signal,
                 budget: modelBudget,
                 credentials,
+                modelConfig,
                 diagnosticContext: { runId: id },
               });
         const request = requestFactory({
@@ -866,6 +878,20 @@ export function createRunService({
         target.profileRevisionId,
       );
       if (!profile) throw Error("Profile revision missing");
+      const modelConfig = structuredClone(config.deepseek || {});
+      if (mode !== "rules" && !credentials.modelBudget) {
+        const settings = (await repository.read()).settings.budgets || {},
+          budgets = { ...settings, ...target.budgets };
+        if (settings.maxCostCny != null && target.budgets?.maxCostCny != null)
+          budgets.maxCostCny = Math.min(
+            settings.maxCostCny,
+            target.budgets.maxCostCny,
+          );
+        credentials = {
+          ...credentials,
+          modelBudget: createConfiguredModelBudget({ modelConfig, budgets }),
+        };
+      }
       const permit =
         credentials.permit || runGate?.acquire(credentials.ip || "local");
       if (permit && !permit.ok) {
@@ -882,6 +908,7 @@ export function createRunService({
         targetSnapshot: structuredClone(target),
         mode,
         credentials,
+        modelConfig,
       };
       try {
         await repository.mutateWorkspace((w) => {

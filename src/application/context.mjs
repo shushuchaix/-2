@@ -25,6 +25,7 @@ import { loadSiteCatalog } from "../sources/catalog.mjs";
 import { createRequestClient } from "../infrastructure/http/client.mjs";
 import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 import { DeepSeek } from "../llm/deepseek.mjs";
+import { createConfiguredModelBudget } from "../llm/budget.mjs";
 import { RunGate } from "../limits.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
 import {
@@ -102,6 +103,7 @@ export async function createApplicationContext({
   const registry = dependencies.registry || createDefaultSourceRegistry();
   const workspaceService = createWorkspaceService({
       repository,
+      modelConfig: () => cfg.deepseek,
       sourceIds: () => [
         ...registry.list().map((p) => p.id),
         "legacy-no-sources",
@@ -128,8 +130,11 @@ export async function createApplicationContext({
         {
           ...cfg,
           deepseek: {
-            ...cfg.deepseek,
-            apiKey: options.credentials?.userApiKey || cfg.deepseek.apiKey,
+            ...(options.modelConfig || cfg.deepseek),
+            apiKey:
+              options.credentials?.userApiKey ||
+              options.modelConfig?.apiKey ||
+              cfg.deepseek.apiKey,
           },
         },
         { ...options, diagnostics },
@@ -137,6 +142,11 @@ export async function createApplicationContext({
   const evaluationService = createEvaluationService({
       repository,
       modelFactory,
+      budgetFactory: async () =>
+        createConfiguredModelBudget({
+          modelConfig: cfg.deepseek,
+          budgets: (await repository.read()).settings.budgets,
+        }),
       diagnostics,
     }),
     eventHub = createRunEventHub({ repository });
@@ -176,6 +186,7 @@ export async function createApplicationContext({
         })(url, options),
     }),
     exportService = createExportService({ repository });
+  let settingsQueue = Promise.resolve();
   const context = {
     diagnostics,
     cfg,
@@ -194,6 +205,12 @@ export async function createApplicationContext({
     gate,
     migration,
     recovery,
+    async createModelBudget() {
+      return createConfiguredModelBudget({
+        modelConfig: cfg.deepseek,
+        budgets: (await repository.read()).settings.budgets,
+      });
+    },
     async getCatalog() {
       const w = await repository.read();
       return (
@@ -218,64 +235,115 @@ export async function createApplicationContext({
       };
     },
     async saveSettings(input) {
-      return trace("application.settings", async () => {
-        assertInput("settings", input, { nativeTypes: true });
-        if (input.budgets) {
-          const limits = {
-            maxModelRequests: 20,
-            maxRequests: 240,
-            maxDetails: 20,
-            maxSites: 24,
-          };
-          for (const [key, value] of Object.entries(input.budgets))
-            if (
-              !(key in limits) ||
-              !Number.isSafeInteger(value) ||
-              value < 0 ||
-              value > limits[key]
-            )
-              throw Error("Invalid budget " + key);
-        }
-        const model = input.model || {};
-        if (model.baseUrl) {
-          const url = new URL(model.baseUrl);
-          if (
-            !["http:", "https:"].includes(url.protocol) ||
-            url.username ||
-            url.password
-          )
-            throw Error("Invalid model endpoint");
-        }
-        const changes = {};
-        for (const key of ["baseUrl", "model", "apiKey"])
-          if (Object.hasOwn(model, key)) {
-            if (typeof model[key] !== "string")
-              throw Error("Invalid model setting");
-            changes[key] = model[key];
-          }
-        if (Object.keys(changes).length) {
-          const filename = path.join(repository.dataDir, "config.json");
-          let file = {};
-          try {
-            file = JSON.parse(await fs.readFile(filename, "utf8"));
-          } catch (error) {
-            if (error.code !== "ENOENT") throw error;
-          }
-          file.deepseek = { ...(file.deepseek || {}), ...changes };
-          await writeAtomicJson(filename, file);
-          Object.assign(cfg.deepseek, changes);
-        }
-        await repository.mutateWorkspace((w) => {
-          if (input.budgets)
-            w.settings.budgets = { ...w.settings.budgets, ...input.budgets };
-          if (input.model)
-            w.settings.model = {
-              ...w.settings.model,
-              ...redactBusiness(model),
+      const result = settingsQueue.then(() =>
+        trace("application.settings", async () => {
+          const current = await repository.read(),
+            effectiveModel = { ...cfg.deepseek, ...input?.model },
+            effectiveBudgets = {
+              ...current.settings.budgets,
+              ...input?.budgets,
             };
-        });
-        return context.getSettings();
-      });
+          if (input?.budgets?.maxCostCny === null) {
+            delete effectiveBudgets.maxCostCny;
+            if (!Object.hasOwn(input.budgets, "maxModelRequests"))
+              effectiveBudgets.maxModelRequests = Math.min(
+                20,
+                effectiveBudgets.maxModelRequests ?? 20,
+              );
+          }
+          assertInput("settings", input, {
+            nativeTypes: true,
+            model: effectiveModel,
+            maxCostCny: effectiveBudgets.maxCostCny,
+          });
+          if (input.budgets) {
+            const limits = {
+              maxModelRequests: effectiveBudgets.maxCostCny != null ? 1000 : 20,
+              maxCostCny: 10,
+              maxRequests: 240,
+              maxDetails: 20,
+              maxSites: 24,
+            };
+            for (const [key, value] of Object.entries(input.budgets))
+              if (key === "maxCostCny" && value === null) continue;
+              else if (
+                !(key in limits) ||
+                (key === "maxCostCny"
+                  ? typeof value !== "number" ||
+                    !Number.isFinite(value) ||
+                    !Number.isInteger(Math.round(value * 100)) ||
+                    Math.abs(value * 100 - Math.round(value * 100)) > 1e-8
+                  : !Number.isSafeInteger(value)) ||
+                value < 0 ||
+                value > limits[key]
+              )
+                throw Error("Invalid budget " + key);
+          }
+          if (effectiveBudgets.maxCostCny != null) {
+            try {
+              createConfiguredModelBudget({
+                modelConfig: effectiveModel,
+                budgets: effectiveBudgets,
+              });
+            } catch {
+              throw inputError({
+                "model.model":
+                  "费用上限需使用已核对价格的 DeepSeek V4.1（deepseek-flash）和官方 API 地址。",
+              });
+            }
+          }
+          const model = input.model || {};
+          if (model.baseUrl) {
+            const url = new URL(model.baseUrl);
+            if (
+              !["http:", "https:"].includes(url.protocol) ||
+              url.username ||
+              url.password
+            )
+              throw Error("Invalid model endpoint");
+          }
+          const changes = {};
+          for (const key of ["baseUrl", "model", "apiKey"])
+            if (Object.hasOwn(model, key)) {
+              if (typeof model[key] !== "string")
+                throw Error("Invalid model setting");
+              changes[key] = model[key];
+            }
+          if (Object.keys(changes).length) {
+            const filename = path.join(repository.dataDir, "config.json");
+            let file = {};
+            try {
+              file = JSON.parse(await fs.readFile(filename, "utf8"));
+            } catch (error) {
+              if (error.code !== "ENOENT") throw error;
+            }
+            file.deepseek = { ...(file.deepseek || {}), ...changes };
+            await writeAtomicJson(filename, file);
+            Object.assign(cfg.deepseek, changes);
+          }
+          await repository.mutateWorkspace((w) => {
+            if (input.budgets) {
+              w.settings.budgets = { ...w.settings.budgets, ...input.budgets };
+              if (input.budgets.maxCostCny === null) {
+                delete w.settings.budgets.maxCostCny;
+                if (!Object.hasOwn(input.budgets, "maxModelRequests"))
+                  w.settings.budgets.maxModelRequests = Math.min(
+                    20,
+                    w.settings.budgets.maxModelRequests ?? 20,
+                  );
+              }
+            }
+            if (input.model)
+              w.settings.model = {
+                ...w.settings.model,
+                ...redactBusiness(model),
+              };
+          });
+          return context.getSettings();
+        }),
+      );
+      settingsQueue = result.catch(() => {});
+      return result;
     },
     async backup() {
       return trace("application.backup", async () => {

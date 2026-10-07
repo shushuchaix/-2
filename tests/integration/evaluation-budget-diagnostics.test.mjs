@@ -406,6 +406,29 @@ test("business validation includes fixed failure counts without raw model result
   assert.equal(JSON.stringify(f.events).includes("private fabricated"), false);
 });
 
+test("title-only zero-score evidence stays valid while missing evidence still fails", () => {
+  const records = [
+    job({ jobId: "j-empty", title: "合成机场岗位", description: "" }),
+  ];
+  const result = row("j-empty", {
+    score: 0,
+    reasons: [],
+    gaps: ["岗位要求未知"],
+    evidence: [{ excerpt: "合成机场岗位" }],
+  });
+  assert.equal(
+    validateModelResults({ results: [result] }, { records }).valid.length,
+    1,
+  );
+  assert.deepEqual(
+    validateModelResults(
+      { results: [{ ...result, evidence: [] }] },
+      { records },
+    ).validationCounts,
+    { missing_evidence: 1 },
+  );
+});
+
 test("parallel JSON callbacks receive their own physical response identifiers", async () => {
   const events = [],
     gates = {};

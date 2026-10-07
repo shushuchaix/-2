@@ -13,7 +13,6 @@ import {
 } from "./resume/profile.mjs";
 import { analyzeResumeOffline } from "./resume/offline.mjs";
 import { DeepSeek } from "./llm/deepseek.mjs";
-import { createModelBudget } from "./llm/budget.mjs";
 import {
   resumeText as validateResume,
   identifier,
@@ -33,7 +32,7 @@ export async function createLegacyRunInput({
 }) {
   const text = validateResume(resumeText);
   context ||= await getDefaultApplicationContext(cfg);
-  const budget = credentials.modelBudget || createModelBudget();
+  const budget = credentials.modelBudget || (await context.createModelBudget());
   const client = new DeepSeek(
     {
       ...cfg,

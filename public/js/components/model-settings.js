@@ -2,6 +2,7 @@ import { el, field, button } from "./dom.js";
 import { feedback } from "./feedback.js";
 import { temporaryCredentials } from "../credentials.js";
 import { bindValidation } from "./form-validation.js";
+import { isVerifiedCostModel } from "../validation-rules.js";
 export function modelSettings({ document: d, settings, api, desktopBridge }) {
   const status = feedback(d),
     form = el(d, "form", { className: "card" }),
@@ -22,10 +23,56 @@ export function modelSettings({ document: d, settings, api, desktopBridge }) {
       type: "number",
       min: 0,
       max: 20,
-      value: settings.budgets?.maxModelRequests ?? 20,
+      value: Math.min(20, settings.budgets?.maxModelRequests ?? 20),
+    }),
+    cost = el(d, "input", {
+      type: "number",
+      min: 0,
+      max: 10,
+      step: "0.01",
+      value:
+        settings.budgets?.maxCostCny ?? (isVerifiedCostModel(model) ? 10 : ""),
     });
   key.addEventListener("input", () => temporaryCredentials.set(key.value));
   const keyRoot = el(d, "div", { className: "stack" });
+  const maxField = field(
+    d,
+    "每任务模型尝试上限（0–20，重试也计数）",
+    max,
+    "请求次数模式填写整数 0–20；0 表示不发起模型调用。",
+  );
+  const moneyMode = () => cost.value !== "";
+  let savedMoney = settings.budgets?.maxCostCny != null;
+  const budgetValues = () => ({
+    maxModelRequests: moneyMode() ? 1000 : max.value,
+    ...(moneyMode()
+      ? { maxCostCny: cost.value }
+      : savedMoney
+        ? { maxCostCny: null }
+        : {}),
+  });
+  const updateBudgetMode = () => {
+    maxField.hidden = moneyMode();
+  };
+  let costTouched = false;
+  cost.addEventListener("input", () => {
+    costTouched = true;
+    updateBudgetMode();
+  });
+  for (const input of [base, name])
+    input.addEventListener("input", () => {
+      if (
+        !costTouched &&
+        !moneyMode() &&
+        isVerifiedCostModel({
+          baseUrl: base.value.trim(),
+          model: name.value.trim(),
+        })
+      )
+        cost.value = "10";
+      updateBudgetMode();
+    });
+  updateBudgetMode();
   form.append(
     el(d, "h2", {}, "模型与预算"),
     el(
@@ -50,15 +97,16 @@ export function modelSettings({ document: d, settings, api, desktopBridge }) {
     ),
     field(
       d,
-      "每任务模型尝试上限（0–20，重试也计数）",
-      max,
-      "必填整数 0–20；0 表示不发起模型调用。",
+      "每任务模型费用上限（元）",
+      cost,
+      "官方 deepseek-flash 可填写 0–10，最多两位小数；0 表示不发起模型调用。其他兼容模型留空，使用请求次数预算。",
     ),
+    maxField,
     el(
       d,
       "p",
       { className: "muted" },
-      "每次输出最多4000 tokens。实际调用与 token 数在运行记录中显示；未配置价格时不估算费用。",
+      "费用预算按官方 deepseek-flash 的最高输入单价 2 元、输出单价 8 元 / 百万 tokens 计算费用上界，包含正在进行和用量不确定的调用。费用模式不在 20 次调用时停止，另有 1000 次辅助上限。每次输出最多4000 tokens；未配置价格时不估算费用。",
     ),
     el(d, "button", { type: "submit" }, "保存模型与预算设置"),
     keyRoot,
@@ -78,10 +126,11 @@ export function modelSettings({ document: d, settings, api, desktopBridge }) {
       "model.baseUrl": base,
       "model.model": name,
       "budgets.maxModelRequests": max,
+      "budgets.maxCostCny": cost,
     },
     values: () => ({
       model: { baseUrl: base.value, model: name.value },
-      budgets: { maxModelRequests: max.value },
+      budgets: budgetValues(),
     }),
   });
   const keyValidation = bindValidation(keyRoot, {
@@ -101,14 +150,20 @@ export function modelSettings({ document: d, settings, api, desktopBridge }) {
     setBusy(true);
     status.show("");
     try {
-      const n = Number(max.value);
+      const budgets = budgetValues();
       await api.request("/settings", {
         method: "PUT",
         body: {
           model: { baseUrl: base.value.trim(), model: name.value.trim() },
-          budgets: { maxModelRequests: n },
+          budgets: Object.fromEntries(
+            Object.entries(budgets).map(([key, value]) => [
+              key,
+              value === null ? null : Number(value),
+            ]),
+          ),
         },
       });
+      savedMoney = budgets.maxCostCny != null;
       status.show("模型与预算设置已保存");
     } catch (e) {
       validation.show(e);

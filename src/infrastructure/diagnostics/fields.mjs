@@ -300,16 +300,39 @@ export function cleanMetadata(value) {
       if (byKind) sources.byKind = byKind;
       usage.sources = sources;
     }
-    const model = numbers(value.usage.model, [
-      "requests",
-      "maxRequests",
-      "maxOutputTokens",
-      "promptTokens",
-      "completionTokens",
-      "calls",
-      "failures",
-    ]);
-    if (model) usage.model = model;
+    const model =
+      numbers(value.usage.model, [
+        "requests",
+        "maxRequests",
+        "maxOutputTokens",
+        "promptTokens",
+        "completionTokens",
+        "calls",
+        "failures",
+        "pricedRequests",
+        "uncertainRequests",
+      ]) || {};
+    const modelValue = value.usage.model;
+    if (modelValue && typeof modelValue === "object") {
+      for (const key of [
+        "maxCostCny",
+        "costUpperBoundCny",
+        "reservedCostCny",
+        "uncertainCostCny",
+      ])
+        if (
+          typeof modelValue[key] === "number" &&
+          Number.isFinite(modelValue[key]) &&
+          modelValue[key] >= 0 &&
+          modelValue[key] <= 10
+        )
+          model[key] = modelValue[key];
+      if (modelValue.costMode === "cny_upper_bound")
+        model.costMode = modelValue.costMode;
+      if (modelValue.pricingVersion === "deepseek-v4.1-flash-cny-2026-10-07")
+        model.pricingVersion = modelValue.pricingVersion;
+    }
+    if (Object.keys(model).length) usage.model = model;
     if (Object.keys(usage).length) result.usage = usage;
   }
   const parser = cleanParser(value.parser),

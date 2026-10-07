@@ -12,6 +12,7 @@ export function createEvaluationService({
   repository,
   cache = new Map(),
   modelFactory,
+  budgetFactory,
   diagnostics,
   clock = repository.clock,
 }) {
@@ -46,7 +47,8 @@ export function createEvaluationService({
         if (!workspace.jobs[id]) throw Error("Job not found: " + id);
       if (!["rules", "ai", "auto"].includes(mode))
         throw Error("Invalid evaluation mode");
-      const newBudget = createModelBudget();
+      const newBudget =
+        modelClient?.budget || (await budgetFactory?.()) || createModelBudget();
       const client =
           modelClient ||
           ((mode === "ai" || mode === "auto") && modelFactory
@@ -120,6 +122,7 @@ export function createEvaluationService({
           const allowance = budget.snapshot();
           if (
             budgetFallbackCount ||
+            budget.isExhausted?.() ||
             allowance.requests >= allowance.maxRequests
           )
             budgetFallbackCount += batch.length;

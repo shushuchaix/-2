@@ -45,7 +45,7 @@ export const DEFAULT_CONFIG = {
   deepseek: {
     apiKey: "",
     baseUrl: "https://api.deepseek.com",
-    model: "deepseek-chat",
+    model: "deepseek-flash",
     concurrency: 4,
     timeoutMs: 120000,
     // 允许访客自带 DeepSeek Key（公网多用户部署时强烈建议开启，成本由使用者自担）

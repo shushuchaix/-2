@@ -35,7 +35,13 @@ export default createPagedProvider({
     detail: true,
   },
   async listPage(site, query, page, ctx) {
-    if (page > 1) return { records: [], hasMore: true };
+    if (page > 1)
+      return {
+        records: [],
+        hasMore: false,
+        coverageScope: "limited",
+        truncationReason: "listing_only",
+      };
     const template = site.template;
     if (!template?.listUrl || !template.linkRule || !template.bodyRule) {
       const e = Error("Verified notice template required");
@@ -111,7 +117,13 @@ export default createPagedProvider({
       e.code = "parse_error";
       throw e;
     }
-    return { records, raw: records.length, hasMore: true };
+    return {
+      records,
+      raw: records.length,
+      hasMore: false,
+      coverageScope: "limited",
+      truncationReason: "listing_only",
+    };
   },
   async detail(record, ctx) {
     const site = ctx.sites.find((s) => s.siteId === record.siteId);

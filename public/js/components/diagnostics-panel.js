@@ -54,6 +54,13 @@ function entryText(entry) {
       entry.issueCount != null && "问题数：" + entry.issueCount,
       entry.revision != null && "工作区版本：" + entry.revision,
       entry.budgetKind && "预算类别：" + entry.budgetKind,
+      entry.truncationReason &&
+        "范围限制：" +
+          ({
+            listing_only: "仅当前列表页",
+            page_limit: "达到分页上限",
+            request_budget: "请求预算用完",
+          }[entry.truncationReason] || entry.truncationReason),
     ]
       .filter(Boolean)
       .join(" · "),

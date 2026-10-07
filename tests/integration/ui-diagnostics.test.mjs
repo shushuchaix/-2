@@ -389,6 +389,7 @@ test("diagnostic details expose safe request and storage context as plain text",
         timeoutMs: 12000,
         parser: { format: "html", selectorPresent: false },
         usage: { sources: { requests: 5, maxRequests: 12 } },
+        truncationReason: "listing_only",
       },
     ]),
   );
@@ -403,6 +404,7 @@ test("diagnostic details expose safe request and storage context as plain text",
   assert.match(component.node.textContent, /排队.*7ms/);
   assert.match(component.node.textContent, /selectorPresent/);
   assert.match(component.node.textContent, /maxRequests/);
+  assert.match(component.node.textContent, /范围限制.*当前列表页/);
   assert.match(component.node.textContent, /重试.*2/);
   assert.match(component.node.textContent, /q-synthetic/);
   component.destroy();

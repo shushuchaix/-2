@@ -13,7 +13,13 @@ export default createPagedProvider({
     detail: true,
   },
   async listPage(site, query, page, ctx) {
-    if (page > 1) return { records: [], hasMore: true };
+    if (page > 1)
+      return {
+        records: [],
+        hasMore: false,
+        coverageScope: "limited",
+        truncationReason: "listing_only",
+      };
     const url = "https://www.yingjiesheng.com/deadline/";
     const document = noticeDocument(
       await ctx.request(url, { signal: ctx.signal }),
@@ -62,7 +68,12 @@ export default createPagedProvider({
       e.code = "parse_error";
       throw e;
     }
-    return { records, hasMore: true };
+    return {
+      records,
+      hasMore: false,
+      coverageScope: "limited",
+      truncationReason: "listing_only",
+    };
   },
   async detail(record, ctx) {
     const document = noticeDocument(

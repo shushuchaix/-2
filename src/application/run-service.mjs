@@ -107,6 +107,8 @@ export function createRunService({
       expanded: 0,
       deduplicated: 0,
       eligible: 0,
+      qualificationUnknown: 0,
+      qualificationFailed: 0,
       shortlisted: 0,
       aiSuccess: 0,
       fallback: 0,
@@ -654,6 +656,12 @@ export function createRunService({
         issues.push(...result.issues);
         counts.eligible = evaluations.filter(
           (e) => e.qualification.status === "pass",
+        ).length;
+        counts.qualificationUnknown = evaluations.filter(
+          (e) => e.qualification.status === "unknown",
+        ).length;
+        counts.qualificationFailed = evaluations.filter(
+          (e) => e.qualification.status === "fail",
         ).length;
         counts.shortlisted = evaluations.filter(
           (e) =>

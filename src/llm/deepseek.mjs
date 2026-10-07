@@ -288,12 +288,21 @@ export class DeepSeek {
     return (await this._request(chatMessages(system, user), opts)).content;
   }
   async chatJson(system, user, opts = {}) {
+    const reportResponse = (metadata) => {
+      try {
+        Promise.resolve(opts.onResponse?.(metadata)).catch(() => {});
+      } catch {
+        /* Response observers cannot replace a successfully parsed answer. */
+      }
+    };
     const { content, requestId } = await this._request(
       chatMessages(system, user),
       { ...opts, json: true },
     );
     try {
-      return parseJsonLoose(content);
+      const result = parseJsonLoose(content);
+      reportResponse({ requestId });
+      return result;
     } catch {
       await recordDiagnostic(this.diagnostics, {
         operation: "model.validation",
@@ -339,6 +348,10 @@ export class DeepSeek {
                   : typeof result,
             documentLength: repaired.length,
           },
+        });
+        reportResponse({
+          requestId: repairRequestId,
+          parentRequestId: requestId,
         });
         return result;
       } catch {

@@ -1,5 +1,10 @@
 import { assertSourceRecord } from "../../domain/contracts.mjs";
 import { recordDiagnostic } from "../../infrastructure/diagnostics/log.mjs";
+const coverageReasons = {
+  listing_only: "仅采集当前列表页，尚未支持历史分页。",
+  page_limit: "已达到本次查询分页上限。",
+  request_budget: "本次来源请求预算已用完。",
+};
 export function jsonResponse(response) {
   if (response.status === 401 || response.status === 403) {
     const e = Error("restricted: HTTP " + response.status);
@@ -99,6 +104,8 @@ export function createPagedProvider({
         for (const [localQueryIndex, query] of queries.entries()) {
           let pages = 0,
             truncated = false,
+            coverageScope,
+            truncationReason,
             currentPage = 1;
           const queryIndex = ctx.queryIndex ?? localQueryIndex;
           const pageDiagnostic = (event, error) =>
@@ -173,6 +180,7 @@ export function createPagedProvider({
               }
               records.push(...batch);
               if (batch.length) await ctx.onBatch?.(batch);
+              const limited = response.coverageScope === "limited";
               await pageDiagnostic({
                 operation: "run.page",
                 ...location,
@@ -183,6 +191,12 @@ export function createPagedProvider({
                   (ctx.clock?.now?.() ?? Date.now()) - pageStarted,
                 ),
                 pageLimit: Math.min(2, query.pageLimit || 1),
+                truncationReason: limited
+                  ? "listing_only"
+                  : response.hasMore &&
+                      page === Math.min(2, query.pageLimit || 1)
+                    ? "page_limit"
+                    : undefined,
                 counts: {
                   raw: response.raw ?? response.records.length,
                   accepted: batch.length,
@@ -202,8 +216,14 @@ export function createPagedProvider({
                   resultCount: response.records.length,
                 },
               });
-              truncated = !!response.hasMore;
-              if (!response.hasMore) break;
+              truncated = limited || !!response.hasMore;
+              coverageScope = limited ? "limited" : undefined;
+              truncationReason = limited
+                ? "listing_only"
+                : response.hasMore
+                  ? "page_limit"
+                  : undefined;
+              if (limited || !response.hasMore) break;
             }
             coverage.push({
               sourceId: id,
@@ -212,6 +232,13 @@ export function createPagedProvider({
               cities: [query.city].filter(Boolean),
               pages,
               truncated,
+              ...(coverageScope ? { coverageScope } : {}),
+              ...(truncationReason
+                ? {
+                    truncationReason,
+                    reason: coverageReasons[truncationReason],
+                  }
+                : {}),
               status: "complete",
               startedAt,
               finishedAt: new Date().toISOString(),
@@ -223,6 +250,9 @@ export function createPagedProvider({
               e.code === "workspace_write_failed"
             )
               throw e;
+            const requestBudgetExhausted =
+              e.code === "source_budget_exhausted" &&
+              e.budgetKind === "requests";
             const entry = await ctx.reportError?.(e, {
               sourceId: id,
               siteId: site.siteId,
@@ -242,6 +272,9 @@ export function createPagedProvider({
               outcome: "failed",
               code: e.code,
               parser: e.parser,
+              truncationReason: requestBudgetExhausted
+                ? "request_budget"
+                : undefined,
             });
             issues.push({
               code:
@@ -262,8 +295,13 @@ export function createPagedProvider({
               cities: [],
               pages,
               truncated: true,
+              ...(requestBudgetExhausted
+                ? { truncationReason: "request_budget" }
+                : {}),
               status: "failed",
-              reason: e.code || e.message,
+              reason: requestBudgetExhausted
+                ? coverageReasons.request_budget
+                : e.code || e.message,
               startedAt,
               finishedAt: new Date().toISOString(),
             });

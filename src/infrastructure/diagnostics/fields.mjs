@@ -30,6 +30,8 @@ const countKeys = [
   "deduplicated",
   "eligible",
   "shortlisted",
+  "qualificationUnknown",
+  "qualificationFailed",
   "aiSuccess",
   "fallback",
   "newForTarget",
@@ -116,6 +118,7 @@ const enums = {
   abortedBy: ["caller", "timeout"],
   mode: ["rules", "ai", "auto"],
   budgetKind: ["requests", "details"],
+  truncationReason: ["listing_only", "page_limit", "request_budget"],
 };
 export function cleanParser(value) {
   if (!value || typeof value !== "object") return undefined;
@@ -143,6 +146,19 @@ export function cleanParser(value) {
   for (const key of ["selectorPresent", "titleOnly"])
     if (typeof value[key] === "boolean") result[key] = value[key];
   if (token(value.version)) result.version = value.version;
+  const validationCounts = numbers(value.validationCounts, [
+    "duplicate_id",
+    "invalid_score",
+    "invalid_reasons",
+    "invalid_gaps",
+    "missing_evidence",
+    "invalid_evidence",
+    "evidence_not_in_source",
+    "unknown_id",
+    "missing_result",
+    "invalid_results_shape",
+  ]);
+  if (validationCounts) result.validationCounts = validationCounts;
   if (Array.isArray(value.missingFields)) {
     const fields = [
       ...new Set(

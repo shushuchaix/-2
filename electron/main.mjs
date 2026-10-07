@@ -532,6 +532,32 @@ async function runSelfTest() {
       path.join(dataDir, "desktop-logs.png"),
       (await mainWindow.webContents.capturePage()).toPNG(),
     );
+    check(
+      "桌面预算回退、资格统计与重复提醒合并",
+      await mainWindow.webContents.executeJavaScript(`(async()=>{
+        const {runProgress}=await import('/js/components/run-progress.js');
+        const run={status:'partial',stage:'finished',degraded:true,
+          counts:{deduplicated:12,shortlisted:7,eligible:1,qualificationUnknown:9,qualificationFailed:2,aiSuccess:2,fallback:10},
+          usage:{sources:{requests:4,maxRequests:120,details:3,maxDetails:20},model:{requests:2,maxRequests:2}},
+          coverage:[{siteId:'synthetic',status:'complete',truncated:true,pages:1,truncationReason:'listing_only'}],
+          issues:[{code:'model_budget_exhausted',affectedCount:8,diagnosticId:'d-budget-synthetic'},
+            {code:'invalid_model_result',jobId:'j-1',diagnosticId:'d-validation-synthetic'},
+            {code:'invalid_model_result',jobId:'j-2',diagnosticId:'d-validation-synthetic'}]};
+        const panel=runProgress({document,run});panel.id='desktop-budget-preview';panel.classList.add('card');
+        document.body.append(panel);panel.scrollIntoView({block:'start'});
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const text=panel.textContent;
+        return text.includes('资格待核实 9')&&text.includes('影响 8 条')&&text.includes('影响 2 条')&&
+          text.split('d-validation-synthetic').length===2&&!text.includes('检查模型设置')&&text.includes('详情 3 / 20');
+      })()`),
+    );
+    fs.writeFileSync(
+      path.join(dataDir, "desktop-budget.png"),
+      (await mainWindow.webContents.capturePage()).toPNG(),
+    );
+    await mainWindow.webContents.executeJavaScript(
+      "document.getElementById('desktop-budget-preview')?.remove()",
+    );
     await mainWindow.webContents.executeJavaScript(
       "location.hash='#/workbench'",
     );

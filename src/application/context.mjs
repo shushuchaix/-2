@@ -6,6 +6,7 @@ import { DATA_ROOT } from "../config.mjs";
 import { openWorkspaceRepository } from "../infrastructure/storage/repository.mjs";
 import { migrateV1 } from "../infrastructure/storage/migrate-v1.mjs";
 import { recoverWorkspace } from "../infrastructure/storage/recovery.mjs";
+import {upgradeWorkspace} from '../infrastructure/storage/upgrade-workspace.mjs';
 import { writeAtomicJson } from "../infrastructure/storage/atomic.mjs";
 import {
   createBackup,
@@ -89,6 +90,8 @@ export async function createApplicationContext({
       }),
     (result) => ({ issueCount: result.issues?.length || 0 }),
   );
+  const managementUpgrade = await trace('application.migration', () => upgradeWorkspace({repository}),
+    result => ({issueCount:result.changed ? 1 : 0}));
   const recovery = await trace(
     "application.recovery",
     () => recoverWorkspace(repository),
@@ -204,6 +207,7 @@ export async function createApplicationContext({
     modelFactory,
     gate,
     migration,
+    managementUpgrade,
     recovery,
     async createModelBudget() {
       return createConfiguredModelBudget({

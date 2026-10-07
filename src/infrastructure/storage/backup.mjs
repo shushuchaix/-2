@@ -5,9 +5,11 @@ import { contentHash } from "./repository.mjs";
 import { writeAtomicJson } from "./atomic.mjs";
 import { assertWorkspace } from "../../domain/contracts.mjs";
 import { redactBusiness } from "../../domain/redact.mjs";
-export async function createBackup({ repository, clock = repository.clock }) {
-  const workspace = redactBusiness(await repository.read()),
+import {normalizeWorkspaceExtensions} from '../../domain/workspace-management.mjs';
+export async function createBackup({ repository, clock = repository.clock, workspaceSnapshot }) {
+  const workspace = redactBusiness(workspaceSnapshot || await repository.read()),
     runSnapshots = {};
+  if (workspace.operationLeases !== undefined) workspace.operationLeases = {};
   for (const run of Object.values(workspace.runs)) {
     if (run.snapshotRef) {
       const snapshot = redactBusiness(
@@ -52,7 +54,7 @@ export async function createBackup({ repository, clock = repository.clock }) {
     "workspace-" + Date.now() + "-" + randomUUID() + ".json",
   );
   await writeAtomicJson(filename, { manifest, workspace, runSnapshots });
-  return { path: filename, manifest };
+  return { path: filename, backupId: path.basename(filename), manifest };
 }
 export function validateBackupArchive(archive) {
   if (archive?.manifest?.version !== 1)
@@ -77,17 +79,20 @@ export function validateBackupArchive(archive) {
     }
   return archive;
 }
-export async function restoreBackup({ repository, archivePath }) {
+export async function restoreBackup({ repository, archivePath, operationLease }) {
   const archive = validateBackupArchive(
     JSON.parse(await fs.readFile(archivePath, "utf8")),
   );
   const snapshots = archive.runSnapshots || {};
   await createBackup({ repository });
   for (const [id, snapshot] of Object.entries(snapshots))
-    await repository.writeRunSnapshot(id, snapshot);
+    await repository.writeRunSnapshot(id, snapshot, {operationLease});
   const result = await repository.mutateWorkspace((w) => {
     const revision = w.revision;
-    Object.assign(w, redactBusiness(archive.workspace));
+    const restored = normalizeWorkspaceExtensions(redactBusiness(archive.workspace));
+    restored.operationLeases = operationLease ? {[operationLease.operationId]:w.operationLeases[operationLease.operationId]} : {};
+    for (const key of Object.keys(w)) delete w[key];
+    Object.assign(w, restored);
     w.revision = revision;
     const at = new Date(repository.clock.now()).toISOString();
     for (const run of Object.values(w.runs)) {
@@ -112,6 +117,6 @@ export async function restoreBackup({ repository, archivePath }) {
       });
     }
     return { recovered: true };
-  });
+  }, {operationLease});
   return { revision: result.revision, recovered: true };
 }

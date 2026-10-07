@@ -7,6 +7,7 @@ import {
   contentHash,
 } from "./infrastructure/storage/repository.mjs";
 import { migrateV1 } from "./infrastructure/storage/migrate-v1.mjs";
+import {upgradeWorkspace} from './infrastructure/storage/upgrade-workspace.mjs';
 import {
   createJobService,
   resolveStoredJobId,
@@ -28,6 +29,7 @@ async function context() {
   ready ||= (async () => {
     const repository = await openWorkspaceRepository({ dataDir: DATA_ROOT });
     await migrateV1({ dataDir: DATA_ROOT, repository });
+    await upgradeWorkspace({repository});
     return { repository, service: createJobService({ repository }) };
   })();
   return ready;

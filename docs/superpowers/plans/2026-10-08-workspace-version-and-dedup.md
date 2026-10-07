@@ -10,7 +10,7 @@
 
 **Spec:** [2026-10-08-workspace-version-and-dedup-design.md](../specs/2026-10-08-workspace-version-and-dedup-design.md)，用户已于 2026-10-08 确认。
 
-代码基线：`a4036016d0cd09e5f44902a69b48a40e75260f81`；设计提交：`7c66faa`；工作分支：`codex/v2-upgrade`。本计划尚未执行。
+代码基线：`a4036016d0cd09e5f44902a69b48a40e75260f81`；设计提交：`7c66faa`；工作分支：`codex/v2-upgrade`。本计划已获用户确认，执行中。
 
 ## Global Constraints
 
@@ -100,7 +100,7 @@ function Invoke-RjrTest {
 - Extend `createBackup({repository,clock,workspaceSnapshot}) -> {path,backupId,manifest}`：backupId为生成档案的basename，不含绝对路径；可接受锁内准确副本，快照读取不重入工作区锁。`restoreBackup({repository,archivePath,operationLease})` 先验证原档案哈希，再规范化并完整替换业务字段。
 - Consumes `repository.mutateWorkspace(fn)`、现有不可变 snapshot/backup 校验。
 
-- [ ] **1. 写失败测试。** 使用 `tempRepository` 构造旧账本、旧备份和含扩展字段的恢复前账本；测试名 `upgrade is idempotent and preserves facts`、`old restore replaces extension state`、`failed upgrade keeps valid workspace`。断言：
+- [x] **1. 写失败测试。** 使用 `tempRepository` 构造旧账本、旧备份和含扩展字段的恢复前账本；测试名 `upgrade is idempotent and preserves facts`、`old restore replaces extension state`、`failed upgrade keeps valid workspace`。断言：
   ```js
   assert.equal(second.changed, false);
   assert.deepEqual(after.profiles, before.profiles);
@@ -110,11 +110,11 @@ function Invoke-RjrTest {
   assert.equal(backupCreatedBeforeWrite, true);
   ```
   验证旧 ID、评价和 snapshot 哈希相同，备份失败不写账本；缺字段可读、坏类型/重定向环/重复名称拒绝。
-- [ ] **2. RED。** `Invoke-RjrTest tests/integration/workspace-management.test.mjs tests/e2e/migration-recovery.test.mjs`，预期升级或旧恢复残留断言失败。
-- [ ] **3. 实现管理规范化、验证和升级入口。** 旧目标名为“岗位方向 · v序号 · 短ID”，冲突时确定性扩展 ID；画像默认日期+revisionId。不自动删除岗位。`context` 与独立 store 均升级；Task 4 再接成员回填。
-- [ ] **4. 实现备份与恢复兼容。** 清除运行态租约能力，保持业务备份完整；替换时删除旧对象业务键后写入规范化档案，保留仓库 revision 计数。禁止用 Object.assign 单独覆盖旧业务键。
-- [ ] **5. GREEN。** 运行步骤 2 及 `tests/integration/repository.test.mjs`、`tests/integration/migration.test.mjs`；预期全部通过，备份可以整体还原。
-- [ ] **6. Commit。** 暂存本任务 Files，`git commit -m "feat: add recoverable workspace management extensions"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/integration/workspace-management.test.mjs tests/e2e/migration-recovery.test.mjs`，预期升级或旧恢复残留断言失败。
+- [x] **3. 实现管理规范化、验证和升级入口。** 旧目标名为“岗位方向 · v序号 · 短ID”，冲突时确定性扩展 ID；画像默认日期+revisionId。不自动删除岗位。`context` 与独立 store 均升级；Task 4 再接成员回填。
+- [x] **4. 实现备份与恢复兼容。** 清除运行态租约能力，保持业务备份完整；替换时删除旧对象业务键后写入规范化档案，保留仓库 revision 计数。禁止用 Object.assign 单独覆盖旧业务键。
+- [x] **5. GREEN。** 运行步骤 2 及 `tests/integration/repository.test.mjs`、`tests/integration/migration.test.mjs`；预期全部通过，备份可以整体还原。
+- [x] **6. Commit。** 暂存本任务 Files，`git commit -m "feat: add recoverable workspace management extensions"`。
 
 ## Task 2：唯一版本名称、幂等保存及管理操作 API
 
@@ -369,4 +369,4 @@ function Invoke-RjrTest {
 
 作者已检查：各任务输入/输出名称一致；所有五项 Review Focus 已落到回归；新字段与旧备份完整替换一致；lease释放覆盖最终snapshot；清理hash排除自身lease且仍核验业务revision；没有实际删除日常数据或模型付费步骤。
 
-任务依次执行，每个任务完成有独立测试与提交。生产数据升级在用户启动新版时完成并先备份；全版本清理仍需在软件中预览并确认。本计划等待用户审阅，之后沿用当前会话执行。
+任务依次执行，每个任务完成有独立测试与提交。生产数据升级在用户启动新版时完成并先备份；全版本清理仍需在软件中预览并确认。本计划已获用户确认，沿用当前会话执行。

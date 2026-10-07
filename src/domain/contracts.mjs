@@ -1,4 +1,5 @@
 /** Shared v2 contracts. Missing facts stay null; execution state differs from recommendation. */
+import {assertWorkspaceExtensions} from './workspace-management.mjs';
 export const SCHEMA_VERSION = 2;
 export const APPLICATION_STATUSES = [
   "new",
@@ -96,6 +97,7 @@ export function assertWorkspace(value) {
       !APPLICATION_STATUSES.includes(application.status)
     )
       throw new Error("Invalid application " + id);
+  assertWorkspaceExtensions(value);
   return value;
 }
 export function assertSourceRecord(value) {

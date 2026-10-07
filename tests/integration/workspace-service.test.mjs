@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -8,10 +9,9 @@ import { loadConfig, DEFAULT_CONFIG } from "../../src/config.mjs";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 function referencedProfileError(error) {
   assert.equal(error.status, 409);
-  assert.equal(error.code, "profile_revision_referenced");
-  assert.match(error.message, /简历版本已被.*引用.*不能删除/);
-  assert.match(error.message, /创建新版本/);
-  assert.equal(error.fieldErrors.profileRevisionId, error.message);
+  assert.equal(error.code, "version_referenced");
+  assert.match(error.fieldErrors.revisionId, /引用.*不能永久删除/);
+  assert.ok(Object.values(error.references).some(n=>n>0));
   return true;
 }
 test("profile and target revisions are immutable and references prevent deletion", async (t) => {
@@ -30,40 +30,41 @@ test("profile and target revisions are immutable and references prevent deletion
   assert.notEqual(a.revisionId, b.revisionId);
   assert.equal((await s.getProfileRevision(a.revisionId)).text, a.text);
   assert.equal(a.profile.major, "安全工程");
-  const target = await s.saveTarget({
+  const target = await s.saveTarget(namedTargetInput({
     profileRevisionId: a.revisionId,
     roles: ["安全工程师"],
     cityMode: "any",
     cities: [],
     enabled: false,
-  });
+  }));
   assert.equal(target.enabled, false);
   assert.equal(target.profileRevisionId, a.revisionId);
+  await s.deleteProfileRevision(a.revisionId);
   await assert.rejects(
-    s.deleteProfileRevision(a.revisionId),
+    s.permanentlyDeleteVersion({kind:'profile',parentId:a.profileId,revisionId:a.revisionId}),
     referencedProfileError,
   );
   await assert.rejects(
-    s.saveTarget({ profileRevisionId: "absent@1", roles: ["岗位"] }),
+    s.saveTarget(namedTargetInput({ profileRevisionId: "absent@1", roles: ["岗位"] })),
     (e) => e.status === 400 && !!e.fieldErrors.profileRevisionId,
   );
   assert.equal(
     (
-      await s.saveTarget({
+      await s.saveTarget(namedTargetInput({
         profileRevisionId: b.revisionId,
         roles: ["岗位"],
         cities: null,
-      })
+      }))
     ).cityMode,
     "from_profile",
   );
   assert.equal(
     (
-      await s.saveTarget({
+      await s.saveTarget(namedTargetInput({
         profileRevisionId: b.revisionId,
         roles: ["岗位"],
         cities: ["上海"],
-      })
+      }))
     ).cityMode,
     "selected",
   );
@@ -77,11 +78,11 @@ for (const reference of ["target", "run", "application"]) {
       profile: { major: "合成专业" },
     });
     if (reference === "target") {
-      await service.saveTarget({
+      await service.saveTarget(namedTargetInput({
         profileRevisionId: saved.revisionId,
         roles: ["合成岗位"],
         enabled: false,
-      });
+      }));
     } else {
       await repository.mutateWorkspace((workspace) => {
         if (reference === "run")
@@ -106,9 +107,10 @@ for (const reference of ["target", "run", "application"]) {
           };
       });
     }
+    await service.deleteProfileRevision(saved.revisionId);
     const before = await repository.read();
     await assert.rejects(
-      service.deleteProfileRevision(saved.revisionId),
+      service.permanentlyDeleteVersion({kind:'profile',parentId:saved.profileId,revisionId:saved.revisionId}),
       referencedProfileError,
     );
     assert.deepEqual(await repository.read(), before);
@@ -124,8 +126,10 @@ test("unreferenced profile deletion still succeeds and retains the other revisio
     profileId: first.profileId,
     text: "第二份合成简历正文，用于验证未引用版本可删除，同时保留其他版本的历史记录。",
   });
-  assert.deepEqual(await service.deleteProfileRevision(first.revisionId), {
+  assert.ok((await service.deleteProfileRevision(first.revisionId)).archivedAt);
+  assert.deepEqual(await service.permanentlyDeleteVersion({kind:'profile',parentId:first.profileId,revisionId:first.revisionId}), {
     deleted: first.revisionId,
+    permanent:true,
   });
   assert.equal(await service.getProfileRevision(first.revisionId), null);
   assert.deepEqual(await service.getProfileRevision(second.revisionId), second);
@@ -137,23 +141,25 @@ test("profile DELETE returns Chinese HTTP 409 field feedback for a referenced ve
     profile: { major: "合成专业" },
   });
   assert.ok(saved.revisionId);
-  const { response: targetResponse } = await f.call("/api/v2/targets", {
+  const { response: targetResponse } = await f.call("/api/v2/targets", namedTargetInput({
     profileRevisionId: saved.revisionId,
     roles: ["合成岗位"],
-  });
+  }));
   assert.equal(targetResponse.status, 201);
+  const base = "/api/v2/profiles/"+encodeURIComponent(saved.profileId)+"/revisions/"+encodeURIComponent(saved.revisionId);
+  assert.equal((await f.call(base,undefined,'DELETE')).response.status,200);
   const { response, data } = await f.call(
     "/api/v2/profiles/" +
       encodeURIComponent(saved.profileId) +
       "/revisions/" +
-      encodeURIComponent(saved.revisionId),
+      encodeURIComponent(saved.revisionId)+"/permanent",
     undefined,
     "DELETE",
   );
   assert.equal(response.status, 409);
-  assert.equal(data.code, "profile_revision_referenced");
-  assert.match(data.error, /简历版本已被.*引用.*不能删除/);
-  assert.equal(data.fieldErrors.profileRevisionId, data.error);
+  assert.equal(data.code, "version_referenced");
+  assert.match(data.fieldErrors.revisionId, /引用.*不能永久删除/);
+  assert.equal(data.references.targets,1);
   assert.equal(typeof data.diagnosticId, "string");
   const { data: stillPresent } = await f.call(
     "/api/v2/profiles/" +

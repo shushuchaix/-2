@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { apiFixture } from "../helpers/api-fixture.mjs";
@@ -19,10 +20,10 @@ test("v2 creates real revisions persistent run jobs applications and business ba
       text: "合成确认画像：本科软件工程专业，掌握 Java 开发，拥有项目经验，期望北京工作。",
     });
   assert.equal(p.response.status, 201);
-  const tar = await f.call("/api/v2/targets", {
+  const tar = await f.call("/api/v2/targets", namedTargetInput({
     ...target(),
     profileRevisionId: p.data.revisionId,
-  });
+  }));
   assert.equal(tar.response.status, 201);
   const run = await f.call("/api/v2/runs", {
     targetRevisionId: tar.data.revisionId,

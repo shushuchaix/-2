@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -63,11 +64,11 @@ test("direct services reject impossible dates and empty job types before writes"
     ctx = await f.ctx.ready;
   const p = await ctx.workspaceService.saveProfile({ profile: profile() });
   await assert.rejects(
-    ctx.workspaceService.saveTarget({
+    ctx.workspaceService.saveTarget(namedTargetInput({
       ...target(),
       profileRevisionId: p.revisionId,
       jobTypes: [],
-    }),
+    })),
     (e) => e.status === 400 && !!e.fieldErrors.jobTypes,
   );
   const imported = await ctx.importService.import({ text: "合成招聘公告" });
@@ -91,10 +92,10 @@ test("query validation exposes field keys and compatible API keys are accepted",
   assert.ok(bad.data.fieldErrors.since);
   f.cfg.deepseek.allowUserKey = true;
   const p = await f.call("/api/v2/profiles", { profile: profile() });
-  const tar = await f.call("/api/v2/targets", {
+  const tar = await f.call("/api/v2/targets", namedTargetInput({
     ...target(),
     profileRevisionId: p.data.revisionId,
-  });
+  }));
   const run = await f.call("/api/v2/runs", {
     targetRevisionId: tar.data.revisionId,
     mode: "rules",
@@ -111,11 +112,11 @@ test("unknown source or site references cannot be saved", async (t) => {
     { sourceIds: ["not-existing"] },
     { siteIds: ["not-existing"] },
   ]) {
-    const result = await f.call("/api/v2/targets", {
+    const result = await f.call("/api/v2/targets", namedTargetInput({
       ...target(),
       profileRevisionId: p.data.revisionId,
       ...patch,
-    });
+    }));
     assert.equal(result.response.status, 400);
     assert.ok(result.data.fieldErrors[Object.keys(patch)[0]]);
   }
@@ -124,10 +125,10 @@ test("unknown source or site references cannot be saved", async (t) => {
 test("default rules mode ignores unused Key", async (t) => {
   const f = await apiFixture(t);
   const p = await f.call("/api/v2/profiles", { profile: profile() });
-  const tar = await f.call("/api/v2/targets", {
+  const tar = await f.call("/api/v2/targets", namedTargetInput({
     ...target(),
     profileRevisionId: p.data.revisionId,
-  });
+  }));
   const run = await f.call("/api/v2/runs", {
     targetRevisionId: tar.data.revisionId,
     userApiKey: "bad unused key",

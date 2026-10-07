@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { apiFixture } from "../helpers/api-fixture.mjs";
@@ -37,10 +38,10 @@ test("insufficient source requirements preserve facts and explain the limitation
   const f = await apiFixture(t, { providers: [provider] }),
     app = await f.ctx.ready;
   const p = await app.workspaceService.saveProfile({ profile: profile() });
-  const tar = await app.workspaceService.saveTarget({
+  const tar = await app.workspaceService.saveTarget(namedTargetInput({
     ...target(),
     profileRevisionId: p.revisionId,
-  });
+  }));
   const { runId } = await app.runService.startRun({
     targetRevisionId: tar.revisionId,
   });

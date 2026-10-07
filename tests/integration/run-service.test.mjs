@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
@@ -19,11 +20,11 @@ async function fixture(t, providers, gate) {
     jobService = createJobService({ repository }),
     evaluationService = createEvaluationService({ repository });
   const p = await workspaceService.saveProfile({ profile: profile() }),
-    tar = await workspaceService.saveTarget({
+    tar = await workspaceService.saveTarget(namedTargetInput({
       ...target(),
       sourceIds: providers.map((p) => p.id),
       profileRevisionId: p.revisionId,
-    });
+    }));
   const catalog = providers.map((p) => ({
     siteId: p.id + "-1",
     providerId: p.id,
@@ -78,7 +79,7 @@ test("partial runs retain all raw facts and manual state with immutable target s
     targetRevisionId: f.tar.revisionId,
     mode: "rules",
   });
-  await f.workspaceService.saveTarget({ ...f.tar, roles: ["新方向"] });
+  await f.workspaceService.saveTarget(namedTargetInput({ ...f.tar, roles: ["新方向"] }));
   const result = await f.service.waitForRun(runId);
   assert.equal(result.run.status, "partial");
   assert.equal(result.run.counts.normalized, 2);

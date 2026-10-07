@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DeepSeek } from "../../src/llm/deepseek.mjs";
@@ -54,11 +55,11 @@ test("partial model results keep valid items and only invalid missing items fall
     workspace = createWorkspaceService({ repository }),
     jobs = createJobService({ repository });
   const p = await workspace.saveProfile({ profile: profile() });
-  const tar = await workspace.saveTarget({
+  const tar = await workspace.saveTarget(namedTargetInput({
     ...target(),
     targetId: undefined,
     profileRevisionId: p.revisionId,
-  });
+  }));
   const ingested = await jobs.ingestRecords({
     runId: "test",
     records: [
@@ -180,10 +181,10 @@ test("parallel tasks isolate usage and cached evaluations retain immutable ident
     workspace = createWorkspaceService({ repository }),
     jobs = createJobService({ repository });
   const p = await workspace.saveProfile({ profile: profile() }),
-    tar = await workspace.saveTarget({
+    tar = await workspace.saveTarget(namedTargetInput({
       ...target(),
       profileRevisionId: p.revisionId,
-    }),
+    })),
     { jobIds } = await jobs.ingestRecords({
       runId: "fixture",
       records: [job()],

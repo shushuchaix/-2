@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -161,10 +162,10 @@ test("invalid source records have a diagnosed ingest failure rather than a stora
   const f = await apiFixture(t, { providers: [provider] }),
     app = await f.ctx.ready;
   const p = await app.workspaceService.saveProfile({ profile: profile() });
-  const tar = await app.workspaceService.saveTarget({
+  const tar = await app.workspaceService.saveTarget(namedTargetInput({
     ...target(),
     profileRevisionId: p.revisionId,
-  });
+  }));
   const { runId } = await app.runService.startRun({
     targetRevisionId: tar.revisionId,
   });
@@ -186,10 +187,10 @@ test("failed source-progress persistence is fatal and is not blamed on the provi
   const f = await apiFixture(t),
     app = await f.ctx.ready;
   const p = await app.workspaceService.saveProfile({ profile: profile() });
-  const tar = await app.workspaceService.saveTarget({
+  const tar = await app.workspaceService.saveTarget(namedTargetInput({
     ...target(),
     profileRevisionId: p.revisionId,
-  });
+  }));
   const publish = app.eventHub.publish;
   let failed = false;
   app.eventHub.publish = (...args) => {
@@ -313,10 +314,10 @@ test("caught paged HTTP errors keep status and diagnostic ids in collection and 
   const f = await apiFixture(t, { providers: [provider] }),
     app = await f.ctx.ready;
   const p = await app.workspaceService.saveProfile({ profile: profile() });
-  const tar = await app.workspaceService.saveTarget({
+  const tar = await app.workspaceService.saveTarget(namedTargetInput({
     ...target({ sourceIds: ["ncss"] }),
     profileRevisionId: p.revisionId,
-  });
+  }));
   const { runId } = await app.runService.startRun({
     targetRevisionId: tar.revisionId,
   });

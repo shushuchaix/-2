@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createApplicationContext } from "../../src/application/context.mjs";
@@ -56,10 +57,10 @@ async function flow(
     },
   });
   const p = await context.workspaceService.saveProfile({ profile: profile() });
-  const tar = await context.workspaceService.saveTarget({
+  const tar = await context.workspaceService.saveTarget(namedTargetInput({
     ...target({ sourceIds: [provider.id] }),
     profileRevisionId: p.revisionId,
-  });
+  }));
   return { context, diagnostics, targetRevisionId: tar.revisionId };
 }
 

@@ -126,7 +126,7 @@ function Invoke-RjrTest {
 - Produces `updateVersion({kind,parentId,revisionId,versionName?,enabled?})`、`archiveVersion(...)`、`restoreVersion(...)`、`permanentlyDeleteVersion(...)`，均返回公共版本视图或明确删除结果。
 - Routes `/api/v2/{profiles|targets}/:id/revisions/:revisionId` 的 GET/PATCH/DELETE；POST 同路径 `/restore`，DELETE `/permanent`。新增 targets 的版本 GET/POST；原 profile DELETE 改默认移入回收站。旧 targets PUT 创建新配置版本，旧 PATCH 仅支持显式 revisionId 的管理操作，否则给字段错误，不猜最新版本。
 
-- [ ] **1. 写失败测试。** 名称边界 0/1/60/61，`" ＡＢＣ  方向 "` 与 `"abc 方向"` 冲突；保留 `"机场-消防"` 与 `"机场 消防"` 的区别。并发调用验证：
+- [x] **1. 写失败测试。** 名称边界 0/1/60/61，`" ＡＢＣ  方向 "` 与 `"abc 方向"` 冲突；保留 `"机场-消防"` 与 `"机场 消防"` 的区别。并发调用验证：
   ```js
   assert.equal(successfulCreates.length, 1);
   assert.equal(replayed.revisionId, first.revisionId);
@@ -135,11 +135,11 @@ function Invoke-RjrTest {
   assert.equal(afterPermanentDelete.versionCounters.target.t1, 2);
   ```
   同 nonce 不同内容拒绝；已永久删除的 nonce 重试返回 retired；回收站名仍占用；错父路径拒绝。设置旧来源已删除/模型已变化，停用仍成功，新配置仍完整校验。仅投递事件 from/to 引用的画像不能永久删除。
-- [ ] **2. RED。** `Invoke-RjrTest tests/unit/version-names.test.mjs tests/integration/version-management.test.mjs tests/integration/workspace-service.test.mjs`，预期名称、元数据或回收站行为失败。
-- [ ] **3. 实现纯名称/引用规则。** 画像和目标独立命名空间，覆盖运行顶层与 frozen target、评价、全部投递包括未解决记录、事件 from/to、成员及活动租约。自己的原名称不冲突。
-- [ ] **4. 实现版本事务及路由。** 锁内占名/nonce/序号分配；状态操作不走 saveTarget 配置校验；配置保持 immutable。回收站可引用、永久删除必须无引用。CLI/legacy 系统创建版本生成明确稳定名称及提交标识，不能绕过占名规则。
-- [ ] **5. GREEN。** 运行步骤 2 加 `tests/integration/api-v2.test.mjs tests/integration/cli-compat.test.mjs`；将既有物理删除断言更新为用户批准的回收站语义，不削弱引用保护。
-- [ ] **6. Commit。** `git commit -m "feat: manage uniquely named target and resume versions"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/unit/version-names.test.mjs tests/integration/version-management.test.mjs tests/integration/workspace-service.test.mjs`，预期名称、元数据或回收站行为失败。
+- [x] **3. 实现纯名称/引用规则。** 画像和目标独立命名空间，覆盖运行顶层与 frozen target、评价、全部投递包括未解决记录、事件 from/to、成员及活动租约。自己的原名称不冲突。
+- [x] **4. 实现版本事务及路由。** 锁内占名/nonce/序号分配；状态操作不走 saveTarget 配置校验；配置保持 immutable。回收站可引用、永久删除必须无引用。CLI/legacy 系统创建版本生成明确稳定名称及提交标识，不能绕过占名规则。
+- [x] **5. GREEN。** 运行步骤 2 加 `tests/integration/api-v2.test.mjs tests/integration/cli-compat.test.mjs`；将既有物理删除断言更新为用户批准的回收站语义，不削弱引用保护。
+- [x] **6. Commit。** `git commit -m "feat: manage uniquely named target and resume versions"`。
 
 ## Task 3：保守身份判定与重复采集幂等
 

@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createEvaluationService } from "../../src/application/evaluation-service.mjs";
@@ -23,11 +24,11 @@ test("rescore keeps prior revisions and application without collecting sources",
       profileId: "p1",
       profile: profile(),
     }),
-    t1 = await workspace.saveTarget({
+    t1 = await workspace.saveTarget(namedTargetInput({
       ...target(),
       targetId: "t1",
       profileRevisionId: p.revisionId,
-    }),
+    })),
     { jobIds } = await jobs.ingestRecords({
       runId: "fixture",
       records: [job()],
@@ -43,10 +44,10 @@ test("rescore keeps prior revisions and application without collecting sources",
       profileId: "p1",
       profile: profile({ skills: ["Java", "SQL"] }),
     }),
-    t2 = await workspace.saveTarget({
+    t2 = await workspace.saveTarget(namedTargetInput({
       ...t1,
       profileRevisionId: p2.revisionId,
-    });
+    }));
   const result = await service.rescore({
     jobIds,
     profileRevisionId: p2.revisionId,
@@ -87,10 +88,10 @@ test("rescore cancellation retains completed batch and validates real revisions"
     jobs = createJobService({ repository }),
     service = createEvaluationService({ repository }),
     p = await workspace.saveProfile({ profile: profile() }),
-    tar = await workspace.saveTarget({
+    tar = await workspace.saveTarget(namedTargetInput({
       ...target(),
       profileRevisionId: p.revisionId,
-    });
+    }));
   const { jobIds } = await jobs.ingestRecords({
     runId: "fixture",
     records: Array.from({ length: 6 }, (_, i) =>

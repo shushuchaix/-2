@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -138,10 +139,10 @@ test("review 4: restoring an unfinished run in its former process interrupts it 
   });
   const ctx = await f.ctx.ready;
   const p = await ctx.workspaceService.saveProfile({ profile: profile() });
-  const tar = await ctx.workspaceService.saveTarget({
+  const tar = await ctx.workspaceService.saveTarget(namedTargetInput({
     ...target(),
     profileRevisionId: p.revisionId,
-  });
+  }));
   const started = await ctx.runService.startRun({
     targetRevisionId: tar.revisionId,
     mode: "rules",
@@ -166,10 +167,10 @@ test("review 5: rescoring legacy evaluations returns an unknown prior qualificat
   const { repository, jobs } = await legacy(t);
   const workspace = createWorkspaceService({ repository });
   const p = await workspace.saveProfile({ profile: profile() });
-  const tar = await workspace.saveTarget({
+  const tar = await workspace.saveTarget(namedTargetInput({
     ...target(),
     profileRevisionId: p.revisionId,
-  });
+  }));
   const jobId = (await jobs.queryJobs()).items[0].jobId;
   const result = await createEvaluationService({ repository }).rescore({
     jobIds: [jobId],
@@ -369,10 +370,10 @@ test("review 11b: ordinary collection records source health without requiring a 
     }),
     ctx = await f.ctx.ready;
   const p = await ctx.workspaceService.saveProfile({ profile: profile() });
-  const tar = await ctx.workspaceService.saveTarget({
+  const tar = await ctx.workspaceService.saveTarget(namedTargetInput({
     ...target(),
     profileRevisionId: p.revisionId,
-  });
+  }));
   const { runId } = await ctx.runService.startRun({
     targetRevisionId: tar.revisionId,
     mode: "rules",

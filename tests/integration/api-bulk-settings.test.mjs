@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { apiFixture } from "../helpers/api-fixture.mjs";
@@ -6,10 +7,10 @@ test("bulk saved-job rescore and bounded settings are available", async (t) => {
   const f = await apiFixture(t),
     context = await f.ctx.ready,
     p = await context.workspaceService.saveProfile({ profile: profile() }),
-    tar = await context.workspaceService.saveTarget({
+    tar = await context.workspaceService.saveTarget(namedTargetInput({
       ...target(),
       profileRevisionId: p.revisionId,
-    }),
+    })),
     ingested = await context.jobService.ingestRecords({
       runId: "manual",
       records: [job()],
@@ -44,11 +45,11 @@ test("target creation API accepts a verified currency budget", async (t) => {
     model: { baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
     budgets: { maxCostCny: 10 },
   });
-  const response = await f.call("/api/v2/targets", {
+  const response = await f.call("/api/v2/targets", namedTargetInput({
     ...target(),
     profileRevisionId: p.revisionId,
     budgets: { maxCostCny: 10 },
-  });
+  }));
   assert.equal(response.response.status, 201);
   assert.equal(response.data.budgets.maxCostCny, 10);
 });

@@ -32,6 +32,9 @@ export async function apiFixture(t,options={}) {
     ctx.server.closeAllConnections();
     await new Promise((resolve) => ctx.server.close(resolve));
   });
+  // Static asset requests do not wait for application startup in the server.
+  // Finish migration before a fixture can be torn down by its first test.
+  await ctx.ready;
   const call = async (url, body, method) => {
     const response = await fetch(origin + url, {
       method: method || (body === undefined ? "GET" : "POST"),

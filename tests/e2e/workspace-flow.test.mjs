@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { apiFixture } from "../helpers/api-fixture.mjs";
@@ -22,7 +23,7 @@ test("personal workflow survives restart and exports human records in Markdown",
     },
     overrides: { major: "软件工程" },
   });
-  const target = await f.call("/api/v2/targets", {
+  const target = await f.call("/api/v2/targets", namedTargetInput({
     profileRevisionId: p.data.revisionId,
     roles: ["Java开发"],
     cityMode: "any",
@@ -30,7 +31,7 @@ test("personal workflow survives restart and exports human records in Markdown",
     jobTypes: ["campus"],
     degreePolicy: "eligibility",
     sourceIds: ["synthetic", "failed"],
-  });
+  }));
   const started = await f.call("/api/v2/runs", {
       targetRevisionId: target.data.revisionId,
       mode: "rules",

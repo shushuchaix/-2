@@ -1,3 +1,4 @@
+import {namedTargetInput} from '../helpers/fixtures.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import announcements from "../../src/sources/adapters/official-announcements.mjs";
@@ -220,10 +221,10 @@ test("a run separates confirmed qualification from unknown and failed while reta
     },
   });
   const p = await context.workspaceService.saveProfile({ profile: profile() });
-  const tar = await context.workspaceService.saveTarget({
+  const tar = await context.workspaceService.saveTarget(namedTargetInput({
     ...target(),
     profileRevisionId: p.revisionId,
-  });
+  }));
   const { runId } = await context.runService.startRun({
     targetRevisionId: tar.revisionId,
     mode: "rules",

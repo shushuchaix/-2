@@ -1,6 +1,7 @@
 // Compatibility entry points over the shared v2 application services.
 import fs from "node:fs/promises";
 import path from "node:path";
+import {randomUUID} from 'node:crypto';
 import { DATA_ROOT } from "./config.mjs";
 import { getDefaultApplicationContext } from "./application/context.mjs";
 import {
@@ -131,6 +132,7 @@ export async function createLegacyRunInput({
     ...extra,
   ];
   const saved = await context.workspaceService.saveProfile({
+    submissionId: 'legacy-profile-'+randomUUID(),
     text,
     profile: {
       ...profile,
@@ -142,6 +144,8 @@ export async function createLegacyRunInput({
     parserVersion: "legacy-inferred-2",
   });
   const target = await context.workspaceService.saveTarget({
+    versionName: '兼容检索 · '+saved.revisionId,
+    submissionId: 'legacy-target-'+randomUUID(),
     profileRevisionId: saved.revisionId,
     roles: titleKeywords.length ? titleKeywords : ["应届生"],
     cityMode: Array.isArray(options.cities)

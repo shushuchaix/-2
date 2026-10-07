@@ -570,6 +570,11 @@ export function createServer(
             ...(e.fieldErrors && status < 500
               ? { fieldErrors: e.fieldErrors }
               : {}),
+            ...(e.references && status < 500 ? {references:Object.fromEntries(
+              ['targets','runs','evaluations','members','applications','applicationEvents','activeOperations']
+                .filter(key=>Number.isSafeInteger(e.references[key]) && e.references[key]>=0)
+                .map(key=>[key,e.references[key]]))} : {}),
+            ...(typeof e.conflictingRevisionId==='string' && status < 500 ? {conflictingRevisionId:e.conflictingRevisionId} : {}),
             diagnosticId,
           });
         } else {

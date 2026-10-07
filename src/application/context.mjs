@@ -27,7 +27,11 @@ import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 import { DeepSeek } from "../llm/deepseek.mjs";
 import { RunGate } from "../limits.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
-import { createDiagnosticsLog } from "../infrastructure/diagnostics/log.mjs";
+import {
+  createDiagnosticsLog,
+  recordDiagnostic,
+} from "../infrastructure/diagnostics/log.mjs";
+import { defaultRuntime } from "../infrastructure/diagnostics/fields.mjs";
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
@@ -36,18 +40,65 @@ export async function createApplicationContext({
   const diagnostics =
     dependencies.diagnostics ||
     createDiagnosticsLog({ dataDir, clock: dependencies.clock });
+  const tick = () => dependencies.clock?.now?.() ?? Date.now();
+  async function trace(operation, action, summarize = () => ({})) {
+    const started = tick();
+    try {
+      const result = await action();
+      await recordDiagnostic(diagnostics, {
+        operation,
+        phase: "finished",
+        outcome: "success",
+        durationMs: Math.max(0, tick() - started),
+        ...summarize(result),
+      });
+      return result;
+    } catch (error) {
+      const entry = await recordDiagnostic(
+        diagnostics,
+        {
+          operation,
+          outcome: "failed",
+          durationMs: Math.max(0, tick() - started),
+        },
+        error,
+      );
+      if (entry) error.diagnosticId ||= entry.diagnosticId;
+      throw error;
+    }
+  }
   const repository =
     dependencies.repository ||
-    (await openWorkspaceRepository({
-      dataDir,
-      clock: dependencies.clock,
-      diagnostics,
-    }));
-  const migration = await migrateV1({
-    dataDir: repository.dataDir,
-    repository,
-  });
-  const recovery = await recoverWorkspace(repository);
+    (await trace(
+      "application.start",
+      () =>
+        openWorkspaceRepository({
+          dataDir,
+          clock: dependencies.clock,
+          diagnostics,
+        }),
+      () => ({ stage: "startup", runtime: defaultRuntime() }),
+    ));
+  const migration = await trace(
+    "application.migration",
+    () =>
+      migrateV1({
+        dataDir: repository.dataDir,
+        repository,
+      }),
+    (result) => ({ issueCount: result.issues?.length || 0 }),
+  );
+  const recovery = await trace(
+    "application.recovery",
+    () => recoverWorkspace(repository),
+    (result) => ({
+      counts: {
+        interrupted: result.interruptedRunIds.length,
+        orphan: result.orphanSnapshots.length,
+        issues: result.issues.length,
+      },
+    }),
+  );
   const registry = dependencies.registry || createDefaultSourceRegistry();
   const workspaceService = createWorkspaceService({
       repository,
@@ -67,6 +118,7 @@ export async function createApplicationContext({
     ((options) =>
       createRequestClient({
         ...options,
+        diagnostics,
         dnsMode: cfg.network?.dnsMode || "auto",
       }));
   const modelFactory =
@@ -80,11 +132,12 @@ export async function createApplicationContext({
             apiKey: options.credentials?.userApiKey || cfg.deepseek.apiKey,
           },
         },
-        options,
+        { ...options, diagnostics },
       ));
   const evaluationService = createEvaluationService({
       repository,
       modelFactory,
+      diagnostics,
     }),
     eventHub = createRunEventHub({ repository });
   const gate =
@@ -119,6 +172,7 @@ export async function createApplicationContext({
       request: (url, options) =>
         requestFactory({
           budget: createSourceBudget({ maxRequests: 6, maxDetails: 2 }),
+          diagnosticContext: { endpointKind: "import" },
         })(url, options),
     }),
     exportService = createExportService({ repository });
@@ -164,97 +218,106 @@ export async function createApplicationContext({
       };
     },
     async saveSettings(input) {
-      assertInput("settings", input, { nativeTypes: true });
-      if (input.budgets) {
-        const limits = {
-          maxModelRequests: 20,
-          maxRequests: 240,
-          maxDetails: 20,
-          maxSites: 24,
-        };
-        for (const [key, value] of Object.entries(input.budgets))
+      return trace("application.settings", async () => {
+        assertInput("settings", input, { nativeTypes: true });
+        if (input.budgets) {
+          const limits = {
+            maxModelRequests: 20,
+            maxRequests: 240,
+            maxDetails: 20,
+            maxSites: 24,
+          };
+          for (const [key, value] of Object.entries(input.budgets))
+            if (
+              !(key in limits) ||
+              !Number.isSafeInteger(value) ||
+              value < 0 ||
+              value > limits[key]
+            )
+              throw Error("Invalid budget " + key);
+        }
+        const model = input.model || {};
+        if (model.baseUrl) {
+          const url = new URL(model.baseUrl);
           if (
-            !(key in limits) ||
-            !Number.isSafeInteger(value) ||
-            value < 0 ||
-            value > limits[key]
+            !["http:", "https:"].includes(url.protocol) ||
+            url.username ||
+            url.password
           )
-            throw Error("Invalid budget " + key);
-      }
-      const model = input.model || {};
-      if (model.baseUrl) {
-        const url = new URL(model.baseUrl);
-        if (
-          !["http:", "https:"].includes(url.protocol) ||
-          url.username ||
-          url.password
-        )
-          throw Error("Invalid model endpoint");
-      }
-      const changes = {};
-      for (const key of ["baseUrl", "model", "apiKey"])
-        if (Object.hasOwn(model, key)) {
-          if (typeof model[key] !== "string")
-            throw Error("Invalid model setting");
-          changes[key] = model[key];
+            throw Error("Invalid model endpoint");
         }
-      if (Object.keys(changes).length) {
-        const filename = path.join(repository.dataDir, "config.json");
-        let file = {};
-        try {
-          file = JSON.parse(await fs.readFile(filename, "utf8"));
-        } catch (error) {
-          if (error.code !== "ENOENT") throw error;
+        const changes = {};
+        for (const key of ["baseUrl", "model", "apiKey"])
+          if (Object.hasOwn(model, key)) {
+            if (typeof model[key] !== "string")
+              throw Error("Invalid model setting");
+            changes[key] = model[key];
+          }
+        if (Object.keys(changes).length) {
+          const filename = path.join(repository.dataDir, "config.json");
+          let file = {};
+          try {
+            file = JSON.parse(await fs.readFile(filename, "utf8"));
+          } catch (error) {
+            if (error.code !== "ENOENT") throw error;
+          }
+          file.deepseek = { ...(file.deepseek || {}), ...changes };
+          await writeAtomicJson(filename, file);
+          Object.assign(cfg.deepseek, changes);
         }
-        file.deepseek = { ...(file.deepseek || {}), ...changes };
-        await writeAtomicJson(filename, file);
-        Object.assign(cfg.deepseek, changes);
-      }
-      await repository.mutateWorkspace((w) => {
-        if (input.budgets)
-          w.settings.budgets = { ...w.settings.budgets, ...input.budgets };
-        if (input.model)
-          w.settings.model = { ...w.settings.model, ...redactBusiness(model) };
+        await repository.mutateWorkspace((w) => {
+          if (input.budgets)
+            w.settings.budgets = { ...w.settings.budgets, ...input.budgets };
+          if (input.model)
+            w.settings.model = {
+              ...w.settings.model,
+              ...redactBusiness(model),
+            };
+        });
+        return context.getSettings();
       });
-      return context.getSettings();
     },
     async backup() {
-      const result = await createBackup({ repository });
-      return JSON.parse(await fs.readFile(result.path, "utf8"));
+      return trace("application.backup", async () => {
+        const result = await createBackup({ repository });
+        return JSON.parse(await fs.readFile(result.path, "utf8"));
+      });
     },
     async restore(archive) {
-      try {
-        validateBackupArchive(archive);
-      } catch {
-        throw inputError({
-          file: "备份格式或完整性检查未通过，请选择软件导出的完整备份文件。",
-        });
-      }
-      if (
-        (await runService.listRuns()).some((r) =>
-          ["queued", "running"].includes(r.status),
+      return trace("application.restore", async () => {
+        try {
+          validateBackupArchive(archive);
+        } catch {
+          throw inputError({
+            file: "备份格式或完整性检查未通过，请选择软件导出的完整备份文件。",
+          });
+        }
+        if (
+          (await runService.listRuns()).some((r) =>
+            ["queued", "running"].includes(r.status),
+          )
         )
-      )
-        throw inputError(
-          { file: "有任务正在运行，请等任务结束后再恢复备份。" },
-          "当前不能恢复备份。",
-          409,
+          throw inputError(
+            { file: "有任务正在运行，请等任务结束后再恢复备份。" },
+            "当前不能恢复备份。",
+            409,
+          );
+        const archivePath = path.join(
+          repository.dataDir,
+          "backups",
+          "restore-" + randomUUID() + ".json",
         );
-      const archivePath = path.join(
-        repository.dataDir,
-        "backups",
-        "restore-" + randomUUID() + ".json",
-      );
-      await writeAtomicJson(archivePath, archive);
-      try {
-        return await restoreBackup({ repository, archivePath });
-      } catch (error) {
-        if (error.code && /ENOSPC|EACCES|EPERM|EROFS|EIO/.test(error.code))
-          throw error;
-        throw inputError({
-          file: "备份格式或完整性检查未通过，请选择软件导出的完整备份文件。",
-        });
-      }
+        await writeAtomicJson(archivePath, archive);
+        try {
+          return await restoreBackup({ repository, archivePath });
+        } catch (error) {
+          if (error.code && /ENOSPC|EACCES|EPERM|EROFS|EIO/.test(error.code))
+            throw error;
+          throw inputError({
+            file: "备份格式或完整性检查未通过，请选择软件导出的完整备份文件。",
+          });
+        }
+      });
     },
   };
   return context;

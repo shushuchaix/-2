@@ -5,6 +5,7 @@ import { mountSettingsPage } from "../../public/js/pages/settings.js";
 import { mountWorkbenchPage } from "../../public/js/pages/workbench.js";
 import { runProgress } from "../../public/js/components/run-progress.js";
 import { createApiClient } from "../../public/js/api.js";
+import { diagnosticsPanel } from "../../public/js/components/diagnostics-panel.js";
 
 const diagnostic = (message, diagnosticId = "diag-example") => ({
   diagnosticId,
@@ -307,4 +308,144 @@ test("run progress explains the stage and diagnostic issue without changing run 
   assert.match(node.textContent, /错误编号.*diag-source-1/);
   assert.match(node.textContent, /查看更新日志/);
   assert.match(node.textContent, /检查网络/);
+});
+
+test("diagnostic filters preserve task scope and apply equally to complete export", async () => {
+  const f = uiFixture(() => ({
+    ...logs(),
+    summary: {
+      total: 280,
+      returned: 200,
+      truncated: true,
+      errors: 3,
+      warnings: 2,
+    },
+    retention: { maxFiles: 2, maxFileBytes: 2097152 },
+  }));
+  const component = diagnosticsPanel(f);
+  f.root.append(component.node);
+  component.setRunId("r-filtered");
+  open(f.document, component.node);
+  await f.settle();
+  assert.match(component.node.textContent, /200.*280/);
+  assert.match(component.node.textContent, /导出.*全部|全部.*导出/);
+  const severity = component.node.querySelector('[name="diagnosticLevel"]');
+  const category = component.node.querySelector('[name="diagnosticCategory"]');
+  const diagnosticId = component.node.querySelector('[name="diagnosticId"]');
+  assert.ok(
+    severity && category && diagnosticId,
+    "level, category and diagnostic number filters are available",
+  );
+  severity.value = "problem";
+  category.value = "storage";
+  diagnosticId.value = "d-00000000-0000-4000-8000-000000000001";
+  control(component.node, "筛选日志").click();
+  await f.settle();
+  const query = new URLSearchParams(f.calls.at(-1).path.split("?")[1]);
+  assert.equal(query.get("runId"), "r-filtered");
+  assert.equal(query.get("level"), "problem");
+  assert.equal(query.get("category"), "storage");
+  assert.equal(query.get("diagnosticId"), diagnosticId.value);
+  const exported = [];
+  f.api.download = async (path) => {
+    exported.push(path);
+    return new Blob(["synthetic diagnostic"]);
+  };
+  control(component.node, "导出日志").click();
+  await f.settle();
+  const exportQuery = new URLSearchParams(exported[0].split("?")[1]);
+  assert.equal(exportQuery.has("limit"), false);
+  assert.equal(exportQuery.get("category"), "storage");
+  assert.equal(exportQuery.get("runId"), "r-filtered");
+  control(component.node, "查看全部日志").click();
+  await f.settle();
+  assert.equal(
+    new URLSearchParams(f.calls.at(-1).path.split("?")[1]).has("runId"),
+    false,
+  );
+  component.destroy();
+});
+
+test("diagnostic details expose safe request and storage context as plain text", async () => {
+  const f = uiFixture(() =>
+    logs([
+      {
+        ...diagnostic("合成错误"),
+        method: "PUT",
+        route: "/api/v2/settings",
+        requestId: "q-synthetic",
+        phase: "mutation",
+        outcome: "failed",
+        httpStatus: 500,
+        resource: "workspace.v2.json",
+        retryCount: 2,
+        retryDelayMs: 30,
+        recordCount: 12,
+        counts: { ingested: 12 },
+        failurePhase: "dns",
+        queueMs: 7,
+        dnsMs: 9,
+        transportMs: 11,
+        timeoutMs: 12000,
+        parser: { format: "html", selectorPresent: false },
+        usage: { sources: { requests: 5, maxRequests: 12 } },
+      },
+    ]),
+  );
+  const component = diagnosticsPanel(f);
+  f.root.append(component.node);
+  open(f.document, component.node);
+  await f.settle();
+  assert.match(component.node.textContent, /PUT.*\/api\/v2\/settings/);
+  assert.match(component.node.textContent, /HTTP.*500/);
+  assert.match(component.node.textContent, /workspace\.v2\.json/);
+  assert.match(component.node.textContent, /DNS.*9ms/);
+  assert.match(component.node.textContent, /排队.*7ms/);
+  assert.match(component.node.textContent, /selectorPresent/);
+  assert.match(component.node.textContent, /maxRequests/);
+  assert.match(component.node.textContent, /重试.*2/);
+  assert.match(component.node.textContent, /q-synthetic/);
+  component.destroy();
+});
+
+test("completed task invalidates collapsed log history before reopening", async () => {
+  let reads = 0;
+  const f = uiFixture(() =>
+    logs([diagnostic(++reads === 1 ? "任务进行中" : "任务已经结束")]),
+  );
+  const component = diagnosticsPanel(f);
+  f.root.append(component.node);
+  open(f.document, component.node);
+  await f.settle();
+  component.node.open = false;
+  component.refresh();
+  open(f.document, component.node);
+  await f.settle();
+  assert.match(component.node.textContent, /任务已经结束/);
+  assert.equal(reads, 2);
+  component.destroy();
+});
+
+test("task completion refresh preserves an export of the same selected scope", async () => {
+  const f = uiFixture(() => logs([diagnostic("更新日志")]));
+  const component = diagnosticsPanel(f);
+  f.root.append(component.node);
+  open(f.document, component.node);
+  await f.settle();
+  const pending = deferred(),
+    downloads = [];
+  f.api.download = () => pending.promise;
+  const create = f.document.createElement.bind(f.document);
+  f.document.createElement = (tag) => {
+    const element = create(tag);
+    if (tag === "a")
+      element.click = () => downloads.push(element.getAttribute("download"));
+    return element;
+  };
+  control(component.node, "导出日志").click();
+  await component.refresh();
+  pending.resolve(new Blob(["合成诊断"]));
+  await f.settle();
+  assert.equal(downloads.length, 1);
+  component.destroy();
 });

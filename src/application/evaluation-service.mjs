@@ -7,10 +7,12 @@ import {
   evaluationCacheKey,
 } from "../llm/validation.mjs";
 import { evaluationPrompt, PROMPT_VERSION } from "../llm/prompts.mjs";
+import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 export function createEvaluationService({
   repository,
   cache = new Map(),
   modelFactory,
+  diagnostics,
   clock = repository.clock,
 }) {
   return {
@@ -22,7 +24,10 @@ export function createEvaluationService({
       signal,
       runId = null,
       modelClient,
+      diagnosticContext = {},
     }) {
+      const trace = { ...diagnosticContext, ...(runId ? { runId } : {}) },
+        started = clock.now();
       signal?.throwIfAborted();
       const workspace = await repository.read();
       const p = Object.values(workspace.profiles)
@@ -45,7 +50,11 @@ export function createEvaluationService({
       const client =
           modelClient ||
           ((mode === "ai" || mode === "auto") && modelFactory
-            ? modelFactory({ signal, budget: newBudget })
+            ? modelFactory({
+                signal,
+                budget: newBudget,
+                diagnosticContext: trace,
+              })
             : null),
         budget = client?.budget || newBudget;
       const ai = mode === "ai" || (mode === "auto" && client?.available);
@@ -88,6 +97,20 @@ export function createEvaluationService({
           draft: evaluateRules(record, p.profile, target),
         });
       }
+      const cachedCount = evaluations.length;
+      await recordDiagnostic(diagnostics, {
+        operation: "model.result",
+        ...trace,
+        mode,
+        phase: "cache",
+        outcome: cachedCount ? "cached" : "success",
+        cacheHit: cachedCount > 0,
+        counts: {
+          input: ids.length,
+          cached: cachedCount,
+          accepted: pending.length,
+        },
+      });
       for (let offset = 0; offset < pending.length; offset += 5) {
         signal?.throwIfAborted();
         const batch = pending.slice(offset, offset + 5);
@@ -102,28 +125,100 @@ export function createEvaluationService({
             const raw = await client.chatJson(prompt.system, prompt.user, {
               signal,
               maxTokens: 4000,
+              diagnosticContext: trace,
             });
             const parsed = validateModelResults(raw, { records });
             valid = new Map(parsed.valid.map((r) => [r.jobId, r]));
+            const validation = await recordDiagnostic(diagnostics, {
+              operation: "model.validation",
+              ...trace,
+              phase: "validation",
+              outcome:
+                parsed.issues.length || parsed.missingIds.length
+                  ? "partial"
+                  : "success",
+              counts: {
+                input: records.length,
+                valid: parsed.valid.length,
+                invalid: parsed.invalidIds.length,
+                missing: parsed.missingIds.length,
+              },
+              issueCount: parsed.issues.length + parsed.missingIds.length,
+              parser: {
+                format: "json",
+                version: PROMPT_VERSION,
+                expectedCount: records.length,
+                resultCount: parsed.valid.length,
+              },
+            });
+            if (valid.size < batch.length)
+              await recordDiagnostic(diagnostics, {
+                operation: "model.fallback",
+                ...trace,
+                phase: "validation",
+                outcome: "partial",
+                code: parsed.invalidIds.length
+                  ? "invalid_model_result"
+                  : "missing_model_result",
+                counts: {
+                  fallback: batch.length - valid.size,
+                  invalid: parsed.invalidIds.length,
+                  missing: parsed.missingIds.length,
+                },
+                level: "warn",
+              });
             issues.push(
-              ...parsed.issues,
+              ...parsed.issues.map((issue) => ({
+                ...issue,
+                ...(validation
+                  ? { diagnosticId: validation.diagnosticId }
+                  : {}),
+              })),
               ...parsed.missingIds.map((jobId) => ({
                 code: "missing_model_result",
                 jobId,
+                ...(validation
+                  ? { diagnosticId: validation.diagnosticId }
+                  : {}),
               })),
             );
           } catch (error) {
             if (signal?.aborted || error.name === "AbortError") throw error;
+            const entry = await recordDiagnostic(
+              diagnostics,
+              {
+                operation: "model.fallback",
+                ...trace,
+                phase: error.phase || "response",
+                outcome: "partial",
+                code: error.code || "model_unavailable",
+                counts: { fallback: batch.length },
+                requestId: error.requestId,
+              },
+              error,
+            );
             issues.push({
               code: error.code || "model_unavailable",
               message: "模型调用未完成，保留规则评价。",
+              ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
             });
           }
-        } else if (ai)
+        } else if (ai) {
+          const entry = await recordDiagnostic(diagnostics, {
+            operation: "model.fallback",
+            ...trace,
+            phase: "validation",
+            outcome: "skipped",
+            code: "missing_model_key",
+            counts: { fallback: batch.length },
+            level: "warn",
+          });
           issues.push({
             code: "missing_model_key",
             message: "未配置模型密钥，保留规则评价。",
+            ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
           });
+        }
         const completed = batch.map(({ record, jdHash, cacheKey, draft }) => {
           const model = valid.get(record.jobId);
           const evaluation = {
@@ -178,6 +273,33 @@ export function createEvaluationService({
             cache.set(e.cacheKey, structuredClone(e));
         }
       }
+      await recordDiagnostic(diagnostics, {
+        operation: "model.result",
+        ...trace,
+        mode,
+        phase: "finished",
+        outcome: issues.length ? "partial" : "success",
+        durationMs: Math.max(0, clock.now() - started),
+        counts: {
+          input: ids.length,
+          accepted: evaluations.length,
+          cached: cachedCount,
+          aiSuccess: evaluations.filter(
+            (evaluation) => evaluation.status === "ai",
+          ).length,
+          fallback: evaluations.filter(
+            (evaluation) => evaluation.status === "rule_fallback",
+          ).length,
+        },
+        issueCount: issues.length,
+        usage: {
+          model: {
+            ...budget.snapshot(),
+            promptTokens: client?.usage?.promptTokens || 0,
+            completionTokens: client?.usage?.completionTokens || 0,
+          },
+        },
+      });
       return {
         evaluations,
         usage: {

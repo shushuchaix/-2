@@ -1,4 +1,5 @@
 import { assertSourceRecord } from "../../domain/contracts.mjs";
+import { recordDiagnostic } from "../../infrastructure/diagnostics/log.mjs";
 export function jsonResponse(response) {
   if (response.status === 401 || response.status === 403) {
     const e = Error("restricted: HTTP " + response.status);
@@ -24,6 +25,13 @@ export function jsonResponse(response) {
   } catch {
     const e = Error("parse_error: invalid JSON");
     e.code = "parse_error";
+    e.phase = "parse";
+    e.requestId = response.requestId;
+    e.parser = {
+      format: "json",
+      resultType: "unknown",
+      documentLength: String(response.text || "").length,
+    };
     throw e;
   }
 }
@@ -88,9 +96,15 @@ export function createPagedProvider({
           (q) => !q.siteId || q.siteId === site.siteId,
         );
         if (!queries.length) queries.push({ keyword: "", pageLimit: 1 });
-        for (const query of queries) {
+        for (const [localQueryIndex, query] of queries.entries()) {
           let pages = 0,
-            truncated = false;
+            truncated = false,
+            currentPage = 1;
+          const queryIndex = ctx.queryIndex ?? localQueryIndex;
+          const pageDiagnostic = (event, error) =>
+            ctx.reportDiagnostic
+              ? recordDiagnostic(ctx.reportDiagnostic, event, error)
+              : recordDiagnostic(ctx.diagnostics, event, error);
           const startedAt = new Date(
             ctx.clock?.now?.() || Date.now(),
           ).toISOString();
@@ -100,8 +114,32 @@ export function createPagedProvider({
               page <= Math.min(2, query.pageLimit || 1);
               page++
             ) {
+              currentPage = page;
               ctx.signal?.throwIfAborted();
-              const response = await listPage(site, query, page, ctx);
+              const location = {
+                runId: ctx.runId,
+                sourceId: id,
+                siteId: site.siteId,
+                queryIndex,
+                page,
+              };
+              const pageStarted = ctx.clock?.now?.() ?? Date.now();
+              const response = await listPage(site, query, page, {
+                ...ctx,
+                queryIndex,
+                page,
+                request:
+                  ctx.request &&
+                  ((url, options = {}) =>
+                    ctx.request(url, {
+                      ...options,
+                      diagnosticContext: {
+                        ...options.diagnosticContext,
+                        ...location,
+                        endpointKind: "list",
+                      },
+                    })),
+              });
               pages++;
               raw += response.raw ?? response.records.length;
               for (const issue of response.issues || []) {
@@ -109,7 +147,7 @@ export function createPagedProvider({
                   Object.assign(Error(issue.message || issue.code), {
                     code: issue.code,
                   }),
-                  { sourceId: id, siteId: site.siteId },
+                  location,
                 );
                 issues.push({
                   ...issue,
@@ -122,10 +160,7 @@ export function createPagedProvider({
                   assertSourceRecord(record);
                   batch.push(record);
                 } catch (e) {
-                  const entry = await ctx.reportError?.(e, {
-                    sourceId: id,
-                    siteId: site.siteId,
-                  });
+                  const entry = await ctx.reportError?.(e, location);
                   issues.push({
                     code: "invalid_record",
                     sourceId: id,
@@ -138,6 +173,35 @@ export function createPagedProvider({
               }
               records.push(...batch);
               if (batch.length) await ctx.onBatch?.(batch);
+              await pageDiagnostic({
+                operation: "run.page",
+                ...location,
+                phase: "parse",
+                outcome: batch.length ? "success" : "empty",
+                durationMs: Math.max(
+                  0,
+                  (ctx.clock?.now?.() ?? Date.now()) - pageStarted,
+                ),
+                pageLimit: Math.min(2, query.pageLimit || 1),
+                counts: {
+                  raw: response.raw ?? response.records.length,
+                  accepted: batch.length,
+                  rejected:
+                    response.records.length -
+                    batch.length +
+                    (response.issues || []).filter(
+                      (issue) => issue.code === "invalid_record",
+                    ).length,
+                },
+                issueCount:
+                  (response.issues || []).length +
+                  response.records.length -
+                  batch.length,
+                parser: {
+                  version: id + "-1",
+                  resultCount: response.records.length,
+                },
+              });
               truncated = !!response.hasMore;
               if (!response.hasMore) break;
             }
@@ -162,6 +226,22 @@ export function createPagedProvider({
             const entry = await ctx.reportError?.(e, {
               sourceId: id,
               siteId: site.siteId,
+              queryIndex,
+              page: currentPage,
+              requestId: e.requestId,
+              parser: e.parser,
+            });
+            await pageDiagnostic({
+              operation: "run.page",
+              runId: ctx.runId,
+              sourceId: id,
+              siteId: site.siteId,
+              queryIndex,
+              page: currentPage,
+              phase: e.phase || "parse",
+              outcome: "failed",
+              code: e.code,
+              parser: e.parser,
             });
             issues.push({
               code:
@@ -203,7 +283,22 @@ export function createPagedProvider({
         record.sourceId + "/" + record.siteId + "/" + record.sourceRecordId,
       );
       return detail
-        ? detail(record, ctx)
+        ? detail(record, {
+            ...ctx,
+            request:
+              ctx.request &&
+              ((url, options = {}) =>
+                ctx.request(url, {
+                  ...options,
+                  diagnosticContext: {
+                    ...options.diagnosticContext,
+                    runId: ctx.runId,
+                    sourceId: id,
+                    siteId: record.siteId,
+                    endpointKind: "detail",
+                  },
+                })),
+          })
         : { ...record, detailStatus: "unavailable" };
     },
     async probe(ctx) {

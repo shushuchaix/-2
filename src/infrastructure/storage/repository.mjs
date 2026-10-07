@@ -7,6 +7,7 @@ import {
 } from "../../domain/contracts.mjs";
 import { writeAtomicJson } from "./atomic.mjs";
 import { withWorkspaceLock } from "./lock.mjs";
+import { recordDiagnostic } from "../diagnostics/log.mjs";
 export const contentHash = (value) =>
   createHash("sha256")
     .update(typeof value === "string" ? value : JSON.stringify(value))
@@ -26,7 +27,7 @@ export async function openWorkspaceRepository({
       fsAdapter,
       onRenameRecovery: diagnostics
         ? (event) =>
-            diagnostics.record({
+            recordDiagnostic(diagnostics, {
               operation: "storage.recovered",
               resource: path.basename(file),
               ...event,
@@ -52,16 +53,20 @@ export async function openWorkspaceRepository({
   await read();
   let queue = Promise.resolve();
   const mutateWorkspace = (fn) => {
-    let phase = "lock";
+    let phase = "lock",
+      started,
+      revision;
     const operation = queue
-      .then(() =>
-        withWorkspaceLock(dataDir, async () => {
+      .then(() => {
+        started = clock.now();
+        return withWorkspaceLock(dataDir, async () => {
           phase = "read";
           const current = await read();
           const draft = structuredClone(current);
           phase = "mutation";
           const result = await fn(draft);
           draft.revision = current.revision + 1;
+          revision = draft.revision;
           phase = "validation";
           assertWorkspace(draft);
           phase = "previous";
@@ -74,10 +79,33 @@ export async function openWorkspaceRepository({
           await write(filename, draft);
           phase = "result";
           return { revision: draft.revision, result: structuredClone(result) };
-        }),
-      )
-      .catch((error) => {
+        });
+      })
+      .then(async (result) => {
+        await recordDiagnostic(diagnostics, {
+          operation: "storage.transaction",
+          outcome: "success",
+          phase: "finished",
+          resource: "workspace.v2.json",
+          revision,
+          durationMs: Math.max(0, clock.now() - started),
+        });
+        return result;
+      })
+      .catch(async (error) => {
         error.storageOperation ||= "workspace." + phase;
+        const entry = await recordDiagnostic(
+          diagnostics,
+          {
+            operation: "storage.transaction",
+            outcome: "failed",
+            phase,
+            resource: "workspace.v2.json",
+            durationMs: Math.max(0, clock.now() - (started ?? clock.now())),
+          },
+          error,
+        );
+        if (entry) error.diagnosticId ||= entry.diagnosticId;
         throw error;
       });
     queue = operation.catch(() => {});

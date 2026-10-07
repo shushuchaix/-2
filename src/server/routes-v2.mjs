@@ -14,6 +14,7 @@ import { analyzeResumeOffline } from "../resume/offline.mjs";
 import { normalizeProfile, analyzeResume } from "../resume/profile.mjs";
 import { createModelBudget } from "../llm/budget.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
+import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 const decode = (value) => {
   try {
     return decodeURIComponent(value);
@@ -40,24 +41,86 @@ export async function handleV2Request(req, res, context) {
     ["/diagnostics/logs", "/diagnostics/logs/export"].includes(route) &&
     method === "GET"
   ) {
+    const exporting = route.endsWith("/export");
     for (const key of url.searchParams.keys())
-      if (!["runId", "limit"].includes(key))
+      if (
+        ![
+          "runId",
+          "limit",
+          "level",
+          "category",
+          "diagnosticId",
+          "requestId",
+          "sourceId",
+          "siteId",
+        ].includes(key)
+      )
         throw inputError({ filters: "日志查询包含不支持的条件。" });
-    const runId = url.searchParams.get("runId") || undefined;
-    if (runId) identifier(runId);
+    const options = {};
+    for (const key of ["runId", "sourceId", "siteId"]) {
+      const value = url.searchParams.get(key);
+      if (value) options[key] = identifier(value);
+    }
+    for (const [key, prefix] of [
+      ["diagnosticId", "d"],
+      ["requestId", "q"],
+    ]) {
+      const value = url.searchParams.get(key);
+      if (value) {
+        if (
+          !new RegExp(
+            "^" +
+              prefix +
+              "-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$",
+          ).test(value)
+        )
+          throw inputError({ [key]: "请填写完整的诊断编号。" });
+        options[key] = value;
+      }
+    }
+    for (const [key, allowed] of [
+      ["level", ["info", "warn", "error", "problem"]],
+      [
+        "category",
+        [
+          "run",
+          "network",
+          "storage",
+          "http",
+          "source",
+          "model",
+          "desktop",
+          "application",
+        ],
+      ],
+    ]) {
+      const value = url.searchParams.get(key);
+      if (value) {
+        if (!allowed.includes(value))
+          throw inputError({ [key]: "请选择支持的日志筛选条件。" });
+        options[key] = value;
+      }
+    }
     const rawLimit = url.searchParams.get("limit"),
-      limit = rawLimit == null ? 200 : Number(rawLimit);
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200)
-      throw inputError({ limit: "最多查看 200 条日志，请填写 1–200 的整数。" });
-    if (route.endsWith("/export")) {
+      limit =
+        rawLimit == null ? (exporting ? undefined : 200) : Number(rawLimit),
+      maximum = exporting ? 5000 : 200;
+    if (
+      limit !== undefined &&
+      (!Number.isSafeInteger(limit) || limit < 1 || limit > maximum)
+    )
+      throw inputError({ limit: "请填写 1–" + maximum + " 的整数。" });
+    if (limit !== undefined) options.limit = limit;
+    if (exporting) {
+      const text = await context.diagnostics.exportText(options);
       res.writeHead(200, {
         "Content-Type": "text/plain; charset=utf-8",
         "Content-Disposition":
           'attachment; filename="job-radar-diagnostics.txt"',
         "Cache-Control": "no-store",
       });
-      res.end(await context.diagnostics.exportText({ runId, limit }));
-    } else send(200, await context.diagnostics.list({ runId, limit }));
+      res.end(text);
+    } else send(200, await context.diagnostics.list(options));
     return true;
   }
   if (route === "/profiles/import-preview" && method === "POST") {
@@ -101,12 +164,30 @@ export async function handleV2Request(req, res, context) {
       const client = context.modelFactory({
         budget: createModelBudget(),
         credentials: userCredentials(input, context.cfg),
+        diagnosticContext: { requestId: http.requestId },
       });
       if (client.available)
         try {
           profile = await analyzeResume(client, text);
-        } catch {
-          warnings.push("模型提取失败，使用离线预览。");
+        } catch (error) {
+          const diagnostic = await recordDiagnostic(
+            context.diagnostics,
+            {
+              operation: "model.fallback",
+              level: "warn",
+              phase: "parse",
+              outcome: "partial",
+              code: "model_preview_failed",
+              requestId: http.requestId,
+            },
+            error,
+          );
+          warnings.push(
+            "模型提取失败，使用离线预览。" +
+              (diagnostic?.diagnosticId
+                ? "（错误编号：" + diagnostic.diagnosticId + "）"
+                : ""),
+          );
         }
       else warnings.push("未配置模型密钥，使用离线预览。");
     }
@@ -210,6 +291,7 @@ export async function handleV2Request(req, res, context) {
           targetRevisionId: input.targetRevisionId,
           mode: input.mode || "rules",
           credentials: {
+            diagnosticContext: { requestId: http.requestId },
             ...(input.mode === "rules" || !input.mode
               ? {}
               : userCredentials(input, context.cfg)),
@@ -248,7 +330,11 @@ export async function handleV2Request(req, res, context) {
     input.jobIds.forEach(jobIdentifier);
     const credentials = userCredentials(input, context.cfg),
       client = ["ai", "auto"].includes(input.mode)
-        ? context.modelFactory({ credentials, budget: createModelBudget() })
+        ? context.modelFactory({
+            credentials,
+            budget: createModelBudget(),
+            diagnosticContext: { requestId: http.requestId },
+          })
         : undefined;
     send(
       200,
@@ -283,7 +369,11 @@ export async function handleV2Request(req, res, context) {
       const credentials = userCredentials(input, context.cfg),
         client =
           input.mode === "ai"
-            ? context.modelFactory({ credentials, budget: createModelBudget() })
+            ? context.modelFactory({
+                credentials,
+                budget: createModelBudget(),
+                diagnosticContext: { requestId: http.requestId },
+              })
             : undefined;
       send(
         200,

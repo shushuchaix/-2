@@ -4,6 +4,7 @@ import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
 import { recordSourceHealth } from "./source-health.mjs";
+import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 export function createSourceService({
   registry,
   repository,
@@ -43,15 +44,27 @@ export function createSourceService({
           targetSnapshot: { cities: [] },
           clock,
           budget,
-          request: requestFactory({ budget }),
+          diagnostics,
+          reportDiagnostic: (event, error) =>
+            recordDiagnostic(
+              diagnostics,
+              { ...event, sourceId, siteId },
+              error,
+            ),
+          request: requestFactory({
+            budget,
+            diagnosticContext: { sourceId, siteId },
+          }),
           reportError: (error, context) =>
-            diagnostics?.record(
+            recordDiagnostic(
+              diagnostics,
               { operation: "source.probe", sourceId, siteId, ...context },
               error,
             ),
         });
       } catch (error) {
-        const entry = await diagnostics?.record(
+        const entry = await recordDiagnostic(
+          diagnostics,
           {
             operation: "source.probe",
             sourceId,
@@ -63,17 +76,27 @@ export function createSourceService({
         if (entry) error.diagnosticId = entry.diagnosticId;
         throw error;
       }
-      await diagnostics?.record({
+      await recordDiagnostic(diagnostics, {
         operation: "source.probe",
         sourceId,
         siteId,
         code: result.status,
         level: result.status === "ready" ? "info" : "warn",
         durationMs: clock.now() - started,
+        recordCount: result.sampleCount,
+        issueCount: result.issues?.length || 0,
+        usage: { sources: budget.snapshot() },
+        outcome:
+          result.status === "ready"
+            ? "success"
+            : result.status === "empty"
+              ? "empty"
+              : "failed",
       });
       for (const issue of result.issues || []) {
         if (issue.diagnosticId) continue;
-        const entry = await diagnostics?.record(
+        const entry = await recordDiagnostic(
+          diagnostics,
           { operation: "source.probe", sourceId, siteId, code: issue.code },
           Object.assign(Error(issue.message || issue.code), {
             code: issue.code,
@@ -113,7 +136,7 @@ export function createSourceService({
           return config;
         })
       ).result;
-      await diagnostics?.record({
+      await recordDiagnostic(diagnostics, {
         operation: "source.settings",
         sourceId: input.sourceId,
       });

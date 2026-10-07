@@ -271,6 +271,13 @@ progress {
   cursor: pointer;
   font-weight: 600;
 }
+.diagnostics-panel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.diagnostics-summary {
+  white-space: pre-line;
+}
 .diagnostics-list {
   display: grid;
   gap: 12px;

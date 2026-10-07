@@ -7,15 +7,20 @@ export function createSourceBudget({
   let requests = 0;
   const details = new Set(),
     byKind = {};
+  const exhausted = (budgetKind) =>
+    Object.assign(Error("budget_exhausted: " + budgetKind), {
+      code: "source_budget_exhausted",
+      budgetKind,
+    });
   return {
     claimRequest(kind = "request") {
-      if (requests >= maxRequests) throw Error("budget_exhausted: requests");
+      if (requests >= maxRequests) throw exhausted("requests");
       requests++;
       byKind[kind] = (byKind[kind] || 0) + 1;
     },
     claimDetail(key) {
       if (details.has(key)) return;
-      if (details.size >= maxDetails) throw Error("budget_exhausted: details");
+      if (details.size >= maxDetails) throw exhausted("details");
       details.add(key);
     },
     snapshot() {

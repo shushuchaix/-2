@@ -1,6 +1,22 @@
 import { pool } from "../util/text.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { createModelBudget } from "./budget.mjs";
+import { randomUUID } from "node:crypto";
+import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
+function annotate(error, phase, requestId) {
+  try {
+    if (error && typeof error === "object") {
+      error.phase ||= phase;
+      error.requestId ||= requestId;
+    }
+  } catch {
+    /* Diagnostic fields must not replace the original error. */
+  }
+}
+const chatMessages = (system, user) => [
+  ...(system ? [{ role: "system", content: system }] : []),
+  { role: "user", content: user },
+];
 export class DeepSeekError extends Error {
   constructor(message, { status, body } = {}) {
     super(message);
@@ -17,6 +33,8 @@ export class DeepSeek {
       budget = createModelBudget(),
       transport = globalThis.fetch,
       retryDelayMs,
+      diagnostics,
+      diagnosticContext = {},
     } = {},
   ) {
     const c = cfg.deepseek || {};
@@ -29,6 +47,8 @@ export class DeepSeek {
     this.budget = budget;
     this.transport = transport;
     this.retryDelayMs = retryDelayMs;
+    this.diagnostics = diagnostics;
+    this.diagnosticContext = diagnosticContext;
     this.usage = {
       calls: 0,
       promptTokens: 0,
@@ -51,16 +71,43 @@ export class DeepSeek {
       json = false,
       retries = 3,
       signal,
+      diagnosticContext = {},
     } = {},
   ) {
     this.assertAvailable();
     const combined = [this.signal, signal].filter(Boolean);
     const caller = combined.length ? AbortSignal.any(combined) : undefined;
+    const trace = { ...this.diagnosticContext, ...diagnosticContext };
     let lastError;
+    let physicalAttempt = 0;
     const limit = Math.max(0, Math.min(3, Number(retries) || 0));
     for (let attempt = 0; attempt <= limit; attempt++) {
       caller?.throwIfAborted();
-      this.budget.claimRequest();
+      const requestId = "q-" + randomUUID(),
+        started = Date.now();
+      physicalAttempt++;
+      try {
+        this.budget.claimRequest();
+      } catch (error) {
+        annotate(error, "budget", requestId);
+        await recordDiagnostic(
+          this.diagnostics,
+          {
+            operation: "model.request",
+            ...trace,
+            requestId,
+            endpointKind: "model",
+            method: "POST",
+            phase: "budget",
+            outcome: "failed",
+            attempt: physicalAttempt,
+            durationMs: Date.now() - started,
+            usage: { model: this.budget.snapshot() },
+          },
+          error,
+        );
+        throw error;
+      }
       const body = {
         model: this.model,
         messages,
@@ -77,8 +124,13 @@ export class DeepSeek {
       if (json && !this._noJsonMode)
         body.response_format = { type: "json_object" };
       let retry = false;
+      let phase = "transport",
+        outcome = "failed",
+        httpStatus,
+        requestSignal,
+        attemptError;
       try {
-        const requestSignal = AbortSignal.any([
+        requestSignal = AbortSignal.any([
           ...(caller ? [caller] : []),
           AbortSignal.timeout(this.timeoutMs),
         ]);
@@ -94,6 +146,8 @@ export class DeepSeek {
             signal: requestSignal,
           },
         );
+        phase = "response";
+        httpStatus = response.status;
         if (!response.ok) {
           const text = await response.text().catch(() => "");
           if (
@@ -103,31 +157,64 @@ export class DeepSeek {
             /response_format|json_object/i.test(text)
           ) {
             this._noJsonMode = true;
+            outcome = "partial";
+            await recordDiagnostic(this.diagnostics, {
+              operation: "model.fallback",
+              ...trace,
+              requestId,
+              endpointKind: "model",
+              phase: "response",
+              outcome: "partial",
+              code: "json_mode_unsupported",
+              httpStatus: 400,
+              attempt: physicalAttempt,
+            });
             attempt--;
             continue;
           }
           const error = new DeepSeekError("模型 HTTP " + response.status, {
             status: response.status,
           });
+          error.code = "model_http_failed";
+          error.phase = phase;
+          error.requestId = requestId;
+          attemptError = error;
           if (response.status !== 429 && response.status < 500) throw error;
           lastError = error;
           retry = true;
         } else {
+          phase = "parse";
           const data = await response.json();
           this.usage.calls++;
           this.usage.promptTokens += data.usage?.prompt_tokens || 0;
           this.usage.completionTokens += data.usage?.completion_tokens || 0;
           const content = data.choices?.[0]?.message?.content;
-          if (content)
+          if (content) {
+            outcome = "success";
             return {
               content,
               finish: data.choices[0].finish_reason,
               raw: data,
+              requestId,
             };
-          lastError = new DeepSeekError("模型返回空内容");
+          }
+          lastError = Object.assign(new DeepSeekError("模型返回空内容"), {
+            code: "model_empty_response",
+            phase: "response",
+            requestId,
+          });
+          attemptError = lastError;
           retry = true;
         }
       } catch (error) {
+        attemptError = error;
+        annotate(error, phase, requestId);
+        if (caller?.aborted) outcome = "cancelled";
+        else if (
+          error.name === "TimeoutError" ||
+          requestSignal?.reason?.name === "TimeoutError"
+        )
+          outcome = "timeout";
         if (
           caller?.aborted ||
           error.name === "AbortError" ||
@@ -143,6 +230,49 @@ export class DeepSeek {
           throw error;
         lastError = error;
         retry = true;
+      } finally {
+        const code =
+          outcome === "cancelled"
+            ? "request_cancelled"
+            : outcome === "timeout"
+              ? "request_timeout"
+              : undefined;
+        const safeError = code
+          ? Object.assign(Error(code), {
+              name: outcome === "cancelled" ? "AbortError" : "TimeoutError",
+              code,
+              phase,
+              requestId,
+            })
+          : attemptError;
+        await recordDiagnostic(
+          this.diagnostics,
+          {
+            operation: "model.request",
+            ...trace,
+            requestId,
+            endpointKind: "model",
+            method: "POST",
+            phase,
+            outcome:
+              retry && attempt < limit && outcome === "failed"
+                ? "retrying"
+                : outcome,
+            ...(code
+              ? {
+                  code,
+                  abortedBy: outcome === "cancelled" ? "caller" : "timeout",
+                }
+              : {}),
+            attempt: physicalAttempt,
+            retryCount: attempt,
+            httpStatus,
+            timeoutMs: this.timeoutMs,
+            durationMs: Math.max(0, Date.now() - started),
+            usage: { model: { ...this.budget.snapshot(), ...this.usage } },
+          },
+          safeError,
+        );
       }
       if (retry && attempt < limit)
         await delay(
@@ -155,26 +285,83 @@ export class DeepSeek {
     throw lastError || new DeepSeekError("模型调用失败");
   }
   async chat(system, user, opts = {}) {
-    const messages = [];
-    if (system) messages.push({ role: "system", content: system });
-    messages.push({ role: "user", content: user });
-    return (await this._request(messages, opts)).content;
+    return (await this._request(chatMessages(system, user), opts)).content;
   }
   async chatJson(system, user, opts = {}) {
-    const content = await this.chat(system, user, { ...opts, json: true });
+    const { content, requestId } = await this._request(
+      chatMessages(system, user),
+      { ...opts, json: true },
+    );
     try {
       return parseJsonLoose(content);
     } catch {
+      await recordDiagnostic(this.diagnostics, {
+        operation: "model.validation",
+        ...this.diagnosticContext,
+        ...opts.diagnosticContext,
+        requestId,
+        phase: "parse",
+        outcome: opts.repair === false ? "failed" : "retrying",
+        code: opts.repair === false ? "model_json_invalid" : "json_repair",
+        parser: {
+          format: "json",
+          resultType: "unknown",
+          documentLength: content.length,
+        },
+      });
       if (opts.repair === false) throw new DeepSeekError("模型 JSON 格式无效");
-      const repaired = await this.chat(
-        "将输入转换为有效JSON，不添加或改写事实；只输出JSON。",
-        String(content).slice(0, 30000),
-        { ...opts, json: true, retries: 0 },
-      );
+      const { content: repaired, requestId: repairRequestId } =
+        await this._request(
+          chatMessages(
+            "将输入转换为有效JSON，不添加或改写事实；只输出JSON。",
+            String(content).slice(0, 30000),
+          ),
+          { ...opts, json: true, retries: 0 },
+        );
       try {
-        return parseJsonLoose(repaired);
+        const result = parseJsonLoose(repaired);
+        await recordDiagnostic(this.diagnostics, {
+          operation: "model.validation",
+          ...this.diagnosticContext,
+          ...opts.diagnosticContext,
+          requestId: repairRequestId,
+          parentRequestId: requestId,
+          phase: "parse",
+          outcome: "success",
+          code: "json_repaired",
+          parser: {
+            format: "json",
+            resultType:
+              result === null
+                ? "null"
+                : Array.isArray(result)
+                  ? "array"
+                  : typeof result,
+            documentLength: repaired.length,
+          },
+        });
+        return result;
       } catch {
-        throw new DeepSeekError("模型 JSON 格式修复失败");
+        const error = Object.assign(
+          new DeepSeekError("模型 JSON 格式修复失败"),
+          { code: "model_json_repair_failed", phase: "parse" },
+        );
+        await recordDiagnostic(
+          this.diagnostics,
+          {
+            operation: "model.validation",
+            ...this.diagnosticContext,
+            ...opts.diagnosticContext,
+            requestId: repairRequestId,
+            parentRequestId: requestId,
+            phase: "parse",
+            outcome: "failed",
+            code: error.code,
+            parser: { format: "json", documentLength: repaired.length },
+          },
+          error,
+        );
+        throw error;
       }
     }
   }

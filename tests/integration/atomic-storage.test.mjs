@@ -184,7 +184,9 @@ test(
     });
     assert.equal(mutations, 1);
     assert.equal((await repo.read()).revision, 1);
-    const entries = (await diagnostics.list()).entries;
+    const entries = (await diagnostics.list()).entries.filter(
+      (entry) => entry.operation === "storage.recovered",
+    );
     assert.equal(entries.length, 1);
     assert.equal(entries[0].operation, "storage.recovered");
     assert.equal(entries[0].level, "info");

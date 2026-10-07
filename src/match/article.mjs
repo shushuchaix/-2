@@ -5,6 +5,7 @@
 import { chunk, normKey, pool, sanitizeText, truncate } from "../util/text.mjs";
 import { normalizeDate } from "../util/html.mjs";
 import { extractTechTerms } from "../util/skills.mjs";
+import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 
 const SYSTEM = `你是招聘信息抽取助手，负责从中文微信公众号文章中抽取校园招聘 / 实习岗位。
 
@@ -189,11 +190,18 @@ export async function expandArticles(
   llm,
   profile,
   articles,
-  { maxExpand = 5, concurrency = 3, log = () => {}, signal } = {},
+  {
+    maxExpand = 5,
+    concurrency = 3,
+    log = () => {},
+    signal,
+    diagnostics,
+    diagnosticContext = {},
+  } = {},
 ) {
   const candidates = articles.slice(0, maxExpand);
   if (candidates.length === 0)
-    return { jobs: [], expanded: 0, skipped: 0, noJob: 0 };
+    return { jobs: [], expanded: 0, skipped: 0, noJob: 0, failed: 0 };
 
   const profileBrief = [
     `目标岗位：${(profile.targetRoles || []).join("、") || "未说明"}`,
@@ -206,6 +214,7 @@ export async function expandArticles(
   let expanded = 0;
   let noJob = 0;
   let done = 0;
+  let failed = 0;
 
   await pool(candidates, concurrency, async (article) => {
     try {
@@ -214,7 +223,7 @@ export async function expandArticles(
       const res = await llm.chatJson(
         SYSTEM,
         `## 求职者画像（用于判断相关性，不影响抽取忠实度）\n${profileBrief}\n\n## 文章标题\n${article.title}\n\n## 公众号\n${article.extra?.account || "未知"}\n\n## 文章正文\n${text}\n\n请按下面结构输出 JSON：\n${SCHEMA}`,
-        { temperature: 0.1, maxTokens: 2200, signal },
+        { temperature: 0.1, maxTokens: 2200, signal, diagnosticContext },
       );
 
       if (
@@ -324,6 +333,22 @@ export async function expandArticles(
       );
     } catch (e) {
       if (signal?.aborted) throw e;
+      failed++;
+      await recordDiagnostic(
+        diagnostics,
+        {
+          operation: "model.fallback",
+          ...diagnosticContext,
+          sourceId: article.sourceId,
+          siteId: article.siteId,
+          phase: e.phase || "response",
+          outcome: "partial",
+          code: e.code || "article_model_unavailable",
+          counts: { failed: 1 },
+          requestId: e.requestId,
+        },
+        e,
+      );
       article.extra = {
         ...(article.extra || {}),
         expandedResult: `failed: ${e.message}`,
@@ -341,6 +366,7 @@ export async function expandArticles(
     expanded,
     skipped: articles.length - candidates.length,
     noJob,
+    failed,
   };
 }
 

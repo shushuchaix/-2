@@ -3,7 +3,13 @@ import { createStore } from "./state.js";
 import { createRouter } from "./router.js";
 import { mountShell } from "./components/shell.js";
 import { message } from "./components/dom.js";
-const api = createApiClient(),
+import {
+  createDiagnosticReporter,
+  installRendererDiagnostics,
+} from "./diagnostic-reporting.js";
+const reportDiagnostic = createDiagnosticReporter(),
+  observer = installRendererDiagnostics({ window, reportDiagnostic }),
+  api = createApiClient({ reportDiagnostic }),
   store = createStore();
 let page,
   version = 0;
@@ -32,7 +38,10 @@ const router = createRouter({
       });
       shell.content.focus();
     } catch (error) {
-      if (current === version) message(shell.content, error.message, true);
+      if (current === version) {
+        observer.reportPageFailure(error);
+        message(shell.content, error.message, true);
+      }
     }
   },
 });

@@ -1,6 +1,7 @@
 // 本地 Web 服务：静态页面 + NDJSON 流式 API + 结果持久化/导出
 // 公网部署形态：密码登录鉴权 + 安全响应头 + 并发与每日配额闸门
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { assertInput } from "../public/js/validation-rules.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -42,7 +43,12 @@ import * as university from "./sources/university.mjs";
 import * as chenyun from "./sources/chenyun.mjs";
 import * as jiuyeqiao from "./sources/jiuyeqiao.mjs";
 import * as store from "./store.mjs";
-import { createDiagnosticsLog } from "./infrastructure/diagnostics/log.mjs";
+import {
+  createDiagnosticsLog,
+  recordDiagnostic,
+  safeApiRoute,
+  withDiagnosticContext,
+} from "./infrastructure/diagnostics/log.mjs";
 
 const PUBLIC_DIR = path.join(ROOT, "public");
 const MAX_BODY = 40 * 1024 * 1024;
@@ -235,8 +241,9 @@ export function createServer(
     dependencies: { ...dependencies, diagnostics, runGate: gate },
   });
   ready.catch((error) => {
-    void diagnostics.record(
-      { operation: "http.request", stage: "startup" },
+    void recordDiagnostic(
+      diagnostics,
+      { operation: "application.start", stage: "startup", outcome: "failed" },
       error,
     );
   });
@@ -258,269 +265,322 @@ export function createServer(
     return Boolean(sessionOf(req));
   }
 
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    const { pathname } = url;
-    const ip = clientIp(req, cfg.server.trustProxy);
-    const secure = isSecureRequest(req, cfg.server.trustProxy);
-
-    try {
-      /* ---------------- 登录页（无需鉴权） ---------------- */
-      if (pathname === "/login" && req.method === "GET") {
-        return serveStatic(req, res, cfg, "/login.html", {
-          allowMissing: true,
-        });
+  const server = http.createServer((req, res) => {
+    const suppliedId = req.headers["x-rjr-request-id"];
+    const requestId =
+      typeof suppliedId === "string" &&
+      /^q-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+        suppliedId,
+      )
+        ? suppliedId
+        : "q-" + randomUUID();
+    return withDiagnosticContext({ requestId }, async () => {
+      const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      const { pathname } = url;
+      const ip = clientIp(req, cfg.server.trustProxy);
+      const secure = isSecureRequest(req, cfg.server.trustProxy);
+      const requestStarted = Date.now(),
+        route = safeApiRoute(pathname);
+      let causeId;
+      if (pathname.startsWith("/api/")) {
+        res.setHeader("X-RJR-Request-Id", requestId);
+        // Diagnostics reads and normal GET polling do not generate more routine logs.
+        if (!route.startsWith("/api/v2/diagnostics/"))
+          res.once("finish", () => {
+            if (res.statusCode < 400 && ["GET", "HEAD"].includes(req.method))
+              return;
+            void recordDiagnostic(diagnostics, {
+              operation: "http.request",
+              requestId,
+              parentDiagnosticId: causeId,
+              method: req.method,
+              route,
+              httpStatus: res.statusCode,
+              durationMs: Date.now() - requestStarted,
+              phase: "finished",
+              outcome: res.statusCode >= 400 ? "failed" : "success",
+              level:
+                res.statusCode >= 500
+                  ? "error"
+                  : res.statusCode >= 400
+                    ? "warn"
+                    : "info",
+            });
+          });
       }
 
-      /* ---------------- 会话状态（无需鉴权，供前端判断跳转） ---------------- */
-      if (pathname === "/api/session" && req.method === "GET") {
-        const authed = isAuthed(req);
-        return sendJson(req, res, cfg, 200, {
-          authenticated: authed,
-          authRequired,
-          exposure: exposure.publicBind ? "public" : "local",
-          quota: authed ? gate.peek(ip) : null,
-          allowUserKey: Boolean(cfg.deepseek.allowUserKey),
-          // 桌面外壳据此切换交互：免登录、自带 Key 本地持久化、指向数据目录
-          desktop: IS_DESKTOP,
-          dataDir: IS_DESKTOP ? dataDir : undefined,
-          deepseekConfigured: llm.available,
-        });
-      }
+      try {
+        /* ---------------- 登录页（无需鉴权） ---------------- */
+        if (pathname === "/login" && req.method === "GET") {
+          return serveStatic(req, res, cfg, "/login.html", {
+            allowMissing: true,
+          });
+        }
 
-      /* ---------------- 登录 / 登出 ---------------- */
-      if (pathname === "/api/login" && req.method === "POST") {
-        if (!authRequired)
+        /* ---------------- 会话状态（无需鉴权，供前端判断跳转） ---------------- */
+        if (pathname === "/api/session" && req.method === "GET") {
+          const authed = isAuthed(req);
           return sendJson(req, res, cfg, 200, {
-            ok: true,
-            message: "当前未启用鉴权",
-          });
-        if (!originAllowed(req, cfg))
-          return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
-
-        const guard = loginGuard.check(ip);
-        if (!guard.allowed) {
-          const mins = Math.ceil(guard.retryAfterMs / 60000);
-          return sendJson(req, res, cfg, 429, {
-            error: `登录尝试过于频繁，请 ${mins} 分钟后再试`,
-          });
-        }
-
-        const body = await readJsonBody(req);
-        assertInput("login", body);
-        const password = body.password;
-
-        if (!verifyPassword(password, passwordHash)) {
-          const lockedUntil = loginGuard.fail(ip);
-          const left = lockedUntil
-            ? 0
-            : Math.max(0, (Number(cfg.auth.maxLoginFails) || 5) - 1);
-          return sendJson(req, res, cfg, 401, {
-            code: "authentication_failed",
-            fieldErrors: lockedUntil
-              ? undefined
-              : { password: "访问密码不正确，请核对后重试。" },
-            error: lockedUntil
-              ? "密码错误次数过多，账号已临时锁定"
-              : `密码错误${left ? `，还可尝试 ${left} 次` : ""}`,
-          });
-        }
-
-        loginGuard.succeed(ip);
-        const { token } = sessions.issue({ ip });
-        res.writeHead(200, {
-          "Content-Type": "application/json; charset=utf-8",
-          "Set-Cookie": buildSetCookie(sessions.cookieName, token, {
-            maxAge: sessions.ttlMs,
-            secure,
-          }),
-          "Cache-Control": "no-store",
-          ...securityHeaders(req, cfg),
-        });
-        return res.end(JSON.stringify({ ok: true }));
-      }
-
-      if (pathname === "/api/logout" && req.method === "POST") {
-        res.writeHead(200, {
-          "Content-Type": "application/json; charset=utf-8",
-          "Set-Cookie": clearCookie(sessions.cookieName),
-          "Cache-Control": "no-store",
-          ...securityHeaders(req, cfg),
-        });
-        return res.end(JSON.stringify({ ok: true }));
-      }
-
-      /* ---------------- 健康检查 ---------------- */
-      if (pathname === "/api/health" && req.method === "GET") {
-        const authed = isAuthed(req);
-        const base = {
-          ok: true,
-          version: VERSION,
-          authRequired,
-          authenticated: authed,
-        };
-        if (!authed) return sendJson(req, res, cfg, 200, base);
-        return sendJson(req, res, cfg, 200, {
-          ...base,
-          exposure: exposure.publicBind ? "public" : "local",
-          deepseek: {
-            configured: llm.available,
-            source: cfg.__deepseekKeySource,
-            model: llm.model,
-            keyMasked: maskKey(llm.apiKey),
-            concurrency: llm.concurrency,
+            authenticated: authed,
+            authRequired,
+            exposure: exposure.publicBind ? "public" : "local",
+            quota: authed ? gate.peek(ip) : null,
             allowUserKey: Boolean(cfg.deepseek.allowUserKey),
-          },
-          search: {
-            provider: cfg.__activeSearchProvider || null,
-            configuredKeys: Object.entries(cfg.__searchKeys)
-              .filter(([, v]) => v)
-              .map(([k]) => k),
-          },
-          sources: {
-            zhaopin: {
-              enabled: cfg.sources.zhaopin.enabled,
-              name: zhaopin.meta.name,
-              maxPages: cfg.sources.zhaopin.maxPages,
-            },
-            shixiseng: {
-              enabled: cfg.sources.shixiseng.enabled,
-              name: shixiseng.meta.name,
-              maxPages: cfg.sources.shixiseng.maxPages,
-            },
-            nowcoder: {
-              enabled: cfg.sources.nowcoder?.enabled !== false,
-              name: nowcoder.meta.name,
-            },
-            university: {
-              enabled: cfg.sources.university?.enabled !== false,
-              name: university.meta.name,
-              hosts:
-                (cfg.sources.university?.hosts?.length || 0) +
-                university.DEFAULT_HOSTS.length,
-            },
-            chenyun: {
-              enabled: cfg.sources.chenyun?.enabled !== false,
-              name: chenyun.meta.name,
-              hosts:
-                (cfg.sources.chenyun?.hosts?.length || 0) +
-                chenyun.CHENYUN_HOSTS.length,
-            },
-            jiuyeqiao: {
-              enabled: cfg.sources.jiuyeqiao?.enabled !== false,
-              name: jiuyeqiao.meta.name,
-            },
-            wechat: {
-              enabled: cfg.sources.wechat?.enabled !== false,
-              name: wechat.meta.name,
-              maxQueries: cfg.sources.wechat?.maxQueries,
-            },
-            searchApi: {
-              enabled: cfg.sources.searchApi.enabled,
-              maxQueries: cfg.sources.searchApi.maxQueries,
-            },
-          },
-          match: cfg.match,
-          filters: cfg.filters,
-          quota: gate.peek(ip),
-        });
-      }
+            // 桌面外壳据此切换交互：免登录、自带 Key 本地持久化、指向数据目录
+            desktop: IS_DESKTOP,
+            dataDir: IS_DESKTOP ? dataDir : undefined,
+            deepseekConfigured: llm.available,
+          });
+        }
 
-      /* ---------------- 以下接口全部需要鉴权 ---------------- */
-      if (pathname.startsWith("/api/") && !isAuthed(req)) {
-        return sendJson(req, res, cfg, 401, {
-          error: "未登录或登录已过期，请先登录",
-          needLogin: true,
-        });
-      }
-      if (pathname === "/" && authRequired && !isAuthed(req)) {
-        res.writeHead(302, {
-          Location: "/login",
-          ...securityHeaders(req, cfg),
-        });
-        return res.end();
-      }
-      // 变更类请求做来源校验
-      if (
-        ["POST", "DELETE", "PUT", "PATCH"].includes(req.method) &&
-        !originAllowed(req, cfg)
-      ) {
-        return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
-      }
+        /* ---------------- 登录 / 登出 ---------------- */
+        if (pathname === "/api/login" && req.method === "POST") {
+          if (!authRequired)
+            return sendJson(req, res, cfg, 200, {
+              ok: true,
+              message: "当前未启用鉴权",
+            });
+          if (!originAllowed(req, cfg))
+            return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
 
-      if (pathname.startsWith("/api/")) {
-        const app = await ready;
-        const context = {
-          ...app,
-          http: {
-            json: (request, response, status, data) =>
-              sendJson(request, response, cfg, status, data),
-            readJson: readValidatedJsonBody,
-            ip: (request) => clientIp(request, cfg.server.trustProxy),
-          },
-        };
-        for (const [name, value] of Object.entries(securityHeaders(req, cfg)))
-          res.setHeader(name, value);
+          const guard = loginGuard.check(ip);
+          if (!guard.allowed) {
+            const mins = Math.ceil(guard.retryAfterMs / 60000);
+            return sendJson(req, res, cfg, 429, {
+              error: `登录尝试过于频繁，请 ${mins} 分钟后再试`,
+            });
+          }
+
+          const body = await readJsonBody(req);
+          assertInput("login", body);
+          const password = body.password;
+
+          if (!verifyPassword(password, passwordHash)) {
+            const lockedUntil = loginGuard.fail(ip);
+            const left = lockedUntil
+              ? 0
+              : Math.max(0, (Number(cfg.auth.maxLoginFails) || 5) - 1);
+            return sendJson(req, res, cfg, 401, {
+              code: "authentication_failed",
+              fieldErrors: lockedUntil
+                ? undefined
+                : { password: "访问密码不正确，请核对后重试。" },
+              error: lockedUntil
+                ? "密码错误次数过多，账号已临时锁定"
+                : `密码错误${left ? `，还可尝试 ${left} 次` : ""}`,
+            });
+          }
+
+          loginGuard.succeed(ip);
+          const { token } = sessions.issue({ ip });
+          res.writeHead(200, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Set-Cookie": buildSetCookie(sessions.cookieName, token, {
+              maxAge: sessions.ttlMs,
+              secure,
+            }),
+            "Cache-Control": "no-store",
+            ...securityHeaders(req, cfg),
+          });
+          return res.end(JSON.stringify({ ok: true }));
+        }
+
+        if (pathname === "/api/logout" && req.method === "POST") {
+          res.writeHead(200, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Set-Cookie": clearCookie(sessions.cookieName),
+            "Cache-Control": "no-store",
+            ...securityHeaders(req, cfg),
+          });
+          return res.end(JSON.stringify({ ok: true }));
+        }
+
+        /* ---------------- 健康检查 ---------------- */
+        if (pathname === "/api/health" && req.method === "GET") {
+          const authed = isAuthed(req);
+          const base = {
+            ok: true,
+            version: VERSION,
+            authRequired,
+            authenticated: authed,
+          };
+          if (!authed) return sendJson(req, res, cfg, 200, base);
+          return sendJson(req, res, cfg, 200, {
+            ...base,
+            exposure: exposure.publicBind ? "public" : "local",
+            deepseek: {
+              configured: llm.available,
+              source: cfg.__deepseekKeySource,
+              model: llm.model,
+              keyMasked: maskKey(llm.apiKey),
+              concurrency: llm.concurrency,
+              allowUserKey: Boolean(cfg.deepseek.allowUserKey),
+            },
+            search: {
+              provider: cfg.__activeSearchProvider || null,
+              configuredKeys: Object.entries(cfg.__searchKeys)
+                .filter(([, v]) => v)
+                .map(([k]) => k),
+            },
+            sources: {
+              zhaopin: {
+                enabled: cfg.sources.zhaopin.enabled,
+                name: zhaopin.meta.name,
+                maxPages: cfg.sources.zhaopin.maxPages,
+              },
+              shixiseng: {
+                enabled: cfg.sources.shixiseng.enabled,
+                name: shixiseng.meta.name,
+                maxPages: cfg.sources.shixiseng.maxPages,
+              },
+              nowcoder: {
+                enabled: cfg.sources.nowcoder?.enabled !== false,
+                name: nowcoder.meta.name,
+              },
+              university: {
+                enabled: cfg.sources.university?.enabled !== false,
+                name: university.meta.name,
+                hosts:
+                  (cfg.sources.university?.hosts?.length || 0) +
+                  university.DEFAULT_HOSTS.length,
+              },
+              chenyun: {
+                enabled: cfg.sources.chenyun?.enabled !== false,
+                name: chenyun.meta.name,
+                hosts:
+                  (cfg.sources.chenyun?.hosts?.length || 0) +
+                  chenyun.CHENYUN_HOSTS.length,
+              },
+              jiuyeqiao: {
+                enabled: cfg.sources.jiuyeqiao?.enabled !== false,
+                name: jiuyeqiao.meta.name,
+              },
+              wechat: {
+                enabled: cfg.sources.wechat?.enabled !== false,
+                name: wechat.meta.name,
+                maxQueries: cfg.sources.wechat?.maxQueries,
+              },
+              searchApi: {
+                enabled: cfg.sources.searchApi.enabled,
+                maxQueries: cfg.sources.searchApi.maxQueries,
+              },
+            },
+            match: cfg.match,
+            filters: cfg.filters,
+            quota: gate.peek(ip),
+          });
+        }
+
+        /* ---------------- 以下接口全部需要鉴权 ---------------- */
+        if (pathname.startsWith("/api/") && !isAuthed(req)) {
+          return sendJson(req, res, cfg, 401, {
+            error: "未登录或登录已过期，请先登录",
+            needLogin: true,
+          });
+        }
+        if (pathname === "/" && authRequired && !isAuthed(req)) {
+          res.writeHead(302, {
+            Location: "/login",
+            ...securityHeaders(req, cfg),
+          });
+          return res.end();
+        }
+        // 变更类请求做来源校验
         if (
-          (await handleV2Request(req, res, context)) ||
-          (await handleV1Request(req, res, context))
-        )
-          return;
-      }
+          ["POST", "DELETE", "PUT", "PATCH"].includes(req.method) &&
+          !originAllowed(req, cfg)
+        ) {
+          return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
+        }
 
-      /* ---------------- 静态资源 ---------------- */
-      if (pathname.startsWith("/api/")) {
-        return sendJson(req, res, cfg, 404, {
-          error: `未知接口 ${req.method} ${pathname}`,
-        });
-      }
-      if (req.method === "GET" || req.method === "HEAD") {
-        return serveStatic(req, res, cfg, pathname);
-      }
+        if (pathname.startsWith("/api/")) {
+          const app = await ready;
+          const context = {
+            ...app,
+            http: {
+              requestId,
+              json: (request, response, status, data) =>
+                sendJson(request, response, cfg, status, data),
+              readJson: readValidatedJsonBody,
+              ip: (request) => clientIp(request, cfg.server.trustProxy),
+            },
+          };
+          for (const [name, value] of Object.entries(securityHeaders(req, cfg)))
+            res.setHeader(name, value);
+          if (
+            (await handleV2Request(req, res, context)) ||
+            (await handleV1Request(req, res, context))
+          )
+            return;
+        }
 
-      return sendJson(req, res, cfg, 404, { error: "未知接口" });
-    } catch (e) {
-      const diagnosticId =
-        e.diagnosticId ||
-        (await diagnostics.record({ operation: "http.request" }, e))
-          .diagnosticId;
-      if (!res.headersSent) {
-        const storage = /ENOSPC|EACCES|EPERM|EROFS/.test(e.code || "");
-        const status =
-          e.status ||
-          (storage
-            ? 500
-            : /not found|未找到|does not exist/i.test(e.message)
-              ? 404
-              : /Invalid|Private|Missing|forbidden|required|referenced|mismatch/i.test(
-                    e.message,
-                  )
-                ? 400
-                : 500);
-        sendJson(req, res, cfg, status, {
-          error: storage
-            ? "存储写入失败，请检查可用空间和目录写入权限后重试。"
-            : status >= 500
-              ? "服务处理失败，请稍后重试；如持续出现，请提供错误编号。"
-              : e.message || "请求未通过检查。",
-          code: storage
-            ? "storage_write_failed"
-            : status >= 500
-              ? "system_error"
-              : e.code || "request_failed",
-          ...(e.fieldErrors && status < 500
-            ? { fieldErrors: e.fieldErrors }
-            : {}),
-          diagnosticId,
-        });
-      } else {
-        try {
-          res.end();
-        } catch {
-          /* ignore */
+        /* ---------------- 静态资源 ---------------- */
+        if (pathname.startsWith("/api/")) {
+          return sendJson(req, res, cfg, 404, {
+            error: `未知接口 ${req.method} ${pathname}`,
+          });
+        }
+        if (req.method === "GET" || req.method === "HEAD") {
+          return serveStatic(req, res, cfg, pathname);
+        }
+
+        return sendJson(req, res, cfg, 404, { error: "未知接口" });
+      } catch (e) {
+        const diagnosticId =
+          e.diagnosticId ||
+          (
+            await recordDiagnostic(
+              diagnostics,
+              {
+                operation: "http.request",
+                requestId,
+                method: req.method,
+                route,
+                durationMs: Date.now() - requestStarted,
+                outcome: "failed",
+              },
+              e,
+            )
+          )?.diagnosticId;
+        causeId = diagnosticId;
+        if (!res.headersSent) {
+          const storage = /ENOSPC|EACCES|EPERM|EROFS/.test(e.code || "");
+          const status =
+            e.status ||
+            (storage
+              ? 500
+              : /not found|未找到|does not exist/i.test(e.message)
+                ? 404
+                : /Invalid|Private|Missing|forbidden|required|referenced|mismatch/i.test(
+                      e.message,
+                    )
+                  ? 400
+                  : 500);
+          sendJson(req, res, cfg, status, {
+            error: storage
+              ? "存储写入失败，请检查可用空间和目录写入权限后重试。"
+              : status >= 500
+                ? "服务处理失败，请稍后重试；如持续出现，请提供错误编号。"
+                : e.message || "请求未通过检查。",
+            code: storage
+              ? "storage_write_failed"
+              : status >= 500
+                ? "system_error"
+                : e.code || "request_failed",
+            ...(e.fieldErrors && status < 500
+              ? { fieldErrors: e.fieldErrors }
+              : {}),
+            diagnosticId,
+          });
+        } else {
+          try {
+            res.end();
+          } catch {
+            /* ignore */
+          }
         }
       }
-    }
+    });
   });
 
   return { server, llm, gate, authRequired, exposure, ready, diagnostics };

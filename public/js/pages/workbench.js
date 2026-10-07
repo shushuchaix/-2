@@ -264,11 +264,13 @@ export function mountWorkbenchPage({ root, api, store }) {
       const run = await api.request("/runs/" + id);
       if (!current()) return;
       progress.replaceChildren(runProgress({ document: d, run }));
-      if (terminal.has(run.status))
+      if (terminal.has(run.status)) {
         status.show(
           runOutcomeText(run),
           ["failed", "interrupted"].includes(run.status),
         );
+        void diagnostics.refresh();
+      }
       cancel.disabled = true;
       start.disabled = false;
       await loadJobs();

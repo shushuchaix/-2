@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld(
     deleteKey: (provider) => ipcRenderer.invoke("credentials:delete", provider),
     getKeyStatus: (provider) =>
       ipcRenderer.invoke("credentials:status", provider),
+    reportDiagnostic: (event) =>
+      ipcRenderer.invoke("diagnostics:report", event),
   }),
 );

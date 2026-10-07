@@ -20,9 +20,17 @@ import {
   safeStorage,
 } from "electron";
 import path from "node:path";
+import os from "node:os";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { createDiagnosticsLog } from "../src/infrastructure/diagnostics/log.mjs";
+import {
+  createDiagnosticsLog,
+  recordDiagnostic,
+} from "../src/infrastructure/diagnostics/log.mjs";
+import {
+  registerDiagnosticIpc,
+  attachWindowDiagnostics,
+} from "./diagnostics.mjs";
 
 const APP_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -61,6 +69,34 @@ let httpServer = null;
 let dataDir = "";
 let appUrl = "";
 let diagnostics;
+let startupPhase = "started";
+const runtime = {
+  appVersion: app.getVersion(),
+  nodeVersion: process.versions.node,
+  electronVersion: process.versions.electron,
+  chromeVersion: process.versions.chrome,
+  platform: process.platform,
+  arch: process.arch,
+  osRelease: os.release(),
+  packaged: app.isPackaged,
+};
+
+// Observe fatal errors without changing Node's default termination behavior.
+process.on("uncaughtExceptionMonitor", (error) => {
+  try {
+    diagnostics?.recordFatal(
+      {
+        operation: "desktop.failure",
+        phase: startupPhase,
+        outcome: "failed",
+        code: "main_uncaught",
+      },
+      error,
+    );
+  } catch {
+    // Preserve Node's default fatal error handling if the observer fails.
+  }
+});
 
 /* ------------------------------ 菜单 ------------------------------ */
 function buildMenu() {
@@ -158,7 +194,7 @@ function buildMenu() {
 }
 
 /* ---------------------------- 窗口创建 ---------------------------- */
-function createWindow() {
+async function createWindow() {
   const iconPath = path.join(APP_ROOT, "build", "icon.ico");
 
   mainWindow = new BrowserWindow({
@@ -180,6 +216,7 @@ function createWindow() {
       webSecurity: true,
     },
   });
+  attachWindowDiagnostics({ window: mainWindow, diagnostics });
 
   // 外部链接（岗位页、DeepSeek 官网等）一律交给系统浏览器，不在应用内打开
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -208,7 +245,7 @@ function createWindow() {
     mainWindow = null;
   });
 
-  mainWindow.loadURL(appUrl);
+  await mainWindow.loadURL(appUrl);
 }
 
 /* ---------------------------- 自检模式 ---------------------------- */
@@ -333,6 +370,7 @@ async function runSelfTest() {
         webSecurity: true,
       },
     });
+    attachWindowDiagnostics({ window: mainWindow, diagnostics });
     await mainWindow.loadURL(appUrl);
     for (let attempt = 0; attempt < 50; attempt++) {
       if (
@@ -355,7 +393,16 @@ async function runSelfTest() {
     check(
       "renderer没有Node访问或明文密钥",
       bridge.node === "undefined" &&
-        bridge.methods.length === 4 &&
+        bridge.methods.length === 5 &&
+        bridge.methods.every((method) =>
+          [
+            "isAvailable",
+            "saveKey",
+            "deleteKey",
+            "getKeyStatus",
+            "reportDiagnostic",
+          ].includes(method),
+        ) &&
         Object.keys(bridge.status).every((k) =>
           ["configured", "encryptionAvailable"].includes(k),
         ),
@@ -373,6 +420,20 @@ async function runSelfTest() {
             .includes("synthetic-self-test-key"),
       );
     } else check("系统加密可用", false, "本机加密不可用");
+    const rendererReport = await mainWindow.webContents.executeJavaScript(
+      "desktopBridge.reportDiagnostic({operation:'renderer.request',code:'network_error',phase:'transport',outcome:'failed',method:'PUT',route:'/api/v2/settings',message:'synthetic-private-report',body:{resumeText:'synthetic-private-report'}})",
+    );
+    const rendererLogs = await diagnostics.list({
+      diagnosticId: rendererReport?.diagnosticId,
+    });
+    check(
+      "桌面界面失败安全上报",
+      /^d-/.test(rendererReport?.diagnosticId || "") &&
+        rendererLogs.entries.some(
+          (entry) => entry.operation === "renderer.request",
+        ) &&
+        !JSON.stringify(rendererLogs).includes("synthetic-private-report"),
+    );
     for (const [route, label] of [
       ["profiles", "简历与目标"],
       ["jobs", "岗位库"],
@@ -461,6 +522,12 @@ async function runSelfTest() {
     await mainWindow.webContents.executeJavaScript(
       "document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
     );
+    check(
+      "桌面详细日志不撑宽页面",
+      await mainWindow.webContents.executeJavaScript(
+        "(()=>{const panel=document.querySelector('.diagnostics-panel');return panel.scrollWidth<=panel.clientWidth+1&&document.documentElement.scrollWidth<=window.innerWidth+1})()",
+      ),
+    );
     fs.writeFileSync(
       path.join(dataDir, "desktop-logs.png"),
       (await mainWindow.webContents.capturePage()).toPNG(),
@@ -505,13 +572,27 @@ async function runSelfTest() {
 
 /* ------------------------------ 启动 ------------------------------ */
 async function boot() {
+  const started = Date.now();
   dataDir = resolveDataDir();
-  diagnostics = createDiagnosticsLog({ dataDir });
-  await diagnostics.record({ operation: "desktop.start", stage: "startup" });
+  diagnostics = createDiagnosticsLog({ dataDir, runtime });
+  await recordDiagnostic(diagnostics, {
+    operation: "desktop.start",
+    stage: "startup",
+    phase: "started",
+    outcome: "success",
+  });
   process.env.RJR_DESKTOP = "1";
   process.env.RJR_DATA_DIR = dataDir;
 
   // 必须在 import src/ 之前设好环境变量（config.mjs 在模块加载时就定了 DATA_ROOT）
+  startupPhase = "parse";
+  await recordDiagnostic(diagnostics, {
+    operation: "desktop.start",
+    stage: "startup",
+    phase: startupPhase,
+    code: "config_loading",
+    outcome: "success",
+  });
   const { loadConfig, ensureDataDirs } = await import("../src/config.mjs");
   const { createServer } = await import("../src/server.mjs");
 
@@ -527,21 +608,41 @@ async function boot() {
     cfg.auth.mode = "none";
 
   const credentials = createCredentialService({ dataDir, safeStorage });
+  startupPhase = "read";
   try {
     const key = await credentials.readForModel("deepseek");
     if (key) cfg.deepseek.apiKey = key;
-  } catch {
+  } catch (error) {
+    await recordDiagnostic(
+      diagnostics,
+      {
+        operation: "desktop.credentials",
+        stage: "startup",
+        phase: "read",
+        outcome: "failed",
+        code: "credential_read_failed",
+      },
+      error,
+    );
     console.error("[desktop] 加密密钥无法读取，请重新设置。");
   }
   registerCredentialIpc({
     ipcMain,
     service: credentials,
+    diagnostics,
     getWindow: () => mainWindow,
     getOrigin: () => appUrl,
     onKey: (key) => {
       cfg.deepseek.apiKey = key;
     },
   });
+  registerDiagnosticIpc({
+    ipcMain,
+    diagnostics,
+    getWindow: () => mainWindow,
+    getOrigin: () => appUrl,
+  });
+  startupPhase = "load";
   const { server, ready } = createServer(cfg, {
     dataDir,
     dependencies: { diagnostics },
@@ -550,6 +651,14 @@ async function boot() {
   const port = await listen(server);
   httpServer = server;
   appUrl = `http://127.0.0.1:${port}`;
+  await recordDiagnostic(diagnostics, {
+    operation: "desktop.ready",
+    stage: "startup",
+    phase: "load",
+    outcome: "success",
+    code: "server_ready",
+    durationMs: Date.now() - started,
+  });
 
   console.log(`[desktop] 数据目录 ${dataDir}`);
   console.log(`[desktop] 内置服务 ${appUrl}`);
@@ -573,10 +682,49 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     try {
       await boot();
+      if (SELF_TEST) {
+        await runSelfTest();
+        return;
+      }
+      startupPhase = "render";
+      Menu.setApplicationMenu(buildMenu());
+      await createWindow();
+      startupPhase = "finished";
+      await recordDiagnostic(diagnostics, {
+        operation: "desktop.ready",
+        stage: "startup",
+        phase: "finished",
+        outcome: "success",
+        code: "window_ready",
+      });
+      app.on("activate", () => {
+        if (BrowserWindow.getAllWindows().length === 0)
+          void createWindow().catch((error) =>
+            recordDiagnostic(
+              diagnostics,
+              {
+                operation: "desktop.failure",
+                phase: "render",
+                outcome: "failed",
+                code: "window_create_failed",
+              },
+              error,
+            ),
+          );
+      });
     } catch (e) {
-      diagnostics ||= createDiagnosticsLog({ dataDir: resolveDataDir() });
-      const diagnostic = await diagnostics.record(
-        { operation: "desktop.failure", stage: "startup" },
+      diagnostics ||= createDiagnosticsLog({
+        dataDir: resolveDataDir(),
+        runtime,
+      });
+      const diagnostic = await recordDiagnostic(
+        diagnostics,
+        {
+          operation: "desktop.failure",
+          stage: "startup",
+          phase: startupPhase,
+          outcome: "failed",
+        },
         e,
       );
       if (SELF_TEST) {
@@ -590,23 +738,11 @@ if (!gotLock) {
       }
       dialog.showErrorBox(
         "启动失败",
-        `启动未完成，请检查数据目录的写入权限和磁盘空间。\n\n错误编号：${diagnostic.diagnosticId}\n日志目录：${path.join(resolveDataDir(), "logs")}\n请保留数据目录以便排查。`,
+        `启动未完成，请检查数据目录的写入权限和磁盘空间。\n\n${diagnostic?.diagnosticId ? "错误编号：" + diagnostic.diagnosticId + "\n" : ""}日志目录：${path.join(resolveDataDir(), "logs")}\n请保留数据目录以便排查。`,
       );
       app.quit();
       return;
     }
-
-    if (SELF_TEST) {
-      await runSelfTest();
-      return;
-    }
-
-    Menu.setApplicationMenu(buildMenu());
-    createWindow();
-
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    });
   });
 
   app.on("window-all-closed", () => {

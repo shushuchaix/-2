@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { assertInput } from "../public/js/validation-rules.js";
 import path from "node:path";
 import { writeAtomicJson } from "../src/infrastructure/storage/atomic.mjs";
+import { recordDiagnostic } from "../src/infrastructure/diagnostics/log.mjs";
 export function createCredentialService({ dataDir, safeStorage }) {
   const filename = path.join(dataDir, "credentials.v2.json"),
     validate = (provider) => {
@@ -67,44 +68,93 @@ export function createCredentialService({ dataDir, safeStorage }) {
     },
   };
 }
+export function guardDesktopSender({ getWindow, getOrigin }, fn) {
+  return async (event, ...args) => {
+    const win = getWindow();
+    if (
+      !win ||
+      event.sender !== win.webContents ||
+      event.senderFrame !== win.webContents.mainFrame
+    )
+      throw Error("Invalid credential sender");
+    let url;
+    try {
+      url = new URL(event.senderFrame.url);
+    } catch {
+      throw Error("Invalid credential sender");
+    }
+    if (url.origin !== new URL(getOrigin()).origin || url.pathname !== "/")
+      throw Error("Invalid credential sender");
+    return fn(...args);
+  };
+}
+
 export function registerCredentialIpc({
   ipcMain,
   service,
+  diagnostics,
   getWindow,
   getOrigin,
   onKey,
 }) {
-  const guarded =
-    (fn) =>
-    async (event, ...args) => {
-      const win = getWindow();
-      if (
-        !win ||
-        event.sender !== win.webContents ||
-        event.senderFrame !== win.webContents.mainFrame
-      )
-        throw Error("Invalid credential sender");
-      let url;
+  const guarded = (code, fn) =>
+    guardDesktopSender({ getWindow, getOrigin }, async (...args) => {
+      const started = Date.now();
       try {
-        url = new URL(event.senderFrame.url);
-      } catch {
-        throw Error("Invalid credential sender");
+        const result = await fn(...args);
+        await recordDiagnostic(diagnostics, {
+          operation: "desktop.credentials",
+          phase:
+            code === "credential_save" || code === "credential_delete"
+              ? "mutation"
+              : "read",
+          outcome: "success",
+          code,
+          durationMs: Date.now() - started,
+        });
+        return result;
+      } catch (error) {
+        const diagnostic = await recordDiagnostic(
+          diagnostics,
+          {
+            operation: "desktop.credentials",
+            phase:
+              code === "credential_save" || code === "credential_delete"
+                ? "mutation"
+                : "read",
+            outcome: "failed",
+            code,
+            durationMs: Date.now() - started,
+          },
+          error,
+        );
+        throw Object.assign(
+          Error(
+            "桌面密钥操作失败，请检查系统加密和目录权限后重试。" +
+              (diagnostic?.diagnosticId
+                ? "（错误编号：" + diagnostic.diagnosticId + "）"
+                : ""),
+          ),
+          {
+            code: "credential_operation_failed",
+            ...(diagnostic?.diagnosticId
+              ? { diagnosticId: diagnostic.diagnosticId }
+              : {}),
+          },
+        );
       }
-      if (url.origin !== new URL(getOrigin()).origin || url.pathname !== "/")
-        throw Error("Invalid credential sender");
-      return fn(...args);
-    };
+    });
   ipcMain.handle(
     "credentials:available",
-    guarded(() => service.available()),
+    guarded("credential_available", () => service.available()),
   );
   ipcMain.handle(
     "credentials:status",
-    guarded((p) => service.status(p)),
+    guarded("credential_status", (p) => service.status(p)),
   );
   ipcMain.handle(
     "credentials:save",
-    guarded(async (p, key) => {
+    guarded("credential_save", async (p, key) => {
       const result = await service.save(p, key);
       onKey(key);
       return result;
@@ -112,7 +162,7 @@ export function registerCredentialIpc({
   );
   ipcMain.handle(
     "credentials:delete",
-    guarded(async (p) => {
+    guarded("credential_delete", async (p) => {
       const result = await service.delete(p);
       onKey("");
       return result;

@@ -29,6 +29,8 @@ function parseNotice(r, site, previous = {}) {
   return baseRecord({
     ...previous,
     id: "notice:" + noticeId,
+    sourceRecordIdKind: "authority",
+    urlKind: "notice_detail",
     sourceId: id,
     siteId: site.siteId,
     scope: String(site.tenantId),
@@ -55,6 +57,8 @@ function parse(r, site, previous = {}) {
   return baseRecord({
     ...previous,
     id: r.zpgwid,
+    sourceRecordIdKind: "authority",
+    urlKind: "job_detail",
     sourceId: id,
     siteId: site.siteId,
     scope: String(site.tenantId),

@@ -10,17 +10,15 @@ import {
 } from "../domain/contracts.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
 import { resolveJobIdentity, relateJobs } from "../domain/identity.mjs";
+import { jobBusinessFingerprint } from "../domain/job-duplicates.mjs";
+import { resolveJobId, jobIdMatches } from "../domain/job-resolution.mjs";
 import { deriveLifecycle } from "../domain/lifecycle.mjs";
 const date = (v) => {
   if (!isCalendarDate(v)) throw Error("Invalid date");
   return v;
 };
 export function resolveStoredJobId(w, id) {
-  if (w.jobs[id]) return id;
-  const ids = w.identityAliases[id] || [];
-  if (ids.length !== 1)
-    throw Error(ids.length ? "Ambiguous legacy job id" : "Job not found");
-  return ids[0];
+  return resolveJobId(w, id);
 }
 export function createJobService({ repository, clock = repository.clock }) {
   const now = () => new Date(clock.now()).toISOString();
@@ -75,7 +73,7 @@ export function createJobService({ repository, clock = repository.clock }) {
                 ),
               ),
             ]
-              .map((id) => w.jobs[id])
+              .map((id) => w.jobs[resolveJobId(w, id, { allowMissing: true })])
               .filter(Boolean);
             const matches = candidates.filter(
               (j) => relateJobs(j.canonical, record).relation === "same",
@@ -84,18 +82,19 @@ export function createJobService({ repository, clock = repository.clock }) {
               matches.find(
                 (j) => resolveJobIdentity(j.canonical).key === identity.key,
               ) || (matches.length === 1 ? matches[0] : null);
+            // Producer input replay does not authorize merging unrelated weak historical entities.
+            stored ||= candidates.find(
+              (j) =>
+                j.canonical.sourceId === record.sourceId &&
+                j.canonical.identityScope === record.identityScope &&
+                resolveJobIdentity(j.canonical).key === identity.key &&
+                relateJobs(j.canonical, record).relation !== "distinct" &&
+                jobBusinessFingerprint(j.canonical) ===
+                  jobBusinessFingerprint(record),
+            );
             if (!stored) {
               let jobId = "j-" + contentHash(identity.key).slice(0, 24);
-              if (w.jobs[jobId])
-                jobId +=
-                  "-" +
-                  contentHash([
-                    record.cities,
-                    record.jobType,
-                    record.graduationYear,
-                    record.title,
-                    record.level,
-                  ]).slice(0, 12);
+              if (w.jobs[jobId]) jobId += "-" + jobBusinessFingerprint(record);
               if (w.jobs[jobId]) throw Error("Unresolved identity collision");
               stored = {
                 jobId,
@@ -132,6 +131,8 @@ export function createJobService({ repository, clock = repository.clock }) {
                       "siteId",
                       "identityScope",
                       "sourceRecordId",
+                      "sourceRecordIdKind",
+                      "urlKind",
                     ].map((k) => [k, stored.canonical[k]]),
                   )
                 : {}),
@@ -150,6 +151,9 @@ export function createJobService({ repository, clock = repository.clock }) {
               sourceId: record.sourceId,
               siteId: record.siteId,
               sourceRecordId: record.sourceRecordId,
+              sourceRecordIdKind: record.sourceRecordIdKind,
+              identityScope: record.identityScope,
+              urlKind: record.urlKind,
               url: record.url,
             };
             if (
@@ -210,7 +214,7 @@ export function createJobService({ repository, clock = repository.clock }) {
             job.absenceCounts ||= {};
             job.observedScopes ||= {};
             const observations = Object.values(w.observations).filter(
-              (o) => o.jobId === job.jobId && o.runId === runId,
+              (o) => jobIdMatches(w, o.jobId, job.jobId) && o.runId === runId,
             );
             const relevant = coverage
               .filter((c) =>
@@ -240,8 +244,8 @@ export function createJobService({ repository, clock = repository.clock }) {
               previous: job,
               observations,
               coverage: relevant,
-              detailEvidence: detailEvidence.filter(
-                (e) => e.jobId === job.jobId,
+              detailEvidence: detailEvidence.filter((e) =>
+                jobIdMatches(w, e.jobId, job.jobId),
               ),
               now: new Date(clock.now()),
             });
@@ -268,7 +272,10 @@ export function createJobService({ repository, clock = repository.clock }) {
       return (
         await repository.mutateWorkspace((w) => {
           for (const e of evaluations) {
-            if (!w.jobs[e.jobId] || !e.evaluationId)
+            if (
+              !resolveJobId(w, e.jobId, { allowMissing: true }) ||
+              !e.evaluationId
+            )
               throw Error("Invalid evaluation reference");
             if (
               w.evaluations[e.evaluationId] &&
@@ -288,7 +295,7 @@ export function createJobService({ repository, clock = repository.clock }) {
         const evaluations = Object.values(w.evaluations)
           .filter(
             (e) =>
-              e.jobId === job.jobId &&
+              jobIdMatches(w, e.jobId, job.jobId) &&
               (!filters.targetRevisionId ||
                 e.targetRevisionId === filters.targetRevisionId) &&
               (!filters.targetId ||
@@ -374,10 +381,12 @@ export function createJobService({ repository, clock = repository.clock }) {
       relatedIds.delete(id);
       return {
         job,
-        observations: Object.values(w.observations).filter(
-          (o) => o.jobId === id,
+        observations: Object.values(w.observations).filter((o) =>
+          jobIdMatches(w, o.jobId, id),
         ),
-        evaluations: Object.values(w.evaluations).filter((e) => e.jobId === id),
+        evaluations: Object.values(w.evaluations).filter((e) =>
+          jobIdMatches(w, e.jobId, id),
+        ),
         application: w.applications[id] || {
           jobId: id,
           status: "new",

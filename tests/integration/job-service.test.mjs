@@ -3,6 +3,26 @@ import assert from "node:assert/strict";
 import { tempRepository } from "../helpers/repository.mjs";
 import { job, AT } from "../helpers/fixtures.mjs";
 import { createJobService } from "../../src/application/job-service.mjs";
+import { createImportService } from "../../src/application/import-service.mjs";
+test("three identical no-link manual imports are idempotent with traceable observations", async (t) => {
+  const repository = await tempRepository(t),
+    jobService = createJobService({ repository });
+  const importer = createImportService({
+    repository,
+    jobService,
+    request: () => {
+      throw Error("Network forbidden");
+    },
+  });
+  const input = {
+    title: "合成消防岗位",
+    text: "合成单位招聘消防安全工程师，负责机场消防设施维护与安全巡检，要求本科消防工程专业，持有相关消防职业资格。",
+  };
+  for (let i = 0; i < 3; i++) await importer.import(input);
+  const w = await repository.read();
+  assert.equal(Object.keys(w.jobs).length, 1);
+  assert.equal(Object.keys(w.observations).length, 3);
+});
 test("recollection retains application history and empty note clears", async (t) => {
   const repository = await tempRepository(t),
     s = createJobService({ repository });
@@ -29,6 +49,19 @@ test("recollection retains application history and empty note clears", async (t)
     s.updateApplication(id, { followUpAt: "bad" }),
     (e) => e.status === 400 && !!e.fieldErrors.followUpAt,
   );
+});
+test("different trusted IDs never collapse through the content replay path", async (t) => {
+  const repository = await tempRepository(t),
+    service = createJobService({ repository });
+  const result = await service.ingestRecords({
+    runId: "authority-conflict",
+    records: [
+      job({ sourceRecordId: "1" }),
+      job({ sourceRecordId: "2" }),
+      job({ sourceRecordId: "3" }),
+    ],
+  });
+  assert.equal(new Set(result.jobIds).size, 3);
 });
 test("conflicting identities retain both records and manual links never merge them", async (t) => {
   const repository = await tempRepository(t),

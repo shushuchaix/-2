@@ -55,6 +55,8 @@ export function baseRecord({
 }) {
   return {
     sourceRecordId: id == null ? null : String(id),
+    sourceRecordIdKind: "hint",
+    urlKind: "unknown",
     sourceId,
     siteId,
     identityScope: scope || siteId,

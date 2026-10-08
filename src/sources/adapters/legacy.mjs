@@ -129,6 +129,16 @@ export function createLegacyProvider(id, { collector } = {}) {
               sourceId: id,
               siteId: site.siteId,
               identityScope: site.siteId,
+              sourceRecordIdKind:
+                ["zhaopin", "shixiseng", "nowcoder"].includes(id) &&
+                r.sourceRecordId
+                  ? "authority"
+                  : "hint",
+              urlKind:
+                ["zhaopin", "shixiseng", "nowcoder"].includes(id) &&
+                r.sourceRecordId
+                  ? "job_detail"
+                  : "unknown",
               kind: id === "wechat" ? "recruitment_notice" : r.kind,
               parserVersion: "legacy-adapter-2",
             }),

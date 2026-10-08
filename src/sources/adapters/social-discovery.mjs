@@ -57,6 +57,8 @@ export function createSocialDiscoveryProvider(id, name, domains) {
         normalizeRecord({
           ...j,
           sourceId: id,
+          sourceRecordIdKind: "hint",
+          urlKind: "unknown",
           siteId,
           identityScope: id,
           kind: "recruitment_notice",

@@ -151,7 +151,7 @@ function Invoke-RjrTest {
 - Produces `resolveJobId(workspace,id,{allowMissing=false}={}) -> string|null`、`resolveJobIds(...) -> string[]`、`jobIdMatches(workspace,storedId,requestedId) -> boolean`、`resolveApplicationAssociation(workspace,application) -> {status,jobIds,originalApplicationId}`。歧义别名不任取第一条。
 - 可信 provenance 为适配器生成的 `{sourceRecordIdKind:'authority'|'generated'|'hint',urlKind:'job_detail'|'job_apply'|'notice_detail'|'listing'|'campaign'|'unknown'}`；用户请求不得自行提升权威性。旧来源缺证明时保守降级；不能按 UUID 外形推断 generated，真实 API 岗位编号可能也是 UUID。
 
-- [ ] **1. 写失败测试。** 参数化覆盖种类/公司分支/标题/城市集合/届别/批次/年份/类型/职级/学历/经验/证书/工作方式冲突；同编号跨年 distinct，同通用 URL 不同岗位 distinct，缺字段/短正文/模板 possible。断言：
+- [x] **1. 写失败测试。** 参数化覆盖种类/公司分支/标题/城市集合/届别/批次/年份/类型/职级/学历/经验/证书/工作方式冲突；同编号跨年 distinct，同通用 URL 不同岗位 distinct，缺字段/短正文/模板 possible。断言：
   ```js
   assert.equal(classifyJobDuplicate(beijing, beijingAndShanghai).relation, 'distinct');
   assert.equal(classifyJobDuplicate(oldCohort, newCohort).relation, 'distinct');
@@ -160,11 +160,11 @@ function Invoke-RjrTest {
   assert.equal(Object.keys(afterThreeManualImports.observations).length, 3);
   ```
   URL 保留未知/签名/jobid/hash，仅剔已知追踪参数；随机 UUID 不成为编号冲突。同业务内容不同运行元数据相同；正文/资格不同则不碰固定后缀。
-- [ ] **2. RED。** `Invoke-RjrTest tests/unit/job-duplicates.test.mjs tests/unit/identity.test.mjs tests/integration/job-service.test.mjs`。
-- [ ] **3. 实现判定器及来源证明。** 冲突先于编号/URL捷径；标题只做 Unicode/空白规范化，城市比较规范化完整集合。确定重复要求 spec §6 的事实证据；正文去首尾空白后不足30字符、占位/导航/验证码/泛化模板或缺关键事实只能疑似。完整内容证明要求有效公司/标题、实际职责或资格、条件无冲突；无链接手工完整输入按全部业务输入指纹幂等。shared默认hint；腾讯/Greenhouse/SmartRecruiters真实来源编号、NCSS岗位编号及91job岗位编号按已校验scope声明authority，公告/窗口URL独立标记。SmartRecruiters未验证applyUrl不提升；legacy仅明确岗位编号生产者可声明authority，social保持hint；import与article派生编号显式generated。
-- [ ] **4. 接入 ingest/import 与有界引用解析。** 生成身份排除 UUID/任务 ID/模型 ID；不同事实使用完整业务内容指纹和招聘事项区分实体。解析 oldID/alias 时检查环、最终实体和歧义；先统一该服务现有读写，Task 7 覆盖其他消费者。
-- [ ] **5. GREEN。** 运行步骤 2 加 `tests/integration/resume-import.test.mjs tests/integration/source-detail-retention.test.mjs`；相同无链接内容三次不冲突，保留三次观察。
-- [ ] **6. Commit。** `git commit -m "fix: distinguish recruitment occurrences before merging identities"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/unit/job-duplicates.test.mjs tests/unit/identity.test.mjs tests/integration/job-service.test.mjs`。
+- [x] **3. 实现判定器及来源证明。** 冲突先于编号/URL捷径；标题只做 Unicode/空白规范化，城市比较规范化完整集合。确定重复要求 spec §6 的事实证据；仅以正文证明时，去首尾空白后不足30字符、占位/导航/验证码/泛化模板或缺关键事实只能疑似。完整内容证明要求有效公司/标题、实际职责或资格、条件无冲突；无链接手工完整输入按全部业务输入指纹幂等。shared默认hint；腾讯/Greenhouse/SmartRecruiters真实来源编号、NCSS岗位编号及91job岗位编号按已校验scope声明authority，公告/窗口URL独立标记。SmartRecruiters未验证applyUrl不提升；legacy仅明确岗位编号生产者可声明authority，social保持hint；import与article派生编号显式generated。
+- [x] **4. 接入 ingest/import 与有界引用解析。** 生成身份排除 UUID/任务 ID/模型 ID；不同事实使用完整业务内容指纹和招聘事项区分实体。解析 oldID/alias 时检查环、最终实体和歧义；先统一该服务现有读写，Task 7 覆盖其他消费者。
+- [x] **5. GREEN。** 运行步骤 2 加 `tests/integration/resume-import.test.mjs tests/integration/source-detail-retention.test.mjs`；相同无链接内容三次不冲突，保留三次观察。
+- [x] **6. Commit。** `git commit -m "fix: distinguish recruitment occurrences before merging identities"`。
 
 ## Task 4：精确版本成员、事实依据与评价缓存
 

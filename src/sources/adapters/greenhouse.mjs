@@ -10,6 +10,8 @@ function normalize(row, site, previous = {}) {
   return baseRecord({
     ...previous,
     id: row.id,
+    sourceRecordIdKind: "authority",
+    urlKind: "job_detail",
     sourceId: "greenhouse",
     siteId: site.siteId,
     scope: site.tenantId,

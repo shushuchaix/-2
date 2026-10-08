@@ -12,6 +12,8 @@ function payload(response) {
 function normalize(row, site) {
   return baseRecord({
     id: row.PostId,
+    sourceRecordIdKind: "authority",
+    urlKind: "job_detail",
     sourceId: "tencent",
     siteId: site.siteId,
     scope: "tencent-social",

@@ -74,6 +74,8 @@ export function createImportService({
       const at = new Date(clock.now()).toISOString();
       const record = baseRecord({
         id: url?.href || randomUUID(),
+        sourceRecordIdKind: url ? "hint" : "generated",
+        urlKind: "unknown",
         sourceId: "manual",
         siteId: network,
         scope: network,

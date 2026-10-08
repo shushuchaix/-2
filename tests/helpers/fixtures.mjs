@@ -2,12 +2,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 export const AT = "2026-10-05T00:00:00.000Z";
-let versionInputNumber=0;
-export const namedTargetInput = (input={}) => ({versionName:'合成目标 '+(++versionInputNumber),submissionId:'fixture-'+versionInputNumber,...input});
+let versionInputNumber = 0;
+export const namedTargetInput = (input = {}) => ({
+  versionName: "合成目标 " + ++versionInputNumber,
+  submissionId: "fixture-" + versionInputNumber,
+  ...input,
+});
 export const job = (overrides = {}) => ({
   sourceId: "synthetic",
   siteId: "synthetic-1",
   sourceRecordId: "1",
+  sourceRecordIdKind: "authority",
+  urlKind: "job_detail",
   identityScope: "synthetic-1",
   kind: "job",
   title: "Java开发工程师",

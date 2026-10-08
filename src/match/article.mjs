@@ -301,6 +301,8 @@ export async function expandArticles(
                 (verified.city || ""),
             ),
           kind: "job",
+          sourceRecordIdKind: "generated",
+          urlKind: "notice_detail",
           description: p.requirementsExcerpt,
           derivedFrom: article.sourceRecordId || article.url,
           evidence: [

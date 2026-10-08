@@ -21,6 +21,8 @@ function normalize(row, site, previous = {}) {
   return baseRecord({
     ...previous,
     id: row.id,
+    sourceRecordIdKind: "authority",
+    urlKind: applyUrl || previous.applyUrl ? "unknown" : "job_detail",
     sourceId: "smartrecruiters",
     siteId: site.siteId,
     scope: site.tenantId,

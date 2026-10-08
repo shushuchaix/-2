@@ -70,6 +70,9 @@ export default createPagedProvider({
       records.push(
         baseRecord({
           id: r.jobId,
+          sourceRecordIdKind: "authority",
+          urlKind:
+            String(r.recruitType) === "1" ? "notice_detail" : "job_detail",
           sourceId: id,
           siteId: site.siteId,
           scope: "national",

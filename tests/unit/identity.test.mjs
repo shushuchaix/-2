@@ -20,12 +20,12 @@ test("legacy dedupe preserves level city and query identity conflicts", () => {
     jobKey({ ...base, url: base.url + "?pid=3" }),
   );
 });
-test("strong identity permits updated title and city while fuzzy only links", async () => {
+test("strong identity preserves title city conflicts while fuzzy only links", async () => {
   const { relateJobs, canonicalizeSourceUrl, resolveJobIdentity } =
     await import("../../src/domain/identity.mjs");
   assert.equal(
     relateJobs(job(), job({ title: "新标题", cities: ["上海"] })).relation,
-    "same",
+    "distinct",
   );
   assert.equal(
     relateJobs(job({ sourceRecordId: "1" }), job({ sourceRecordId: "2" }))

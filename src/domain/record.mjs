@@ -17,6 +17,8 @@ export function normalizeRecord(input) {
     sourceId,
     siteId: record.siteId || record.extra?.university || sourceId,
     sourceRecordId: record.sourceRecordId ?? null,
+    sourceRecordIdKind: record.sourceRecordIdKind || "hint",
+    urlKind: record.urlKind || "unknown",
     identityScope: record.identityScope || record.siteId || sourceId,
     kind: JOB_KINDS.includes(record.kind)
       ? record.kind

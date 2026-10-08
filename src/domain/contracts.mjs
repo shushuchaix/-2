@@ -1,6 +1,7 @@
 /** Shared v2 contracts. Missing facts stay null; execution state differs from recommendation. */
 import {assertWorkspaceExtensions} from './workspace-management.mjs';
-export const SCHEMA_VERSION = 2;
+import {assertPackageOwnership} from './package-ownership.mjs';
+export const SCHEMA_VERSION = 3;
 export const APPLICATION_STATUSES = [
   "new",
   "seen",
@@ -37,9 +38,10 @@ export const LIFECYCLES = [
 /** @typedef {{evaluationId:string,jobId:string,profileRevisionId:string,targetRevisionId:string,jdHash:string,qualification:object,score:number,components:object,evidence:object[],gaps:string[],completeness:object,status:string,recommendation:string}} Evaluation */
 /** @typedef {{jobId:string,status:string,note:string,resumeRevisionId:string|null,appliedAt:string|null,followUpAt:string|null,events:object[]}} Application */
 /** @typedef {{schemaVersion:2,revision:number,profiles:object,targets:object,jobs:object,observations:object,evaluations:object,applications:object,runs:object,sourceHealth:object,identityAliases:object,duplicateGroups:object,recoveryRecords:object[],migration:object|null,settings:object}} Workspace */
-export function createEmptyWorkspace() {
+export function createEmptyWorkspace({schemaVersion = 2} = {}) {
   return {
-    schemaVersion: 2,
+    schemaVersion,
+    ...(schemaVersion === 3 ? {packages:{},events:{},files:{}} : {}),
     revision: 0,
     profiles: {},
     targets: {},
@@ -63,7 +65,7 @@ const plain = (value) =>
   (Object.getPrototypeOf(value) === Object.prototype ||
     Object.getPrototypeOf(value) === null);
 export function assertWorkspace(value) {
-  if (!plain(value) || value.schemaVersion !== 2)
+  if (!plain(value) || ![2,3].includes(value.schemaVersion))
     throw new Error("Unsupported workspace schema");
   if (!Number.isSafeInteger(value.revision) || value.revision < 0)
     throw new Error("Invalid workspace revision");
@@ -83,6 +85,7 @@ export function assertWorkspace(value) {
     if (!plain(value[key])) throw new Error("Invalid workspace " + key);
   if (!Array.isArray(value.recoveryRecords))
     throw new Error("Invalid recoveryRecords");
+  if (value.schemaVersion === 3) assertPackageOwnership(value);
   for (const key of ["profiles", "targets"])
     for (const list of Object.values(value[key]))
       if (!Array.isArray(list) || list.some((x) => !plain(x)))
@@ -93,7 +96,7 @@ export function assertWorkspace(value) {
   for (const [id, application] of Object.entries(value.applications))
     if (
       !plain(application) ||
-      application.jobId !== id ||
+      (value.schemaVersion === 3 ? application.applicationId !== id : application.jobId !== id) ||
       !APPLICATION_STATUSES.includes(application.status)
     )
       throw new Error("Invalid application " + id);

@@ -35,7 +35,7 @@ test("runner discovers nested tests and rejects outside test paths", () => {
   );
 });
 test("workspace schema rejects future versions and malformed entities", () => {
-  assert.throws(() => assertWorkspace({ schemaVersion: 3 }), /schema/i);
+  assert.throws(() => assertWorkspace({ schemaVersion: 4 }), /schema/i);
   const w = createEmptyWorkspace();
   assert.equal(assertWorkspace(w).revision, 0);
   assert.throws(() => assertWorkspace({ ...w, jobs: [] }), /jobs/i);

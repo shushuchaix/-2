@@ -9,6 +9,7 @@ import {
 } from "../../src/infrastructure/storage/package-control.mjs";
 import { createEmptyWorkspace } from "../../src/domain/contracts.mjs";
 import { createWorkspaceService } from "../../src/application/workspace-service.mjs";
+import { createTrashService } from "../../src/application/trash-service.mjs";
 export function failOnce(fsAdapter, phase) {
   let armed = phase;
   const match = {
@@ -56,9 +57,14 @@ export async function packageFixture(t, options = {}) {
       fsAdapter: adapter,
     });
     f.control = openPackageControl({ dataDir, fsAdapter: adapter });
+    f.trash = createTrashService({
+      repository: f.repository,
+      cancelPackageAndWait: options.cancelPackageAndWait,
+    });
     f.workspaceService = createWorkspaceService({
       repository: f.repository,
       modelConfig: options.modelConfig,
+      trashService: f.trash,
     });
   }
   await open();

@@ -212,6 +212,9 @@ export function createPackageVersionService({
       } else {
         const copy = structuredClone(source);
         Object.assign(copy, {
+          profileId: "copy-" + packageId,
+          revisionId: "copy-" + packageId + "@1",
+          revision: 1,
           recordId: reservation.profileSnapshotId,
           ownerPackageId: packageId,
           packageId,

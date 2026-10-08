@@ -272,6 +272,9 @@ export function normalizeBackupOwnership({
     item.profileSnapshot = source
       ? owned("profileSnapshot", r.revisionId, owner, {
           ...source,
+          profileId: "copy-" + owner,
+          revisionId: "copy-" + owner + "@1",
+          revision: 1,
           provenance: {
             profileRevisionId: r.profileRevisionId,
             sourcePackageId: source.ownerPackageId || null,

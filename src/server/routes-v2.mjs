@@ -8,6 +8,7 @@ import {
   invalid,
 } from "./validation.mjs";
 import { writeRunEventStream } from "./event-stream.mjs";
+import { handleTrashRequest } from "./trash-routes.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { extractResumeText } from "../resume/extract-text.mjs";
 import { analyzeResumeOffline } from "../resume/offline.mjs";
@@ -25,6 +26,7 @@ export async function handleV2Request(req, res, context) {
   const url = new URL(req.url, "http://localhost"),
     pathname = url.pathname;
   if (!pathname.startsWith("/api/v2/")) return false;
+  if (await handleTrashRequest(req, res, context)) return true;
   const route = pathname.slice(7),
     method = req.method;
   const {

@@ -47,6 +47,8 @@ test("target resume copies raw text, structured profile, overrides and import me
   const wa = await f.workspaceService.getTargetRevision(a.revisionId),
     wb = await f.workspaceService.getTargetRevision(b.revisionId);
   assert.notEqual(wa.profileSnapshot.recordId, wb.profileSnapshot.recordId);
+  assert.notEqual(wa.profileSnapshot.revisionId, wb.profileSnapshot.revisionId);
+  assert.notEqual(wa.profileSnapshot.revisionId, sourceProfile.revisionId);
   assert.equal(wa.profileSnapshot.ownerPackageId, a.packageId);
   assert.equal(
     wa.profileSnapshot.provenance.profileRevisionId,

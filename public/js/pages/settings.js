@@ -1,3 +1,4 @@
+import { dataLocations } from "../components/data-locations.js";
 import { el, field } from "../components/dom.js";
 import { feedback } from "../components/feedback.js";
 import { sourceTable } from "../components/source-table.js";
@@ -127,7 +128,9 @@ export function mountSettingsPage({ root, api, desktopBridge }) {
             body: site,
           });
           catalog.sites.push(site);
-          status.show("候选站点已保存，重新打开设置页检查。");
+          status.show("候选站点已保存，重新打开设置页检查。", false, {
+            notify: true,
+          });
         } catch (e) {
           validation.show(e);
         } finally {
@@ -151,6 +154,7 @@ export function mountSettingsPage({ root, api, desktopBridge }) {
       model = modelSettings({ document: d, settings, api, desktopBridge });
       right.replaceChildren(
         model.node,
+        dataLocations(d, { bridge: desktopBridge }),
         custom,
         jobImport({ document: d, api }),
         backupPanel({ document: d, api }),

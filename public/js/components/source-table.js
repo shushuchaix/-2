@@ -73,7 +73,7 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
         source.config = config;
         validation.clear();
         stateMessage.textContent = "来源设置已保存";
-        status.show("来源设置已保存");
+        status.show("来源设置已保存", false, { notify: true });
       } catch (e) {
         checkbox.disabled = false;
         validation.show(e);

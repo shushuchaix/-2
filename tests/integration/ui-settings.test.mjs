@@ -61,3 +61,8 @@ test("settings API failure remains visible", async () => {
   assert.ok(f.root.textContent.includes("无法读取设置"));
   page.destroy();
 });
+test('settings connects local data paths only through the desktop bridge',async()=>{
+ const f=uiFixture(p=>p==='/sources'?{sources:[],sites:[]}:{});let reads=0;
+ const page=mountSettingsPage({...f,desktopBridge:{getDataLocations:async()=>{reads++;return {data:'C:/synthetic/data',history:'C:/synthetic/data/runs-v2',backups:'C:/synthetic/data/backups',cache:'C:/synthetic/data/cache',logs:'C:/synthetic/data/logs'};}}});
+ await page.ready;await f.settle();assert.equal(reads,1);assert.match(f.root.querySelector('.data-locations').textContent,/runs-v2/);assert.equal(f.calls.some(c=>/location|director/.test(c.path)),false);page.destroy();
+});

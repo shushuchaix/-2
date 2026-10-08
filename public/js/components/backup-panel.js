@@ -44,7 +44,9 @@ export function backupPanel({ document: d, api }) {
           }),
           "job-radar-backup.json",
         );
-        status.show("备份已生成，凭据不包含在内。");
+        status.show("备份已在服务器生成，已开始下载；凭据不包含在内。", false, {
+          notify: true,
+        });
       } catch (e) {
         exportValidation.show(e);
       } finally {
@@ -76,7 +78,7 @@ export function backupPanel({ document: d, api }) {
             await api.download("/exports?format=" + format.value),
             "job-radar." + format.value,
           );
-          status.show("导出已生成");
+          status.show("导出已生成，已开始下载", false, { notify: true });
         } catch (e) {
           exportValidation.show(e);
         } finally {
@@ -119,7 +121,9 @@ export function backupPanel({ document: d, api }) {
           method: "POST",
           body: { archive },
         });
-        status.show("备份验证通过，工作区已恢复。请重新打开页面。");
+        status.show("备份验证通过，工作区已恢复。请重新打开页面。", false, {
+          notify: true,
+        });
       } catch (e) {
         restoreValidation.show(e);
       } finally {

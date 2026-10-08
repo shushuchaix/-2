@@ -229,7 +229,13 @@ export function mountWorkbenchPage({ root, api, store }) {
             .slice(0, 5),
           onOpen: async (id) => {
             try {
-              const detail = await api.request("/jobs/" + id);
+              const detail = await api.request(
+                "/jobs/" +
+                  encodeURIComponent(id) +
+                  (select.value
+                    ? "?targetRevisionId=" + encodeURIComponent(select.value)
+                    : ""),
+              );
               if (!destroyed)
                 dialog = openJobDetail({
                   root,
@@ -278,6 +284,7 @@ export function mountWorkbenchPage({ root, api, store }) {
         status.show(
           runOutcomeText(run),
           ["failed", "interrupted"].includes(run.status),
+          { notify: true },
         );
         void diagnostics.refresh();
       }
@@ -306,6 +313,7 @@ export function mountWorkbenchPage({ root, api, store }) {
       status.show(
         runOutcomeText(state.run),
         ["failed", "interrupted"].includes(state.run.status),
+        { notify: true },
       );
       updateStart();
     }

@@ -1,3 +1,8 @@
+import {
+  resolveDataLayout,
+  writeCacheJsonSync,
+  validKnownCache,
+} from "../infrastructure/storage/layout.mjs";
 import { sourceFetch as fetch } from "./request-context.mjs";
 // 高校就业信息网岗位源
 //
@@ -262,7 +267,10 @@ export { normSchool, isOwnSchool };
 
 /* ---------------------- 就业网自动探测与缓存 ---------------------- */
 
-const HOST_CACHE = path.join(DATA_ROOT, "university-hosts.json");
+const HOST_CACHE = path.join(
+  resolveDataLayout(DATA_ROOT).cache,
+  "university-hosts.json",
+);
 
 /**
  * 缓存格式版本。
@@ -275,7 +283,8 @@ export { CACHE_VERSION };
 
 function loadHostCache() {
   try {
-    return JSON.parse(fs.readFileSync(HOST_CACHE, "utf8"));
+    const value = JSON.parse(fs.readFileSync(HOST_CACHE, "utf8"));
+    return validKnownCache("university-hosts.json", value) ? value : {};
   } catch {
     return {};
   }
@@ -288,8 +297,7 @@ function saveHostCache(cache) {
     const pruned = {};
     for (const [k, v] of Object.entries(cache))
       if (v?.v === CACHE_VERSION) pruned[k] = v;
-    fs.mkdirSync(path.dirname(HOST_CACHE), { recursive: true });
-    fs.writeFileSync(HOST_CACHE, JSON.stringify(pruned, null, 2), "utf8");
+    writeCacheJsonSync(HOST_CACHE, pruned);
   } catch {
     /* 缓存写不了不影响主流程 */
   }

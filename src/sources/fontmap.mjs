@@ -1,3 +1,8 @@
+import {
+  resolveDataLayout,
+  writeCacheJsonSync,
+  validKnownCache,
+} from "../infrastructure/storage/layout.mjs";
 // 实习僧标题「字体混淆」解码器
 //
 // 背景：实习僧列表页用一套每次请求随机生成的图标字体渲染岗位标题，
@@ -67,11 +72,12 @@ export function coverage(text, map) {
 }
 
 /* ------------------------- 映射表持久化 ------------------------- */
-const FILE = path.join(DATA_ROOT, "font-map.json");
+const FILE = path.join(resolveDataLayout(DATA_ROOT).cache, "font-map.json");
 
-export function loadPersistedMap() {
+export function loadPersistedMap(filename = FILE) {
   try {
-    const raw = JSON.parse(fs.readFileSync(FILE, "utf8"));
+    const raw = JSON.parse(fs.readFileSync(filename, "utf8"));
+    if (!validKnownCache("font-map.json", raw)) return new Map();
     const map = new Map(Object.entries(raw.map || {}));
     map.__savedAt = raw.savedAt;
     map.__conflicts = raw.conflicts || 0;
@@ -81,27 +87,18 @@ export function loadPersistedMap() {
   }
 }
 
-export function persistMap(map) {
+export function persistMap(map, filename = FILE) {
   const clean = {};
   for (const [k, v] of map) {
     if (k.startsWith("__")) continue;
     clean[k] = v;
   }
   try {
-    fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    fs.writeFileSync(
-      FILE,
-      JSON.stringify(
-        {
-          savedAt: new Date().toISOString(),
-          size: Object.keys(clean).length,
-          map: clean,
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
+    writeCacheJsonSync(filename, {
+      savedAt: new Date().toISOString(),
+      size: Object.keys(clean).length,
+      map: clean,
+    });
     return true;
   } catch {
     return false;

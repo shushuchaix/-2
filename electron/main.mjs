@@ -18,8 +18,11 @@ import {
   dialog,
   ipcMain,
   safeStorage,
+  clipboard,
 } from "electron";
 import path from "node:path";
+import { resolveDataLayout } from "../src/infrastructure/storage/layout.mjs";
+import { registerDirectoryIpc } from "./directories.mjs";
 import os from "node:os";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -101,8 +104,30 @@ process.on("uncaughtExceptionMonitor", (error) => {
 /* ------------------------------ 菜单 ------------------------------ */
 function buildMenu() {
   const openTarget = async (p) => {
-    const err = await shell.openPath(p);
-    if (err) dialog.showErrorBox("打开失败", `${p}\n\n${err}`);
+    try {
+      fs.mkdirSync(path.extname(p) ? path.dirname(p) : p, { recursive: true });
+      const error = await shell.openPath(p);
+      if (error) throw Error("open_failed");
+      mainWindow?.webContents
+        .executeJavaScript(
+          'document.dispatchEvent(new CustomEvent("rjr-notification",{detail:{text:"已请求系统打开所选位置。",error:false}}))',
+        )
+        .catch(() => {});
+    } catch {
+      const diagnostic = await recordDiagnostic(diagnostics, {
+        operation: "desktop.directories",
+        phase: "open",
+        outcome: "failed",
+        code: "directory_operation_failed",
+      });
+      dialog.showErrorBox(
+        "打开失败",
+        "请检查目录权限后重试。" +
+          (diagnostic?.diagnosticId
+            ? "错误编号：" + diagnostic.diagnosticId
+            : ""),
+      );
+    }
   };
 
   return Menu.buildFromTemplate([
@@ -120,7 +145,11 @@ function buildMenu() {
         },
         {
           label: "打开历史结果目录",
-          click: () => openTarget(path.join(dataDir, "runs")),
+          click: () => openTarget(resolveDataLayout(dataDir).runs),
+        },
+        {
+          label: "打开旧版兼容历史目录",
+          click: () => openTarget(resolveDataLayout(dataDir).legacyRuns),
         },
         {
           label: "打开运行日志目录",
@@ -668,6 +697,15 @@ async function boot() {
     diagnostics,
     getWindow: () => mainWindow,
     getOrigin: () => appUrl,
+  });
+  registerDirectoryIpc({
+    ipcMain,
+    shell,
+    clipboard,
+    getWindow: () => mainWindow,
+    getOrigin: () => appUrl,
+    layout: resolveDataLayout(dataDir),
+    diagnostics,
   });
   startupPhase = "load";
   const { server, ready } = createServer(cfg, {

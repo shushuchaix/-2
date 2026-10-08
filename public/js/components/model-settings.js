@@ -164,7 +164,7 @@ export function modelSettings({ document: d, settings, api, desktopBridge }) {
         },
       });
       savedMoney = budgets.maxCostCny != null;
-      status.show("模型与预算设置已保存");
+      status.show("模型与预算设置已保存", false, { notify: true });
     } catch (e) {
       validation.show(e);
     } finally {
@@ -190,7 +190,7 @@ export function modelSettings({ document: d, settings, api, desktopBridge }) {
           await desktopBridge.saveKey("deepseek", key.value.trim());
           key.value = "";
           temporaryCredentials.clear();
-          status.show("桌面密钥已加密保存");
+          status.show("桌面密钥已加密保存", false, { notify: true });
         } catch (e) {
           keyValidation.show(e);
         } finally {
@@ -203,7 +203,7 @@ export function modelSettings({ document: d, settings, api, desktopBridge }) {
         status.show("");
         try {
           await desktopBridge.deleteKey("deepseek");
-          status.show("桌面密钥已清除");
+          status.show("桌面密钥已清除", false, { notify: true });
         } catch (e) {
           keyValidation.show(e);
         } finally {

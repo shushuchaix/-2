@@ -322,7 +322,7 @@ function Invoke-RjrTest {
 - Produces `registerDirectoryIpc({ipcMain,shell,clipboard,getWindow,getOrigin,layout})`，复用 guardDesktopSender；preload仅 `getDataLocations()`、`openDataLocation(kind)`、`copyDataLocation(kind)`，kind固定 `data,history,backups,cache,logs`。open成功以 shell.openPath返回空错误串为依据。
 - Produces `dataLocations(document,{bridge,notify}) -> node`；bridge缺失时显示Web下载说明，不请求私人路径。
 
-- [ ] **1. 写失败测试。** override/root一致、当前历史指runs-v2、旧缓存有效迁入/新缓存优先/坏旧缓存保留且不用、不递归未知目录。断言：
+- [x] **1. 写失败测试。** override/root一致、当前历史指runs-v2、旧缓存有效迁入/新缓存优先/坏旧缓存保留且不用、不递归未知目录。断言：
   ```js
   assert.equal(layout.runs, path.join(dataDir, 'runs-v2'));
   assert.equal(arbitraryPathRejected, true);
@@ -332,12 +332,12 @@ function Invoke-RjrTest {
   assert.match(downloadNotice, /导出已生成，已开始下载/);
   ```
   IPC错误不显示成功，不向日志写绝对路径；Web无bridge可用。成功matrix覆盖导入、评分、投递、备份、恢复、设置、导出、打开/复制目录，读取刷新不消除通知。
-- [ ] **2. RED。** `Invoke-RjrTest tests/unit/storage-layout.test.mjs tests/unit/desktop-directories.test.mjs tests/unit/fontmap.test.mjs tests/integration/ui-settings.test.mjs tests/integration/form-feedback.test.mjs`。
-- [ ] **3. 实现目录及缓存接入。** 权威账本/配置/凭据不搬迁；已知缓存验证后原子写新位置，验证成功后才可删除确切旧缓存文件，失败保留旧文件。不把 uploads 显示为简历原件，不生成假导出目录。
-- [ ] **4. 实现受保护 IPC、菜单与设置卡片。** 主进程固定映射、验证主窗口/主框架/本机应用origin；当前历史菜单修到runs-v2，旧历史明确兼容。每项开/复制后显示对应成功/错误。
-- [ ] **5. 接通其余写操作通知。** 复用 Task8反馈，不创建第二套通知；业务成功后发通知，重评分报告更新数，备份/恢复可确认本地写入，浏览器下载用限定文案，保留安全diagnosticId。
-- [ ] **6. GREEN。** 运行步骤 2 加 `tests/unit/desktop-bridge.test.mjs tests/integration/ui-applications.test.mjs tests/integration/ui-settings-validation.test.mjs`；无凭据和路径泄露。
-- [ ] **7. Commit。** `git commit -m "feat: clarify local data locations and operation feedback"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/unit/storage-layout.test.mjs tests/unit/desktop-directories.test.mjs tests/unit/fontmap.test.mjs tests/integration/ui-settings.test.mjs tests/integration/form-feedback.test.mjs`。
+- [x] **3. 实现目录及缓存接入。** 权威账本/配置/凭据不搬迁；已知缓存验证后原子写新位置，验证成功后才可删除确切旧缓存文件，失败保留旧文件。不把 uploads 显示为简历原件，不生成假导出目录。
+- [x] **4. 实现受保护 IPC、菜单与设置卡片。** 主进程固定映射、验证主窗口/主框架/本机应用origin；当前历史菜单修到runs-v2，旧历史明确兼容。每项开/复制后显示对应成功/错误。
+- [x] **5. 接通其余写操作通知。** 复用 Task8反馈，不创建第二套通知；业务成功后发通知，重评分报告更新数，备份/恢复可确认本地写入，浏览器下载用限定文案，保留安全diagnosticId。
+- [x] **6. GREEN。** 运行步骤 2 加 `tests/unit/desktop-bridge.test.mjs tests/integration/ui-applications.test.mjs tests/integration/ui-settings-validation.test.mjs`；无凭据和路径泄露。
+- [x] **7. Commit。** `git commit -m "feat: clarify local data locations and operation feedback"`。
 
 ## Task 11：完整回归、桌面实际自检、文档与 PR 更新
 

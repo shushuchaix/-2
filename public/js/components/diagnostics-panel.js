@@ -291,7 +291,7 @@ export function diagnosticsPanel({ document: d, api }) {
       });
       if (!current(request, exporting)) return;
       downloadBlob(d, blob, "job-radar-update.log");
-      status.show("日志已导出。");
+      status.show("导出已生成，已开始下载。", false, { notify: true });
     } catch (error) {
       if (current(request, exporting))
         status.show("日志导出失败：" + errorText(error), true);

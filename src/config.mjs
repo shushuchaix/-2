@@ -3,6 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import {
+  resolveDataLayout,
+  ensureDataLayout,
+  migrateKnownCaches,
+} from "./infrastructure/storage/layout.mjs";
 
 export const ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -398,6 +403,9 @@ export function seedConfig(dataDir = resolveDataRoot()) {
 }
 
 export function ensureDataDirs({ dataDir = resolveDataRoot() } = {}) {
+  const layout = resolveDataLayout(dataDir);
+  ensureDataLayout(layout);
+  migrateKnownCaches(layout);
   const dirs = [
     dataDir,
     path.join(dataDir, "runs"),

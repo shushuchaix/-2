@@ -4,8 +4,24 @@ import {
   learnFromPair,
   decodeWithMap,
   coverage,
+  loadPersistedMap,
+  persistMap,
 } from "../../src/sources/fontmap.mjs";
 import { repairTitles } from "../../src/sources/shixiseng.mjs";
+import path from "node:path";
+import { createTempDir } from "../helpers/fixtures.mjs";
+test("font map cache persists atomically in the isolated cache directory and excludes runtime metadata", async (t) => {
+  const filename = path.join(await createTempDir(t), "cache", "font-map.json");
+  const map = new Map([
+    ["\ue001", "甲"],
+    ["__debug", "omit"],
+  ]);
+  assert.equal(persistMap(map, filename), true);
+  const loaded = loadPersistedMap(filename);
+  assert.equal(loaded.get("\ue001"), "甲");
+  assert.equal(loaded.has("__debug"), false);
+  assert.ok(loaded.__savedAt);
+});
 test("font learning preserves unknown characters and rejects mismatched alignment", () => {
   const map = new Map();
   assert.equal(learnFromPair("\ue001\ue002后端", "Ja后端", map), 2);

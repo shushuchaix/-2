@@ -51,6 +51,7 @@ test("preview waits for confirmation and explicit target city and degree policy 
   await f.settle();
   assert.ok(profiles[0].text.startsWith("已校正"));
   assert.equal(profiles[0].overrides.education, "本科");
+  f.root.querySelector("#targetVersionName").value = "合成目标";
   f.root.querySelector("#targetRoles").value = "Java开发";
   f.root.querySelector("#cityMode").value = "any";
   f.root.querySelector("#targetCities").value = "深圳";

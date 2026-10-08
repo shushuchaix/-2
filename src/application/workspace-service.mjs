@@ -38,6 +38,10 @@ export function createWorkspaceService({
       ? {
           ...item,
           ...w.versionMetadata[item.revisionId],
+          references: countVersionReferences(w, {
+            kind,
+            revisionId: item.revisionId,
+          }),
           availability:
             kind === "target"
               ? versionAvailability(w, item)

@@ -1,5 +1,6 @@
 import { el, field, list } from "./dom.js";
 import { bindValidation } from "./form-validation.js";
+import { submissionNonce } from "../version-management.js";
 export function profileForm({ document: d, preview = {}, onSave }) {
   const p = preview.profile || {},
     form = el(d, "form", { id: "profileForm" }),
@@ -20,6 +21,7 @@ export function profileForm({ document: d, preview = {}, onSave }) {
   education.value = p.education || p.degree || "未知";
   const input = (id, value) => el(d, "input", { id, value: value || "" });
   const name = input("profileName", p.name),
+    versionName = input("profileVersionName", ""),
     major = input("major", p.major),
     year = input("graduationYear", p.graduationYear),
     skills = el(
@@ -53,6 +55,12 @@ export function profileForm({ document: d, preview = {}, onSave }) {
         .join("\n"),
     );
   form.append(
+    field(
+      d,
+      "新画像版本名称",
+      versionName,
+      "可空则自动命名；自定义名称最多 60 字符，同名只保存一份。名称用于本地版本管理。",
+    ),
     field(
       d,
       "校正后的简历正文",
@@ -110,6 +118,7 @@ export function profileForm({ document: d, preview = {}, onSave }) {
     ),
   );
   const values = () => ({
+    ...(versionName.value.trim() ? { versionName: versionName.value } : {}),
     text: text.value,
     profile: {
       ...p,
@@ -138,6 +147,7 @@ export function profileForm({ document: d, preview = {}, onSave }) {
   const validation = bindValidation(form, {
     kind: "profile",
     fields: {
+      versionName,
       text,
       "profile.name": name,
       "profile.education": education,
@@ -150,7 +160,9 @@ export function profileForm({ document: d, preview = {}, onSave }) {
     },
     values,
   });
-  let busy = false;
+  let busy = false,
+    submissionId = submissionNonce(),
+    lastInput;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (busy || !validation.check()) return;
@@ -159,8 +171,17 @@ export function profileForm({ document: d, preview = {}, onSave }) {
       input = values();
     save.disabled = true;
     input.profile.graduationYear = year.value ? Number(year.value) : null;
+    const hash = JSON.stringify(input);
+    if (lastInput !== undefined && lastInput !== hash)
+      submissionId = submissionNonce();
+    lastInput = hash;
+    input.submissionId = submissionId;
     try {
       await onSave(input);
+      submissionId = submissionNonce();
+      lastInput = undefined;
+      versionName.value = "";
+      validation.clear();
     } catch (e) {
       validation.show(e);
     } finally {

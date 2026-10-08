@@ -153,6 +153,21 @@ export function createApiClient({
         error.message += "（错误编号：" + data.diagnosticId + "）";
       }
       error.status = res.status;
+      if (
+        typeof data.conflictingRevisionId === "string" &&
+        data.conflictingRevisionId.length <= 180
+      )
+        error.conflictingRevisionId = data.conflictingRevisionId;
+      if (
+        data.references &&
+        typeof data.references === "object" &&
+        !Array.isArray(data.references)
+      )
+        error.references = Object.fromEntries(
+          Object.entries(data.references).filter(
+            ([k, v]) => k.length <= 100 && Number.isSafeInteger(v) && v >= 0,
+          ),
+        );
       error.code =
         data.code ||
         (res.status === 403

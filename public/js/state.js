@@ -25,6 +25,14 @@ export function createStore(initial = {}) {
           jobs: { items: [], total: 0 },
           jobsRequestId: state.jobsRequestId + 1,
         };
+      else if (action.type === "versionUpdated")
+        state = {
+          ...state,
+          versions: {
+            ...state.versions,
+            [action.version.revisionId]: action.version,
+          },
+        };
       else if (action.type === "route")
         state = { ...state, route: action.route };
       else if (action.type === "jobs-request")

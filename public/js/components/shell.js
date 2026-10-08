@@ -17,6 +17,41 @@ export function mountShell({ root, store, router }) {
       ),
     );
   const content = el(d, "main", { id: "page", tabindex: "-1" });
+  const notification = el(d, "div", {
+    "aria-live": "polite",
+    className: "shell-feedback",
+  });
+  notification.hidden = true;
+  let notificationTimer;
+  const showNotification = ({ detail: { text, error } }) => {
+    clearTimeout(notificationTimer);
+    notification.hidden = false;
+    notification.className = "shell-feedback" + (error ? " error" : "");
+    notification.setAttribute("role", error ? "alert" : "status");
+    notification.replaceChildren(
+      el(d, "span", {}, text),
+      el(
+        d,
+        "button",
+        {
+          type: "button",
+          "aria-label": "关闭通知",
+          onClick: () => {
+            notification.hidden = true;
+            clearTimeout(notificationTimer);
+          },
+        },
+        "关闭",
+      ),
+    );
+    if (!error) {
+      notificationTimer = setTimeout(() => {
+        notification.hidden = true;
+      }, 8000);
+      notificationTimer.unref?.();
+    }
+  };
+  d.addEventListener("rjr-notification", showNotification);
   root.replaceChildren(
     el(
       d,
@@ -81,7 +116,7 @@ export function mountShell({ root, store, router }) {
         ),
       ),
       content,
-      el(d, "div", { "aria-live": "polite", className: "shell-feedback" }),
+      notification,
     ),
   );
   const unsubscribe = store.subscribe((state) => {
@@ -95,6 +130,8 @@ export function mountShell({ root, store, router }) {
     content,
     destroy() {
       unsubscribe();
+      clearTimeout(notificationTimer);
+      d.removeEventListener("rjr-notification", showNotification);
       root.replaceChildren();
     },
   };

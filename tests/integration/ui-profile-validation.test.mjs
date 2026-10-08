@@ -35,6 +35,7 @@ function targetFixture() {
   });
   f.root.append(form);
   form.querySelector("#targetRoles").value = "软件开发";
+  form.querySelector("#targetVersionName").value = "合成目标";
   return { ...f, form, saved };
 }
 function pageFixture(failure) {
@@ -213,6 +214,7 @@ test("target server field errors reach the target form without losing roles", as
   );
   const page = mountProfilesPage(f);
   await page.ready;
+  f.root.querySelector("#targetVersionName").value = "合成目标";
   f.root.querySelector("#targetRoles").value = "软件开发";
   submit(f.document, f.root.querySelector("#targetForm"));
   await f.settle();

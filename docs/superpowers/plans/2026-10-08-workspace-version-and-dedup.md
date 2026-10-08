@@ -275,7 +275,7 @@ function Invoke-RjrTest {
 - Extend `targetForm(document,{target,profiles,model,onSubmit,...})`：显式配置字段、新名称空白，model从安全 settings读入；submissionId一次编辑提交生成，网络重试复用，成功/内容改变后重建。
 - Extend `feedback(document)` 的 `show(text,error=false,{notify=false}={})`：兼容旧调用，notify=true触发 shell 的可见 aria-live 通知；行内同时显示。成功通知可关闭并显示至少6秒，错误保持到关闭/下一操作；普通 show('') 不清全局操作通知。
 
-- [ ] **1. 写真实点击失败测试。** 打开同组多个命名版本；编辑→停用→另存新名，payload不含旧enabled；已有10元预算加载实际model后前端合法。断言：
+- [x] **1. 写真实点击失败测试。** 打开同组多个命名版本；编辑→停用→另存新名，payload不含旧enabled；已有10元预算加载实际model后前端合法。断言：
   ```js
   assert.equal(createRequests.length, 1); // 忙时连击
   assert.equal(toggleRequests[0].revisionId, selectedRevisionId);
@@ -285,11 +285,11 @@ function Invoke-RjrTest {
   assert.equal(notificationSurvivesReadRefresh, true);
   ```
   重名/失败保留输入；rename不清岗位；archive/restore保持原ID，画像回收站禁运行/评分、旧投递画像标签仍显示但不可新选。开始按钮各恢复路径依据 availability，不无条件启用。
-- [ ] **2. RED。** `Invoke-RjrTest tests/integration/ui-version-management.test.mjs tests/integration/ui-profiles.test.mjs tests/integration/ui-model-money.test.mjs tests/integration/ui-workbench.test.mjs`。
-- [ ] **3. 实现统一版本组件和通知。** 版本按父组展示但不折叠旧版本；所有操作指定 revisionId、busy保护；行内失败含字段/引用/活动原因及diagnosticId；管理与配置保存分开。
-- [ ] **4. 接通画像/目标表单、store及工作台。** 列表按ID upsert，编辑器有效状态同步；旧配置“新建版本”要求空白新名称；重新选择/恢复后可运行状态一致。版本名称只本地显示，不进入模型 payload。
-- [ ] **5. GREEN。** 运行步骤 2 加 `tests/integration/ui-profile-validation.test.mjs tests/unit/ui-state.test.mjs tests/integration/ui-shell.test.mjs`；在长列表模拟滚动后通知仍可见且 aria-live 有内容。
-- [ ] **6. Commit。** `git commit -m "fix: make version management actions consistent and visible"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/integration/ui-version-management.test.mjs tests/integration/ui-profiles.test.mjs tests/integration/ui-model-money.test.mjs tests/integration/ui-workbench.test.mjs`。
+- [x] **3. 实现统一版本组件和通知。** 版本按父组展示但不折叠旧版本；所有操作指定 revisionId、busy保护；行内失败含字段/引用/活动原因及diagnosticId；管理与配置保存分开。
+- [x] **4. 接通画像/目标表单、store及工作台。** 列表按ID upsert，编辑器有效状态同步；旧配置“新建版本”要求空白新名称；重新选择/恢复后可运行状态一致。版本名称只本地显示，不进入模型 payload。
+- [x] **5. GREEN。** 运行步骤 2 加 `tests/integration/ui-profile-validation.test.mjs tests/unit/ui-state.test.mjs tests/integration/ui-shell.test.mjs`；在长列表模拟滚动后通知仍可见且 aria-live 有内容。
+- [x] **6. Commit。** `git commit -m "fix: make version management actions consistent and visible"`。
 
 ## Task 9：岗位库分类与全版本清理界面
 

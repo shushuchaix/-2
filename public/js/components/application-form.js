@@ -2,6 +2,7 @@ import { el, field } from "./dom.js";
 import { feedback } from "./feedback.js";
 import { bindValidation } from "./form-validation.js";
 import { STATUS_LABELS, localDate, formatDate } from "../format.js";
+import { versionLabel } from "../version-management.js";
 export function applicationForm({
   document: d,
   application,
@@ -30,14 +31,18 @@ export function applicationForm({
       "select",
       { id: "applicationResume" },
       el(d, "option", { value: "" }, "未记录"),
-      profiles.map((p) =>
-        el(
-          d,
-          "option",
-          { value: p.revisionId },
-          (p.profile.name || "画像") + " · " + p.revisionId,
+      profiles
+        .filter(
+          (p) => !p.archivedAt || p.revisionId === current.resumeRevisionId,
+        )
+        .map((p) =>
+          el(
+            d,
+            "option",
+            { value: p.revisionId, disabled: !!p.archivedAt },
+            versionLabel(p),
+          ),
         ),
-      ),
     ),
     applied = el(d, "input", {
       id: "appliedAt",
@@ -137,7 +142,7 @@ export function applicationForm({
       current = updated;
       renderHistory();
       validation.clear();
-      status.show("投递记录已保存");
+      status.show("投递记录已保存", false, { notify: true });
     } catch (e) {
       for (const node of Object.values(fields)) node.disabled = false;
       validation.show(e);

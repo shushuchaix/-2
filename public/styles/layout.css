@@ -214,3 +214,9 @@ th {
     max-width: 100%;
   }
 }
+.version-list {
+  min-width: 0;
+}
+.version-row .row {
+  flex-wrap: wrap;
+}

@@ -199,6 +199,7 @@ export function validateInput(kind, input, options = {}) {
   };
   switch (kind) {
     case "profile": {
+      text("versionName", input.versionName, 60);
       if (!options.partial || own(input, "text")) {
         text("text", input.text, 60000, !options.partial);
         if (
@@ -239,6 +240,7 @@ export function validateInput(kind, input, options = {}) {
       break;
     }
     case "target": {
+      text("versionName", input.versionName, 60, !!options.requireVersionName);
       ident(
         "profileRevisionId",
         input.profileRevisionId,

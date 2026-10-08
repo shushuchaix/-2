@@ -1,24 +1,27 @@
 import { el, field, list } from "./dom.js";
 import { bindValidation } from "./form-validation.js";
+import { versionLabel, submissionNonce } from "../version-management.js";
 export function targetForm({
   document: d,
   profiles = [],
   target = {},
   sourceIds = [],
+  model,
   onSave,
 }) {
+  const availableProfiles = profiles.filter((p) => !p.archivedAt);
   const form = el(d, "form", { id: "targetForm" }),
+    versionName = el(d, "input", {
+      id: "targetVersionName",
+      value: "",
+      maxLength: 60,
+    }),
     profile = el(
       d,
       "select",
       { id: "targetProfile" },
-      profiles.map((p) =>
-        el(
-          d,
-          "option",
-          { value: p.revisionId },
-          (p.profile.name || "画像") + " · " + p.revisionId,
-        ),
+      availableProfiles.map((p) =>
+        el(d, "option", { value: p.revisionId }, versionLabel(p)),
       ),
     ),
     roles = el(d, "input", {
@@ -96,7 +99,7 @@ export function targetForm({
         type: "submit",
         className: "primary",
         id: "saveTarget",
-        disabled: !profiles.length,
+        disabled: !availableProfiles.length,
       },
       target.targetId ? "保存目标新版本" : "保存检索目标",
     );
@@ -108,12 +111,22 @@ export function targetForm({
     el(d, "div", { className: "row" }, types),
     el(d, "small", {}, "必选至少一项；选择校招、实习、社招或未标类型。"),
   );
-  profile.value = target.profileRevisionId || profiles.at(-1)?.revisionId || "";
+  profile.value =
+    availableProfiles.find((p) => p.revisionId === target.profileRevisionId)
+      ?.revisionId ||
+    availableProfiles.at(-1)?.revisionId ||
+    "";
   cityMode.value = target.cityMode || "any";
   degree.value = target.degreePolicy || "eligibility";
   coverage.value = target.coverageMode || "standard";
   minDegree.value = target.minDegree || "本科";
   form.append(
+    field(
+      d,
+      "新版本名称",
+      versionName,
+      "必填 1–60 字符；同名只能保存一份。管理已有名称请使用列表中的重命名。",
+    ),
     field(
       d,
       "使用的画像版本",
@@ -172,7 +185,10 @@ export function targetForm({
     save,
   );
   const values = () => ({
-    ...target,
+    ...(target.targetId ? { targetId: target.targetId } : {}),
+    ...(target.siteIds ? { siteIds: [...target.siteIds] } : {}),
+    ...(target.budgets ? { budgets: { ...target.budgets } } : {}),
+    versionName: versionName.value,
     profileRevisionId: profile.value,
     roles: list(roles.value),
     cityMode: cityMode.value,
@@ -190,6 +206,7 @@ export function targetForm({
   const validation = bindValidation(form, {
     kind: "target",
     fields: {
+      versionName,
       profileRevisionId: profile,
       roles,
       cityMode,
@@ -203,8 +220,10 @@ export function targetForm({
     },
     values,
     options: () => ({
-      profileRevisionIds: profiles.map((p) => p.revisionId),
+      profileRevisionIds: availableProfiles.map((p) => p.revisionId),
       sourceIds,
+      model,
+      requireVersionName: true,
     }),
   });
   const updateDependentFields = () => {
@@ -214,7 +233,9 @@ export function targetForm({
   cityMode.addEventListener("change", updateDependentFields);
   degree.addEventListener("change", updateDependentFields);
   updateDependentFields();
-  let busy = false;
+  let busy = false,
+    submissionId = submissionNonce(),
+    lastInput;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (busy || !validation.check()) return;
@@ -222,13 +243,22 @@ export function targetForm({
     save.disabled = true;
     const input = values();
     input.graduationYear = year.value ? Number(year.value) : null;
+    const hash = JSON.stringify(input);
+    if (lastInput !== undefined && lastInput !== hash)
+      submissionId = submissionNonce();
+    lastInput = hash;
+    input.submissionId = submissionId;
     try {
       await onSave(input);
+      submissionId = submissionNonce();
+      lastInput = undefined;
+      versionName.value = "";
+      validation.clear();
     } catch (e) {
       validation.show(e);
     } finally {
       busy = false;
-      save.disabled = !profiles.length;
+      save.disabled = !availableProfiles.length;
     }
   });
   return form;

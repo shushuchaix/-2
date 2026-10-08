@@ -1,5 +1,6 @@
 import { validateInput } from "../validation-rules.js";
 import { el } from "./dom.js";
+import { operationError } from "../version-management.js";
 let nextId = 0;
 export function bindValidation(
   form,
@@ -129,9 +130,7 @@ export function bindValidation(
       error?.fieldErrors && typeof error.fieldErrors === "object"
         ? { ...error.fieldErrors }
         : {};
-    generic = Object.keys(current).length
-      ? ""
-      : error?.message || "操作失败，请稍后重试。";
+    generic = operationError(error || {});
     submitted = true;
     render();
     const first = Object.keys(current)

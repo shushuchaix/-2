@@ -1,5 +1,6 @@
+import { versionLabel, versionAvailability } from "../version-management.js";
 import { readAllJobs } from "../jobs-data.js";
-import { el, button, latest, field } from "../components/dom.js";
+import { el, button, field } from "../components/dom.js";
 import { feedback } from "../components/feedback.js";
 import { runProgress, runOutcomeText } from "../components/run-progress.js";
 import { diagnosticsPanel } from "../components/diagnostics-panel.js";
@@ -42,6 +43,7 @@ export function mountWorkbenchPage({ root, api, store }) {
     "aria-label": "本次更新临时模型密钥",
   });
   let targets = [],
+    profiles = [],
     destroyed = false,
     starting = false,
     streamController,
@@ -72,9 +74,10 @@ export function mountWorkbenchPage({ root, api, store }) {
         } catch (e) {
           if (destroyed || select.value !== targetRevisionId) return;
           validation.show(e);
-          start.disabled = false;
+          updateStart();
         } finally {
           starting = false;
+          updateStart();
         }
       },
       { className: "primary", id: "startRun" },
@@ -88,7 +91,7 @@ export function mountWorkbenchPage({ root, api, store }) {
             method: "POST",
             body: {},
           });
-          status.show("已请求取消，已采集数据保留。");
+          status.show("已请求取消，已采集数据保留。", false, { notify: true });
         } catch (e) {
           status.show(e.message, true);
         }
@@ -162,6 +165,13 @@ export function mountWorkbenchPage({ root, api, store }) {
     e.preventDefault();
     start.click();
   });
+  function updateStart() {
+    const selected = targets.find((t) => t.revisionId === select.value);
+    start.disabled =
+      starting ||
+      (store.getState().run && !terminal.has(store.getState().run.status)) ||
+      !versionAvailability(selected, profiles).canCollect;
+  }
   async function loadJobs() {
     const request = ++loading;
     try {
@@ -272,7 +282,7 @@ export function mountWorkbenchPage({ root, api, store }) {
         void diagnostics.refresh();
       }
       cancel.disabled = true;
-      start.disabled = false;
+      updateStart();
       await loadJobs();
       await loadHistory();
     } catch (e) {
@@ -286,6 +296,9 @@ export function mountWorkbenchPage({ root, api, store }) {
     }
   }
   const unsubscribe = store.subscribe((state) => {
+    targets = targets.map((t) => state.versions?.[t.revisionId] || t);
+    profiles = profiles.map((p) => state.versions?.[p.revisionId] || p);
+    updateStart();
     if (destroyed || !state.run) return;
     progress.replaceChildren(runProgress({ document: d, run: state.run }));
     cancel.disabled = terminal.has(state.run.status);
@@ -294,7 +307,7 @@ export function mountWorkbenchPage({ root, api, store }) {
         runOutcomeText(state.run),
         ["failed", "interrupted"].includes(state.run.status),
       );
-      start.disabled = false;
+      updateStart();
     }
   });
   async function loadHistory() {
@@ -310,9 +323,12 @@ export function mountWorkbenchPage({ root, api, store }) {
       select.value !== targetRevisionId
     )
       return [];
+    const selectedRuns = (result.runs || []).filter(
+      (r) => !r.targetRevisionId || r.targetRevisionId === targetRevisionId,
+    );
     history.replaceChildren(
       el(d, "h2", {}, "最近更新"),
-      ...(result.runs || []).slice(0, 5).map((r) =>
+      ...selectedRuns.slice(0, 5).map((r) =>
         button(d, r.createdAt + " · " + r.status, () => {
           runId = r.runId;
           store.dispatch({ type: "run-start", runId });
@@ -320,14 +336,14 @@ export function mountWorkbenchPage({ root, api, store }) {
         }),
       ),
     );
-    return result.runs || [];
+    return selectedRuns;
   }
   select.addEventListener("change", async () => {
     streamController?.abort();
     runId = null;
     diagnostics.setRunId(null);
     cancel.disabled = true;
-    start.disabled = false;
+    updateStart();
     status.show("");
     progress.replaceChildren(runProgress({ document: d, run: null }));
     const t = targets.find((t) => t.revisionId === select.value);
@@ -336,6 +352,7 @@ export function mountWorkbenchPage({ root, api, store }) {
       id: t.targetId,
       revisionId: t.revisionId,
     });
+    updateStart();
     const revisionId = select.value;
     try {
       await loadJobs();
@@ -354,10 +371,12 @@ export function mountWorkbenchPage({ root, api, store }) {
   });
   const ready = (async () => {
     try {
-      targets = latest(
-        (await api.request("/targets")).targets,
-        "targetId",
-      ).filter((t) => t.enabled !== false);
+      const [targetData, profileData] = await Promise.all([
+        api.request("/targets"),
+        api.request("/profiles"),
+      ]);
+      targets = (targetData.targets || []).filter((t) => !t.archivedAt);
+      profiles = profileData.profiles || [];
       if (destroyed) return;
       if (!targets.length) {
         start.disabled = true;
@@ -380,17 +399,15 @@ export function mountWorkbenchPage({ root, api, store }) {
       }
       select.replaceChildren(
         ...targets.map((t) =>
-          el(
-            d,
-            "option",
-            { value: t.revisionId },
-            t.roles.join(" / ") + " · v" + t.revision,
-          ),
+          el(d, "option", { value: t.revisionId }, versionLabel(t)),
         ),
       );
       select.value =
+        targets.find((t) => t.revisionId === store.getState().targetRevisionId)
+          ?.revisionId ||
         targets.find((t) => t.targetId === store.getState().selectedTargetId)
-          ?.revisionId || targets[0].revisionId;
+          ?.revisionId ||
+        targets[0].revisionId;
       const t = targets.find((t) => t.revisionId === select.value);
       store.dispatch({
         type: "target",
@@ -398,6 +415,7 @@ export function mountWorkbenchPage({ root, api, store }) {
         revisionId: t.revisionId,
       });
       progress.replaceChildren(runProgress({ document: d, run: null }));
+      updateStart();
       await loadJobs();
       const runs = await loadHistory(),
         active = runs.find((r) => !terminal.has(r.status));

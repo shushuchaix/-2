@@ -1,5 +1,11 @@
 import { readAllJobs } from "../jobs-data.js";
-import { el, button, latest, message, field } from "../components/dom.js";
+import { el, message, field } from "../components/dom.js";
+import { versionList } from "../components/version-list.js";
+import {
+  upsertVersion,
+  versionAvailability,
+  operationError,
+} from "../version-management.js";
 import { feedback } from "../components/feedback.js";
 import { profileForm } from "../components/profile-form.js";
 import { targetForm } from "../components/target-form.js";
@@ -12,7 +18,10 @@ export function mountProfilesPage({ root, api, store }) {
     targets = [],
     sourceIds = [],
     previewBusy = false,
-    editingProfileId;
+    editingProfileId,
+    editingTarget,
+    model,
+    versionLists;
   const status = feedback(d),
     confirmed = el(d, "section", { className: "card stack" }),
     targetRoot = el(d, "section", { className: "card" }),
@@ -110,8 +119,11 @@ export function mountProfilesPage({ root, api, store }) {
             { method: "POST", body: input },
           );
           if (destroyed) return;
-          profiles.push(saved);
-          status.show("画像已保存：" + saved.revisionId);
+          profiles = upsertVersion(profiles, saved);
+          store.dispatch({ type: "versionUpdated", version: saved });
+          status.show("画像已保存：" + saved.versionName, false, {
+            notify: true,
+          });
           renderTargets();
           renderHistory();
         },
@@ -119,12 +131,14 @@ export function mountProfilesPage({ root, api, store }) {
     );
   }
   function renderTargets(target) {
+    editingTarget = target;
     targetRoot.replaceChildren(
       el(d, "h2", {}, "3. 检索目标"),
       targetForm({
         document: d,
         profiles,
         sourceIds,
+        model,
         target,
         onSave: async (input) => {
           status.show("");
@@ -134,101 +148,120 @@ export function mountProfilesPage({ root, api, store }) {
             { method: input.targetId ? "PUT" : "POST", body: input },
           );
           if (destroyed) return;
-          targets.push(saved);
+          targets = upsertVersion(targets, saved);
           store.dispatch({
             type: "target",
             id: saved.targetId,
             revisionId: saved.revisionId,
           });
-          status.show("目标已保存：" + saved.revisionId);
+          status.show("目标已保存：" + saved.versionName, false, {
+            notify: true,
+          });
           renderTargets(saved);
           renderHistory();
         },
       }),
     );
   }
+  async function manage(kind, v, method, suffix = "", body) {
+    const saved = await api.request(
+      "/" +
+        kind +
+        "s/" +
+        encodeURIComponent(v[kind + "Id"]) +
+        "/revisions/" +
+        encodeURIComponent(v.revisionId) +
+        suffix,
+      { method, ...(body ? { body } : {}) },
+    );
+    if (destroyed) return;
+    if (suffix === "/permanent") {
+      if (kind === "profile")
+        profiles = profiles.filter((x) => x.revisionId !== v.revisionId);
+      else targets = targets.filter((x) => x.revisionId !== v.revisionId);
+    } else {
+      if (kind === "profile") profiles = upsertVersion(profiles, saved);
+      else targets = upsertVersion(targets, saved);
+      store.dispatch({ type: "versionUpdated", version: saved });
+    }
+    renderHistory();
+    if (kind === "profile") renderTargets(editingTarget);
+    const label =
+      suffix === "/restore"
+        ? "已恢复"
+        : suffix === "/permanent"
+          ? "已永久删除"
+          : method === "DELETE"
+            ? "已移入回收站"
+            : body?.versionName
+              ? "名称已更新"
+              : body?.enabled
+                ? "已启用"
+                : "已停用";
+    status.show(
+      label + "：" + (saved.versionName || v.versionName || v.revisionId),
+      false,
+      { notify: true },
+    );
+  }
   function renderHistory() {
+    if (versionLists) {
+      versionLists.profile.update(profiles);
+      versionLists.target.update(targets);
+      return;
+    }
     history.replaceChildren(el(d, "h2", {}, "已保存的版本"));
-    if (!profiles.length)
-      history.append(el(d, "p", { className: "muted" }, "还没有确认画像。"));
-    for (const p of profiles)
-      history.append(
-        el(
-          d,
-          "div",
-          { className: "row" },
-          button(d, (p.profile.name || "画像") + " · " + p.revisionId, () =>
-            showProfile({ ...p, warnings: [] }, p.profileId),
-          ),
-          button(d, "删除版本", async () => {
-            try {
-              await api.request(
-                "/profiles/" +
-                  encodeURIComponent(p.profileId) +
-                  "/revisions/" +
-                  encodeURIComponent(p.revisionId),
-                { method: "DELETE" },
-              );
-              profiles = profiles.filter((x) => x.revisionId !== p.revisionId);
-              renderHistory();
-              renderTargets();
-              status.show("版本已删除");
-            } catch (e) {
-              status.show(
-                "不能删除：该版本可能被目标或投递记录引用。" + e.message,
-                true,
-              );
-            }
-          }),
-        ),
-      );
-    for (const t of latest(targets, "targetId"))
-      history.append(
-        el(
-          d,
-          "div",
-          { className: "row" },
-          button(
-            d,
-            t.roles.join(" / ") +
-              " · " +
-              t.revisionId +
-              (t.enabled === false ? " · 已停用" : ""),
-            () => renderTargets(t),
-          ),
-          button(d, t.enabled === false ? "启用" : "停用", async () => {
-            try {
-              const saved = await api.request("/targets/" + t.targetId, {
-                method: "PATCH",
-                body: { enabled: t.enabled === false },
-              });
-              targets.push(saved);
-              renderHistory();
-              status.show("目标新版本已保存，历史保留");
-            } catch (e) {
-              status.show(e.message, true);
-            }
-          }),
-          button(d, "对保存岗位重新评分", async () => {
-            try {
-              const data = await readAllJobs(api);
-              for (let i = 0; i < data.items.length; i += 5000)
-                await api.request("/jobs/evaluations", {
-                  method: "POST",
-                  body: {
-                    jobIds: data.items.slice(i, i + 5000).map((x) => x.jobId),
-                    profileRevisionId: t.profileRevisionId,
-                    targetRevisionId: t.revisionId,
-                    mode: "rules",
-                  },
+    versionLists = {};
+    for (const kind of ["profile", "target"]) {
+      const component = versionList(d, {
+        kind,
+        versions: kind === "profile" ? profiles : targets,
+        onSelect: (v) =>
+          kind === "profile"
+            ? showProfile({ ...v, warnings: [] }, v.profileId)
+            : renderTargets(v),
+        onRename: (v, name) =>
+          manage(kind, v, "PATCH", "", { versionName: name }),
+        onToggle:
+          kind === "target"
+            ? (v) =>
+                manage(kind, v, "PATCH", "", { enabled: v.enabled === false })
+            : undefined,
+        onArchive: (v) => manage(kind, v, "DELETE"),
+        onRestore: (v) => manage(kind, v, "POST", "/restore"),
+        onPermanentDelete: (v) => manage(kind, v, "DELETE", "/permanent"),
+        canRescore: (v) => versionAvailability(v, profiles).canRescore,
+        onRescore:
+          kind === "target"
+            ? async (t) => {
+                const data = await readAllJobs(api, {
+                  targetRevisionId: t.revisionId,
                 });
-              status.show("已按 " + t.revisionId + " 重新评分；未重新采集。");
-            } catch (e) {
-              status.show("重新评分失败：" + e.message, true);
-            }
-          }),
-        ),
-      );
+                for (let i = 0; i < data.items.length; i += 5000)
+                  await api.request("/jobs/evaluations", {
+                    method: "POST",
+                    body: {
+                      jobIds: data.items.slice(i, i + 5000).map((x) => x.jobId),
+                      profileRevisionId: t.profileRevisionId,
+                      targetRevisionId: t.revisionId,
+                      mode: "rules",
+                    },
+                  });
+                status.show(
+                  "已按 " +
+                    t.versionName +
+                    " 重新评分：" +
+                    data.items.length +
+                    " 条",
+                  false,
+                  { notify: true },
+                );
+              }
+            : undefined,
+      });
+      versionLists[kind] = component;
+      history.append(component.node);
+    }
   }
   previewForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -254,7 +287,7 @@ export function mountProfilesPage({ root, api, store }) {
       });
       if (!destroyed) {
         showProfile(result);
-        status.show("预览已生成，请校正后确认保存。");
+        status.show("预览已生成，请校正后确认保存。", false, { notify: true });
       }
     } catch (e) {
       if (!destroyed) previewValidation.show(e);
@@ -265,12 +298,14 @@ export function mountProfilesPage({ root, api, store }) {
   });
   const ready = (async () => {
     try {
-      const [p, t, catalog] = await Promise.all([
+      const [p, t, catalog, settings] = await Promise.all([
         api.request("/profiles", { signal: controller.signal }),
         api.request("/targets", { signal: controller.signal }),
         api.request("/sources", { signal: controller.signal }),
+        api.request("/settings", { signal: controller.signal }),
       ]);
       if (destroyed) return;
+      model = (settings?.settings || settings)?.model;
       profiles = p.profiles;
       targets = t.targets;
       sourceIds = (catalog?.sources || []).map((s) => s.sourceId);

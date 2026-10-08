@@ -267,7 +267,18 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
-      ...(SELF_TEST ? { backgroundThrottling: false, offscreen: true } : {}),
+      ...(SELF_TEST
+        ? {
+            backgroundThrottling: false,
+            // Electron 42+ OSR defaults to 1 independently of the display CLI flag.
+            offscreen: {
+              deviceScaleFactor: Number(
+                app.commandLine.getSwitchValue("force-device-scale-factor") ||
+                  "1",
+              ),
+            },
+          }
+        : {}),
       // 界面只与本机内置服务通信，无需任何额外权限
       webSecurity: true,
     },
@@ -324,6 +335,7 @@ async function createWindow() {
         selfTestRendererErrors.push({
           code: "renderer_console_error",
           message: String(details.message).slice(0, 500),
+          phase: mainWindow.__selfTestPhase || "startup",
         });
     });
   }

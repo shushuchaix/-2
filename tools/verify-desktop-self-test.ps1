@@ -1,4 +1,4 @@
-param([string]$ExePath = '', [double[]]$Scales = @(1, 1.25, 1.5))
+﻿param([string]$ExePath = '', [double[]]$Scales = @(1, 1.25, 1.5))
 $ErrorActionPreference = 'Stop'
 $workspacePath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (!$ExePath) { $ExePath = Join-Path $workspacePath 'dist/简历岗位雷达-win32-x64/简历岗位雷达.exe' }

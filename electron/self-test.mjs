@@ -306,6 +306,17 @@ export async function runWorkspaceSelfTest({
       `document.querySelector('h1')?.textContent.trim()===${JSON.stringify(label)}`,
     );
   };
+  const resizeViewport = async (width, height = 900) => {
+    let requested = width;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      window.setContentSize(requested, height);
+      await delay(250);
+      const actual = await js("innerWidth");
+      if (actual === width) return;
+      requested += width - actual;
+    }
+    throw Error("self_test_viewport_width_mismatch: " + width);
+  };
   const api = async (route, body, method) => {
     const response = await fetch(origin + "/api/v2" + route, {
       method: method || (body === undefined ? "GET" : "POST"),
@@ -331,6 +342,7 @@ export async function runWorkspaceSelfTest({
   };
   const phase = async (name, fn) => {
     console.log("[self-test] " + name);
+    window.__selfTestPhase = name;
     try {
       await fn();
       results.push({ name, ok: true });
@@ -457,6 +469,11 @@ export async function runWorkspaceSelfTest({
       await navigate("岗位库");
       await click("查看岗位");
       await wait(textHas("本版本招聘事实"));
+      await wait(textHas("当前评价依据"));
+      check(
+        "真实规则评价显示资格核对与评分组成",
+        (await js(textHas("资格核对"))) && (await js(textHas("评分组成"))),
+      );
       await delay(250);
       check(
         "Sheet 焦点位于弹层",
@@ -485,8 +502,49 @@ export async function runWorkspaceSelfTest({
     });
     await phase("取消任务与切换版本竞态隔离", async () => {
       controls.hold = true;
+      const originalStart = context.runService.startRun;
+      let releaseStart;
+      context.runService.startRun = async (...args) => {
+        await new Promise((resolve) => (releaseStart = resolve));
+        return originalStart(...args);
+      };
+      try {
+        await navigate("工作台");
+        await click("更新岗位");
+        for (let attempt = 0; !releaseStart && attempt < 100; attempt++)
+          await delay(20);
+        if (!releaseStart) throw Error("self_test_start_not_entered");
+        await navigate("岗位库");
+        await navigate("工作台");
+        check(
+          "未提交启动跨页返回时禁止重复提交",
+          await js(
+            "[...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='更新岗位')?.disabled === true",
+          ),
+        );
+        releaseStart();
+        await wait(`Boolean(${locate("取消任务")})`);
+        check("延迟提交的后台任务已在原版本恢复", true);
+      } finally {
+        context.runService.startRun = originalStart;
+        releaseStart?.();
+      }
+      const heldRunCount = countRecords(
+        await context.repository.read(),
+        a.packageId,
+        "runs",
+      );
+      await navigate("岗位库");
       await navigate("工作台");
-      await click("更新岗位");
+      await wait(`Boolean(${locate("取消任务")})`);
+      check(
+        "导航回来恢复活跃任务并禁用重复启动",
+        (await js(
+          "[...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='更新岗位')?.disabled === true",
+        )) &&
+          countRecords(await context.repository.read(), a.packageId, "runs") ===
+            heldRunCount,
+      );
       await click("取消任务");
       await wait(textHas("任务已取消"));
       controls.hold = false;
@@ -540,8 +598,7 @@ export async function runWorkspaceSelfTest({
       );
       await click("关闭预览");
       for (const width of [375, 768, 1024, 1440]) {
-        window.setContentSize(width, 900);
-        await delay(250);
+        await resizeViewport(width);
         const geometry = await js(
           "({width:innerWidth,dpr:devicePixelRatio,overflow:document.documentElement.scrollWidth>innerWidth+1})",
         );
@@ -667,6 +724,44 @@ export async function runWorkspaceSelfTest({
         ),
       );
     });
+    await phase("真实窗口后退与完整刷新恢复版本和筛选", async () => {
+      await navigate("岗位库");
+      await input("搜索岗位", "消防");
+      await wait(
+        "new URLSearchParams(location.hash.split('?')[1]).get('search')==='消防'",
+      );
+      await navigate("投递进度");
+      window.webContents.goBack();
+      await wait(
+        "document.querySelector('h1')?.textContent==='岗位库'&&document.getElementById('job-search')?.value==='消防'",
+      );
+      check(
+        "真实后退恢复岗位筛选",
+        await js(
+          "new URLSearchParams(location.hash.split('?')[1]).get('packageId')===" +
+            JSON.stringify(a.packageId),
+        ),
+      );
+      window.webContents.reload();
+      await wait(
+        "document.querySelector('h1')?.textContent==='岗位库'&&document.getElementById('job-search')?.value==='消防'",
+      );
+      await wait(
+        "document.querySelector('[aria-label=当前目标]')?.textContent.includes(" +
+          JSON.stringify(a.versionName) +
+          ")",
+      );
+      check(
+        "真实刷新恢复准确版本和筛选",
+        await js(
+          "new URLSearchParams(location.hash.split('?')[1]).get('targetRevisionId')===" +
+            JSON.stringify(a.revisionId),
+        ),
+      );
+      await js(
+        "window.__rjrSelfTestIssues=[];window.addEventListener('securitypolicyviolation',e=>window.__rjrSelfTestIssues.push({code:'csp_violation',directive:e.violatedDirective}));window.addEventListener('error',()=>window.__rjrSelfTestIssues.push({code:'renderer_error'}));window.addEventListener('unhandledrejection',()=>window.__rjrSelfTestIssues.push({code:'renderer_rejection'}));",
+      );
+    });
     const archive = async (name, kind = "求职目标") => {
       await navigate(kind);
       await click("版本操作", { card: name });
@@ -762,8 +857,7 @@ export async function runWorkspaceSelfTest({
     });
     await phase("响应式窗口、长中文与字体放大截图", async () => {
       for (const width of [375, 768, 1024, 1440]) {
-        window.setContentSize(width, 900);
-        await delay(200);
+        await resizeViewport(width);
         await js("location.hash='#/settings'");
         await wait("document.querySelector('h1')?.textContent==='设置'");
         await wait("Boolean(document.getElementById('model.model'))");

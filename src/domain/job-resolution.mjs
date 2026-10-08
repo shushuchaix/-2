@@ -1,11 +1,14 @@
 import { inputError } from "../../public/js/validation-rules.js";
+import {packageError} from './packages.mjs';
 function redirected(w, id) {
   const seen = new Set();
   while (w.jobRedirects?.[id]) {
     if (seen.has(id) || seen.size > Object.keys(w.jobRedirects).length)
       throw Error("Invalid cyclic job redirect");
     seen.add(id);
-    id = w.jobRedirects[id].toJobId;
+    const redirect=w.jobRedirects[id],owner=redirect.ownerPackageId;
+    id = redirect.toJobId;
+    if(w.schemaVersion===3&&owner&&w.jobs[id]&&w.jobs[id].ownerPackageId!==owner)throw packageError('package_scope_mismatch','岗位重定向跨越了数据包。');
   }
   return w.jobs[id] ? id : null;
 }

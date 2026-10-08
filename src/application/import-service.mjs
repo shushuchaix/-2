@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import {assertScope} from '../domain/packages.mjs';
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { parseHTML } from "linkedom";
@@ -26,11 +27,12 @@ export function createImportService({
   operationGate = createWorkspaceOperationGate({ repository }),
 }) {
   return {
-    async import(input, { operationLease: parentLease, signal } = {}) {
+    async import(input, { scope, operationLease: parentLease, signal } = {}) {
+      const initial=await repository.read();if(initial.schemaVersion===3){assertScope(initial,scope,clock.now());input={...input,targetRevisionId:scope.targetRevisionId};}
       assertInput("import", input);
       return operationGate.withOperation(
         "import",
-        { targetRevisionId: input.targetRevisionId, parentLease, signal },
+        { scope, targetRevisionId: input.targetRevisionId, parentLease, signal },
         async (operationLease) => {
           let url = null;
           try {
@@ -108,8 +110,11 @@ export function createImportService({
               },
             ],
           });
+          const runId="import-"+randomUUID();
+          if(initial.schemaVersion===3)await repository.mutateWorkspace(w=>{assertScope(w,scope,clock.now());w.runs[runId]={runId,recordId:randomUUID(),ownerPackageId:scope.packageId,targetSnapshot:structuredClone(Object.values(w.targets).flat().find(t=>t.revisionId===scope.targetRevisionId)),status:'completed',stage:'manual_import',events:[],lastSeq:0};},{operationLease});
           const result = await jobService.ingestRecords({
-            runId: "import-" + randomUUID(),
+            runId,
+            scope,
             records: [record],
             observedAt: at,
             targetRevisionId: input.targetRevisionId,
@@ -117,9 +122,9 @@ export function createImportService({
           });
           if (Object.hasOwn(input, "note"))
             for (const id of result.jobIds)
-              await jobService.updateApplication(id, {
+              await jobService[initial.schemaVersion===3?'updateJobApplication':'updateApplication'](id, {
                 note: String(input.note),
-              });
+              },scope);
           issues.push({
             code: "notice_requires_verification",
             message: "导入内容保留为招聘公告，具体岗位和账号归属需核实。",

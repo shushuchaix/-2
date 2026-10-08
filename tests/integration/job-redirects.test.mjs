@@ -12,6 +12,7 @@ import {
   AT,
 } from "../helpers/fixtures.mjs";
 import { snapshotToLegacy, loadRun } from "../../src/pipeline.mjs";
+import {packageBusinessFixture} from '../helpers/package-business-fixture.mjs';
 async function fixture(t) {
   const f = await apiFixture(t),
     ctx = await f.ctx.ready,
@@ -206,9 +207,11 @@ test("SSE replay and legacy snapshots keep original run facts with current manua
   assert.equal(legacy.jobs[0].tracking.status, "applied");
   assert.equal(snap.jobs[0].jobId, "old");
 });
-test("standalone store preserves legacy associations across old-ID writes and repeated ingestion", async (t) => {
-  const { ctx, keptId } = await fixture(t);
-  const script = `import assert from 'node:assert/strict';const store=await import('./src/store.mjs');let index=await store.loadIndex();assert.equal(Object.keys(index.jobs).length,1);assert.equal(Object.values(index.jobs)[0].note,'保留合成旧备注');await store.setStatus('old','interviewing');index=await store.loadIndex();Object.values(index.jobs)[0].note='独立入口修改';await store.saveIndex(index);const input=${JSON.stringify(job({ id: "source-alias" }))};const diff=await store.upsert([input,input],{runId:'standalone'});assert.equal(diff.stats.ongoing,1);assert.equal(diff.stats.added,0);const annotated=await store.annotate([{id:'old'}],diff);assert.equal(annotated.jobs[0].tracking.status,'interviewing');assert.equal((await store.summary()).byStatus.interviewing,1);`;
+test("standalone store preserves scoped aliases and refuses peer writes or unscoped summaries", async (t) => {
+  const f=await packageBusinessFixture(t),{a,b}=await f.twoTargets(),[keptId]=await f.ingest(a,[job()]),[peerId]=await f.ingest(b,[job()]);
+  await f.jobs.updateJobApplication(keptId,{status:'applied',note:'保留合成旧备注'},a);await f.repository.mutateWorkspace(w=>{w.identityAliases.old=[keptId];});
+  const scope={packageId:a.packageId,targetRevisionId:a.targetRevisionId},peer={packageId:b.packageId,targetRevisionId:b.targetRevisionId};
+  const script = `import assert from 'node:assert/strict';const store=await import('./src/store.mjs'),scope=${JSON.stringify(scope)},peer=${JSON.stringify(peer)};let index=await store.loadIndex({scope});assert.equal(Object.keys(index.jobs).length,1);assert.equal(Object.values(index.jobs)[0].note,'保留合成旧备注');await assert.rejects(()=>store.loadIndex(),{code:'version_scope_required'});await assert.rejects(()=>store.setStatus('old','applied',undefined,{scope:peer}));await store.setStatus('old','interviewing',undefined,{scope});index=await store.loadIndex({scope});Object.values(index.jobs)[0].note='独立入口修改';await store.saveIndex(index,{scope});const input=${JSON.stringify(job({ id: "source-alias" }))};const diff=await store.upsert([input,input],{runId:'standalone',scope});assert.equal(diff.stats.ongoing,1);assert.equal(diff.stats.added,0);const annotated=await store.annotate([{id:'old'}],diff,{scope});assert.equal(annotated.jobs[0].tracking.status,'interviewing');assert.equal((await store.summary({scope})).byStatus.interviewing,1);`;
   const child = spawn(
     process.execPath,
     [
@@ -218,16 +221,18 @@ test("standalone store preserves legacy associations across old-ID writes and re
       "-e",
       script,
     ],
-    { env: { ...process.env, RJR_DATA_DIR: ctx.repository.dataDir } },
+    { env: { ...process.env, RJR_DATA_DIR: f.repository.dataDir } },
   );
   let stderr = "";
   child.stderr.on("data", (v) => (stderr += v));
   const code = await new Promise((resolve) => child.on("exit", resolve));
   assert.equal(code, 0, stderr);
-  const w = await ctx.repository.read();
-  assert.equal(Object.keys(w.jobs).length, 1);
-  assert.equal(w.applications.legacy.note, "独立入口修改");
-  assert.equal(w.applications.legacy.status, "interviewing");
+  const w = await f.repository.read();
+  assert.equal(Object.keys(w.jobs).length, 2);
+  const application=Object.values(w.applications).find(a=>a.jobId===keptId);
+  assert.equal(application.note, "独立入口修改");
+  assert.equal(application.status, "interviewing");
+  assert.equal((await f.jobs.getJob(peerId,b)).application.status,'new');
   assert.equal(w.jobs[keptId].jobId, keptId);
 });
 test("archived v1 run projects current status while its saved result remains unchanged", async (t) => {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { jobBusinessContent } from "./job-duplicates.mjs";
 import { resolveJobId, jobIdMatches } from "./job-resolution.mjs";
+import {packageError} from './packages.mjs';
 const hash = (v) =>
   createHash("sha256")
     .update(typeof v === "string" ? v : JSON.stringify(v))
@@ -52,6 +53,7 @@ export function addTargetMemberFact(
   if (!target)
     throw Object.assign(Error("Target revision not found"), { status: 400 });
   jobId = resolveJobId(w, jobId);
+  if(w.schemaVersion===3){const owner=w.jobs[jobId]?.ownerPackageId||w._scope?.packageId;if(owner!==target.ownerPackageId||(observationId&&(w.observations[observationId]?.ownerPackageId||w._scope?.packageId)!==owner))throw packageError('package_scope_mismatch','岗位事实只能归入自有目标包。');}
   w.targetMembers ||= {};
   const members = (w.targetMembers[targetRevisionId] ||= {});
   const member = (members[jobId] ||= {

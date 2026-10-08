@@ -1,13 +1,25 @@
 import { createJobService } from "./job-service.mjs";
 import { assertInput } from "../../public/js/validation-rules.js";
 import { redactBusiness, csvCell } from "../domain/redact.mjs";
+import { assertScope, packageError } from "../domain/packages.mjs";
 export function createExportService({ repository }) {
   return {
-    async export({ format = "json", filters = {} } = {}) {
+    async export({ format = "json", filters = {}, scope } = {}) {
+      const snapshot = await repository.read();
+      if(snapshot.schemaVersion===3){
+        const selected=scope||filters;
+        if(selected.allTargets===true){
+          if(selected.packageId||selected.targetRevisionId||filters.packageId||filters.targetRevisionId)throw packageError('package_scope_mismatch','全部目标与具体版本范围不能同时导出。');
+          filters={...filters,allTargets:true};
+        }else{
+          if(filters.allTargets)throw packageError('package_scope_mismatch','导出范围与筛选条件不一致。');
+          assertScope(snapshot,selected,repository.clock.now());
+          filters={...filters,packageId:selected.packageId,targetRevisionId:selected.targetRevisionId};
+        }
+      }
       assertInput("export", { format: format === "markdown" ? "md" : format });
       assertInput("filters", filters);
       if (format === "md") format = "markdown";
-      const snapshot = await repository.read();
       const service = createJobService({
         repository: { ...repository, read: async () => snapshot },
       });

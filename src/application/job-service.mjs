@@ -1,4 +1,5 @@
 import { contentHash } from "../infrastructure/storage/repository.mjs";
+import { createPackageJobService } from "./package-job-service.mjs";
 import {
   assertInput,
   inputError,
@@ -35,7 +36,7 @@ const date = (v) => {
 export function resolveStoredJobId(w, id) {
   return resolveJobId(w, id);
 }
-export function createJobService({ repository, clock = repository.clock }) {
+function createLegacyJobService({ repository, clock = repository.clock }) {
   const now = () => new Date(clock.now()).toISOString();
   const group = (w, a, b, manual = false) => {
     const ids = [a, b].sort();
@@ -123,7 +124,7 @@ export function createJobService({ repository, clock = repository.clock }) {
                   jobBusinessFingerprint(record),
             );
             if (!stored) {
-              let jobId = "j-" + contentHash(identity.key).slice(0, 24);
+              let jobId = "j-" + contentHash(w._scope ? [w._scope.packageId,identity.key] : identity.key).slice(0, 24);
               if (w.jobs[jobId]) jobId += "-" + jobBusinessFingerprint(record);
               if (w.jobs[jobId]) throw Error("Unresolved identity collision");
               stored = {
@@ -709,4 +710,11 @@ export function createJobService({ repository, clock = repository.clock }) {
       ).result;
     },
   };
+}
+export function createJobService(options) {
+  const legacy=createLegacyJobService(options),scoped=createPackageJobService({...options,legacyFactory:createLegacyJobService});
+  return Object.fromEntries([...new Set([...Object.keys(legacy),...Object.keys(scoped)])].map(name=>[name,async(...args)=>{
+    const w=await options.repository.read();const implementation=w.schemaVersion===3?scoped:legacy;
+    if(!implementation[name])throw Object.assign(Error('该入口需要准确的目标版本。'),{code:'version_scope_required',status:409});return implementation[name](...args);
+  }]));
 }

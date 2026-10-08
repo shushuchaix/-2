@@ -31,6 +31,60 @@ test("fact hashes ignore runtime IDs and preserve exact business text", async ()
     jobFactHash(job({ description: job().description + " " })),
   );
 });
+test("identical facts in independent authority jobs persist separate scores while retries reuse each entity", async (t) => {
+  const repository = await tempRepository(t),
+    ws = createWorkspaceService({ repository }),
+    jobs = createJobService({ repository }),
+    service = createEvaluationService({ repository, cache: new Map() });
+  const p = await ws.saveProfile({ profile: profile() });
+  const tar = await ws.saveTarget(
+    namedTargetInput({ ...target(), profileRevisionId: p.revisionId }),
+  );
+  const { jobIds: ids } = await jobs.ingestRecords({
+    runId: "synthetic-cache",
+    targetRevisionId: tar.revisionId,
+    records: [
+      job({ sourceRecordId: "authority-a" }),
+      job({ sourceRecordId: "authority-b" }),
+    ],
+  });
+  assert.equal(new Set(ids).size, 2);
+  const input = {
+    profileRevisionId: p.revisionId,
+    targetRevisionId: tar.revisionId,
+    mode: "rules",
+  };
+  const first = (await service.evaluate({ ...input, jobIds: [ids[0]] }))
+    .evaluations[0];
+  const second = (await service.evaluate({ ...input, jobIds: [ids[1]] }))
+    .evaluations[0];
+  assert.notEqual(second.evaluationId, first.evaluationId);
+  assert.equal(Object.keys((await repository.read()).evaluations).length, 2);
+  assert.ok(
+    (await jobs.queryJobs({ targetRevisionId: tar.revisionId })).items.every(
+      (i) => i.evaluation?.jobId === i.jobId,
+    ),
+  );
+  for (const [id, saved] of [
+    [ids[0], first],
+    [ids[1], second],
+  ]) {
+    assert.equal(
+      (await service.evaluate({ ...input, jobIds: [id] })).evaluations[0]
+        .evaluationId,
+      saved.evaluationId,
+    );
+    assert.equal(
+      (
+        await createEvaluationService({ repository }).evaluate({
+          ...input,
+          jobIds: [id],
+        })
+      ).evaluations[0].evaluationId,
+      saved.evaluationId,
+    );
+  }
+});
 test("legacy evaluation basis validates original IDs and three historical hash formats", async () => {
   const { resolveEvaluationFactBasis, jobFactHash } = await import(
     "../../src/domain/job-facts.mjs"

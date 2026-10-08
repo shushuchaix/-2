@@ -39,6 +39,53 @@ function clickText(node, text) {
   assert.ok(b, text);
   b.click();
 }
+test("restoring a profile recomputes its target rescore action despite stale server availability", async () => {
+  let current = {
+    ...profile,
+    archivedAt: "2026-10-08",
+    availability: {
+      canCollect: false,
+      canRescore: false,
+      reasonCode: "profile_archived",
+    },
+  };
+  const t = {
+    ...base,
+    revisionId: "t1@1",
+    revision: 1,
+    versionName: "消防",
+    availability: {
+      canCollect: false,
+      canRescore: false,
+      reasonCode: "profile_archived",
+    },
+  };
+  const f = uiFixture((path, options) => {
+    if (path === "/profiles") return { profiles: [current] };
+    if (path === "/targets") return { targets: [t] };
+    if (path === "/sources") return { sources: [] };
+    if (path === "/settings") return { settings: { model } };
+    if (path.endsWith("/restore"))
+      return (current = { ...profile, archivedAt: null });
+    if (options.method === "DELETE")
+      return (current = { ...profile, archivedAt: "2026-10-08" });
+    return {};
+  });
+  const page = mountProfilesPage(f);
+  await page.ready;
+  const rescore = () =>
+    [...row(f, "t1@1").querySelectorAll("button")].find((b) =>
+      b.textContent.includes("重新评分"),
+    );
+  assert.equal(rescore().disabled, true);
+  clickText(row(f, "p1@1"), "恢复");
+  await f.settle();
+  assert.equal(rescore().disabled, false);
+  clickText(row(f, "p1@1"), "移入回收站");
+  await f.settle();
+  assert.equal(rescore().disabled, true);
+  page.destroy();
+});
 test("all versions stay visible; toggle uses exact revision, editing creates a clean named version once", async () => {
   let release;
   const pending = new Promise((r) => (release = r));

@@ -805,6 +805,35 @@ async function runWorkspaceSelfTest(check) {
     redirected.jobId === mainId &&
       redirected.application.note === "合成人工记录",
   );
+  await applicationContext.repository.mutateWorkspace((w) => {
+    w.runs["desktop-other-version"] = {
+      runId: "desktop-other-version",
+      createdAt: new Date().toISOString(),
+      status: "running",
+      stage: "collecting",
+      targetSnapshot: structuredClone(
+        w.targets[target.targetId].find(
+          (t) => t.revisionId === target.revisionId,
+        ),
+      ),
+      counts: {},
+      usage: {},
+      coverage: [],
+      issues: [],
+      lastSeq: 0,
+    };
+  });
+  await js('location.hash="#/workbench"');
+  check(
+    "桌面工作台仅连接所选冻结版本任务",
+    await waitRenderer(
+      `document.getElementById("workbenchTarget")?.value===${JSON.stringify(upgraded.revisionId)}&&document.getElementById("cancelRun")?.disabled===true&&!document.getElementById("startRun")?.disabled`,
+    ),
+  );
+  await applicationContext.repository.mutateWorkspace((w) => {
+    w.runs["desktop-other-version"].status = "completed";
+    w.runs["desktop-other-version"].stage = "finished";
+  });
   await localCall(
     "/profiles/" +
       p.profileId +
@@ -813,19 +842,30 @@ async function runWorkspaceSelfTest(check) {
     undefined,
     "DELETE",
   );
+  // The synthetic API archive bypasses the page's normal versionUpdated event.
+  // Mount a fresh page before testing the workbench's current availability.
+  await js('location.hash="#/profiles"');
+  await waitRenderer(
+    `(()=>{const row=document.querySelector('[data-revision-id="${p.revisionId}"]');return row&&[...row.querySelectorAll('button')].some(b=>b.textContent==='恢复')})()`,
+  );
   await js('location.hash="#/workbench"');
   await waitRenderer('!!document.querySelector("#workbenchTarget option")');
   check(
     "桌面回收站画像阻止真实开始按钮",
     await js('document.getElementById("startRun").disabled===true'),
   );
-  await localCall(
-    "/profiles/" +
-      p.profileId +
-      "/revisions/" +
-      encodeURIComponent(p.revisionId) +
-      "/restore",
-    {},
+  await js('location.hash="#/profiles"');
+  await waitRenderer(
+    `!!document.querySelector('[data-revision-id="${p.revisionId}"]')&&!!document.querySelector('[data-revision-id="${upgraded.revisionId}"]')`,
+  );
+  await js(
+    `[...document.querySelector('[data-revision-id="${p.revisionId}"]').querySelectorAll('button')].find(b=>b.textContent==='恢复').click()`,
+  );
+  check(
+    "桌面真实恢复简历后重评分按钮立即可用",
+    await waitRenderer(
+      `(()=>{const row=document.querySelector('[data-revision-id="${upgraded.revisionId}"]');return row&&[...row.querySelectorAll('button')].find(b=>b.textContent.includes('重新评分'))?.disabled===false})()`,
+    ),
   );
 }
 

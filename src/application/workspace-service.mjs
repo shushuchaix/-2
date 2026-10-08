@@ -80,12 +80,13 @@ export function createWorkspaceService({
                 "availability",
                 "nameKey",
                 "kind",
+                "references",
               ].includes(k),
           ),
         ),
       ),
     );
-  function replay(w, input, kind) {
+  function replay(w, input, kind, submissionInput = input) {
     if (!input.submissionId) return null;
     if (
       typeof input.submissionId !== "string" ||
@@ -94,7 +95,7 @@ export function createWorkspaceService({
       throw inputError({ submissionId: "提交标识无效，请重新提交。" });
     const prior = w.versionSubmissions[kind + ":" + input.submissionId];
     if (!prior) return null;
-    if (prior.inputHash !== requestHash(input))
+    if (prior.inputHash !== requestHash(submissionInput))
       throw Object.assign(
         inputError(
           { submissionId: "同一提交标识内容已变化，请重新提交。" },
@@ -119,7 +120,7 @@ export function createWorkspaceService({
       );
     return view(w, saved, kind);
   }
-  function register(w, input, item, kind) {
+  function register(w, input, item, kind, submissionInput = input) {
     const name =
       input.versionName ||
       (kind === "profile"
@@ -139,7 +140,7 @@ export function createWorkspaceService({
     if (input.submissionId)
       w.versionSubmissions[kind + ":" + input.submissionId] = {
         revisionId: item.revisionId,
-        inputHash: requestHash(input),
+        inputHash: requestHash(submissionInput),
       };
     return view(w, item, kind);
   }
@@ -294,14 +295,14 @@ export function createWorkspaceService({
         })
       ).result;
     },
-    async saveTarget(input) {
+    async saveTarget(input, { submissionInput = input } = {}) {
       normalizeVersionName(input.versionName);
       const model =
         typeof modelConfig === "function" ? modelConfig() : modelConfig;
       return (
         await repository.mutateWorkspace((w) => {
           ensure(w);
-          const prior = replay(w, input, "target");
+          const prior = replay(w, input, "target", submissionInput);
           if (prior) return prior;
           assertInput("target", input, {
             nativeTypes: true,
@@ -374,7 +375,7 @@ export function createWorkspaceService({
             createdAt: now(),
           };
           w.targets[targetId] = [...list, item];
-          return register(w, input, item, "target");
+          return register(w, input, item, "target", submissionInput);
         })
       ).result;
     },

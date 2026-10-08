@@ -4,6 +4,7 @@ import { tempRepository } from "../helpers/repository.mjs";
 import { createWorkspaceService } from "../../src/application/workspace-service.mjs";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 import { profile, AT } from "../helpers/fixtures.mjs";
+import { job } from "../helpers/fixtures.mjs";
 async function setup(t) {
   const repository = await tempRepository(t),
     service = createWorkspaceService({ repository });
@@ -18,6 +19,56 @@ async function setup(t) {
   };
   return { repository, service, p, input };
 }
+test("HTTP PUT retries use the original submission despite reference and inherited default changes", async (t) => {
+  const f = await apiFixture(t),
+    context = await f.ctx.ready;
+  const p = await context.workspaceService.saveProfile({ profile: profile() });
+  const original = await context.workspaceService.saveTarget({
+    targetId: "retry-parent",
+    profileRevisionId: p.revisionId,
+    versionName: "初版",
+    roles: ["消防"],
+    cityMode: "any",
+    cities: [],
+  });
+  await context.jobService.ingestRecords({
+    runId: "referenced",
+    targetRevisionId: original.revisionId,
+    records: [job()],
+  });
+  const body = {
+    versionName: "机场消防",
+    submissionId: "stable-put-request",
+    roles: ["机场消防"],
+  };
+  const first = await f.call("/api/v2/targets/retry-parent", body, "PUT");
+  assert.equal(first.response.status, 200);
+  const retry = await f.call("/api/v2/targets/retry-parent", body, "PUT");
+  assert.equal(retry.response.status, 200, JSON.stringify(retry.data));
+  assert.equal(retry.data.revisionId, first.data.revisionId);
+  const other = await f.call(
+    "/api/v2/targets/retry-parent",
+    {
+      versionName: "其他版本",
+      submissionId: "other-put",
+      cityMode: "selected",
+      cities: ["广州"],
+    },
+    "PUT",
+  );
+  assert.equal(other.response.status, 200);
+  const laterRetry = await f.call("/api/v2/targets/retry-parent", body, "PUT");
+  assert.equal(laterRetry.response.status, 200);
+  assert.equal(laterRetry.data.revisionId, first.data.revisionId);
+  const conflict = await f.call(
+    "/api/v2/targets/retry-parent",
+    { ...body, roles: ["其他岗位"] },
+    "PUT",
+  );
+  assert.equal(conflict.response.status, 409);
+  assert.equal(conflict.data.code, "version_submission_conflict");
+  assert.equal((await context.workspaceService.listTargets()).length, 3);
+});
 test("concurrent equivalent names and retries save exactly one version", async (t) => {
   const { repository, service, input } = await setup(t);
   const results = await Promise.allSettled([

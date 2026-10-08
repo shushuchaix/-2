@@ -1,7 +1,7 @@
 import { el, button, field, downloadBlob } from "./dom.js";
 import { feedback } from "./feedback.js";
 import { bindValidation } from "./form-validation.js";
-export function backupPanel({ document: d, api }) {
+export function backupPanel({ document: d, api, onRestored }) {
   const status = feedback(d),
     root = el(d, "section", { className: "card stack" }),
     format = el(
@@ -121,9 +121,14 @@ export function backupPanel({ document: d, api }) {
           method: "POST",
           body: { archive },
         });
-        status.show("备份验证通过，工作区已恢复。请重新打开页面。", false, {
-          notify: true,
-        });
+        onRestored?.();
+        status.show(
+          "备份验证通过，工作区已恢复。进入岗位库或简历与目标即可查看。",
+          false,
+          {
+            notify: true,
+          },
+        );
       } catch (e) {
         restoreValidation.show(e);
       } finally {

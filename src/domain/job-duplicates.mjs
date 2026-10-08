@@ -208,18 +208,15 @@ export function classifyJobDuplicate(
     specificKinds.includes(leftProvenance.urlKind) &&
     specificKinds.includes(rightProvenance.urlKind)
   )
-    for (const a of [left.url, left.applyUrl].filter(Boolean))
-      for (const b of [right.url, right.applyUrl].filter(Boolean)) {
-        try {
-          if (
-            canonicalizeSourceUrl(a, left.urlPolicy) ===
-            canonicalizeSourceUrl(b, right.urlPolicy)
-          )
-            specificUrl = true;
-        } catch {
-          /* invalid URL is not proof */
-        }
-      }
+    try {
+      // urlKind describes only the primary source URL. A separate application
+      // form has no specificity proof and cannot inherit the detail URL's role.
+      specificUrl =
+        canonicalizeSourceUrl(left.url, left.urlPolicy) ===
+        canonicalizeSourceUrl(right.url, right.urlPolicy);
+    } catch {
+      /* invalid URL is not proof */
+    }
   if (fieldsMatch && sameAuthority)
     return { relation: "confirmed", reasonCodes: ["authority_id"] };
   if (fieldsMatch && specificUrl)

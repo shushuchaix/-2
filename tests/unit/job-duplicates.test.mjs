@@ -54,6 +54,27 @@ test("generic URLs and weak incomplete text are not proof of one job", () => {
   });
   assert.equal(relateJobs(weak, { ...weak }).relation, "possible");
 });
+test("a generic apply URL cannot inherit specificity from different detail pages", async () => {
+  const { classifyJobDuplicate } = await import(
+    "../../src/domain/job-duplicates.mjs"
+  );
+  const left = trusted({
+    sourceId: "source-a",
+    url: "https://example.com/jobs/1",
+    applyUrl: "https://example.com/careers/apply",
+  });
+  const right = trusted({
+    sourceId: "source-b",
+    url: "https://example.com/jobs/2",
+    applyUrl: left.applyUrl,
+  });
+  assert.equal(classifyJobDuplicate(left, right).relation, "possible");
+  assert.equal(
+    classifyJobDuplicate(left, { ...right, url: left.url }).relation,
+    "confirmed",
+    "individually verified detail URLs remain valid evidence",
+  );
+});
 test("duplicate classifier exposes confirmed possible distinct with stable reasons", async () => {
   const mod = await import("../../src/domain/job-duplicates.mjs").catch(
     () => null,

@@ -332,7 +332,9 @@ export function mountWorkbenchPage({ root, api, store }) {
     )
       return [];
     const selectedRuns = (result.runs || []).filter(
-      (r) => !r.targetRevisionId || r.targetRevisionId === targetRevisionId,
+      (r) =>
+        (r.targetSnapshot?.revisionId || r.targetRevisionId) ===
+        targetRevisionId,
     );
     history.replaceChildren(
       el(d, "h2", {}, "最近更新"),

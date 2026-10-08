@@ -25,6 +25,17 @@ export function createStore(initial = {}) {
           jobs: { items: [], total: 0 },
           jobsRequestId: state.jobsRequestId + 1,
         };
+      else if (action.type === "workspace-restored")
+        state = {
+          ...state,
+          versions: {},
+          selectedTargetId: null,
+          targetRevisionId: null,
+          selectedJobId: null,
+          run: null,
+          jobs: { items: [], total: 0 },
+          jobsRequestId: state.jobsRequestId + 1,
+        };
       else if (action.type === "jobs-invalidated")
         state = {
           ...state,

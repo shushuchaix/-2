@@ -9,7 +9,11 @@ import {
 } from "../llm/validation.mjs";
 import { evaluationPrompt, PROMPT_VERSION } from "../llm/prompts.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
-import { resolveJobId, resolveJobIds } from "../domain/job-resolution.mjs";
+import {
+  resolveJobId,
+  resolveJobIds,
+  jobIdMatches,
+} from "../domain/job-resolution.mjs";
 import {
   backfillTargetMembers,
   selectVersionJobFact,
@@ -111,17 +115,23 @@ export function createEvaluationService({
               ruleVersion: RULE_VERSION,
               modelFingerprint: fingerprint,
             });
+            const reusable = (e) =>
+              e &&
+              ["rules", "ai"].includes(e.status) &&
+              jobIdMatches(workspace, e.jobId, id) &&
+              e.profileRevisionId === profileRevisionId &&
+              e.targetRevisionId === targetRevisionId &&
+              resolveEvaluationFactBasis(workspace, e).factContentHash ===
+                fact.factContentHash;
+            const cached = cache.get(cacheKey);
             const candidate =
-              cache.get(cacheKey) ||
+              (reusable(cached) ? cached : null) ||
               Object.values(workspace.evaluations).find(
-                (e) =>
-                  e.cacheKey === cacheKey && ["rules", "ai"].includes(e.status),
+                (e) => e.cacheKey === cacheKey && reusable(e),
               ) ||
               Object.values(workspace.evaluations).find(
                 (e) =>
-                  ["rules", "ai"].includes(e.status) &&
-                  e.profileRevisionId === profileRevisionId &&
-                  e.targetRevisionId === targetRevisionId &&
+                  reusable(e) &&
                   e.promptVersion === PROMPT_VERSION &&
                   e.ruleVersion === RULE_VERSION &&
                   e.modelFingerprint === fingerprint &&

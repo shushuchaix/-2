@@ -55,6 +55,9 @@ test("review 9a: a late history response from target A cannot overwrite target B
                   runId: p.endsWith("b") ? "b-run" : "a-run",
                   createdAt: p.endsWith("b") ? "B HISTORY" : "A HISTORY",
                   status: "completed",
+                  targetSnapshot: {
+                    revisionId: p.endsWith("b") ? "b@1" : "a@1",
+                  },
                 },
               ],
             },
@@ -67,7 +70,14 @@ test("review 9a: a late history response from target A cannot overwrite target B
   selectTarget(f, "b");
   await f.settle();
   delayed.resolve({
-    runs: [{ runId: "late", createdAt: "LATE A HISTORY", status: "completed" }],
+    runs: [
+      {
+        runId: "late",
+        createdAt: "LATE A HISTORY",
+        status: "completed",
+        targetSnapshot: { revisionId: "a@1" },
+      },
+    ],
   });
   await f.settle();
   assert.match(f.root.textContent, /B HISTORY/);

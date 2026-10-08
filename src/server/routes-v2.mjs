@@ -318,7 +318,12 @@ export async function handleV2Request(req, res, context) {
       identifier(input.profileRevisionId, { revision: true });
     send(
       200,
-      await workspace.saveTarget({ ...previous, ...input, targetId: id }),
+      await workspace.saveTarget(
+        { ...previous, ...input, targetId: id },
+        {
+          submissionInput: { ...input, targetId: id },
+        },
+      ),
     );
     return true;
   }

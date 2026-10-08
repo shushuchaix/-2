@@ -172,7 +172,12 @@ function workbenchFixture(onLogs) {
     if (path.startsWith("/runs?"))
       return {
         runs: [
-          { runId: "run-old", createdAt: "2026-10-05", status: "completed" },
+          {
+            runId: "run-old",
+            createdAt: "2026-10-05",
+            status: "completed",
+            targetSnapshot: { revisionId: "target-1@1" },
+          },
         ],
       };
     if (path === "/runs") return { runId: "run-new", status: "queued" };

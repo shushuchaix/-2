@@ -7,7 +7,7 @@ import { backupPanel } from "../components/backup-panel.js";
 import { jobImport } from "../components/job-import.js";
 import { bindValidation } from "../components/form-validation.js";
 import { diagnosticsPanel } from "../components/diagnostics-panel.js";
-export function mountSettingsPage({ root, api, desktopBridge }) {
+export function mountSettingsPage({ root, api, desktopBridge, store }) {
   const d = root.ownerDocument,
     status = feedback(d),
     sourcesRoot = el(d, "section", { className: "card" }),
@@ -157,7 +157,11 @@ export function mountSettingsPage({ root, api, desktopBridge }) {
         dataLocations(d, { bridge: desktopBridge }),
         custom,
         jobImport({ document: d, api }),
-        backupPanel({ document: d, api }),
+        backupPanel({
+          document: d,
+          api,
+          onRestored: () => store?.dispatch({ type: "workspace-restored" }),
+        }),
         el(
           d,
           "p",

@@ -25,15 +25,16 @@ export function versionAvailability(target, profiles = []) {
       canRescore: false,
       reasonCode: "target_archived",
     };
-  if (
-    profiles.find((p) => p.revisionId === target.profileRevisionId)?.archivedAt
-  )
+  const profile = profiles.find(
+    (p) => p.revisionId === target.profileRevisionId,
+  );
+  if (profile?.archivedAt)
     return {
       canCollect: false,
       canRescore: false,
       reasonCode: "profile_archived",
     };
-  if (target.availability) return target.availability;
+  if (!profile && target.availability) return target.availability;
   return {
     canCollect: target.enabled !== false,
     canRescore: true,

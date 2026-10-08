@@ -1,4 +1,5 @@
 import path from "node:path";
+import { projectJobApplication } from "../domain/job-resolution.mjs";
 import {
   runPipeline,
   saveRun,
@@ -172,7 +173,7 @@ export async function handleV1Request(req, res, context) {
     const w = await context.repository.read(),
       byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0]));
     for (const job of Object.values(w.jobs))
-      byStatus[w.applications[job.jobId]?.status || "new"]++;
+      byStatus[projectJobApplication(w, job.jobId).status]++;
     send(200, {
       total: Object.keys(w.jobs).length,
       byStatus,
@@ -242,7 +243,13 @@ export async function handleV1Request(req, res, context) {
         ),
       });
     } catch (error) {
-      send(400, { error: error.message, allowed: STATUSES });
+      if (error.status === 409) throw error;
+      send(error.status || 400, {
+        error: error.message,
+        allowed: STATUSES,
+        fieldErrors: error.fieldErrors,
+        code: error.code,
+      });
     }
     return true;
   }

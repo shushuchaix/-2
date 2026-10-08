@@ -19,6 +19,10 @@ import {
   identifier,
 } from "./server/validation.mjs";
 import { STATUS_LABELS } from "./store.mjs";
+import {
+  projectJobApplication,
+  resolveJobId,
+} from "./domain/job-resolution.mjs";
 export const RUNS_DIR = path.join(DATA_ROOT, "runs-v2");
 const resultContexts = new WeakMap();
 export async function createLegacyRunInput({
@@ -209,10 +213,7 @@ export function snapshotToLegacy(snapshot, { cfg, workspace, registry }) {
   };
   const jobs = snapshot.jobs.map((job) => {
     const evaluation = evaluations.get(job.jobId),
-      application = workspace.applications[job.jobId] || {
-        status: "new",
-        note: "",
-      };
+      application = projectJobApplication(workspace, job.jobId);
     return {
       ...job.canonical,
       id: job.jobId,
@@ -266,7 +267,7 @@ export function snapshotToLegacy(snapshot, { cfg, workspace, registry }) {
     },
     queries: {
       titleKeywords: run.targetSnapshot?.roles || [],
-      webQueries: buildWebQueries(profile, { max: 6 }),
+      webQueries: buildWebQueries(normalizeProfile(profile), { max: 6 }),
     },
     funnel: {
       raw: run.counts.raw || 0,
@@ -294,9 +295,9 @@ export function snapshotToLegacy(snapshot, { cfg, workspace, registry }) {
     },
     errors: (run.issues || []).map((i) => i.message || i.code),
     llmUsage: {
-      calls: run.usage.model?.requests || 0,
-      promptTokens: run.usage.model?.promptTokens || 0,
-      completionTokens: run.usage.model?.completionTokens || 0,
+      calls: run.usage?.model?.requests || 0,
+      promptTokens: run.usage?.model?.promptTokens || 0,
+      completionTokens: run.usage?.model?.completionTokens || 0,
     },
     jobs,
     status: run.status,
@@ -400,14 +401,46 @@ export async function loadRun(runId, { context, cfg } = {}) {
   );
   const run = (await context.repository.read()).runs[runId];
   if (!run || run.deletedAt) return null;
+  const projectLegacy = async (result) => {
+    const w = await context.repository.read(),
+      copy = structuredClone(result);
+    copy.jobs = (copy.jobs || copy.results || []).map((job) => {
+      let application;
+      try {
+        const id = resolveJobId(w, job.jobId || job.id, { allowMissing: true });
+        if (id) application = projectJobApplication(w, id);
+      } catch (error) {
+        if (error.code !== "job_identity_ambiguous") throw error;
+      }
+      application ||= w.applications["legacy:" + (job.jobId || job.id)];
+      return application
+        ? {
+            ...job,
+            status: application.status,
+            note: application.note,
+            tracking: {
+              ...job.tracking,
+              status: application.status,
+              statusLabel: STATUS_LABELS[application.status],
+              note: application.note,
+            },
+          }
+        : job;
+    });
+    return copy;
+  };
   if (run.legacy) {
     if (run.snapshotRef)
-      return (await context.repository.readRunSnapshot(runId)).legacyResult;
+      return projectLegacy(
+        (await context.repository.readRunSnapshot(runId)).legacyResult,
+      );
     try {
-      return JSON.parse(
-        await fs.readFile(
-          path.join(context.repository.dataDir, "runs", runId + ".json"),
-          "utf8",
+      return projectLegacy(
+        JSON.parse(
+          await fs.readFile(
+            path.join(context.repository.dataDir, "runs", runId + ".json"),
+            "utf8",
+          ),
         ),
       );
     } catch (error) {

@@ -71,3 +71,48 @@ export function resolveApplicationAssociation(w, application) {
     originalApplicationId: application.jobId,
   };
 }
+export const isManualApplication = (a) =>
+  (a.status && a.status !== "new") ||
+  !!a.note ||
+  !!a.appliedAt ||
+  !!a.followUpAt ||
+  !!a.resumeRevisionId ||
+  !!a.events?.length;
+export function findAssociatedApplication(w, id) {
+  const jobId = resolveJobId(w, id, { allowMissing: true });
+  if (!jobId) return null;
+  return (
+    Object.values(w.applications)
+      .filter((a) => {
+        const association = resolveApplicationAssociation(w, a);
+        return (
+          association.status === "single" && association.jobIds[0] === jobId
+        );
+      })
+      .sort(
+        (a, b) =>
+          Number(!!isManualApplication(b)) - Number(!!isManualApplication(a)) ||
+          Number(b.jobId === jobId) - Number(a.jobId === jobId) ||
+          a.jobId.localeCompare(b.jobId),
+      )[0] || null
+  );
+}
+export function projectJobApplication(w, id) {
+  const jobId = resolveJobId(w, id),
+    application = findAssociatedApplication(w, jobId);
+  return application
+    ? {
+        ...structuredClone(application),
+        jobId,
+        originalApplicationId: application.jobId,
+      }
+    : {
+        jobId,
+        status: "new",
+        note: "",
+        resumeRevisionId: null,
+        appliedAt: null,
+        followUpAt: null,
+        events: [],
+      };
+}

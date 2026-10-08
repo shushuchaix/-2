@@ -8,6 +8,18 @@ import {
 } from "./infrastructure/storage/repository.mjs";
 import { migrateV1 } from "./infrastructure/storage/migrate-v1.mjs";
 import { createWorkspaceOperationGate } from "./application/workspace-operations.mjs";
+import {
+  resolveJobId,
+  resolveJobIds,
+  jobIdMatches,
+  projectJobApplication,
+  findAssociatedApplication,
+} from "./domain/job-resolution.mjs";
+import {
+  selectVersionJobFact,
+  selectMatchingEvaluation,
+} from "./domain/job-facts.mjs";
+import { normalizeRecord } from "./domain/record.mjs";
 import { upgradeWorkspace } from "./infrastructure/storage/upgrade-workspace.mjs";
 import {
   createJobService,
@@ -47,15 +59,23 @@ function view(w) {
         !key.startsWith("id:") &&
         !key.startsWith("url:") &&
         !key.startsWith("fields:") &&
-        ids.length === 1 &&
-        ids[0] === job.jobId,
+        !key.startsWith("content:") &&
+        !key.startsWith("input:") &&
+        resolveJobIds(w, ids, { allowMissing: true }).length === 1 &&
+        resolveJobId(w, ids[0], { allowMissing: true }) === job.jobId,
     )?.[0];
     const id = legacy || job.jobId;
     const evaluations = Object.values(w.evaluations)
-      .filter((e) => e.jobId === job.jobId)
+      .filter((e) => jobIdMatches(w, e.jobId, job.jobId))
       .sort((a, b) =>
         String(b.createdAt || "").localeCompare(a.createdAt || ""),
       );
+    const fact = selectVersionJobFact(w, { jobId: job.jobId }),
+      evaluation = selectMatchingEvaluation(w, {
+        jobId: job.jobId,
+        factContentHash: fact.factContentHash,
+      }),
+      application = projectJobApplication(w, job.jobId);
     jobs[id] = {
       ...job.canonical,
       id,
@@ -66,16 +86,16 @@ function view(w) {
       lastSeen: job.lastSeen,
       seenCount: new Set(
         Object.values(w.observations)
-          .filter((o) => o.jobId === job.jobId)
+          .filter((o) => jobIdMatches(w, o.jobId, job.jobId))
           .map((o) => o.runId),
       ).size,
-      score: evaluations[0]?.score ?? null,
+      score: evaluation?.score ?? null,
       scoreHistory: evaluations.map((e) => ({
         at: e.createdAt,
         score: e.score,
       })),
-      status: w.applications[job.jobId]?.status || "new",
-      note: w.applications[job.jobId]?.note || "",
+      status: application.status,
+      note: application.note,
       lifecycle: job.lifecycle,
     };
   }
@@ -98,15 +118,25 @@ export async function saveIndex(index) {
   await repository.mutateWorkspace((w) => {
     for (const rec of Object.values(index.jobs || {})) {
       const id = resolveStoredJobId(w, rec.jobId || rec.id);
-      const a = w.applications[id] || {
+      const a = findAssociatedApplication(w, id) || {
         jobId: id,
         status: "new",
         note: "",
         events: [],
       };
-      if (rec.status) a.status = rec.status;
-      if (Object.hasOwn(rec, "note")) a.note = rec.note;
-      w.applications[id] = a;
+      const changes = {};
+      for (const key of ["status", "note"])
+        if (Object.hasOwn(rec, key) && a[key] !== rec[key]) {
+          changes[key] = { from: a[key], to: rec[key] };
+          a[key] = rec[key];
+        }
+      if (Object.keys(changes).length)
+        a.events.push({
+          type: "application_updated",
+          at: new Date().toISOString(),
+          changes,
+        });
+      w.applications[a.jobId] = a;
     }
   });
   return { ok: true };
@@ -153,6 +183,7 @@ export async function upsert(
             evaluationId:
               "legacy-" + contentHash([runId, jobIds[i], j.score]).slice(0, 24),
             jobId: jobIds[i],
+            jdHash: contentHash(normalizeRecord(j).description || ""),
             score: j.score,
             status: "legacy",
             targetRevisionId: null,
@@ -164,9 +195,15 @@ export async function upsert(
   if (evaluations.length) await service.saveEvaluations(evaluations);
   const added = [],
     ongoing = [];
-  valid.forEach((j, i) =>
-    (before.jobs[jobIds[i]] ? ongoing : added).push(j.id || jobIds[i]),
-  );
+  const counted = new Set();
+  valid.forEach((j, i) => {
+    if (counted.has(jobIds[i])) return;
+    counted.add(jobIds[i]);
+    (resolveJobId(before, jobIds[i], { allowMissing: true })
+      ? ongoing
+      : added
+    ).push(j.id || jobIds[i]);
+  });
   const index = view(await repository.read());
   return {
     added,
@@ -186,10 +223,13 @@ export async function upsert(
 }
 export async function annotate(jobs = [], diff, { now = Date.now() } = {}) {
   const index = diff.index || (await loadIndex());
+  const w = await (await context()).repository.read();
   for (const j of jobs) {
     const rec =
       index.jobs[j.id] ||
-      Object.values(index.jobs).find((r) => r.jobId === j.jobId);
+      Object.values(index.jobs).find((r) =>
+        jobIdMatches(w, r.jobId, j.jobId || j.id),
+      );
     j.tracking = {
       isNew: diff.added.includes(j.id || j.jobId),
       firstSeen: rec?.firstSeen || "",

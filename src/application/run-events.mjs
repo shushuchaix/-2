@@ -1,3 +1,5 @@
+import { resolveJobIds, resolveJobId } from "../domain/job-resolution.mjs";
+import { selectRunJobFact } from "../domain/job-facts.mjs";
 export function createRunEventHub({
   repository,
   clock = repository.clock,
@@ -51,10 +53,22 @@ export function createRunEventHub({
         at: at(),
         payload: {
           run,
-          jobs: [...ids].map((id) => w.jobs[id]),
-          evaluations: Object.values(w.evaluations).filter(
-            (e) => evaluationIds.has(e.evaluationId) || e.runId === runId,
+          jobs: resolveJobIds(w, [...ids], { allowMissing: true }).map(
+            (jobId) => ({
+              ...w.jobs[jobId],
+              canonical: selectRunJobFact(w, { runId, jobId }).record,
+            }),
           ),
+          evaluations: Object.values(w.evaluations)
+            .filter(
+              (e) => evaluationIds.has(e.evaluationId) || e.runId === runId,
+            )
+            .map((e) => ({
+              ...e,
+              jobId:
+                resolveJobId(w, e.jobId, { allowMissing: true }) || e.jobId,
+              originalJobId: e.jobId,
+            })),
         },
       };
     },

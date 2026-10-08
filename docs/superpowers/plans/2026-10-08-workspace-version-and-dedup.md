@@ -249,7 +249,7 @@ function Invoke-RjrTest {
 
 **Interfaces:** Consumes Task 3 的 resolveJobId/resolveApplicationAssociation、Task 4 的事实选择；现有 getJob/updateApplication/link/unlink/saveEvaluations/finalizeCoverage、legacy view/saveIndex/upsert/annotate 等内部统一解析。GET详情可携带 targetRevisionId；返回主jobId并保留原查询ID供前端替换。
 
-- [ ] **1. 写失败测试。** 使用 Task 6 已合并合成集，对 oldID 读详情、修改投递、单条/批量评分、解除关联、source alias再入库、分页导出、SSE重连快照、legacy store/v1 tracking 各走实际入口。断言：
+- [x] **1. 写失败测试。** 使用 Task 6 已合并合成集，对 oldID 读详情、修改投递、单条/批量评分、解除关联、source alias再入库、分页导出、SSE重连快照、legacy store/v1 tracking 各走实际入口。断言：
   ```js
   assert.equal(oldDetail.jobId, keptId);
   assert.equal(legacyApplication.association.status, 'single');
@@ -259,11 +259,11 @@ function Invoke-RjrTest {
   assert.equal(Object.keys(afterReingest.jobs).length, 1);
   ```
   旧歧义投递原事件/legacy候选ID保留；两个真正不同事项别名仍歧义；旧缓存输出主ID；snapshot正文与人工当前状态分开投影。
-- [ ] **2. RED。** `Invoke-RjrTest tests/integration/job-redirects.test.mjs tests/integration/run-events.test.mjs tests/integration/api-v1-compat.test.mjs`。
-- [ ] **3. 接通服务及快照/导出消费者。** 包括观察聚合、覆盖统计、未解决投递列表/详情、application事件引用、v1 summary；run-events 从该run观察构造原事实，不能直接 w.jobs[oldID] 或全局新canonical。
-- [ ] **4. 接通独立 store 与 pipeline。** store启动升级，所有 status/note/evaluation/upsert入口解析；snapshotToLegacy保持snapshot原事实和评价对应，只将当前人工状态从主ID读入。无悬空实体或重复行。
-- [ ] **5. GREEN。** 运行步骤 2 加 `tests/integration/cli-compat.test.mjs`；运行 `& $rjrNode tools/test-store.mjs` 和 `& $rjrNode tools/test-export.mjs`，预期 exit0。
-- [ ] **6. Commit。** `git commit -m "fix: retain historical access through merged job redirects"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/integration/job-redirects.test.mjs tests/integration/run-events.test.mjs tests/integration/api-v1-compat.test.mjs`。
+- [x] **3. 接通服务及快照/导出消费者。** 包括观察聚合、覆盖统计、未解决投递列表/详情、application事件引用、v1 summary；run-events 从该run观察构造原事实，不能直接 w.jobs[oldID] 或全局新canonical。
+- [x] **4. 接通独立 store 与 pipeline。** store启动升级，所有 status/note/evaluation/upsert入口解析；snapshotToLegacy保持snapshot原事实和评价对应，只将当前人工状态从主ID读入。无悬空实体或重复行。
+- [x] **5. GREEN。** 运行步骤 2 加 `tests/integration/cli-compat.test.mjs`；运行 `& $rjrNode tools/test-store.mjs` 和 `& $rjrNode tools/test-export.mjs`，预期 exit0。
+- [x] **6. Commit。** `git commit -m "fix: retain historical access through merged job redirects"`。
 
 ## Task 8：版本列表、按钮、表单同步与可见成功提示
 

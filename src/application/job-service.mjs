@@ -11,7 +11,14 @@ import {
 import { normalizeRecord } from "../domain/record.mjs";
 import { resolveJobIdentity, relateJobs } from "../domain/identity.mjs";
 import { jobBusinessFingerprint } from "../domain/job-duplicates.mjs";
-import { resolveJobId, jobIdMatches } from "../domain/job-resolution.mjs";
+import {
+  resolveJobId,
+  resolveJobIds,
+  jobIdMatches,
+  resolveApplicationAssociation,
+  findAssociatedApplication,
+  projectJobApplication,
+} from "../domain/job-resolution.mjs";
 import { deriveLifecycle } from "../domain/lifecycle.mjs";
 import {
   addTargetMemberFact,
@@ -374,12 +381,7 @@ export function createJobService({ repository, clock = repository.clock }) {
               : job.canonical)),
           fact,
           jobId: job.jobId,
-          application: w.applications[job.jobId] || {
-            jobId: job.jobId,
-            status: "new",
-            note: "",
-            events: [],
-          },
+          application: projectJobApplication(w, job.jobId),
           evaluation: evaluation ? { ...evaluation, jobId: job.jobId } : null,
         };
       });
@@ -455,8 +457,12 @@ export function createJobService({ repository, clock = repository.clock }) {
         throw inputError({ targetRevisionId: "未找到目标版本。" });
       const fact = selectVersionJobFact(w, { targetRevisionId, jobId: id });
       const relatedIds = new Set(
-        job.duplicateGroupIds.flatMap(
-          (g) => w.duplicateGroups[g]?.jobIds || [],
+        resolveJobIds(
+          w,
+          (job.duplicateGroupIds || []).flatMap(
+            (g) => w.duplicateGroups[g]?.jobIds || [],
+          ),
+          { allowMissing: true },
         ),
       );
       relatedIds.delete(id);
@@ -486,26 +492,22 @@ export function createJobService({ repository, clock = repository.clock }) {
         evaluations: Object.values(w.evaluations).filter((e) =>
           jobIdMatches(w, e.jobId, id),
         ),
-        application: w.applications[id] || {
-          jobId: id,
-          status: "new",
-          note: "",
-          resumeRevisionId: null,
-          appliedAt: null,
-          followUpAt: null,
-          events: [],
-        },
+        application: projectJobApplication(w, id),
         relatedJobs: [...relatedIds].map((i) => w.jobs[i]).filter(Boolean),
-        unresolvedApplications: Object.values(w.applications).filter(
-          (a) => !w.jobs[a.jobId] && a.legacyJobIds?.includes(id),
-        ),
+        unresolvedApplications: Object.values(w.applications).filter((a) => {
+          const association = resolveApplicationAssociation(w, a);
+          return (
+            association.status === "ambiguous" &&
+            association.jobIds.includes(id)
+          );
+        }),
       };
     },
     async listUnresolvedApplications(filters = {}) {
       assertInput("filters", filters);
       const w = await repository.read();
       const items = Object.values(w.applications)
-        .filter((a) => !w.jobs[a.jobId] && a.legacyJobIds?.length > 1)
+        .filter((a) => resolveApplicationAssociation(w, a).status !== "single")
         .filter((a) => !filters.status || a.status === filters.status)
         .filter(
           (a) =>
@@ -517,8 +519,9 @@ export function createJobService({ repository, clock = repository.clock }) {
         )
         .map((application) => ({
           application,
-          candidateJobs: application.legacyJobIds
-            .map((id) => w.jobs[id])
+          association: resolveApplicationAssociation(w, application),
+          candidateJobs: resolveApplicationAssociation(w, application)
+            .jobIds.map((id) => w.jobs[id])
             .filter(Boolean),
         }));
       return { items, total: items.length };
@@ -526,14 +529,26 @@ export function createJobService({ repository, clock = repository.clock }) {
     async getApplication(id) {
       const w = await repository.read();
       const a = w.applications[id];
-      if (a && !w.jobs[id] && a.legacyJobIds?.length > 1)
+      if (a) {
+        const association = resolveApplicationAssociation(w, a);
         return {
-          application: a,
-          candidateJobs: a.legacyJobIds.map((j) => w.jobs[j]).filter(Boolean),
-          unresolved: true,
+          application:
+            association.status === "single"
+              ? {
+                  ...a,
+                  jobId: association.jobIds[0],
+                  originalApplicationId: a.jobId,
+                }
+              : a,
+          association,
+          candidateJobs: association.jobIds.map((j) => w.jobs[j]),
+          unresolved: association.status !== "single",
         };
+      }
+      const application = projectJobApplication(w, id);
       return {
-        application: (await this.getJob(id)).application,
+        application,
+        association: resolveApplicationAssociation(w, application),
         unresolved: false,
       };
     },
@@ -541,9 +556,12 @@ export function createJobService({ repository, clock = repository.clock }) {
       assertInput("application", patch);
       return (
         await repository.mutateWorkspace((w) => {
-          if (!(w.applications[id]?.legacyJobIds?.length > 1 && !w.jobs[id]))
-            id = resolveStoredJobId(w, id);
-          const current = w.applications[id] || {
+          const requested = id;
+          const associated =
+            w.applications[id] ||
+            findAssociatedApplication(w, resolveStoredJobId(w, id));
+          id = associated?.jobId || resolveStoredJobId(w, id);
+          const current = associated || {
             jobId: id,
             status: "new",
             note: "",
@@ -552,6 +570,7 @@ export function createJobService({ repository, clock = repository.clock }) {
             followUpAt: null,
             events: [],
           };
+          current.events ||= [];
           const changes = {};
           for (const key of [
             "status",
@@ -592,7 +611,17 @@ export function createJobService({ repository, clock = repository.clock }) {
               changes,
             });
           w.applications[id] = current;
-          return current;
+          const association = resolveApplicationAssociation(w, current);
+          return {
+            ...current,
+            jobId:
+              association.status === "single"
+                ? association.jobIds[0]
+                : current.jobId,
+            originalApplicationId: current.jobId,
+            requestedJobId: requested,
+            association,
+          };
         })
       ).result;
     },
@@ -620,8 +649,8 @@ export function createJobService({ repository, clock = repository.clock }) {
           for (const [id, g] of Object.entries(w.duplicateGroups))
             if (g.jobIds.includes(a) && g.jobIds.includes(b)) {
               for (const jid of g.jobIds)
-                w.jobs[jid].duplicateGroupIds = w.jobs[
-                  jid
+                w.jobs[resolveStoredJobId(w, jid)].duplicateGroupIds = w.jobs[
+                  resolveStoredJobId(w, jid)
                 ].duplicateGroupIds.filter((x) => x !== id);
               delete w.duplicateGroups[id];
             }

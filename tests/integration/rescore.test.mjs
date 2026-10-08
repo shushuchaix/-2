@@ -136,6 +136,6 @@ test("rescore cancellation retains completed batch and validates real revisions"
       profileRevisionId: "missing",
       targetRevisionId: tar.revisionId,
     }),
-    /revision/i,
+    /revision|简历版本/i,
   );
 });

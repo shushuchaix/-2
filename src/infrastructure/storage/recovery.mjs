@@ -2,7 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { contentHash } from "./repository.mjs";
 import { hasLiveOwner } from "./process-owner.mjs";
-export async function recoverWorkspace(repository) {
+import { createWorkspaceOperationGate } from "../../application/workspace-operations.mjs";
+export async function recoverWorkspace(
+  repository,
+  { operationGate = createWorkspaceOperationGate({ repository }) } = {},
+) {
+  await operationGate.recover();
   const w = await repository.read(),
     interruptedRunIds = [],
     orphanSnapshots = [],

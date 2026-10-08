@@ -1,7 +1,7 @@
 // Compatibility entry points over the shared v2 application services.
 import fs from "node:fs/promises";
 import path from "node:path";
-import {randomUUID} from 'node:crypto';
+import { randomUUID } from "node:crypto";
 import { DATA_ROOT } from "./config.mjs";
 import { getDefaultApplicationContext } from "./application/context.mjs";
 import {
@@ -30,159 +30,171 @@ export async function createLegacyRunInput({
   credentials = {},
   onEvent = () => {},
   signal,
+  operationLease,
 }) {
   const text = validateResume(resumeText);
   context ||= await getDefaultApplicationContext(cfg);
-  const budget = credentials.modelBudget || (await context.createModelBudget());
-  const client = new DeepSeek(
-    {
-      ...cfg,
-      deepseek: {
-        ...cfg.deepseek,
-        apiKey: credentials.userApiKey || llm?.apiKey || cfg.deepseek.apiKey,
+  operationLease ||= await context.operationGate.acquire("legacy", { signal });
+  try {
+    const budget =
+      credentials.modelBudget || (await context.createModelBudget());
+    const client = new DeepSeek(
+      {
+        ...cfg,
+        deepseek: {
+          ...cfg.deepseek,
+          apiKey: credentials.userApiKey || llm?.apiKey || cfg.deepseek.apiKey,
+        },
       },
-    },
-    { budget, signal },
-  );
-  let profile = normalizeProfile(analyzeResumeOffline(text));
-  onEvent({ type: "stage", stage: "analyze", label: "解析简历画像" });
-  if (options.useLlm !== false && client.available) {
-    try {
-      profile = await analyzeResume(client, text, { signal });
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      onEvent({ type: "log", message: "模型画像提取失败，使用离线预览。" });
+      { budget, signal },
+    );
+    let profile = normalizeProfile(analyzeResumeOffline(text));
+    onEvent({ type: "stage", stage: "analyze", label: "解析简历画像" });
+    if (options.useLlm !== false && client.available) {
+      try {
+        profile = await analyzeResume(client, text, { signal });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        onEvent({ type: "log", message: "模型画像提取失败，使用离线预览。" });
+      }
     }
-  }
-  const pin = cfg.profile || {},
-    pinned = [];
-  for (const [key, value] of Object.entries(pin)) {
-    if (
-      key.startsWith("_") ||
-      value == null ||
-      value === "" ||
-      (Array.isArray(value) && !value.length)
-    )
-      continue;
-    profile[key] = value;
-    pinned.push(key);
-  }
-  if (pinned.length) {
-    if (pin.major && !pin.targetRoles) {
-      profile.targetRoles = rolesForMajor(profile.major);
-      profile.titleKeywords = [];
+    const pin = cfg.profile || {},
+      pinned = [];
+    for (const [key, value] of Object.entries(pin)) {
+      if (
+        key.startsWith("_") ||
+        value == null ||
+        value === "" ||
+        (Array.isArray(value) && !value.length)
+      )
+        continue;
+      profile[key] = value;
+      pinned.push(key);
     }
-    profile = normalizeProfile(profile);
-    onEvent({ type: "log", message: "画像已按配置钉死：" + pinned.join("、") });
+    if (pinned.length) {
+      if (pin.major && !pin.targetRoles) {
+        profile.targetRoles = rolesForMajor(profile.major);
+        profile.titleKeywords = [];
+      }
+      profile = normalizeProfile(profile);
+      onEvent({
+        type: "log",
+        message: "画像已按配置钉死：" + pinned.join("、"),
+      });
+    }
+    if (Array.isArray(options.cities)) profile.preferredCities = options.cities;
+    else if (Array.isArray(cfg.filters?.cities))
+      profile.preferredCities = cfg.filters.cities;
+    const year =
+      options.graduationYear ??
+      cfg.filters?.graduationYear ??
+      profile.graduationYear;
+    if (year !== undefined) profile.graduationYear = String(year || "");
+    if (Array.isArray(options.titleKeywords) && options.titleKeywords.length)
+      profile.titleKeywords = options.titleKeywords;
+    const titleKeywords = buildTitleKeywords(profile, {
+        max: Math.min(6, options.maxTitleKeywords || 6),
+      }),
+      webQueries = buildWebQueries(profile, {
+        cities: profile.preferredCities,
+        max: cfg.sources.searchApi?.maxQueries || 6,
+      }),
+      wechatQueries =
+        cfg.sources.wechat?.enabled === false
+          ? []
+          : buildWechatQueries(profile, { max: 6 });
+    onEvent({ type: "profile", profile });
+    onEvent({
+      type: "queries",
+      titleKeywords,
+      webQueries,
+      wechatQueries,
+      targetYear: profile.graduationYear,
+    });
+    const oldIds = [
+      "zhaopin",
+      "shixiseng",
+      "searchApi",
+      "wechat",
+      "nowcoder",
+      "university",
+      "chenyun",
+      "jiuyeqiao",
+    ];
+    const oldSelected = oldIds
+      .filter((id) => cfg.sources[id]?.enabled !== false)
+      .map((id) => (id === "searchApi" ? "searchapi" : id));
+    const extra = oldSelected.length
+      ? Object.entries(cfg.sources)
+          .filter(
+            ([id, c]) =>
+              !oldIds.includes(id) &&
+              context.registry.get(id) &&
+              c?.enabled === true,
+          )
+          .map(([id]) => id)
+      : [];
+    const sourceIds = options.sourceIds || [
+      ...oldSelected.filter((id) => context.registry.get(id)),
+      ...extra,
+    ];
+    const saved = await context.workspaceService.saveProfile({
+      submissionId: "legacy-profile-" + randomUUID(),
+      text,
+      profile: {
+        ...profile,
+        education: profile.degree,
+        cities: profile.preferredCities,
+        explicitFacts: {},
+        inferred: true,
+      },
+      parserVersion: "legacy-inferred-2",
+    });
+    const target = await context.workspaceService.saveTarget({
+      versionName: "兼容检索 · " + saved.revisionId,
+      submissionId: "legacy-target-" + randomUUID(),
+      profileRevisionId: saved.revisionId,
+      roles: titleKeywords.length ? titleKeywords : ["应届生"],
+      cityMode: Array.isArray(options.cities)
+        ? options.cities.length
+          ? "selected"
+          : "any"
+        : profile.preferredCities.length
+          ? "from_profile"
+          : "any",
+      cities: profile.preferredCities,
+      graduationYear: profile.graduationYear || null,
+      jobTypes:
+        (options.includeInternship ?? cfg.filters?.includeInternship)
+          ? ["campus", "internship"]
+          : ["campus"],
+      degreePolicy: cfg.filters?.minDegree
+        ? "minimum_requirement"
+        : "eligibility",
+      minDegree: cfg.filters?.minDegree || null,
+      sourceIds: sourceIds.length ? sourceIds : ["legacy-no-sources"],
+      siteIds: options.siteIds || [],
+      coverageMode: options.coverageMode || "standard",
+    });
+    return {
+      targetRevisionId: target.revisionId,
+      operationLease,
+      mode:
+        options.useLlm === false ? "rules" : client.available ? "ai" : "rules",
+      credentials: {
+        ...credentials,
+        modelBudget: budget,
+        userApiKey: credentials.userApiKey || llm?.apiKey || undefined,
+      },
+      profile,
+      titleKeywords,
+      webQueries,
+      wechatQueries,
+    };
+  } catch (error) {
+    await operationLease.release();
+    throw error;
   }
-  if (Array.isArray(options.cities)) profile.preferredCities = options.cities;
-  else if (Array.isArray(cfg.filters?.cities))
-    profile.preferredCities = cfg.filters.cities;
-  const year =
-    options.graduationYear ??
-    cfg.filters?.graduationYear ??
-    profile.graduationYear;
-  if (year !== undefined) profile.graduationYear = String(year || "");
-  if (Array.isArray(options.titleKeywords) && options.titleKeywords.length)
-    profile.titleKeywords = options.titleKeywords;
-  const titleKeywords = buildTitleKeywords(profile, {
-      max: Math.min(6, options.maxTitleKeywords || 6),
-    }),
-    webQueries = buildWebQueries(profile, {
-      cities: profile.preferredCities,
-      max: cfg.sources.searchApi?.maxQueries || 6,
-    }),
-    wechatQueries =
-      cfg.sources.wechat?.enabled === false
-        ? []
-        : buildWechatQueries(profile, { max: 6 });
-  onEvent({ type: "profile", profile });
-  onEvent({
-    type: "queries",
-    titleKeywords,
-    webQueries,
-    wechatQueries,
-    targetYear: profile.graduationYear,
-  });
-  const oldIds = [
-    "zhaopin",
-    "shixiseng",
-    "searchApi",
-    "wechat",
-    "nowcoder",
-    "university",
-    "chenyun",
-    "jiuyeqiao",
-  ];
-  const oldSelected = oldIds
-    .filter((id) => cfg.sources[id]?.enabled !== false)
-    .map((id) => (id === "searchApi" ? "searchapi" : id));
-  const extra = oldSelected.length
-    ? Object.entries(cfg.sources)
-        .filter(
-          ([id, c]) =>
-            !oldIds.includes(id) &&
-            context.registry.get(id) &&
-            c?.enabled === true,
-        )
-        .map(([id]) => id)
-    : [];
-  const sourceIds = options.sourceIds || [
-    ...oldSelected.filter((id) => context.registry.get(id)),
-    ...extra,
-  ];
-  const saved = await context.workspaceService.saveProfile({
-    submissionId: 'legacy-profile-'+randomUUID(),
-    text,
-    profile: {
-      ...profile,
-      education: profile.degree,
-      cities: profile.preferredCities,
-      explicitFacts: {},
-      inferred: true,
-    },
-    parserVersion: "legacy-inferred-2",
-  });
-  const target = await context.workspaceService.saveTarget({
-    versionName: '兼容检索 · '+saved.revisionId,
-    submissionId: 'legacy-target-'+randomUUID(),
-    profileRevisionId: saved.revisionId,
-    roles: titleKeywords.length ? titleKeywords : ["应届生"],
-    cityMode: Array.isArray(options.cities)
-      ? options.cities.length
-        ? "selected"
-        : "any"
-      : profile.preferredCities.length
-        ? "from_profile"
-        : "any",
-    cities: profile.preferredCities,
-    graduationYear: profile.graduationYear || null,
-    jobTypes:
-      (options.includeInternship ?? cfg.filters?.includeInternship)
-        ? ["campus", "internship"]
-        : ["campus"],
-    degreePolicy: cfg.filters?.minDegree
-      ? "minimum_requirement"
-      : "eligibility",
-    minDegree: cfg.filters?.minDegree || null,
-    sourceIds: sourceIds.length ? sourceIds : ["legacy-no-sources"],
-    siteIds: options.siteIds || [],
-    coverageMode: options.coverageMode || "standard",
-  });
-  return {
-    targetRevisionId: target.revisionId,
-    mode:
-      options.useLlm === false ? "rules" : client.available ? "ai" : "rules",
-    credentials: {
-      ...credentials,
-      modelBudget: budget,
-      userApiKey: credentials.userApiKey || llm?.apiKey || undefined,
-    },
-    profile,
-    titleKeywords,
-    webQueries,
-    wechatQueries,
-  };
 }
 export function snapshotToLegacy(snapshot, { cfg, workspace, registry }) {
   const run = snapshot.run,
@@ -311,9 +323,9 @@ export async function runPipeline({
     error.retryAfterMs = permit.retryAfterMs;
     throw error;
   }
-  let stop, abort, runId;
+  let stop, abort, runId, input;
   try {
-    const input =
+    input =
       legacyInput ||
       (await createLegacyRunInput({
         resumeText,
@@ -369,6 +381,8 @@ export async function runPipeline({
     stop?.();
     if (abort) signal.removeEventListener("abort", abort);
     permit.release();
+    if (runId) await context.runService.waitForRun(runId).catch(() => {});
+    await input?.operationLease?.release();
   }
 }
 export async function saveRun(result, { context } = {}) {

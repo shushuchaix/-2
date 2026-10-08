@@ -79,6 +79,7 @@ export async function handleV1Request(req, res, context) {
       startedRun = await context.runService.startRun(legacyInput);
     } catch (error) {
       permit.release();
+      await legacyInput?.operationLease?.release();
       throw error;
     }
     res.writeHead(200, {
@@ -209,17 +210,15 @@ export async function handleV1Request(req, res, context) {
           .items,
       );
     send(200, {
-      jobs: rows
-        .slice(0, Number(raw))
-        .map((i) => ({
-          ...i,
-          id: i.jobId,
-          status: i.application.status,
-          note: i.application.note,
-          city: i.cities.join(" / "),
-          firstSeen: i.job.firstSeen,
-          lastSeen: i.job.lastSeen,
-        })),
+      jobs: rows.slice(0, Number(raw)).map((i) => ({
+        ...i,
+        id: i.jobId,
+        status: i.application.status,
+        note: i.application.note,
+        city: i.cities.join(" / "),
+        firstSeen: i.job.firstSeen,
+        lastSeen: i.job.lastSeen,
+      })),
     });
     return true;
   }

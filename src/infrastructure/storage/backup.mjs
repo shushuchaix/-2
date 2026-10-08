@@ -7,6 +7,7 @@ import { assertWorkspace } from "../../domain/contracts.mjs";
 import { redactBusiness } from "../../domain/redact.mjs";
 import { normalizeWorkspaceExtensions } from "../../domain/workspace-management.mjs";
 import { backfillTargetMembers } from "../../domain/job-facts.mjs";
+import { createWorkspaceOperationGate } from "../../application/workspace-operations.mjs";
 export async function createBackup({
   repository,
   clock = repository.clock,
@@ -91,6 +92,13 @@ export async function restoreBackup({
   archivePath,
   operationLease,
 }) {
+  if (!operationLease)
+    return createWorkspaceOperationGate({ repository }).withOperation(
+      "restore",
+      {},
+      (lease) =>
+        restoreBackup({ repository, archivePath, operationLease: lease }),
+    );
   const archive = validateBackupArchive(
     JSON.parse(await fs.readFile(archivePath, "utf8")),
   );

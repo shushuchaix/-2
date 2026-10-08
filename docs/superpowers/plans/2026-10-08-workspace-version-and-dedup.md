@@ -202,7 +202,7 @@ function Invoke-RjrTest {
 - Extend `repository.mutateWorkspace(fn,{operationLease=null,operationMaintenance=false}={})`：exclusive 存在时普通业务写拒绝；maintenance 仅允许更改租约且校验其余业务摘要未变。lease token 验证失败拒绝。Extend `writeRunSnapshot(id,snapshot,{operationLease=null}={})` 同样验证 exclusive/lease。
 - Extend内部 `startRun/evaluate/rescore/import` 支持父 operationLease；正常公开 API 不接收 token。
 
-- [ ] **1. 写失败测试。** 两 repository/真实子进程竞争；一个运行停在最后 snapshot write，一个 standalone rescore 停在评价；exclusive 均拒绝。断言：
+- [x] **1. 写失败测试。** 两 repository/真实子进程竞争；一个运行停在最后 snapshot write，一个 standalone rescore 停在评价；exclusive 均拒绝。断言：
   ```js
   assert.equal(cleanupError.code, 'workspace_operation_busy');
   assert.equal(snapshotWrittenBeforeLeaseRelease, true);
@@ -211,11 +211,11 @@ function Invoke-RjrTest {
   assert.equal(newRescoreRejectedWhenProfileArchived, true);
   ```
   活动间接画像不能 archive；停用不取消既有 run；恢复后重算状态。测试活 PID 不回收、死 PID 可回收、异常/取消释放、检查后启动竞争只有一方成功；故障诊断无 token/路径。
-- [ ] **2. RED。** `Invoke-RjrTest tests/integration/workspace-operations.test.mjs tests/integration/run-service.test.mjs tests/integration/rescore.test.mjs`。
-- [ ] **3. 实现持久租约、repository 写保护与恢复。** isOwnerAlive 复用 hasLiveOwner 的保守 PID 判定；先清理确已终止的操作。无需长时间持有文件锁；所有租约业务改动仍走原子事务，不能重入 mutate。
-- [ ] **4. 接入全流程租约与版本状态。** 排队 run 从登记起持有，直到最终 snapshot 和失败收尾结束再释放；RunGate 配额独立。run 内评价复用父 lease；standalone评分独立取得；legacy 覆盖画像/目标创建到snapshot，import覆盖获取、入库及人工备注。恢复/永久删除/升级使用 exclusive；archive 锁内检查间接引用活动。
-- [ ] **5. GREEN。** 运行步骤 2 加 `tests/integration/api-v1-compat.test.mjs tests/integration/atomic-storage.test.mjs`；父lease复用不自阻塞，失败恢复无残留能力。
-- [ ] **6. Commit。** `git commit -m "fix: coordinate cleanup with collection scoring and snapshot writes"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/integration/workspace-operations.test.mjs tests/integration/run-service.test.mjs tests/integration/rescore.test.mjs`。
+- [x] **3. 实现持久租约、repository 写保护与恢复。** isOwnerAlive 复用 hasLiveOwner 的保守 PID 判定；先清理确已终止的操作。无需长时间持有文件锁；所有租约业务改动仍走原子事务，不能重入 mutate。
+- [x] **4. 接入全流程租约与版本状态。** 排队 run 从登记起持有，直到最终 snapshot 和失败收尾结束再释放；RunGate 配额独立。run 内评价复用父 lease；standalone评分独立取得；legacy 覆盖画像/目标创建到snapshot，import覆盖获取、入库及人工备注。恢复/永久删除/升级使用 exclusive；archive 锁内检查间接引用活动。
+- [x] **5. GREEN。** 运行步骤 2 加 `tests/integration/api-v1-compat.test.mjs tests/integration/atomic-storage.test.mjs`；父lease复用不自阻塞，失败恢复无残留能力。
+- [x] **6. Commit。** `git commit -m "fix: coordinate cleanup with collection scoring and snapshot writes"`。
 
 ## Task 6：全版本重复预览、备份与原子清理
 

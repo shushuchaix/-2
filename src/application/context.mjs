@@ -6,7 +6,7 @@ import { DATA_ROOT } from "../config.mjs";
 import { openWorkspaceRepository } from "../infrastructure/storage/repository.mjs";
 import { migrateV1 } from "../infrastructure/storage/migrate-v1.mjs";
 import { recoverWorkspace } from "../infrastructure/storage/recovery.mjs";
-import {upgradeWorkspace} from '../infrastructure/storage/upgrade-workspace.mjs';
+import { upgradeWorkspace } from "../infrastructure/storage/upgrade-workspace.mjs";
 import { writeAtomicJson } from "../infrastructure/storage/atomic.mjs";
 import {
   createBackup,
@@ -14,6 +14,7 @@ import {
   validateBackupArchive,
 } from "../infrastructure/storage/backup.mjs";
 import { createWorkspaceService } from "./workspace-service.mjs";
+import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { createJobService } from "./job-service.mjs";
 import { createEvaluationService } from "./evaluation-service.mjs";
 import { createSourceService } from "./source-service.mjs";
@@ -90,11 +91,15 @@ export async function createApplicationContext({
       }),
     (result) => ({ issueCount: result.issues?.length || 0 }),
   );
-  const managementUpgrade = await trace('application.migration', () => upgradeWorkspace({repository}),
-    result => ({issueCount:result.changed ? 1 : 0}));
+  const operationGate = createWorkspaceOperationGate({ repository });
+  const managementUpgrade = await trace(
+    "application.migration",
+    () => upgradeWorkspace({ repository, operationGate }),
+    (result) => ({ issueCount: result.changed ? 1 : 0 }),
+  );
   const recovery = await trace(
     "application.recovery",
-    () => recoverWorkspace(repository),
+    () => recoverWorkspace(repository, { operationGate }),
     (result) => ({
       counts: {
         interrupted: result.interruptedRunIds.length,
@@ -106,6 +111,7 @@ export async function createApplicationContext({
   const registry = dependencies.registry || createDefaultSourceRegistry();
   const workspaceService = createWorkspaceService({
       repository,
+      operationGate,
       modelConfig: () => cfg.deepseek,
       sourceIds: () => [
         ...registry.list().map((p) => p.id),
@@ -144,6 +150,7 @@ export async function createApplicationContext({
       ));
   const evaluationService = createEvaluationService({
       repository,
+      operationGate,
       modelFactory,
       budgetFactory: async () =>
         createConfiguredModelBudget({
@@ -160,6 +167,7 @@ export async function createApplicationContext({
       storageFile: path.join(repository.dataDir, "quota.json"),
     });
   const runService = createRunService({
+    operationGate,
     diagnostics,
     repository,
     workspaceService,
@@ -181,6 +189,7 @@ export async function createApplicationContext({
     }),
     importService = createImportService({
       repository,
+      operationGate,
       jobService,
       request: (url, options) =>
         requestFactory({
@@ -191,6 +200,7 @@ export async function createApplicationContext({
     exportService = createExportService({ repository });
   let settingsQueue = Promise.resolve();
   const context = {
+    operationGate,
     diagnostics,
     cfg,
     repository,
@@ -383,6 +393,11 @@ export async function createApplicationContext({
         try {
           return await restoreBackup({ repository, archivePath });
         } catch (error) {
+          if (
+            error.code === "workspace_operation_busy" ||
+            error.code === "invalid_operation_lease"
+          )
+            throw error;
           if (error.code && /ENOSPC|EACCES|EPERM|EROFS|EIO/.test(error.code))
             throw error;
           throw inputError({

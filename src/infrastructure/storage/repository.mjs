@@ -8,6 +8,7 @@ import {
 import { writeAtomicJson } from "./atomic.mjs";
 import { withWorkspaceLock } from "./lock.mjs";
 import { recordDiagnostic } from "../diagnostics/log.mjs";
+import { assertOperationWriteAllowed } from "../../application/workspace-operations.mjs";
 export const contentHash = (value) =>
   createHash("sha256")
     .update(typeof value === "string" ? value : JSON.stringify(value))
@@ -52,7 +53,7 @@ export async function openWorkspaceRepository({
   };
   await read();
   let queue = Promise.resolve();
-  const mutateWorkspace = (fn) => {
+  const mutateWorkspace = (fn, options = {}) => {
     let phase = "lock",
       started,
       revision;
@@ -62,9 +63,20 @@ export async function openWorkspaceRepository({
         return withWorkspaceLock(dataDir, async () => {
           phase = "read";
           const current = await read();
+          assertOperationWriteAllowed(current, options);
           const draft = structuredClone(current);
           phase = "mutation";
           const result = await fn(draft);
+          if (options.operationMaintenance) {
+            const business = (w) =>
+              contentHash({
+                ...w,
+                revision: undefined,
+                operationLeases: undefined,
+              });
+            if (business(current) !== business(draft))
+              throw Error("Operation maintenance cannot change business data");
+          }
           draft.revision = current.revision + 1;
           revision = draft.revision;
           phase = "validation";
@@ -120,13 +132,14 @@ export async function openWorkspaceRepository({
     clock,
     read,
     mutateWorkspace,
-    async writeRunSnapshot(id, snapshot) {
+    async writeRunSnapshot(id, snapshot, options = {}) {
       if (typeof id === "object") {
         snapshot = id;
         id = snapshot.run?.runId || snapshot.runId;
       }
       const p = runPath(id);
       return withWorkspaceLock(dataDir, async () => {
+        assertOperationWriteAllowed(await read(), options);
         const raw = JSON.stringify(snapshot);
         try {
           const old = await fsAdapter.readFile(p, "utf8");

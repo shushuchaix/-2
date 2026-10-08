@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { normalizeWorkspaceExtensions } from "../domain/workspace-management.mjs";
@@ -24,6 +25,7 @@ export function createWorkspaceService({
   sourceIds,
   siteIds,
   modelConfig,
+  operationGate = createWorkspaceOperationGate({ repository }),
 }) {
   const now = () => new Date(clock.now()).toISOString();
   const revision = (w, key, id) =>
@@ -395,7 +397,14 @@ export function createWorkspaceService({
     updateVersion: (args) => manage("update", args),
     archiveVersion: (args) => manage("archive", args),
     restoreVersion: (args) => manage("restore", args),
-    permanentlyDeleteVersion: (args) => manage("delete", args),
+    permanentlyDeleteVersion: (args) =>
+      args.operationLease
+        ? manage("delete", args)
+        : operationGate.withOperation(
+            "permanent-delete",
+            {},
+            (operationLease) => manage("delete", { ...args, operationLease }),
+          ),
     async deleteProfileRevision(id) {
       const item = revision(await repository.read(), "profiles", id);
       if (!item)

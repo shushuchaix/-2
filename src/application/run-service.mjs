@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { selectRunJobFact } from "../domain/job-facts.mjs";
+import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
@@ -47,6 +48,7 @@ export function createRunService({
   catalog,
   config = {},
   diagnostics,
+  operationGate = createWorkspaceOperationGate({ repository }),
 }) {
   const active = new Map(),
     now = () => new Date(clock.now()).toISOString();
@@ -103,6 +105,7 @@ export function createRunService({
       mode,
       credentials,
       modelConfig,
+      operationLease,
     },
   ) {
     const signal = controller.signal,
@@ -674,6 +677,7 @@ export function createRunService({
           signal,
           runId: id,
           modelClient: client,
+          operationLease,
         });
         evaluations.push(...result.evaluations);
         issues.push(...result.issues);
@@ -799,7 +803,9 @@ export function createRunService({
         events: workspace.runs[id].events || [],
       };
       try {
-        const snapshotRef = await repository.writeRunSnapshot(id, snapshot);
+        const snapshotRef = await repository.writeRunSnapshot(id, snapshot, {
+          operationLease,
+        });
         await update(id, { snapshotRef });
         await emit(id, "done", { status: snapshot.run.status, counts });
         snapshot.run = (await repository.read()).runs[id];
@@ -871,7 +877,12 @@ export function createRunService({
     }
   }
   const service = {
-    async startRun({ targetRevisionId, mode = "rules", credentials = {} }) {
+    async startRun({
+      targetRevisionId,
+      mode = "rules",
+      credentials = {},
+      operationLease: parentLease,
+    }) {
       assertInput("run", {
         targetRevisionId,
         mode,
@@ -925,6 +936,11 @@ export function createRunService({
         modelConfig,
       };
       try {
+        frozen.operationLease = await operationGate.acquire("collect", {
+          targetRevisionId,
+          profileRevisionId: profile.revisionId,
+          parentLease,
+        });
         await repository.mutateWorkspace((w) => {
           w.runs[runId] = {
             runId,
@@ -948,6 +964,7 @@ export function createRunService({
         });
       } catch (error) {
         permit?.release();
+        await frozen.operationLease?.release();
         throw error;
       }
       active.set(runId, frozen);
@@ -963,7 +980,13 @@ export function createRunService({
             () => execute(runId, frozen),
           ),
         )
-        .finally(() => active.delete(runId));
+        .finally(async () => {
+          try {
+            await frozen.operationLease.release();
+          } finally {
+            active.delete(runId);
+          }
+        });
       frozen.promise.catch((error) => {
         if (!error.diagnosticId)
           void recordDiagnostic(

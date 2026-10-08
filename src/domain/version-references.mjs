@@ -2,6 +2,27 @@ export function countVersionReferences(
   w,
   { kind, revisionId, excludeOperationId = null },
 ) {
+  if (w.schemaVersion === 3) {
+    const owner = Object.values(w.packages).find(
+      (p) => p.kind === kind && p.versionId === revisionId,
+    )?.packageId;
+    const own = (r) => r.ownerPackageId === owner;
+    return {
+      targets: 0,
+      runs: Object.values(w.runs).filter(own).length,
+      evaluations: Object.values(w.evaluations).filter(own).length,
+      members: Object.values(w.jobs).filter(own).length,
+      applications: Object.values(w.applications).filter(own).length,
+      applicationEvents: Object.values(w.applications)
+        .filter(own)
+        .reduce((n, a) => n + (a.events || []).length, 0),
+      activeOperations: Object.entries(w.operationLeases || {}).filter(
+        ([id, l]) =>
+          id !== excludeOperationId &&
+          (l.packageIds || [l.packageId]).includes(owner),
+      ).length,
+    };
+  }
   const refs = {
     targets: 0,
     runs: 0,
@@ -68,6 +89,26 @@ export function countVersionReferences(
   return refs;
 }
 export function versionAvailability(w, target) {
+  if (w.schemaVersion === 3) {
+    const p = w.packages[target.ownerPackageId];
+    if (p?.state !== "active")
+      return {
+        canCollect: false,
+        canRescore: false,
+        reasonCode: "target_archived",
+      };
+    if (target.incomplete || !target.profileSnapshot)
+      return {
+        canCollect: false,
+        canRescore: false,
+        reasonCode: "target_profile_unverified",
+      };
+    return {
+      canCollect: p.enabled,
+      canRescore: true,
+      reasonCode: p.enabled ? null : "target_disabled",
+    };
+  }
   const meta = w.versionMetadata?.[target.revisionId];
   if (meta?.archivedAt)
     return {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createPackageVersionService } from "./package-version-service.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
@@ -25,8 +26,18 @@ export function createWorkspaceService({
   sourceIds,
   siteIds,
   modelConfig,
+  trashService,
   operationGate = createWorkspaceOperationGate({ repository }),
 }) {
+  const ownedService = createPackageVersionService({
+    repository,
+    clock,
+    sourceIds,
+    siteIds,
+    modelConfig,
+    trashService,
+  });
+  const isOwned = async () => (await repository.read()).schemaVersion === 3;
   const now = () => new Date(clock.now()).toISOString();
   const revision = (w, key, id) =>
     Object.values(w[key])
@@ -146,8 +157,33 @@ export function createWorkspaceService({
   }
   async function manage(
     action,
-    { kind, parentId, revisionId, versionName, enabled, operationLease },
+    {
+      kind,
+      parentId,
+      revisionId,
+      versionName,
+      enabled,
+      operationLease,
+      packageId,
+    },
   ) {
+    if (await isOwned())
+      return ownedService[
+        {
+          update: "updateVersion",
+          archive: "archiveVersion",
+          restore: "restoreVersion",
+          delete: "permanentlyDeleteVersion",
+        }[action]
+      ]({
+        kind,
+        parentId,
+        revisionId,
+        versionName,
+        enabled,
+        operationLease,
+        packageId,
+      });
     if (!["profile", "target"].includes(kind))
       throw inputError({ kind: "版本种类无效。" });
     const key = kind === "profile" ? "profiles" : "targets";
@@ -246,6 +282,7 @@ export function createWorkspaceService({
   }
   return {
     async saveProfile(input) {
+      if (await isOwned()) return ownedService.saveProfile(input);
       assertInput("profile", input, { partial: true });
       return (
         await repository.mutateWorkspace((w) => {
@@ -296,6 +333,8 @@ export function createWorkspaceService({
       ).result;
     },
     async saveTarget(input, { submissionInput = input } = {}) {
+      if (await isOwned())
+        return ownedService.saveTarget(input, { submissionInput });
       normalizeVersionName(input.versionName);
       const model =
         typeof modelConfig === "function" ? modelConfig() : modelConfig;
@@ -380,20 +419,24 @@ export function createWorkspaceService({
       ).result;
     },
     async getProfileRevision(id) {
+      if (await isOwned()) return ownedService.getProfileRevision(id);
       const w = normalizeWorkspaceExtensions(await repository.read());
       return view(w, revision(w, "profiles", id), "profile");
     },
     async getTargetRevision(id) {
+      if (await isOwned()) return ownedService.getTargetRevision(id);
       const w = normalizeWorkspaceExtensions(await repository.read());
       return view(w, revision(w, "targets", id), "target");
     },
     async listProfiles() {
+      if (await isOwned()) return ownedService.listProfiles();
       const w = normalizeWorkspaceExtensions(await repository.read());
       return Object.values(w.profiles)
         .flat()
         .map((item) => view(w, item, "profile"));
     },
     async listTargets() {
+      if (await isOwned()) return ownedService.listTargets();
       const w = normalizeWorkspaceExtensions(await repository.read());
       return Object.values(w.targets)
         .flat()
@@ -411,6 +454,7 @@ export function createWorkspaceService({
             (operationLease) => manage("delete", { ...args, operationLease }),
           ),
     async deleteProfileRevision(id) {
+      if (await isOwned()) return ownedService.deleteProfileRevision(id);
       const item = revision(await repository.read(), "profiles", id);
       if (!item)
         throw Object.assign(Error("简历版本不存在。"), { status: 404 });

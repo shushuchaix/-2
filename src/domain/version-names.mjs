@@ -13,6 +13,25 @@ export function assertVersionNameAvailable(
   { kind, versionName, revisionId = null },
 ) {
   const normalized = normalizeVersionName(versionName);
+  const packageOccupied = Object.values(w.packages || {}).find(
+    (p) =>
+      p.versionId !== revisionId &&
+      p.kind === kind &&
+      p.state !== "purged" &&
+      versionNameKey(p.versionName) === normalized.nameKey,
+  );
+  if (packageOccupied)
+    throw Object.assign(
+      inputError(
+        { versionName: "该版本名称已被占用，请查看已有版本或使用其他名称。" },
+        "该版本名称已被占用。",
+        409,
+      ),
+      {
+        code: "version_name_conflict",
+        conflictingRevisionId: packageOccupied.versionId,
+      },
+    );
   const occupied = Object.entries(w.versionMetadata || {}).find(
     ([id, m]) =>
       id !== revisionId && m.kind === kind && m.nameKey === normalized.nameKey,

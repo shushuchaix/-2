@@ -310,7 +310,13 @@ try {
 
   r = await api('/api/health');
   j = await r.json();
-  check('未登录时 /api/health 不泄露密钥信息', j.ok === true && !j.deepseek, `字段：${Object.keys(j).join(',')}`);
+  check('未登录时 /api/health 不泄露密钥信息',
+    ['starting', 'ready', 'maintenance'].includes(j.status) &&
+    j.ok === (j.status === 'ready') &&
+    j.authRequired === true && j.authenticated === false &&
+    Object.keys(j).every(key => ['ok', 'status', 'maintenance', 'version', 'authRequired', 'authenticated'].includes(key)),
+    `字段：${Object.keys(j).join(',')}`);
+  await started.ctx.ready;
 
   r = await api('/api/analyze', {
     method: 'POST',

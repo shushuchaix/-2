@@ -5,6 +5,7 @@ import { useVersionContext } from "../../app/VersionContext";
 import { buildHash } from "../../app/router";
 import { RunOptions } from "./RunOptions";
 import { RunSummary } from "./RunSummary";
+import { getPendingStart, startRunOnce } from "./pending-start";
 import { Button } from "../../components/ui/button";
 import {
   Card,
@@ -57,6 +58,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
     [streamError, setStreamError] = useState<unknown>(null),
     [recovering, setRecovering] = useState(!!ctx.scope),
     [recoveryError, setRecoveryError] = useState<unknown>(null),
+    [pendingStartError, setPendingStartError] = useState<unknown>(null),
     [recoveryAttempt, setRecoveryAttempt] = useState(0),
     [errors, setErrors] = useState<Record<string, string>>({});
   const controller = useRef<AbortController | null>(null),
@@ -85,18 +87,33 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
     setOutcome("");
     setStreamError(null);
     setRecoveryError(null);
+    setPendingStartError(null);
     setRecovering(!!ctx.scope && !ctx.error);
     if (ctx.scope && !ctx.loading && !ctx.error) {
       const scope = ctx.scope;
       const read = new AbortController();
       controller.current = read;
-      void api
-        .request<{ runs: Record<string, unknown>[] }>("/runs", {
+      const pending = getPendingStart(api, scope);
+      void (async () => {
+        if (pending) {
+          try {
+            await pending;
+          } catch (error) {
+            if (token !== generation.current || read.signal.aborted) return;
+            setPendingStartError(error);
+          }
+        }
+        if (token !== generation.current || read.signal.aborted) return;
+        // Even a failed response may follow a committed mutation. Re-read the
+        // exact scope before deciding that starting another task is safe.
+        return api.request<{ runs: Record<string, unknown>[] }>("/runs", {
           scope,
           signal: read.signal,
-        })
+        });
+      })()
         .then((result) => {
-          if (token !== generation.current || read.signal.aborted) return;
+          if (!result || token !== generation.current || read.signal.aborted)
+            return;
           const current = result.runs.find(
             (item) =>
               typeof item.runId === "string" &&
@@ -173,6 +190,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
       ctx.error ||
       recovering ||
       recoveryError ||
+      getPendingStart(api, ctx.scope) ||
       (!!run && !terminal.has(String(run.status))) ||
       op.busy
     )
@@ -189,23 +207,16 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
     setErrors({});
     const scope = ctx.scope,
       token = generation.current;
-    controller.current?.abort();
-    controller.current = new AbortController();
-    const signal = controller.current.signal;
     setOutcome("");
     setStreamError(null);
+    setPendingStartError(null);
     await op.run(async () => {
-      const created = await api.request<Record<string, unknown>>("/runs", {
-        method: "POST",
-        scope,
-        signal,
-        body: {
-          mode,
-          ...(mode === "ai" && userKey ? { userApiKey: userKey } : {}),
-        },
+      const created = await startRunOnce(api, scope, {
+        mode,
+        ...(mode === "ai" && userKey ? { userApiKey: userKey } : {}),
       });
+      if (token !== generation.current) return;
       setUserKey("");
-      if (token !== generation.current || signal.aborted) return;
       setRun(created);
       void connect(String(created.runId), scope);
     }, "检索任务已创建");
@@ -310,6 +321,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
         <p role="status">正在读取当前目标的运行任务…</p>
       )}
       <OperationFeedback error={recoveryError} />
+      <OperationFeedback error={pendingStartError} />
       {!!recoveryError && ctx.scope && (
         <Button
           variant="outline"

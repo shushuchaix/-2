@@ -472,3 +472,157 @@ test("failed run recovery blocks duplicate start and can be retried in the same 
     { packageId: "A", targetRevisionId: "t1@1" },
   );
 });
+
+test("returning before a delayed start commits waits for that exact pending request before reading runs", async (t) => {
+  let commit: (value: unknown) => void = () => {},
+    created = false;
+  const delayed = new Promise((resolve) => (commit = resolve));
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path, options) => {
+      if (path === "/runs") {
+        if (options.method === "POST")
+          return delayed.then((value) => {
+            created = true;
+            return value;
+          });
+        return {
+          runs: created
+            ? [
+                {
+                  runId: "delayed-created-A",
+                  status: "running",
+                  counts: { collected: 6, saved: 5, candidates: 4 },
+                },
+              ]
+            : [],
+        };
+      }
+      if (path === "/runs/delayed-created-A/events")
+        return new Promise(() => {});
+      return syntheticApi(path, options);
+    },
+  });
+  await f.user.click(f.screen.getByRole("button", { name: "运行选项" }));
+  await f.user.click(f.screen.getByRole("button", { name: "模型辅助" }));
+  await f.user.type(
+    f.screen.getByLabelText("本次更新临时模型密钥"),
+    "SYNTHETIC_REQUEST_ONLY_KEY_00001",
+  );
+  await f.user.click(f.screen.getByRole("button", { name: "更新岗位" }));
+  await waitFor(() =>
+    assert.ok(
+      f.apiCalls.some((c) => c.path === "/runs" && c.options.method === "POST"),
+    ),
+  );
+  const post = f.apiCalls.find(
+    (c) => c.path === "/runs" && c.options.method === "POST",
+  )!;
+  assert.equal(
+    (post.body as Record<string, unknown>).userApiKey,
+    "SYNTHETIC_REQUEST_ONLY_KEY_00001",
+  );
+  await f.user.click(f.screen.getByRole("link", { name: "岗位库" }));
+  await f.screen.findByLabelText("搜索岗位");
+  await f.user.click(f.screen.getByRole("link", { name: "工作台" }));
+  assert.equal(
+    f.screen.getByRole("button", { name: "更新岗位" }).hasAttribute("disabled"),
+    true,
+  );
+  assert.equal(
+    f.apiCalls.filter((c) => c.path === "/runs" && c.options.method !== "POST")
+      .length,
+    1,
+  );
+  assert.equal(f.screen.queryByLabelText("本次更新临时模型密钥"), null);
+  await act(async () => {
+    commit({ runId: "delayed-created-A", status: "queued" });
+  });
+  await f.screen.findByText("采集 6 条 · 保存 5 条 · 候选 4 条");
+  assert.ok(f.screen.getByRole("button", { name: "取消任务" }));
+  assert.equal(post.options.signal, undefined);
+  assert.equal(
+    f.apiCalls.filter((c) => c.path === "/runs" && c.options.method === "POST")
+      .length,
+    1,
+  );
+  assert.equal(
+    f.apiCalls.filter((c) => c.path === "/runs" && c.options.method !== "POST")
+      .length,
+    2,
+  );
+  assert.deepEqual(
+    f.apiCalls.find((c) => c.path === "/runs/delayed-created-A/events")?.scope,
+    { packageId: "A", targetRevisionId: "t1@1" },
+  );
+});
+
+test("pending start is isolated by exact scope and a failed pending commit can recover and start again", async (t) => {
+  let rejectFirst: (reason: unknown) => void = () => {},
+    posts = 0;
+  const failed = new Promise((_resolve, reject) => (rejectFirst = reject));
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path, options) => {
+      if (path === "/runs") {
+        if (options.method !== "POST") return { runs: [] };
+        if (++posts === 1) return failed;
+        return { runId: "second-created-A", status: "running" };
+      }
+      if (path === "/runs/second-created-A/events")
+        return new Promise(() => {});
+      return syntheticApi(path, options);
+    },
+  });
+  await f.user.click(f.screen.getByRole("button", { name: "更新岗位" }));
+  await f.user.click(f.screen.getByRole("link", { name: "岗位库" }));
+  await f.selectTarget({ packageId: "B", targetRevisionId: "t2@1" });
+  await f.user.click(f.screen.getByRole("link", { name: "工作台" }));
+  await waitFor(() =>
+    assert.equal(
+      f.screen
+        .getByRole("button", { name: "更新岗位" })
+        .hasAttribute("disabled"),
+      false,
+    ),
+  );
+  assert.deepEqual(
+    f.apiCalls
+      .filter((c) => c.path === "/runs" && c.options.method !== "POST")
+      .at(-1)?.scope,
+    { packageId: "B", targetRevisionId: "t2@1" },
+  );
+  assert.equal(f.screen.queryByRole("button", { name: "取消任务" }), null);
+  await f.selectTarget({ packageId: "A", targetRevisionId: "t1@1" });
+  assert.equal(
+    f.screen.getByRole("button", { name: "更新岗位" }).hasAttribute("disabled"),
+    true,
+  );
+  await act(async () => {
+    rejectFirst(Error("合成任务创建失败，请重试"));
+  });
+  await f.screen.findByText(/合成任务创建失败/);
+  await waitFor(() =>
+    assert.equal(
+      f.screen
+        .getByRole("button", { name: "更新岗位" })
+        .hasAttribute("disabled"),
+      false,
+    ),
+  );
+  await f.user.click(f.screen.getByRole("button", { name: "更新岗位" }));
+  await f.screen.findByRole("button", { name: "取消任务" });
+  assert.equal(posts, 2);
+  assert.equal(f.screen.queryByText(/合成任务创建失败/), null);
+  assert.ok(
+    f.apiCalls
+      .filter((c) => c.path === "/runs" && c.options.method === "POST")
+      .every(
+        (c) =>
+          c.scope &&
+          "packageId" in c.scope &&
+          c.scope.packageId === "A" &&
+          c.scope.targetRevisionId === "t1@1",
+      ),
+  );
+});

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import {runtimeRepository,runtimeGate,assertRuntimeJobs} from './package-runtime-service.mjs';
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { evaluateRules, RULE_VERSION } from "../domain/ranking.mjs";
@@ -21,7 +22,7 @@ import {
   selectMatchingEvaluation,
   resolveEvaluationFactBasis,
 } from "../domain/job-facts.mjs";
-export function createEvaluationService({
+function createLegacyEvaluationService({
   repository,
   cache = new Map(),
   modelFactory,
@@ -107,7 +108,7 @@ export function createEvaluationService({
               );
             const record = { ...fact.record, jobId: id };
             const jdHash = contentHash({ ...record, retrievedAt: undefined });
-            const cacheKey = evaluationCacheKey({
+            const rawCacheKey = evaluationCacheKey({
               jdHash: fact.factContentHash,
               profileRevisionId,
               targetRevisionId,
@@ -115,6 +116,7 @@ export function createEvaluationService({
               ruleVersion: RULE_VERSION,
               modelFingerprint: fingerprint,
             });
+            const cacheKey=workspace._scope?contentHash([workspace._scope.packageId,rawCacheKey]):rawCacheKey;
             const reusable = (e) =>
               e &&
               ["rules", "ai"].includes(e.status) &&
@@ -500,4 +502,14 @@ export function createEvaluationService({
       );
     },
   };
+}
+export function createEvaluationService(options){
+ const legacy=createLegacyEvaluationService(options),instances=new Map();
+ const gate=options.operationGate||createWorkspaceOperationGate({repository:options.repository});
+ async function invoke(method,input){const w=await options.repository.read();if(w.schemaVersion!==3)return legacy[method](input);
+  const target=await assertRuntimeJobs(options.repository,input.scope,input.jobIds,input.runId),scope={packageId:input.scope.packageId,targetRevisionId:input.scope.targetRevisionId};
+  if(!instances.has(scope.packageId))instances.set(scope.packageId,createLegacyEvaluationService({...options,repository:runtimeRepository(options.repository,scope),operationGate:runtimeGate(gate,scope)}));
+  return instances.get(scope.packageId)[method]({...input,targetRevisionId:scope.targetRevisionId,profileRevisionId:target.profileSnapshot.revisionId});
+ }
+ return {evaluate:input=>invoke('evaluate',input),rescore:input=>invoke('rescore',input)};
 }

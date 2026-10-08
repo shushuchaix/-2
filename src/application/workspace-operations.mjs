@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { hasLiveOwner } from "../infrastructure/storage/process-owner.mjs";
 import { versionAvailability } from "../domain/version-references.mjs";
+import {assertScope,requirePackage,packageError} from '../domain/packages.mjs';
 export const SHARED_OPERATION_KINDS = new Set([
   "collect",
   "evaluate",
@@ -99,6 +100,8 @@ export function createWorkspaceOperationGate({
         parentLease,
         expectedWorkspaceRevision,
         signal,
+        scope,
+        packageIds,
       } = {},
     ) {
       if (
@@ -122,6 +125,11 @@ export function createWorkspaceOperationGate({
               );
             for (const [id, l] of Object.entries(w.operationLeases))
               if (!alive(l)) delete w.operationLeases[id];
+            if(w.schemaVersion===3){
+              if(scope){const pkg=assertScope(w,scope,clock.now());targetRevisionId=pkg.versionId;profileRevisionId=Object.values(w.targets).flat().find(t=>t.revisionId===targetRevisionId)?.profileSnapshot?.revisionId;packageIds=[pkg.packageId];scope={packageId:pkg.packageId,targetRevisionId};}
+              else if(SHARED_OPERATION_KINDS.has(kind)&&!packageIds?.length)throw packageError('version_scope_required','操作需要明确的数据包范围。');
+              for(const id of packageIds||[]){if(kind==='permanent-delete'||kind==='restore'){if(!w.packages[id])throw packageError('package_not_found','数据包不存在。',404);}else requirePackage(w,id,{access:SHARED_OPERATION_KINDS.has(kind)?'business':'management',now:clock.now()});}
+            }
             if (targetRevisionId) {
               const target = Object.values(w.targets)
                 .flat()
@@ -129,7 +137,8 @@ export function createWorkspaceOperationGate({
               if (!target)
                 throw Object.assign(Error("目标版本不存在。"), { status: 400 });
               profileRevisionId ||= target.profileRevisionId;
-              if (SHARED_OPERATION_KINDS.has(kind)) {
+              if(w.schemaVersion===3&&kind==='collect'&&(w.versionMetadata?.[targetRevisionId]?.enabled??target.enabled)===false)throw packageError('version_disabled','目标版本已停用，请先启用。');
+              if (w.schemaVersion!==3&&SHARED_OPERATION_KINDS.has(kind)) {
                 const availability = versionAvailability(w, target);
                 if (availability.reasonCode?.endsWith("_archived"))
                   throw Object.assign(
@@ -143,7 +152,7 @@ export function createWorkspaceOperationGate({
                   });
               }
             }
-            if (profileRevisionId && SHARED_OPERATION_KINDS.has(kind)) {
+            if (w.schemaVersion!==3&&profileRevisionId && SHARED_OPERATION_KINDS.has(kind)) {
               if (
                 !Object.values(w.profiles)
                   .flat()
@@ -161,10 +170,11 @@ export function createWorkspaceOperationGate({
               if (
                 !parent ||
                 parent.token !== parentLease.token ||
-                !SHARED_OPERATION_KINDS.has(parent.kind) ||
-                !SHARED_OPERATION_KINDS.has(kind)
+                !(EXCLUSIVE_OPERATION_KINDS.has(parent.kind)||(SHARED_OPERATION_KINDS.has(parent.kind)&&SHARED_OPERATION_KINDS.has(kind)))
               )
                 throw invalidLease();
+              if(scope&&parent.scope&&(parent.scope.packageId!==scope.packageId||parent.scope.targetRevisionId!==scope.targetRevisionId))throw invalidLease();
+              if(parent.packageIds?.length&&packageIds?.some(id=>!parent.packageIds.includes(id)))throw invalidLease();
               if (
                 parent.targetRevisionId &&
                 targetRevisionId &&
@@ -209,6 +219,7 @@ export function createWorkspaceOperationGate({
               targetRevisionId: targetRevisionId || null,
               profileRevisionId: profileRevisionId || null,
               createdAt: now(),
+              ...(w.schemaVersion===3?{scope:scope||null,packageIds:[...new Set(packageIds||[])]}:{}),
             };
             w.operationLeases[operationId] = lease;
             return { ...lease, acquiredRevision: w.revision + 1 };

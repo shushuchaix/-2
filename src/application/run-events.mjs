@@ -1,5 +1,8 @@
 import { resolveJobIds, resolveJobId } from "../domain/job-resolution.mjs";
 import { selectRunJobFact } from "../domain/job-facts.mjs";
+import {randomUUID} from 'node:crypto';
+import {assertScope,assertOwned} from '../domain/packages.mjs';
+import {packageWorkspace} from './package-job-service.mjs';
 export function createRunEventHub({
   repository,
   clock = repository.clock,
@@ -14,11 +17,12 @@ export function createRunEventHub({
   const listeners = new Map();
   const at = () => new Date(clock.now()).toISOString();
   const hub = {
-    async publish(runId, type, payload) {
+    async publish(runId, type, payload,scope) {
       const event = (
         await repository.mutateWorkspace((w) => {
           const run = w.runs[runId];
           if (!run) throw Error("Run not found");
+          if(w.schemaVersion===3){assertScope(w,scope,clock.now());assertOwned(w,run,scope.packageId);}
           const event = {
             schemaVersion: 2,
             runId,
@@ -26,6 +30,7 @@ export function createRunEventHub({
             type,
             at: at(),
             payload: structuredClone(payload),
+            ...(w.schemaVersion===3?{recordId:randomUUID(),ownerPackageId:scope.packageId}:{}),
           };
           run.events = [...(run.events || []), event].slice(-maxBuffered);
           return event;
@@ -35,8 +40,10 @@ export function createRunEventHub({
         subscriber.enqueue(event);
       return event;
     },
-    async getSnapshot(runId) {
-      const w = await repository.read(),
+    async getSnapshot(runId,scope) {
+      let w = await repository.read();
+      if(w.schemaVersion===3){assertScope(w,scope,clock.now());assertOwned(w,w.runs[runId],scope.packageId);w=packageWorkspace(w,scope.packageId);}
+      const
         run = w.runs[runId];
       if (!run) throw Error("Run not found");
       const ids = new Set(
@@ -72,7 +79,7 @@ export function createRunEventHub({
         },
       };
     },
-    async subscribe(runId, { afterSeq = 0, onEvent, signal }) {
+    async subscribe(runId, { afterSeq = 0, onEvent, onClose, signal,scope }) {
       if (
         !Number.isSafeInteger(afterSeq) ||
         afterSeq < 0 ||
@@ -102,20 +109,26 @@ export function createRunEventHub({
         clearInterval(poll);
         signal?.removeEventListener("abort", unsubscribe);
       };
+      const closeAfterFailure = (error) => {
+        if(closed)return;
+        unsubscribe();
+        try{onClose?.(error);}catch{}
+      };
       async function pump() {
         if (pumping || closed) return;
         pumping = true;
         try {
           while (queue.length && !closed) {
             let event = queue.shift();
-            if (event.type === "resync") event = await hub.getSnapshot(runId);
+            const current=scope?await hub.getSnapshot(runId,scope):null;
+            if (event.type === "resync") event = current||await hub.getSnapshot(runId,scope);
             if (event.seq <= lastSeq && event.type !== "snapshot") continue;
             if (event.type === "snapshot" && event.seq < lastSeq) continue;
             await onEvent(event);
             lastSeq = Math.max(lastSeq, event.seq);
           }
-        } catch {
-          unsubscribe();
+        } catch (error) {
+          closeAfterFailure(error);
         } finally {
           pumping = false;
         }
@@ -124,7 +137,7 @@ export function createRunEventHub({
       listeners.get(runId).add(subscriber);
       let poll;
       try {
-        const snapshot = await hub.getSnapshot(runId),
+        const snapshot = await hub.getSnapshot(runId,scope),
           run = snapshot.payload.run;
         if (afterSeq > snapshot.seq) throw Error("Future event cursor seq");
         const events = run.events || [];
@@ -153,15 +166,15 @@ export function createRunEventHub({
           if (closed || polling) return;
           polling = true;
           try {
-            const current = await hub.getSnapshot(runId);
+            const current = await hub.getSnapshot(runId,scope);
             if (current.seq > lastSeq) {
               const events = current.payload.run.events || [];
               if (!events.length || lastSeq < events[0].seq - 1)
                 subscriber.enqueue({ type: "resync" });
               else for (const event of events) subscriber.enqueue(event);
             }
-          } catch {
-            unsubscribe();
+          } catch (error) {
+            closeAfterFailure(error);
           } finally {
             polling = false;
           }

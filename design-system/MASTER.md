@@ -58,9 +58,9 @@ node node_modules/shadcn/dist/index.js init --cwd ui --base base --preset nova -
 node node_modules/shadcn/dist/index.js add '@shadcn/sidebar' '@shadcn/card' '@shadcn/field' '@shadcn/select' '@shadcn/dialog' '@shadcn/alert-dialog' '@shadcn/toast' '@shadcn/badge' '@shadcn/tabs' '@shadcn/toggle-group' '@shadcn/table' '@shadcn/dropdown-menu' '@shadcn/alert' '@shadcn/empty' '@shadcn/spinner' '@shadcn/checkbox' '@shadcn/textarea' '@shadcn/switch' '@shadcn/collapsible' --cwd ui --yes
 ```
 
-这里的 preset 参数是 `nova`，`--base base` 选择 Base UI；`base-nova` 是生成的 style 名称，不能直接传作 preset。真实 CLI 生成 28 个 UI 文件及 `use-mobile.ts`，依赖组件包括 button/input/separator/skeleton/tooltip/label/toggle/sheet。生成源使用 `@base-ui/react`、`cn`、Lucide；Toast 采用 Base UI manager，Select/ToggleGroup 使用 Base UI 的值和 props。组件中文关闭提示与布局覆盖属于本地修改，原始供应商来源仍记录在此。
+这里的 preset 参数是 `nova`，`--base base` 选择 Base UI；`base-nova` 是生成的 style 名称，不能直接传作 preset。真实 CLI 生成 27 个 UI 组件文件及 `use-mobile.ts`，合计 28 个生成文件，依赖组件包括 button/input/separator/skeleton/tooltip/label/toggle/sheet。生成源使用 `@base-ui/react`、`cn`、Lucide；Toast 采用 Base UI manager，Select/ToggleGroup 使用 Base UI 的值和 props。组件中文关闭提示与布局覆盖属于本地修改，原始供应商来源仍记录在此。
 
-主题初始化含字体模板；实施将其替换为本地系统中文字体和批准的变量，不下载外部字体。
+主题初始化含字体模板；已替换为本地系统中文字体和批准的变量，不下载外部字体。
 
 | 锁定包                 | 版本                     |
 | ---------------------- | ------------------------ |
@@ -81,7 +81,9 @@ node node_modules/shadcn/dist/index.js add '@shadcn/sidebar' '@shadcn/card' '@sh
 
 `ui/` 是 Vite root，`publicDir: false`，`base: /app/`，只输出 `public/app/`。`tools/build-ui.mjs` 先严格类型检查，再 Vite build。入口引用外部 bundle/CSS，不使用内联 JS、CDN、远程字体或 Vite 生产服务。
 
-App 包裹 `<CSPProvider disableStyleElements>`。Base UI 禁止插入动态 style 元素；滚动条隐藏类写入本地 CSS，浮层定位保留组件所需的 DOM style 属性。此适配不修改服务端原有 CSP。jsdom 仅验证行为，不能证明真实 Chromium CSP 或窗口几何；Select、Toast、Sheet、Dialog、导航侧栏定位及 CSP 控制台须在最终合成 EXE 验收中核实。
+App 包裹 `<CSPProvider disableStyleElements>`。Base UI 禁止插入动态 style 元素；滚动条隐藏类写入本地 CSS，浮层定位保留组件所需的 DOM style 属性。此适配不修改服务端原有 CSP。jsdom 仅验证行为；最终 EXE 的独立 100% / 125% / 150% 进程各通过 57 项实际 Chromium 检查，CSP / 控制台 / 渲染器错误为 0。Select 定位、Sheet 焦点、Esc 与焦点返回、Toast 和窗口几何由实际操作验证。375px 名义窗口在后两种 DPI 的真实宽度为 374px，768 / 1024 / 1440px 则精确；报告保留 requested / actual / DPR 和原生采样，不将 jsdom 或标注尺寸当作实际窗口证明。详见 `docs/UI-ACCEPTANCE.md`。
+
+Toast Content 的高度类由 `h-full` 改为 `h-auto`，解决真实 125% 环境中的 ResizeObserver 高度反馈循环；保留原组件测量及错误监听。岗位详情完整显示当前 / 历史规则依据。工作台按准确版本恢复活跃任务，待提交启动请求跨页面继续、返回后先等待提交再读取，避免后台任务被遗漏。日志页签及诊断链接同步 hash，手动切换保留草稿。上述审查和实际 EXE 问题的定点 RED / GREEN 证据均记录在验收文档中。
 
 ## 技能检索依据
 

@@ -31,3 +31,10 @@ npm-debug.log*
 
 # Implementation ledger and task output
 .superpowers/
+
+# Generated frontend output and local management state.
+/public/app/
+/control/
+/cache/
+/logs/
+credentials.v2.json

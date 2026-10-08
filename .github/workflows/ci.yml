@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.20.2"
 
       # 安装锁定的测试依赖，不下载 Electron 运行时。
       # Electron 的 postinstall 要下载 ~130MB 运行时，CI 里没必要。

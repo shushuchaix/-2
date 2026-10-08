@@ -1,32 +1,34 @@
-# 简历岗位雷达 · 生产镜像
-FROM node:22-alpine
-
+# Build once, then ship the same renderer used by the desktop package.
+FROM node:20.20.2-bookworm-slim AS builder
 WORKDIR /app
+COPY package.json package-lock.json ./
+COPY ui/package.json ./ui/package.json
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY ui ./ui
+COPY tools/build-ui.mjs ./tools/build-ui.mjs
+COPY public/js ./public/js
+RUN node tools/build-ui.mjs
 
-# 生产环境标识
+FROM node:20.20.2-bookworm-slim AS runtime
+WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3210 \
     TRUST_PROXY=1
-
-# 先装依赖，利用 Docker 层缓存
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
-
-# 应用代码（不包含 tools/、data/、config.json）
+COPY ui/package.json ./ui/package.json
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+    && rm -rf /app/ui && npm cache clean --force
 COPY src ./src
-COPY public ./public
+COPY --from=builder /app/public/app ./public/app
+COPY public/login.html public/login.js public/style.css ./public/
+COPY public/js/validation-rules.js public/js/diagnostic-rules.js public/js/version-management.js ./public/js/
+COPY public/js/components/form-validation.js public/js/components/dom.js ./public/js/components/
 COPY config.example.json ./
-
-# 数据目录：检索结果与字体映射缓存，以卷挂载持久化
 RUN mkdir -p /app/data && chown -R node:node /app
 USER node
-
 VOLUME ["/app/data"]
 EXPOSE 3210
-
-# 健康检查直接打业务接口
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3210)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-
 CMD ["node", "src/server.mjs"]

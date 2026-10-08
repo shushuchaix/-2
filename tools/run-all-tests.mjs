@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildUi } from "./build-ui.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKIP_NET = process.argv.includes("--skip-network");
@@ -72,6 +73,8 @@ const results = [];
 console.log("\n" + "=".repeat(84));
 console.log("  全量测试");
 console.log("=".repeat(84) + "\n");
+// A missing or invalid renderer stops every downstream server/package check.
+await buildUi();
 
 for (const s of SUITES) {
   if (s.artifact && !process.argv.includes("--package")) {
@@ -126,6 +129,12 @@ const v2 = spawnSync(process.execPath, [path.join(ROOT, "tools/test-v2.mjs")], {
   timeout: 300000,
 });
 results.push({ f: "v2 tests", offline: true, code: v2.status ?? 1 });
+const ui = spawnSync(process.execPath, [path.join(ROOT, "tools/test-ui.mjs")], {
+  cwd: ROOT,
+  stdio: "inherit",
+  timeout: 300000,
+});
+results.push({ f: "React UI tests", offline: true, code: ui.status ?? 1 });
 const failed = results.filter((r) => r.code !== 0);
 const skipped = results.filter((r) => r.skipped);
 const passed = results.length - failed.length - skipped.length;

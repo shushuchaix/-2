@@ -1,136 +1,233 @@
-// 校验打包产物：① 新代码确实进去了 ② 敏感文件确实没进去 ③ 不含真实密钥
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import * as asar from "@electron/asar";
+import { parse } from "acorn";
 
-const p = "dist/简历岗位雷达-win32-x64/resources/app.asar";
-const buf = fs.readFileSync(p);
-
-/* ---------- 解析 asar 头部，拿到文件清单 ---------- */
-function readHeader(b) {
-  const jsonLen = b.readUInt32LE(12);
-  const json = b.toString("utf8", 16, 16 + jsonLen);
-  return JSON.parse(json);
-}
-const header = readHeader(buf);
-
-/** 递归收集所有文件路径 */
-function walk(node, prefix = "", out = []) {
-  for (const [name, v] of Object.entries(node.files || {})) {
-    const full = prefix ? `${prefix}/${name}` : name;
-    if (v.files) walk(v, full, out);
-    else out.push(full);
-  }
-  return out;
-}
-const files = walk(header);
-
-const has = (re) => files.filter((f) => re.test(f));
-let bad = 0;
-
-/* ---------- ① 新代码在不在 ---------- */
-console.log("【① 新代码是否已打包】");
-for (const f of [
-  "src/infrastructure/diagnostics/log.mjs",
-  "public/js/components/diagnostics-panel.js",
-  "src/domain/job-duplicates.mjs",
-  "src/domain/job-facts.mjs",
-  "src/domain/job-resolution.mjs",
-  "src/application/workspace-operations.mjs",
-  "src/application/job-cleanup-service.mjs",
-  "src/infrastructure/storage/layout.mjs",
-  "src/infrastructure/storage/upgrade-workspace.mjs",
-  "electron/directories.mjs",
-  "public/js/version-management.js",
-  "public/js/components/version-list.js",
-  "public/js/components/duplicate-cleanup.js",
-  "public/js/components/data-locations.js",
-]) {
-  const ok = files.includes(f);
-  if (!ok) bad++;
-  console.log(`${ok ? "✅" : "❌"} ${f}`);
-}
-for (const f of [
-  "src/sources/university.mjs",
-  "src/match/campus.mjs",
-  "src/sources/nowcoder.mjs",
-  "src/application/context.mjs",
-  "src/application/run-service.mjs",
-  "src/infrastructure/storage/repository.mjs",
-  "src/domain/ontology.json",
-  "src/sources/catalog/universities.json",
-  "public/js/main.js",
-  "public/js/pages/profiles.js",
-  "public/js/pages/jobs.js",
-  "public/js/pages/applications.js",
-  "public/js/pages/settings.js",
-  "public/js/pages/workbench.js",
-  "public/js/validation-rules.js",
-  "public/js/components/form-validation.js",
-  "public/styles/tokens.css",
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+export const EXCLUDE_MODULES = ["@napi-rs/canvas-win32-x64-msvc"];
+export const PUBLIC_RUNTIME_FILES = [
+  "login.html",
+  "login.js",
+  "style.css",
+  "js/validation-rules.js",
+  "js/diagnostic-rules.js",
+  "js/version-management.js",
+  "js/components/form-validation.js",
+  "js/components/dom.js",
+];
+const REQUIRED_RUNTIME = [
+  "electron/main.mjs",
   "electron/preload.cjs",
   "electron/credentials.mjs",
-  "node_modules/acorn/package.json",
-  "node_modules/linkedom/package.json",
-]) {
-  const ok = files.includes(f);
-  if (!ok) bad++;
-  console.log(`${ok ? "✅" : "❌"} ${f}`);
-}
-// 【坑】必须按 utf8 解码：asar 正文是 UTF-8 字节流。
-// 早期这里用 toString('latin1')，每个字节变成一个字符，
-// 于是**任何中文关键词都永远匹配不上** —— 会得出「中文串不在包里」的错误结论（曾因此误判过一次）。
-const asarStr = buf.toString("utf8");
-for (const n of [
-  "VERIFIED_HOSTS",
-  "resolveHosts",
-  "preferredKinds",
-  "SCHOOL_ABBR",
-]) {
-  const ok = asarStr.includes(n);
-  if (!ok) bad++;
-  console.log(`${ok ? "✅" : "❌"} 含符号 ${n}`);
-}
-
-/* ---------- ② 敏感文件在不在 ---------- */
-console.log("\n【② 敏感文件是否被打进去】");
-const sensitive = [
-  /^config\.json$/,
-  /^\.env$/,
-  /credentials\.yaml$/,
-  /^data\//,
-  /^\.cache\//,
-  /^\.superpowers\//,
-  /(?:^|\/)(?:workspace\.v2(?:\.previous)?\.json|credentials\.v2\.json|desktop-self-test\.json|font-map\.json|university-hosts\.json)$/,
-  /^dist\//,
-  /test-security\.mjs$/,
-  /^\.npm-cache/,
+  "electron/directories.mjs",
+  "electron/self-test.mjs",
+  "electron/self-test-network.mjs",
+  "src/server.mjs",
+  "src/config.mjs",
+  "src/application/context.mjs",
+  "src/application/run-service.mjs",
+  "src/application/purge-service.mjs",
+  "src/infrastructure/storage/repository.mjs",
+  "src/infrastructure/storage/package-control.mjs",
+  "src/infrastructure/storage/bootstrap-workspace.mjs",
+  "src/infrastructure/diagnostics/log.mjs",
+  "src/domain/ontology.json",
+  "src/sources/catalog/universities.json",
 ];
-for (const re of sensitive) {
-  const hits = has(re);
-  if (hits.length) bad++;
-  console.log(
-    `${hits.length ? "⚠️" : "✅"} ${re.source} ${hits.length ? "→ " + hits.slice(0, 3).join(", ") : ""}`,
+
+/** Shared with the desktop assembler: installed production dependencies, including optional modules. */
+export function prodClosure({ root = ROOT, dependencies } = {}) {
+  const pkg = JSON.parse(
+    fs.readFileSync(path.join(root, "package.json"), "utf8"),
   );
+  const seen = new Set();
+  const walk = (name, optional = false) => {
+    if (seen.has(name) || EXCLUDE_MODULES.includes(name)) return;
+    const pj = path.join(root, "node_modules", name, "package.json");
+    if (!fs.existsSync(pj)) {
+      if (optional) return;
+      throw Error("Missing production dependency: " + name);
+    }
+    seen.add(name);
+    const p = JSON.parse(fs.readFileSync(pj, "utf8"));
+    for (const d of Object.keys(p.dependencies || {}))
+      walk(d, Object.hasOwn(p.optionalDependencies || {}, d));
+    for (const d of Object.keys(p.optionalDependencies || {})) walk(d, true);
+  };
+  for (const d of Object.keys(dependencies || pkg.dependencies || {})) walk(d);
+  return [...seen];
 }
 
-/* ---------- ③ 真实密钥 ---------- */
-console.log("\n【③ 是否含真实密钥】");
-// 【坑】Tavily 的 key 形如 `tvly-dev-xxxx`（带连字符）。
-// 原来的正则写成 /tvly-[A-Za-z0-9]{20,}/，遇到 `tvly-dev-` 会在连字符处断掉，
-// 结果是**真实格式的 Tavily key 泄漏了也扫不出来**。字符集必须包含连字符。
-for (const [label, re] of [
-  ["DeepSeek sk- 密钥", /sk-[A-Za-z0-9_-]{20,}/],
-  ["Tavily Key（tvly- / tvly-dev-）", /tvly-[A-Za-z0-9_-]{20,}/],
-  ["博查 bsa- Key", /bsa-[A-Za-z0-9_-]{20,}/],
-  // 不加「40 位十六进制」这种通用模式：asar 里的 integrity/sha1 摘要天然就是 40 位十六进制，
-  // 加了必然误报（实测报了一次假泄漏）。Serper 的 key 恰好就是这个形状，无法与哈希区分，
-  // 与其每次都假警报，不如不扫 —— 有前缀的 key 才是能可靠识别的。
-]) {
-  const hit = re.test(asarStr);
-  if (hit) bad++;
-  console.log(`${hit ? "⚠️ 泄漏" : "✅ 不含"} ${label}`);
+/** Validate actual references, including generated chunks and CSS resources. */
+export function validateUiAssets({ root = ROOT, hasFile, readFile } = {}) {
+  hasFile ||= (rel) =>
+    fs.existsSync(path.join(root, rel)) &&
+    fs.statSync(path.join(root, rel)).isFile();
+  readFile ||= (rel) => fs.readFileSync(path.join(root, rel), "utf8");
+  const index = "public/app/index.html";
+  if (!hasFile(index)) throw Error("Missing UI asset: " + index);
+  const html = readFile(index);
+  if (/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(html))
+    throw Error("Inline UI scripts are forbidden");
+  const urls = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+    .map((match) => match[1])
+    .filter((url) => !url.startsWith("data:"));
+  if (
+    !urls.some((url) => url.endsWith(".js")) ||
+    !urls.some((url) => url.endsWith(".css"))
+  )
+    throw Error("Missing UI JS/CSS entry");
+  const visited = new Set([index]),
+    queue = [];
+  function add(url, from) {
+    const clean = url.split(/[?#]/)[0];
+    if (/^(?:data:|#)/.test(url)) return;
+    if (/^(?:[a-z]+:|\/\/)/i.test(clean))
+      throw Error("External UI asset is forbidden");
+    const rel = clean.startsWith("/app/")
+      ? "public" + clean
+      : path.posix.normalize(path.posix.join(path.posix.dirname(from), clean));
+    if (!rel.startsWith("public/app/") || rel.includes("\\"))
+      throw Error("UI asset leaves application directory");
+    if (!hasFile(rel)) throw Error("Missing UI asset: " + rel);
+    if (!visited.has(rel)) {
+      visited.add(rel);
+      queue.push(rel);
+    }
+  }
+  for (const url of urls) add(url, index);
+  while (queue.length) {
+    const file = queue.shift();
+    if (file.endsWith(".js")) {
+      const pending = [
+        parse(readFile(file), { ecmaVersion: "latest", sourceType: "module" }),
+      ];
+      while (pending.length) {
+        const node = pending.pop();
+        if (
+          [
+            "ImportDeclaration",
+            "ExportNamedDeclaration",
+            "ExportAllDeclaration",
+            "ImportExpression",
+          ].includes(node.type) &&
+          typeof node.source?.value === "string"
+        )
+          add(node.source.value, file);
+        for (const value of Object.values(node)) {
+          if (Array.isArray(value))
+            for (const item of value) {
+              if (item?.type) pending.push(item);
+            }
+          else if (value?.type) pending.push(value);
+        }
+      }
+    } else if (file.endsWith(".css")) {
+      for (const match of readFile(file).matchAll(
+        /url\(\s*["']?([^"')\s]+)["']?\s*\)/g,
+      ))
+        add(match[1], file);
+    }
+  }
+  return {
+    index,
+    assets: [...visited],
+    js: [...visited].filter((file) => file.endsWith(".js")),
+    css: [...visited].filter((file) => file.endsWith(".css")),
+  };
 }
 
-console.log(
-  `\nasar ${(buf.length / 1048576).toFixed(1)} MB，文件 ${files.length} 个，问题 ${bad} 项`,
-);
-process.exit(bad === 0 ? 0 : 1);
+function archiveFiles(header, prefix = "", result = []) {
+  for (const [name, entry] of Object.entries(header.files || {})) {
+    const full = prefix ? prefix + "/" + name : name;
+    if (entry.files) archiveFiles(entry, full, result);
+    else result.push(full);
+  }
+  return result;
+}
+
+export function verifyPackageArchive({
+  archivePath = path.join(
+    ROOT,
+    "dist/简历岗位雷达-win32-x64/resources/app.asar",
+  ),
+  root = ROOT,
+} = {}) {
+  const buffer = fs.readFileSync(archivePath),
+    headerLength = buffer.readUInt32LE(12);
+  const files = archiveFiles(
+      JSON.parse(buffer.toString("utf8", 16, 16 + headerLength)),
+    ),
+    listed = new Set(files);
+  const read = (rel) =>
+    asar
+      .extractFile(archivePath, rel.split("/").join(path.sep))
+      .toString("utf8");
+  const forbidden = files.filter(
+    (file) =>
+      /^(?:data|control|cache|logs|credentials|tests|tools|ui|dist|\.cache|\.tmp|\.git|\.superpowers|\.npm-cache)\//.test(
+        file,
+      ) ||
+      /(?:^|\/)(?:config\.json|\.env(?:\.[^/]+)?|\.?credentials(?:\.v2)?\.(?:json|ya?ml)|workspace\.v2(?:\.previous)?\.json|desktop-self-test\.json)$/.test(
+        file,
+      ) ||
+      (file.startsWith("public/") &&
+        !file.startsWith("public/app/") &&
+        !PUBLIC_RUNTIME_FILES.some((rel) => file === "public/" + rel)),
+  );
+  if (forbidden.length)
+    throw Error(
+      "Forbidden packaged files: " + forbidden.slice(0, 8).join(", "),
+    );
+  for (const file of [
+    ...REQUIRED_RUNTIME,
+    ...PUBLIC_RUNTIME_FILES.map((rel) => "public/" + rel),
+    "package.json",
+  ])
+    if (!listed.has(file)) throw Error("Missing runtime file: " + file);
+  const pkg = JSON.parse(read("package.json"));
+  if (pkg.devDependencies || pkg.workspaces)
+    throw Error("Development package metadata is forbidden");
+  const closure = prodClosure({ root, dependencies: pkg.dependencies });
+  for (const name of closure)
+    if (!listed.has("node_modules/" + name + "/package.json"))
+      throw Error("Missing packaged production dependency: " + name);
+  const ui = validateUiAssets({
+    hasFile: (rel) => listed.has(rel),
+    readFile: read,
+  });
+  const text = buffer.toString("utf8");
+  for (const re of [
+    /\bsk-[A-Za-z0-9_-]{20,}/,
+    /\btvly-[A-Za-z0-9_-]{20,}/,
+    /\bbsa-[A-Za-z0-9_-]{20,}/,
+  ])
+    if (re.test(text))
+      throw Error("Credential-shaped secret is forbidden in package");
+  return {
+    fileCount: files.length,
+    bytes: buffer.length,
+    ui,
+    dependencies: closure,
+  };
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const value = (flag) => {
+    const i = process.argv.indexOf(flag);
+    return i < 0 ? undefined : process.argv[i + 1];
+  };
+  try {
+    const report = verifyPackageArchive({
+      archivePath: value("--archive"),
+      root: value("--root"),
+    });
+    console.log(
+      `Package verified: ${report.fileCount} files, ${report.ui.js.length} JS assets, ${report.ui.css.length} CSS assets, ${report.dependencies.length} production dependencies.`,
+    );
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

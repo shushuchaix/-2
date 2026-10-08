@@ -297,7 +297,7 @@ function Invoke-RjrTest {
 
 **Interfaces:** Consumes preview/apply及版本事实API；Produce `duplicateCleanup(document,{api,onApplied,notify}) -> {node,open,dispose}`。`queryJobs(filters)`明确独立字段 `targetRevisionId:'all'|'unassigned'|ID`、`kind:'job'|'recruitment_notice'|'company_campaign'|'all'`、`recommendation:'high'|'consider'|'low'|'insufficient'|'not_recommended'|'unevaluated'|'all'`、`qualification:'pass'|'unknown'|'fail'|'all'`、`applicationStatus`（沿用 APPLICATION_STATUSES）、`duplicateStatus:'normal'|'possible'|'protected'|'all'`。缺省/all表示该维度不限，旧 filter 参数仅映射兼容。正常UI不把回收站版本加入常规下拉，从回收站入口显式浏览。
 
-- [ ] **1. 写失败测试。** 合成跨类别、跨页、未评价和三状态版本；组合过滤计数与服务一致。默认选中版本+job，consider/low/insufficient/unevaluated均可选，notice/campaign独立。断言：
+- [x] **1. 写失败测试。** 合成跨类别、跨页、未评价和三状态版本；组合过滤计数与服务一致。默认选中版本+job，consider/low/insufficient/unevaluated均可选，notice/campaign独立。断言：
   ```js
   assert.equal(filters.kind, 'job');
   assert.equal(filtered.total, expectedMatchingCanonicalCount);
@@ -307,11 +307,11 @@ function Invoke-RjrTest {
   assert.equal(stalePlanShowsRefreshAction, true);
   ```
   预览不受当前分页/版本筛选限制，疑似和人工保护不能默认删除；确认前不apply，忙时一次提交；失败不清空预览/输入。oldID详情返回主ID后替换缓存/选中行，不重复显示。
-- [ ] **2. RED。** `Invoke-RjrTest tests/integration/ui-job-cleanup.test.mjs tests/integration/ui-jobs.test.mjs tests/integration/ui-applications.test.mjs`。
-- [ ] **3. 实现独立筛选与详情依据。** 服务匹配 spec §8 全部推荐/资格/投递枚举；详情展示所选版本依据、历史分数与当前事实区别，未验证依据明确提示。导出复用同一查询语义。
-- [ ] **4. 实现清理预览/确认/结果。** 展示主项/删除项/理由/版本/保护/疑似/清理前备份说明，支持选确定组；apply成功按主ID刷新所有缓存，报告实体数和版本内归并条目数，提供完整备份恢复入口说明。
-- [ ] **5. GREEN。** 运行步骤 2 加 `tests/integration/job-service.test.mjs tests/integration/job-redirects.test.mjs`；预览/清理/导出/投递操作的可见提示不会被 load()清除。
-- [ ] **6. Commit。** `git commit -m "feat: organize version job views and global duplicate cleanup"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/integration/ui-job-cleanup.test.mjs tests/integration/ui-jobs.test.mjs tests/integration/ui-applications.test.mjs`。
+- [x] **3. 实现独立筛选与详情依据。** 服务匹配 spec §8 全部推荐/资格/投递枚举；详情展示所选版本依据、历史分数与当前事实区别，未验证依据明确提示。导出复用同一查询语义。
+- [x] **4. 实现清理预览/确认/结果。** 展示主项/删除项/理由/版本/保护/疑似/清理前备份说明，支持选确定组；apply成功按主ID刷新所有缓存，报告实体数和版本内归并条目数，提供完整备份恢复入口说明。
+- [x] **5. GREEN。** 运行步骤 2 加 `tests/integration/job-service.test.mjs tests/integration/job-redirects.test.mjs`；预览/清理/导出/投递操作的可见提示不会被 load()清除。
+- [x] **6. Commit。** `git commit -m "feat: organize version job views and global duplicate cleanup"`。
 
 ## Task 10：目录集中解析、安全桌面入口与全页操作反馈
 

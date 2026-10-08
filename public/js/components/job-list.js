@@ -44,6 +44,33 @@ export function renderJobList({ document: d, items, onOpen }) {
           ),
           el(
             d,
+            "span",
+            { className: "badge" },
+            item.evaluation?.recommendation
+              ? {
+                  high: "优先推荐",
+                  consider: "可以考虑",
+                  low: "匹配较低",
+                  insufficient: "信息不足",
+                  not_recommended: "不推荐",
+                }[item.evaluation.recommendation] || "尚未评价"
+              : "尚未评价",
+          ),
+          item.duplicateStatus && item.duplicateStatus !== "normal"
+            ? el(
+                d,
+                "span",
+                { className: "badge" },
+                item.duplicateStatus === "protected"
+                  ? "人工记录待处理"
+                  : "疑似重复",
+              )
+            : null,
+          item.fact && item.fact.status !== "verified"
+            ? el(d, "span", { className: "badge" }, "该版本事实依据缺失")
+            : null,
+          el(
+            d,
             "small",
             {},
             STATUS_LABELS[item.application?.status] || "未处理",

@@ -29,7 +29,15 @@ export function createExportService({ repository }) {
       if (
         !Object.keys(filters).some(
           (k) =>
-            !["status", "search", "page", "pageSize"].includes(k) && filters[k],
+            ![
+              "status",
+              "applicationStatus",
+              "search",
+              "page",
+              "pageSize",
+            ].includes(k) &&
+            filters[k] &&
+            filters[k] !== "all",
         )
       ) {
         const unresolved = await service.listUnresolvedApplications(filters);

@@ -108,12 +108,17 @@ export function mountApplicationsPage({ root, api }) {
               },
             );
             items = items.map((i) =>
-              i.jobId === id ? { ...i, application: updated } : i,
+              [id, updated.jobId, updated.originalApplicationId].includes(
+                i.jobId,
+              )
+                ? { ...i, application: updated }
+                : i,
             );
             unresolved = unresolved.map((i) =>
               i.application.jobId === id ? { ...i, application: updated } : i,
             );
             render();
+            await load();
             return updated;
           },
         }),

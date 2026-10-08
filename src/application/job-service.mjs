@@ -10,6 +10,7 @@ import {
 } from "../domain/contracts.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
 import { resolveJobIdentity, relateJobs } from "../domain/identity.mjs";
+import { buildWorkspaceDuplicatePlan } from "../domain/job-duplicates.mjs";
 import { jobBusinessFingerprint } from "../domain/job-duplicates.mjs";
 import {
   resolveJobId,
@@ -25,6 +26,7 @@ import {
   backfillTargetMembers,
   selectVersionJobFact,
   selectMatchingEvaluation,
+  resolveEvaluationFactBasis,
 } from "../domain/job-facts.mjs";
 const date = (v) => {
   if (!isCalendarDate(v)) throw Error("Invalid date");
@@ -357,6 +359,20 @@ export function createJobService({ repository, clock = repository.clock }) {
         throw inputError({
           targetRevisionId: "目标版本不存在或与所属目标不匹配。",
         });
+      const duplicateStatuses = new Map();
+      const duplicatePlan = buildWorkspaceDuplicatePlan(w);
+      for (const pair of duplicatePlan.possiblePairs)
+        for (const id of pair.jobIds) duplicateStatuses.set(id, "possible");
+      for (const g of duplicatePlan.groups)
+        for (const id of [g.keepJobId, ...g.removeJobIds])
+          duplicateStatuses.set(
+            id,
+            g.protected
+              ? "protected"
+              : duplicateStatuses.get(id) === "protected"
+                ? "protected"
+                : "possible",
+          );
       let items = Object.values(w.jobs).map((job) => {
         const fact = selectVersionJobFact(w, {
           targetRevisionId: revisionId,
@@ -380,6 +396,7 @@ export function createJobService({ repository, clock = repository.clock }) {
                 }
               : job.canonical)),
           fact,
+          duplicateStatus: duplicateStatuses.get(job.jobId) || "normal",
           jobId: job.jobId,
           application: projectJobApplication(w, job.jobId),
           evaluation: evaluation ? { ...evaluation, jobId: job.jobId } : null,
@@ -397,20 +414,30 @@ export function createJobService({ repository, clock = repository.clock }) {
             (t) => w.targetMembers[t.revisionId]?.[i.jobId],
           ),
         );
-      if (filters.status)
-        items = items.filter((i) => i.application.status === filters.status);
-      if (filters.kind) items = items.filter((i) => i.kind === filters.kind);
+      const applicationStatus = filters.applicationStatus || filters.status;
+      if (applicationStatus && applicationStatus !== "all")
+        items = items.filter((i) => i.application.status === applicationStatus);
+      if (filters.duplicateStatus && filters.duplicateStatus !== "all")
+        items = items.filter(
+          (i) => i.duplicateStatus === filters.duplicateStatus,
+        );
+      if (filters.kind && filters.kind !== "all")
+        items = items.filter((i) => i.kind === filters.kind);
       if (filters.sourceId)
         items = items.filter((i) =>
           i.job.sourceRefs.some((r) => r.sourceId === filters.sourceId),
         );
-      if (filters.qualification)
+      if (filters.qualification && filters.qualification !== "all")
         items = items.filter(
-          (i) => i.evaluation?.qualification?.status === filters.qualification,
+          (i) =>
+            (i.evaluation?.qualification?.status || "unknown") ===
+            filters.qualification,
         );
-      if (filters.recommendation)
-        items = items.filter(
-          (i) => i.evaluation?.recommendation === filters.recommendation,
+      if (filters.recommendation && filters.recommendation !== "all")
+        items = items.filter((i) =>
+          filters.recommendation === "unevaluated"
+            ? !i.evaluation
+            : i.evaluation?.recommendation === filters.recommendation,
         );
       if (filters.cities?.length)
         items = items.filter((i) =>
@@ -455,7 +482,16 @@ export function createJobService({ repository, clock = repository.clock }) {
           .some((t) => t.revisionId === targetRevisionId)
       )
         throw inputError({ targetRevisionId: "未找到目标版本。" });
+      const target = Object.values(w.targets)
+        .flat()
+        .find((t) => t.revisionId === targetRevisionId);
       const fact = selectVersionJobFact(w, { targetRevisionId, jobId: id });
+      const evaluation = selectMatchingEvaluation(w, {
+        jobId: id,
+        targetRevisionId,
+        profileRevisionId: target?.profileRevisionId,
+        factContentHash: fact.factContentHash,
+      });
       const relatedIds = new Set(
         resolveJobIds(
           w,
@@ -481,17 +517,18 @@ export function createJobService({ repository, clock = repository.clock }) {
         jobId: id,
         requestedJobId,
         fact,
-        evaluation: selectMatchingEvaluation(w, {
-          jobId: id,
-          targetRevisionId,
-          factContentHash: fact.factContentHash,
-        }),
+        targetRevisionId: targetRevisionId || null,
+        evaluation: evaluation ? { ...evaluation, jobId: id } : null,
         observations: Object.values(w.observations).filter((o) =>
           jobIdMatches(w, o.jobId, id),
         ),
-        evaluations: Object.values(w.evaluations).filter((e) =>
-          jobIdMatches(w, e.jobId, id),
-        ),
+        evaluations: Object.values(w.evaluations)
+          .filter((e) => jobIdMatches(w, e.jobId, id))
+          .map((e) => ({
+            ...e,
+            factBasis: resolveEvaluationFactBasis(w, e),
+            matchesCurrentFact: e.evaluationId === evaluation?.evaluationId,
+          })),
         application: projectJobApplication(w, id),
         relatedJobs: [...relatedIds].map((i) => w.jobs[i]).filter(Boolean),
         unresolvedApplications: Object.values(w.applications).filter((a) => {
@@ -508,7 +545,12 @@ export function createJobService({ repository, clock = repository.clock }) {
       const w = await repository.read();
       const items = Object.values(w.applications)
         .filter((a) => resolveApplicationAssociation(w, a).status !== "single")
-        .filter((a) => !filters.status || a.status === filters.status)
+        .filter(
+          (a) =>
+            !(filters.applicationStatus || filters.status) ||
+            (filters.applicationStatus || filters.status) === "all" ||
+            a.status === (filters.applicationStatus || filters.status),
+        )
         .filter(
           (a) =>
             !filters.search ||

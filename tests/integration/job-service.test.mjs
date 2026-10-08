@@ -4,6 +4,113 @@ import { tempRepository } from "../helpers/repository.mjs";
 import { job, AT } from "../helpers/fixtures.mjs";
 import { createJobService } from "../../src/application/job-service.mjs";
 import { createImportService } from "../../src/application/import-service.mjs";
+import { createWorkspaceService } from "../../src/application/workspace-service.mjs";
+import { profile, target, namedTargetInput } from "../helpers/fixtures.mjs";
+import { jobFactHash } from "../../src/domain/job-facts.mjs";
+import { filters as httpFilters } from "../../src/server/validation.mjs";
+import { createExportService } from "../../src/application/export-service.mjs";
+
+test("independent classifications include unevaluated, unknown, all and unassigned consistently in HTTP and exports", async (t) => {
+  const repository = await tempRepository(t),
+    s = createJobService({ repository }),
+    ws = createWorkspaceService({ repository });
+  const p = await ws.saveProfile({ profile: profile() }),
+    v = await ws.saveTarget(
+      namedTargetInput({ ...target(), profileRevisionId: p.revisionId }),
+    );
+  const recommendations = [
+    "high",
+    "consider",
+    "low",
+    "insufficient",
+    "not_recommended",
+  ];
+  for (let i = 0; i < 7; i++) {
+    const r = job({
+      sourceRecordId: String(i),
+      url: "https://jobs.example.com/" + i,
+      kind: i === 6 ? "company_campaign" : "job",
+    });
+    const saved = await s.ingestRecords({
+      runId: "r" + i,
+      targetRevisionId: i === 5 ? undefined : v.revisionId,
+      records: [r],
+      observedAt: AT,
+    });
+    if (i < 5)
+      await s.saveEvaluations([
+        {
+          evaluationId: "enum" + i,
+          jobId: saved.jobIds[0],
+          observationId: saved.observationIds[0],
+          factContentHash: jobFactHash(r),
+          profileRevisionId: p.revisionId,
+          targetRevisionId: v.revisionId,
+          recommendation: recommendations[i],
+          qualification: { status: i === 0 ? "pass" : "unknown" },
+          score: 80 - i,
+          createdAt: AT,
+        },
+      ]);
+  }
+  assert.equal(
+    (
+      await s.queryJobs({
+        kind: "all",
+        recommendation: "all",
+        qualification: "all",
+        applicationStatus: "all",
+        duplicateStatus: "all",
+      })
+    ).total,
+    7,
+  );
+  for (const recommendation of recommendations)
+    assert.equal(
+      (
+        await s.queryJobs({
+          targetRevisionId: v.revisionId,
+          kind: "job",
+          recommendation,
+        })
+      ).total,
+      1,
+    );
+  assert.equal(
+    (
+      await s.queryJobs({
+        targetRevisionId: "unassigned",
+        recommendation: "unevaluated",
+        qualification: "unknown",
+      })
+    ).total,
+    1,
+  );
+  assert.equal(
+    (
+      await s.queryJobs({
+        targetRevisionId: v.revisionId,
+        kind: "company_campaign",
+        recommendation: "unevaluated",
+      })
+    ).total,
+    1,
+  );
+  const parsed = httpFilters(
+    new URLSearchParams({
+      targetRevisionId: "all",
+      kind: "all",
+      applicationStatus: "new",
+      duplicateStatus: "normal",
+    }),
+  );
+  assert.equal(parsed.applicationStatus, "new");
+  assert.equal(parsed.duplicateStatus, "normal");
+  const exported = await createExportService({ repository }).export({
+    filters: { targetRevisionId: "unassigned", recommendation: "unevaluated" },
+  });
+  assert.equal(JSON.parse(exported.body).length, 1);
+});
 test("three identical no-link manual imports are idempotent with traceable observations", async (t) => {
   const repository = await tempRepository(t),
     jobService = createJobService({ repository });

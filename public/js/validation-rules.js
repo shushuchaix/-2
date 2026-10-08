@@ -358,6 +358,7 @@ export function validateInput(kind, input, options = {}) {
       break;
     case "filters":
       choice("status", input.status, [
+        "all",
         "new",
         "seen",
         "interested",
@@ -367,13 +368,38 @@ export function validateInput(kind, input, options = {}) {
         "rejected",
         "ignored",
       ]);
+      choice("applicationStatus", input.applicationStatus, [
+        "all",
+        "new",
+        "seen",
+        "interested",
+        "applied",
+        "interviewing",
+        "offer",
+        "rejected",
+        "ignored",
+      ]);
+      choice("duplicateStatus", input.duplicateStatus, [
+        "all",
+        "normal",
+        "possible",
+        "protected",
+      ]);
       choice("kind", input.kind, [
+        "all",
         "job",
         "recruitment_notice",
         "company_campaign",
       ]);
-      choice("qualification", input.qualification, ["pass", "fail", "unknown"]);
+      choice("qualification", input.qualification, [
+        "all",
+        "pass",
+        "fail",
+        "unknown",
+      ]);
       choice("recommendation", input.recommendation, [
+        "all",
+        "unevaluated",
         "high",
         "consider",
         "low",
@@ -387,7 +413,9 @@ export function validateInput(kind, input, options = {}) {
       ident("targetId", input.targetId);
       ident(
         "targetRevisionId",
-        input.targetRevisionId,
+        ["all", "unassigned"].includes(input.targetRevisionId)
+          ? undefined
+          : input.targetRevisionId,
         false,
         true,
         options.targetRevisionIds,

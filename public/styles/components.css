@@ -323,3 +323,16 @@ progress {
 .shell-feedback[hidden] {
   display: none;
 }
+.duplicate-cleanup {
+  margin-block: 24px;
+}
+.duplicate-cleanup p,
+.version-row strong {
+  overflow-wrap: anywhere;
+}
+.cleanup-result {
+  position: sticky;
+  bottom: 0;
+  padding: 12px;
+  background: var(--surface, #fff);
+}

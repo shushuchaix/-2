@@ -1,7 +1,12 @@
 import { el, field } from "./dom.js";
 import { feedback } from "./feedback.js";
 import { bindValidation } from "./form-validation.js";
-export function jobImport({ document: d, api, onImported }) {
+export function jobImport({
+  document: d,
+  api,
+  getTargetRevisionId = () => null,
+  onImported,
+}) {
   const form = el(d, "form", { className: "card" }),
     status = feedback(d),
     url = el(d, "input", { type: "url", placeholder: "https://…" }),
@@ -14,6 +19,12 @@ export function jobImport({ document: d, api, onImported }) {
     note = el(d, "textarea", { placeholder: "我的备注" });
   form.append(
     el(d, "h2", {}, "导入招聘线索"),
+    el(
+      d,
+      "p",
+      { className: "muted" },
+      "导入到当前所选目标版本；全部版本或未归属视图中的导入保存为未归属记录。",
+    ),
     el(
       d,
       "p",
@@ -44,6 +55,10 @@ export function jobImport({ document: d, api, onImported }) {
     text: text.value,
     account: account.value.trim(),
     note: note.value,
+    ...(getTargetRevisionId() &&
+    !["all", "unassigned"].includes(getTargetRevisionId())
+      ? { targetRevisionId: getTargetRevisionId() }
+      : {}),
   });
   const validation = bindValidation(form, {
     kind: "import",
@@ -66,6 +81,8 @@ export function jobImport({ document: d, api, onImported }) {
       status.show(
         (result.jobIds.length ? "已导入。" : "未导入。") +
           (result.issues || []).map((x) => x.message).join("；"),
+        false,
+        { notify: true },
       );
       if (result.jobIds.length) await onImported?.();
     } catch (e) {

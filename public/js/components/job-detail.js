@@ -82,6 +82,22 @@ export function openJobDetail({ root, detail, api, onChanged }) {
       ),
       status.node,
     );
+    if (data.fact)
+      dialog.append(
+        el(
+          d,
+          "p",
+          { className: "notice-banner" },
+          data.fact.status === "verified"
+            ? "当前事实依据：" +
+                (data.targetRevisionId || "全部版本最新观察") +
+                " · " +
+                data.fact.observationIds.join(" / ")
+            : "该版本事实依据未验证；历史分数不能作为当前匹配结果。",
+        ),
+      );
+    if (data.fact && !data.evaluation)
+      dialog.append(el(d, "p", {}, "当前版本尚未评价"));
     if (r.kind !== "job")
       dialog.append(
         el(
@@ -164,7 +180,15 @@ export function openJobDetail({ root, detail, api, onChanged }) {
             d,
             "h3",
             {},
-            "匹配分 " +
+            (data.fact
+              ? e.matchesCurrentFact
+                ? "当前版本匹配分 "
+                : "历史匹配分（" +
+                  (e.factBasis?.status === "verified"
+                    ? "已验证历史依据"
+                    : "依据未验证") +
+                  "） "
+              : "匹配分 ") +
               e.score +
               " · " +
               QUALIFICATION_LABELS[e.qualification?.status || "unknown"],
@@ -247,7 +271,16 @@ export function openJobDetail({ root, detail, api, onChanged }) {
         api,
         status,
         onChanged: async () => {
-          await render(await api.request("/jobs/" + job.jobId));
+          await render(
+            await api.request(
+              "/jobs/" +
+                encodeURIComponent(job.jobId) +
+                (data.targetRevisionId
+                  ? "?targetRevisionId=" +
+                    encodeURIComponent(data.targetRevisionId)
+                  : ""),
+            ),
+          );
           await onChanged?.();
         },
       }),

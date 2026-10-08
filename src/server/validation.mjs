@@ -68,6 +68,8 @@ export function filters(params) {
     "kind",
     "qualification",
     "recommendation",
+    "applicationStatus",
+    "duplicateStatus",
   ])
     if (params.has(key)) result[key] = params.get(key);
   if (params.has("since")) result.since = params.get("since");

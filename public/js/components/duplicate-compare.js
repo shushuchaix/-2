@@ -29,7 +29,7 @@ export function duplicateCompare({
           method: "DELETE",
           body: { jobId: other.jobId },
         });
-        status.show("关联已取消");
+        status.show("关联已取消", false, { notify: true });
         await onChanged();
       } catch (e) {
         status.show("取消关联失败：" + e.message, true);
@@ -84,7 +84,7 @@ export function duplicateCompare({
       });
       validation.clear();
       await onChanged();
-      status.show("记录已关联");
+      status.show("记录已关联", false, { notify: true });
     } catch (e) {
       id.disabled = false;
       validation.show(e);

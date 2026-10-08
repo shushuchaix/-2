@@ -16,3 +16,15 @@ export async function readAllJobs(api, filters = {}, options = {}) {
     items: [...new Map(items.map((item) => [item.jobId, item])).values()],
   };
 }
+export function replaceResolvedJob(items, requestedId, resolvedId) {
+  const updated = items.map((i) =>
+    i.jobId === requestedId
+      ? {
+          ...i,
+          jobId: resolvedId,
+          job: i.job ? { ...i.job, jobId: resolvedId } : i.job,
+        }
+      : i,
+  );
+  return [...new Map(updated.map((i) => [i.jobId, i])).values()];
+}

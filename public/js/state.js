@@ -25,7 +25,26 @@ export function createStore(initial = {}) {
           jobs: { items: [], total: 0 },
           jobsRequestId: state.jobsRequestId + 1,
         };
-      else if (action.type === "versionUpdated")
+      else if (action.type === "jobs-invalidated")
+        state = {
+          ...state,
+          jobs: { items: [], total: 0 },
+          jobsRequestId: state.jobsRequestId + 1,
+          selectedJobId: null,
+        };
+      else if (action.type === "job-resolved") {
+        const items = state.jobs.items.map((i) =>
+          i.jobId === action.requestedJobId ? { ...i, jobId: action.jobId } : i,
+        );
+        state = {
+          ...state,
+          jobs: {
+            ...state.jobs,
+            items: [...new Map(items.map((i) => [i.jobId, i])).values()],
+          },
+          selectedJobId: action.jobId,
+        };
+      } else if (action.type === "versionUpdated")
         state = {
           ...state,
           versions: {
@@ -40,6 +59,8 @@ export function createStore(initial = {}) {
       else if (action.type === "jobs") {
         if (
           action.targetId !== state.selectedTargetId ||
+          (action.targetRevisionId !== undefined &&
+            action.targetRevisionId !== state.targetRevisionId) ||
           action.requestId !== state.jobsRequestId
         )
           return;

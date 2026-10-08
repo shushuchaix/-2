@@ -23,6 +23,7 @@ import {
 import path from "node:path";
 import { resolveDataLayout } from "../src/infrastructure/storage/layout.mjs";
 import { registerDirectoryIpc } from "./directories.mjs";
+import { awaitDesktopContext } from "./startup.mjs";
 import os from "node:os";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -43,14 +44,38 @@ const IS_DEV = !app.isPackaged;
 const APP_TITLE = "简历岗位雷达";
 // 自检模式：使用隐藏窗口验证内置服务、真实渲染器和预加载桥接。
 const SELF_TEST = process.argv.includes("--self-test");
+const selfTestEnvironment = SELF_TEST
+  ? (await import("./self-test.mjs")).prepareSelfTestEnvironment({
+      explicitDataDir: process.env.RJR_DATA_DIR,
+    })
+  : null;
+const selfTestNetwork = SELF_TEST
+  ? (await import("./self-test-network.mjs")).installSelfTestNetworkGuard()
+  : null;
+const selfTestRendererErrors = [],
+  selfTestExternalIntents = [];
 if (SELF_TEST) {
-  const isolated = path.join(resolveDataDir(), "electron-self-test-session");
-  fs.mkdirSync(isolated, { recursive: true });
-  app.setPath("userData", isolated);
+  app.disableHardwareAcceleration();
+  process.env.RJR_DATA_DIR = selfTestEnvironment.dataDir;
+  process.env.RJR_DESKTOP = "1";
+  for (const name of [
+    "AUTH_PASSWORD",
+    "DEEPSEEK_API_KEY",
+    "TAVILY_API_KEY",
+    "BOCHA_API_KEY",
+    "SERPER_API_KEY",
+  ])
+    delete process.env[name];
+  process.env.AUTH_SECRET = "synthetic-offline-self-test-secret";
+  app.setPath(
+    "userData",
+    path.join(selfTestEnvironment.dataDir, "electron-session"),
+  );
 }
 
 // 允许通过环境变量强制指定数据目录（便于排查问题）
 function resolveDataDir() {
+  if (selfTestEnvironment) return selfTestEnvironment.dataDir;
   if (process.env.RJR_DATA_DIR) return process.env.RJR_DATA_DIR;
   // 开发态直接复用项目里的 data/，这样 npm run desktop 能沿用已有配置与历史
   if (IS_DEV) return path.join(APP_ROOT, "data");
@@ -230,7 +255,7 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 900,
-    minWidth: 1000,
+    minWidth: 375,
     minHeight: 660,
     show: false,
     title: APP_TITLE,
@@ -242,6 +267,7 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      ...(SELF_TEST ? { backgroundThrottling: false, offscreen: true } : {}),
       // 界面只与本机内置服务通信，无需任何额外权限
       webSecurity: true,
     },
@@ -251,622 +277,91 @@ async function createWindow() {
   // 外部链接（岗位页、DeepSeek 官网等）一律交给系统浏览器，不在应用内打开
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Always use the system browser for new windows.
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    if (/^https?:/i.test(url)) {
+      if (SELF_TEST) selfTestExternalIntents.push({ kind: "external-link" });
+      else shell.openExternal(url);
+    }
     return { action: "deny" };
   });
 
   mainWindow.webContents.on("will-navigate", (e, url) => {
-    if (appUrl && url.startsWith(appUrl)) return;
+    if (appUrl && new URL(url).origin === appUrl) return;
     e.preventDefault();
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    if (/^https?:/i.test(url)) {
+      if (SELF_TEST) selfTestExternalIntents.push({ kind: "external-link" });
+      else shell.openExternal(url);
+    }
   });
 
   // 页面加载失败时给出可读提示，而不是白屏
   mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
     if (code === -3) return; // 用户主动中断
+    if (SELF_TEST) {
+      selfTestRendererErrors.push({ code: "renderer_load_failed" });
+      return;
+    }
     dialog.showErrorBox(
       "页面加载失败",
       `无法加载 ${url}\n\n${desc}（${code}）`,
     );
   });
 
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => {
+    if (!SELF_TEST) mainWindow.show();
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 
+  if (SELF_TEST) {
+    selfTestNetwork.attachSession(mainWindow.webContents.session);
+    mainWindow.webContents.on("console-message", (_event, ...legacy) => {
+      const details =
+        _event && typeof _event === "object" && "level" in _event
+          ? _event
+          : { level: legacy[0], message: legacy[1] };
+      if (details.level === "error" || details.level === 3)
+        selfTestRendererErrors.push({
+          code: "renderer_console_error",
+          message: String(details.message).slice(0, 500),
+        });
+    });
+  }
   await mainWindow.loadURL(appUrl);
+  if (SELF_TEST)
+    await mainWindow.webContents.executeJavaScript(
+      "window.__rjrSelfTestIssues=[];window.addEventListener('securitypolicyviolation',e=>window.__rjrSelfTestIssues.push({code:'csp_violation',directive:e.violatedDirective}));window.addEventListener('error',()=>window.__rjrSelfTestIssues.push({code:'renderer_error'}));window.addEventListener('unhandledrejection',()=>window.__rjrSelfTestIssues.push({code:'renderer_rejection'}));",
+    );
 }
 
 /* ---------------------------- 自检模式 ---------------------------- */
-/** 生成一个最小可用的 PDF，用于验证 pdfjs 在打包后仍能正常解析 */
-function makeTestPdf(lines) {
-  const esc = (s) =>
-    String(s)
-      .replace(/\\/g, "\\\\")
-      .replace(/\(/g, "\\(")
-      .replace(/\)/g, "\\)");
-  const content = `BT /F1 14 Tf 40 760 Td 20 TL\n${lines.map((l) => `(${esc(l)}) Tj T*`).join("\n")}\nET`;
-  const objs = {
-    1: "<< /Type /Catalog /Pages 2 0 R >>",
-    2: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    3: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-    4: `<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}\nendstream`,
-    5: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-  };
-  let pdf = "%PDF-1.4\n";
-  const offsets = {};
-  for (let i = 1; i <= 5; i++) {
-    offsets[i] = Buffer.byteLength(pdf, "latin1");
-    pdf += `${i} 0 obj\n${objs[i]}\nendobj\n`;
-  }
-  const xref = Buffer.byteLength(pdf, "latin1");
-  pdf += "xref\n0 6\n0000000000 65535 f \n";
-  for (let i = 1; i <= 5; i++)
-    pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
-  pdf += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return Buffer.from(pdf, "latin1");
-}
-
 async function runSelfTest() {
-  const results = [];
-  const check = (name, ok, detail = "") => {
-    results.push({ name, ok });
-    console.log(
-      `  ${ok ? "✅" : "❌"} ${name}${detail ? "  —  " + detail : ""}`,
-    );
-  };
-
-  console.log("\n=== 桌面外壳自检 ===\n");
+  await createWindow();
+  const { runWorkspaceSelfTest } = await import("./self-test.mjs");
+  let report;
   try {
-    check(
-      "内置服务监听随机端口",
-      /^http:\/\/127\.0\.0\.1:\d+$/.test(appUrl),
-      appUrl,
-    );
-
-    const page = await fetch(`${appUrl}/`);
-    const html = await page.text();
-    check(
-      "首页可访问且内容正确",
-      page.status === 200 && html.includes("简历岗位雷达"),
-      `HTTP ${page.status}, ${html.length} 字节`,
-    );
-
-    const s = await (await fetch(`${appUrl}/api/session`)).json();
-    check("标记为桌面模式", s.desktop === true);
-    check(
-      "桌面模式免登录",
-      s.authRequired === false,
-      `authRequired=${s.authRequired}`,
-    );
-    check("数据目录已重定向到可写位置", s.dataDir === dataDir, s.dataDir);
-    check(
-      "返回 DeepSeek 配置状态",
-      typeof s.deepseekConfigured === "boolean",
-      `deepseekConfigured=${s.deepseekConfigured}`,
-    );
-
-    for (const f of ["/app.js", "/style.css", "/login.js", "/login"]) {
-      const r = await fetch(`${appUrl}${f}`);
-      check(`静态资源 ${f}`, r.status === 200, `HTTP ${r.status}`);
-    }
-
-    const h = await (await fetch(`${appUrl}/api/health`)).json();
-    check("/api/health 正常", h.ok === true && h.version);
-
-    const probe = path.join(dataDir, ".write-probe");
-    fs.writeFileSync(probe, "ok", "utf8");
-    const wrote = fs.readFileSync(probe, "utf8") === "ok";
-    fs.rmSync(probe, { force: true });
-    check("数据目录可写", wrote, dataDir);
-
-    check(
-      "应用图标存在",
-      fs.existsSync(path.join(APP_ROOT, "build", "icon.ico")),
-    );
-    check(
-      "配置文件已就位",
-      fs.existsSync(path.join(dataDir, "config.json")),
-      path.join(dataDir, "config.json"),
-    );
-
-    // 最能暴露打包问题的一项：pdfjs 是 ESM + 动态 import，在 asar 内解析失败会直接抛错
-    const { extractResumeText } = await import(
-      "../src/resume/extract-text.mjs"
-    );
-    const pdfBuf = makeTestPdf([
-      "Zhang Ming",
-      "Java Spring Boot MySQL Redis Docker",
-      "Beijing University of Posts and Telecommunications",
-    ]);
-    const parsed = await extractResumeText(pdfBuf, "self-test.pdf");
-    check(
-      "PDF 文本提取可用（验证 pdfjs 在 asar 内正常）",
-      parsed.format === "pdf" && /Spring/.test(parsed.text),
-      `提取 ${parsed.text.length} 字：${parsed.text.replace(/\s+/g, " ").slice(0, 46)}`,
-    );
-    // Exercise the real sandboxed renderer and preload, not just its HTTP server.
-    mainWindow = new BrowserWindow({
-      show: false,
-      width: 1440,
-      height: 1000,
-      webPreferences: {
-        backgroundThrottling: false,
-        preload: path.join(APP_ROOT, "electron", "preload.cjs"),
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-        webSecurity: true,
-      },
+    report = await runWorkspaceSelfTest({
+      window: mainWindow,
+      context: applicationContext,
+      clock: selfTestEnvironment.clock,
+      controls: selfTestEnvironment.controls,
+      dataDir,
+      networkGuard: selfTestNetwork,
+      rendererErrors: selfTestRendererErrors,
+      externalIntents: selfTestExternalIntents,
     });
-    attachWindowDiagnostics({ window: mainWindow, diagnostics });
-    await mainWindow.loadURL(appUrl);
-    for (let attempt = 0; attempt < 50; attempt++) {
-      if (
-        await mainWindow.webContents.executeJavaScript(
-          "document.querySelectorAll('nav a').length===5",
-        )
-      )
-        break;
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    check(
-      "真实渲染器加载五页导航",
-      await mainWindow.webContents.executeJavaScript(
-        "document.querySelectorAll('nav a').length===5",
-      ),
-    );
-    const bridge = await mainWindow.webContents.executeJavaScript(
-      "(async()=>({node:typeof require,methods:Object.keys(window.desktopBridge||{}),status:await window.desktopBridge.getKeyStatus('deepseek')}))()",
-    );
-    check(
-      "renderer没有Node访问或明文密钥",
-      bridge.node === "undefined" &&
-        bridge.methods.length === 8 &&
-        bridge.methods.every((method) =>
-          [
-            "isAvailable",
-            "saveKey",
-            "deleteKey",
-            "getKeyStatus",
-            "reportDiagnostic",
-            "getDataLocations",
-            "openDataLocation",
-            "copyDataLocation",
-          ].includes(method),
-        ) &&
-        Object.keys(bridge.status).every((k) =>
-          ["configured", "encryptionAvailable"].includes(k),
-        ),
-    );
-    if (bridge.status.encryptionAvailable) {
-      const result = await mainWindow.webContents.executeJavaScript(
-        "(async()=>{await desktopBridge.saveKey('deepseek','synthetic-self-test-key');const saved=await desktopBridge.getKeyStatus('deepseek');await desktopBridge.deleteKey('deepseek');return {saved,cleared:await desktopBridge.getKeyStatus('deepseek')};})()",
-      );
-      check(
-        "系统加密保存与清除可用",
-        result.saved.configured &&
-          !result.cleared.configured &&
-          !fs
-            .readFileSync(path.join(dataDir, "credentials.v2.json"), "utf8")
-            .includes("synthetic-self-test-key"),
-      );
-    } else check("系统加密可用", false, "本机加密不可用");
-    const rendererReport = await mainWindow.webContents.executeJavaScript(
-      "desktopBridge.reportDiagnostic({operation:'renderer.request',code:'network_error',phase:'transport',outcome:'failed',method:'PUT',route:'/api/v2/settings',message:'synthetic-private-report',body:{resumeText:'synthetic-private-report'}})",
-    );
-    const rendererLogs = await diagnostics.list({
-      diagnosticId: rendererReport?.diagnosticId,
-    });
-    check(
-      "桌面界面失败安全上报",
-      /^d-/.test(rendererReport?.diagnosticId || "") &&
-        rendererLogs.entries.some(
-          (entry) => entry.operation === "renderer.request",
-        ) &&
-        !JSON.stringify(rendererLogs).includes("synthetic-private-report"),
-    );
-    for (const [route, label] of [
-      ["profiles", "简历与目标"],
-      ["jobs", "岗位库"],
-      ["applications", "投递进度"],
-      ["settings", "让来源与设置保持清晰"],
-    ]) {
-      await mainWindow.webContents.executeJavaScript(
-        "location.hash=" + JSON.stringify("#/" + route),
-      );
-      let loaded = false;
-      for (let attempt = 0; attempt < 50; attempt++) {
-        loaded = await mainWindow.webContents.executeJavaScript(
-          "document.querySelector('main h1')?.textContent===" +
-            JSON.stringify(label),
-        );
-        if (loaded) break;
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      check("桌面页面 " + route, loaded);
-    }
-    const validation = await mainWindow.webContents.executeJavaScript(`(()=>{
-      const budget=[...document.querySelectorAll('input[type="number"]')].find(input=>!input.closest('[hidden]'));
-      if(!budget) return {invalid:false,corrected:false};
-      budget.value='11';
-      budget.closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
-      return {invalid:budget.getAttribute('aria-invalid')==='true' && document.activeElement===budget && budget.value==='11' && !!document.querySelector('.validation-summary:not([hidden])')};
-    })()`);
-    check("桌面填写错误提示、输入保留与聚焦", validation.invalid);
-    await mainWindow.webContents.executeJavaScript(
-      "new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
-    );
     fs.writeFileSync(
-      path.join(dataDir, "desktop-validation.png"),
-      (await mainWindow.webContents.capturePage()).toPNG(),
+      path.join(dataDir, "desktop-self-test.json"),
+      JSON.stringify(report, null, 2),
     );
-    check(
-      "桌面修改后清除字段错误",
-      await mainWindow.webContents.executeJavaScript(`(()=>{
-      const budget=[...document.querySelectorAll('input[type="number"]')].find(input=>!input.closest('[hidden]'));
-      budget.value='0';budget.dispatchEvent(new Event('input',{bubbles:true}));
-      return !budget.hasAttribute('aria-invalid') && budget.value==='0';
-    })()`),
-    );
-    const logEntry = await diagnostics.record(
-      {
-        operation: "run.ingest",
-        runId: "r-desktop-log",
-        sourceId: "synthetic",
-        stage: "details",
-      },
-      Error("Missing source title"),
-    );
-    const logResponse = await fetch(
-      appUrl + "/api/v2/diagnostics/logs?runId=r-desktop-log",
-    );
-    const logData = await logResponse.json();
-    check(
-      "桌面日志写入与任务筛选",
-      logResponse.ok &&
-        logData.entries.some(
-          (entry) => entry.diagnosticId === logEntry.diagnosticId,
-        ) &&
-        fs.existsSync(path.join(dataDir, "logs", "application.log")),
-    );
-    await mainWindow.webContents.executeJavaScript(
-      "document.querySelector('.diagnostics-panel').open=true",
-    );
-    let logVisible = false;
-    for (let attempt = 0; attempt < 50; attempt++) {
-      logVisible = await mainWindow.webContents.executeJavaScript(
-        "document.querySelector('.diagnostics-list')?.textContent.includes(" +
-          JSON.stringify(logEntry.diagnosticId) +
-          ")",
-      );
-      if (logVisible) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    check("桌面实际日志查看入口", logVisible);
-    const logExport = await fetch(
-      appUrl + "/api/v2/diagnostics/logs/export?runId=r-desktop-log",
-    );
-    check(
-      "桌面日志导出",
-      logExport.ok && (await logExport.text()).includes(logEntry.diagnosticId),
-    );
-    await mainWindow.webContents.executeJavaScript(
-      "document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
-    );
-    check(
-      "桌面详细日志不撑宽页面",
-      await mainWindow.webContents.executeJavaScript(
-        "(()=>{const panel=document.querySelector('.diagnostics-panel');return panel.scrollWidth<=panel.clientWidth+1&&document.documentElement.scrollWidth<=window.innerWidth+1})()",
-      ),
-    );
-    fs.writeFileSync(
-      path.join(dataDir, "desktop-logs.png"),
-      (await mainWindow.webContents.capturePage()).toPNG(),
-    );
-    check(
-      "桌面人民币费用、预算回退、资格统计与重复提醒合并",
-      await mainWindow.webContents.executeJavaScript(`(async()=>{
-        const {runProgress}=await import('/js/components/run-progress.js');
-        const run={status:'partial',stage:'finished',degraded:true,
-          counts:{deduplicated:12,shortlisted:7,eligible:1,qualificationUnknown:9,qualificationFailed:2,aiSuccess:2,fallback:10},
-          usage:{sources:{requests:4,maxRequests:120,details:3,maxDetails:20},model:{requests:4,maxRequests:1000,maxCostCny:10,costUpperBoundCny:8.516608,reservedCostCny:0,uncertainCostCny:8.516608,uncertainRequests:4,pricedRequests:0,costMode:'cny_upper_bound'}},
-          coverage:[{siteId:'synthetic',status:'complete',truncated:true,pages:1,truncationReason:'listing_only'}],
-          issues:[{code:'model_budget_exhausted',affectedCount:8,diagnosticId:'d-budget-synthetic'},
-            {code:'invalid_model_result',jobId:'j-1',diagnosticId:'d-validation-synthetic'},
-            {code:'invalid_model_result',jobId:'j-2',diagnosticId:'d-validation-synthetic'}]};
-        const panel=runProgress({document,run});panel.id='desktop-budget-preview';panel.classList.add('card');
-        document.body.append(panel);panel.scrollIntoView({block:'start'});
-        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-        const text=panel.textContent;
-        return text.includes('资格待核实 9')&&text.includes('影响 8 条')&&text.includes('影响 2 条')&&
-          text.split('d-validation-synthetic').length===2&&!text.includes('检查模型设置')&&text.includes('详情 3 / 20')&&
-          text.includes('模型费用上界 ¥8.516608 / ¥10')&&text.includes('用量不确定的费用上界 ¥8.516608');
-      })()`),
-    );
-    fs.writeFileSync(
-      path.join(dataDir, "desktop-budget.png"),
-      (await mainWindow.webContents.capturePage()).toPNG(),
-    );
-    await mainWindow.webContents.executeJavaScript(
-      "document.getElementById('desktop-budget-preview')?.remove()",
-    );
-    await runWorkspaceSelfTest(check);
-    await mainWindow.webContents.executeJavaScript(
-      "location.hash='#/workbench'",
-    );
-    await new Promise((r) => setTimeout(r, 300));
-    fs.writeFileSync(
-      path.join(dataDir, "desktop-smoke.png"),
-      (await mainWindow.webContents.capturePage()).toPNG(),
-    );
-  } catch (e) {
-    check("自检执行", false, e.message);
+  } finally {
+    await applicationContext?.close?.();
+    httpServer?.closeAllConnections();
+    if (httpServer?.listening)
+      await new Promise((resolve) => httpServer.close(resolve));
+    selfTestNetwork.dispose();
   }
-
-  const failed = results.filter((r) => !r.ok).length;
-  fs.writeFileSync(
-    path.join(dataDir, "desktop-self-test.json"),
-    JSON.stringify(
-      {
-        version: app.getVersion(),
-        electron: process.versions.electron,
-        results,
-        failed,
-      },
-      null,
-      2,
-    ),
-  );
-  console.log(`\n  通过 ${results.length - failed} 项，失败 ${failed} 项\n`);
-
-  if (httpServer) {
-    try {
-      httpServer.close();
-    } catch {
-      /* 忽略 */
-    }
-  }
-  app.exit(failed === 0 ? 0 : 1);
-}
-
-async function runWorkspaceSelfTest(check) {
-  const localCall = async (route, body, method = "POST") => {
-    const response = await fetch(appUrl + "/api/v2" + route, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok)
-      throw Error(
-        "Synthetic self-test API failed: " + route + " " + response.status,
-      );
-    return response.json();
-  };
-  const js = (code) => mainWindow.webContents.executeJavaScript(code);
-  const waitRenderer = async (expression) => {
-    for (let i = 0; i < 80; i++) {
-      if (await js(expression)) return true;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    return false;
-  };
-  const locations = await js("desktopBridge.getDataLocations()");
-  check(
-    "桌面固定目录桥接与当前历史位置",
-    locations.data === path.resolve(dataDir) &&
-      locations.history === path.join(path.resolve(dataDir), "runs-v2"),
-  );
-  check(
-    "桌面目录桥接拒绝任意路径",
-    await js(
-      '(async()=>{try{await desktopBridge.openDataLocation("../private");return false;}catch{return true;}})()',
-    ),
-  );
-  await localCall(
-    "/settings",
-    {
-      model: {
-        baseUrl: "https://api.deepseek.com/v1",
-        model: "deepseek-flash",
-      },
-      budgets: { maxCostCny: 10, maxModelRequests: 1000 },
-    },
-    "PUT",
-  );
-  const p = await localCall("/profiles", {
-    versionName: "桌面合成简历",
-    text: "合成消防工程本科简历，熟悉机场消防设施巡检与安全管理，具有校园项目实践经历。",
-    profile: {
-      name: "合成画像",
-      education: "本科",
-      major: "消防工程",
-      skills: ["消防安全"],
-    },
-  });
-  const target = await localCall("/targets", {
-    versionName: "桌面消防基础",
-    profileRevisionId: p.revisionId,
-    roles: ["消防", "机场"],
-    cityMode: "any",
-    cities: [],
-    jobTypes: ["campus"],
-    degreePolicy: "eligibility",
-    budgets: { maxCostCny: 10, maxModelRequests: 1000 },
-  });
-  await js('location.hash="#/profiles"');
-  await waitRenderer(
-    "!!document.querySelector('[data-revision-id=\"" +
-      target.revisionId +
-      "\"]')",
-  );
-  await js(
-    `(()=>{const row=document.querySelector('[data-revision-id="${target.revisionId}"]');[...row.querySelectorAll('button')].find(b=>b.textContent==='新建版本').click();document.getElementById('targetVersionName').value='桌面消防机场升级';document.getElementById('saveTarget').click();document.getElementById('saveTarget').click();})()`,
-  );
-  check(
-    "桌面真实新建命名版本与10元预算保存",
-    await waitRenderer(
-      'document.querySelector("main").textContent.includes("桌面消防机场升级")&&document.querySelector(".shell-feedback").textContent.includes("目标已保存")',
-    ),
-  );
-  const allTargets = (await (await fetch(appUrl + "/api/v2/targets")).json())
-    .targets;
-  const upgraded = allTargets.find((t) => t.versionName === "桌面消防机场升级");
-  check(
-    "桌面忙时提交仅一份且保留金额预算",
-    allTargets.filter((t) => t.versionName === "桌面消防机场升级").length ===
-      1 && upgraded?.budgets.maxCostCny === 10,
-  );
-  if (!upgraded) throw Error("Synthetic target form save failed");
-  await js(
-    `[...document.querySelector('[data-revision-id="${target.revisionId}"]').querySelectorAll('button')].find(b=>b.textContent==='停用').click()`,
-  );
-  check(
-    "桌面精确版本停用与可见成功通知",
-    await waitRenderer(
-      'document.querySelector(".shell-feedback").textContent.includes("已停用")&&!document.querySelector(".shell-feedback").hidden',
-    ),
-  );
-  await js("window.scrollTo(0,document.body.scrollHeight)");
-  check(
-    "桌面长列表通知仍在可见视口",
-    await js(
-      '(()=>{const n=document.querySelector(".shell-feedback"),r=n.getBoundingClientRect();return !n.hidden&&r.top>=0&&r.bottom<=innerHeight+1&&n.getAttribute("aria-live")==="polite"})()',
-    ),
-  );
-  const record = {
-    sourceId: "synthetic",
-    siteId: "synthetic-self-test",
-    sourceRecordId: "fire-airport",
-    sourceRecordIdKind: "authority",
-    identityScope: "synthetic-self-test",
-    urlKind: "job_detail",
-    kind: "job",
-    title: "合成机场消防工程师",
-    company: "合成机场单位",
-    cities: ["广州"],
-    jobType: "campus",
-    degree: "本科",
-    url: "https://jobs.example.com/synthetic-fire",
-    description:
-      "负责机场消防设施巡检、消防安全管理与应急演练，要求本科消防工程相关专业，熟悉消防技术规范。",
-  };
-  const ingested = await applicationContext.jobService.ingestRecords({
-    runId: "self-test",
-    targetRevisionId: target.revisionId,
-    records: [record],
-  });
-  const mainId = ingested.jobIds[0],
-    oid = ingested.observationIds[0];
-  await applicationContext.jobService.updateApplication(mainId, {
-    status: "applied",
-    note: "合成人工记录",
-  });
-  await applicationContext.repository.mutateWorkspace((w) => {
-    w.jobs["copy-desktop-selftest"] = {
-      ...structuredClone(w.jobs[mainId]),
-      jobId: "copy-desktop-selftest",
-    };
-    w.observations["ob-desktop-copy"] = {
-      ...structuredClone(w.observations[oid]),
-      jobId: "copy-desktop-selftest",
-      observationId: "ob-desktop-copy",
-      targetRevisionId: upgraded.revisionId,
-    };
-    w.targetMembers[upgraded.revisionId] = {
-      "copy-desktop-selftest": {
-        ...structuredClone(w.targetMembers[target.revisionId][mainId]),
-        factRefs: [{ observationId: "ob-desktop-copy" }],
-        currentObservationId: "ob-desktop-copy",
-      },
-    };
-  });
-  await js('location.hash="#/jobs"');
-  await waitRenderer('!!document.querySelector("#jobsTarget")');
-  await js(
-    '[...document.querySelectorAll("button")].find(b=>b.textContent==="清理所有版本重复岗位").click()',
-  );
-  await waitRenderer('!!document.querySelector("[data-cleanup-group]")');
-  await js(
-    '[...document.querySelectorAll("button")].find(b=>b.textContent==="确认清理所选重复岗位").click()',
-  );
-  check(
-    "桌面实际全版本清理按钮与备份结果通知",
-    await waitRenderer(
-      'document.querySelector(".cleanup-result")?.textContent.includes("重复实体 1")&&document.querySelector(".cleanup-result")?.textContent.includes("备份")',
-    ),
-  );
-  const redirected = await (
-    await fetch(appUrl + "/api/v2/jobs/copy-desktop-selftest")
-  ).json();
-  check(
-    "桌面清理后旧ID与人工记录仍可访问",
-    redirected.jobId === mainId &&
-      redirected.application.note === "合成人工记录",
-  );
-  await applicationContext.repository.mutateWorkspace((w) => {
-    w.runs["desktop-other-version"] = {
-      runId: "desktop-other-version",
-      createdAt: new Date().toISOString(),
-      status: "running",
-      stage: "collecting",
-      targetSnapshot: structuredClone(
-        w.targets[target.targetId].find(
-          (t) => t.revisionId === target.revisionId,
-        ),
-      ),
-      counts: {},
-      usage: {},
-      coverage: [],
-      issues: [],
-      lastSeq: 0,
-    };
-  });
-  await js('location.hash="#/workbench"');
-  check(
-    "桌面工作台仅连接所选冻结版本任务",
-    await waitRenderer(
-      `document.getElementById("workbenchTarget")?.value===${JSON.stringify(upgraded.revisionId)}&&document.getElementById("cancelRun")?.disabled===true&&!document.getElementById("startRun")?.disabled`,
-    ),
-  );
-  await applicationContext.repository.mutateWorkspace((w) => {
-    w.runs["desktop-other-version"].status = "completed";
-    w.runs["desktop-other-version"].stage = "finished";
-  });
-  await localCall(
-    "/profiles/" +
-      p.profileId +
-      "/revisions/" +
-      encodeURIComponent(p.revisionId),
-    undefined,
-    "DELETE",
-  );
-  // The synthetic API archive bypasses the page's normal versionUpdated event.
-  // Mount a fresh page before testing the workbench's current availability.
-  await js('location.hash="#/profiles"');
-  await waitRenderer(
-    `(()=>{const row=document.querySelector('[data-revision-id="${p.revisionId}"]');return row&&[...row.querySelectorAll('button')].some(b=>b.textContent==='恢复')})()`,
-  );
-  await js('location.hash="#/workbench"');
-  await waitRenderer('!!document.querySelector("#workbenchTarget option")');
-  check(
-    "桌面回收站画像阻止真实开始按钮",
-    await js('document.getElementById("startRun").disabled===true'),
-  );
-  await js('location.hash="#/profiles"');
-  await waitRenderer(
-    `!!document.querySelector('[data-revision-id="${p.revisionId}"]')&&!!document.querySelector('[data-revision-id="${upgraded.revisionId}"]')`,
-  );
-  await js(
-    `[...document.querySelector('[data-revision-id="${p.revisionId}"]').querySelectorAll('button')].find(b=>b.textContent==='恢复').click()`,
-  );
-  check(
-    "桌面真实恢复简历后重评分按钮立即可用",
-    await waitRenderer(
-      `(()=>{const row=document.querySelector('[data-revision-id="${upgraded.revisionId}"]');return row&&[...row.querySelectorAll('button')].find(b=>b.textContent.includes('重新评分'))?.disabled===false})()`,
-    ),
-  );
+  app.exit(report?.failed ? 1 : 0);
 }
 
 /* ------------------------------ 启动 ------------------------------ */
@@ -892,13 +387,20 @@ async function boot() {
     code: "config_loading",
     outcome: "success",
   });
-  const { loadConfig, ensureDataDirs } = await import("../src/config.mjs");
+  const configuration = SELF_TEST ? null : await import("../src/config.mjs");
   const { createServer } = await import("../src/server.mjs");
 
   // ensureDataDirs 内部会 seedConfig：把 config.example.json 复制到可写数据目录
-  ensureDataDirs();
+  if (!SELF_TEST) configuration.ensureDataDirs();
+  else
+    fs.writeFileSync(
+      path.join(dataDir, "config.json"),
+      JSON.stringify(selfTestEnvironment.cfg),
+    );
 
-  const cfg = loadConfig({ quiet: true });
+  const cfg = SELF_TEST
+    ? selfTestEnvironment.cfg
+    : configuration.loadConfig({ quiet: true });
   cfg.server.host = "127.0.0.1";
   cfg.server.port = 0; // 交给系统分配空闲端口，避免与已装的服务冲突
   cfg.server.trustProxy = false;
@@ -909,7 +411,7 @@ async function boot() {
   const credentials = createCredentialService({ dataDir, safeStorage });
   startupPhase = "read";
   try {
-    const key = await credentials.readForModel("deepseek");
+    const key = SELF_TEST ? "" : await credentials.readForModel("deepseek");
     if (key) cfg.deepseek.apiKey = key;
   } catch (error) {
     await recordDiagnostic(
@@ -943,7 +445,14 @@ async function boot() {
   });
   registerDirectoryIpc({
     ipcMain,
-    shell,
+    shell: SELF_TEST
+      ? {
+          openPath: async () => {
+            selfTestExternalIntents.push({ kind: "directory-open" });
+            return "";
+          },
+        }
+      : shell,
     clipboard,
     getWindow: () => mainWindow,
     getOrigin: () => appUrl,
@@ -953,18 +462,21 @@ async function boot() {
   startupPhase = "load";
   const { server, ready } = createServer(cfg, {
     dataDir,
-    dependencies: { diagnostics },
+    dependencies: { ...(selfTestEnvironment?.dependencies || {}), diagnostics },
   });
-  applicationContext = await ready;
+  applicationContext = await awaitDesktopContext(ready, {
+    selfTest: SELF_TEST,
+  });
   const port = await listen(server);
   httpServer = server;
   appUrl = `http://127.0.0.1:${port}`;
+  selfTestNetwork?.setAllowedOrigin(appUrl);
   await recordDiagnostic(diagnostics, {
     operation: "desktop.ready",
     stage: "startup",
     phase: "load",
     outcome: "success",
-    code: "server_ready",
+    code: applicationContext ? "server_ready" : "server_maintenance",
     durationMs: Date.now() - started,
   });
 
@@ -1053,7 +565,8 @@ if (!gotLock) {
     }
   });
 
-  app.on("window-all-closed", () => {
+  app.on("window-all-closed", async () => {
+    await applicationContext?.close?.();
     if (httpServer) {
       try {
         httpServer.close();

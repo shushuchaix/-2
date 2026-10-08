@@ -66,6 +66,12 @@ const startupMessages = {
     "管理备份未通过完整性检查，已停止业务访问。请查看安全日志。",
   purge_file_failed: "永久清理尚未完成，已停止业务访问。请查看安全日志。",
 };
+const lifecycleMessages = {
+  control_state_invalid: startupMessages.control_state_invalid,
+  workspace_upgrade_required: startupMessages.workspace_upgrade_required,
+  purge_file_failed: "永久清理尚未完成，请在回收站重试并查看安全日志。",
+  snapshot_failed: "运行快照未保存，请查看安全诊断日志。",
+};
 function safeStartupFailure(error) {
   const code = Object.hasOwn(startupMessages, error?.code)
     ? error.code
@@ -670,21 +676,27 @@ export function createServer(
                     )
                   ? 400
                   : 500);
+          const safeLifecycleError =
+            status >= 500 && Object.hasOwn(lifecycleMessages, e.code);
           sendJson(req, res, cfg, status, {
             error: storage
               ? "存储写入失败，请检查可用空间和目录写入权限后重试。"
               : e.maintenanceFailure
                 ? e.message
-                : status >= 500
-                  ? "服务处理失败，请稍后重试；如持续出现，请提供错误编号。"
-                  : e.message || "请求未通过检查。",
+                : safeLifecycleError
+                  ? lifecycleMessages[e.code]
+                  : status >= 500
+                    ? "服务处理失败，请稍后重试；如持续出现，请提供错误编号。"
+                    : e.message || "请求未通过检查。",
             code: storage
               ? "storage_write_failed"
               : e.maintenanceFailure
                 ? e.code
-                : status >= 500
-                  ? "system_error"
-                  : e.code || "request_failed",
+                : safeLifecycleError
+                  ? e.code
+                  : status >= 500
+                    ? "system_error"
+                    : e.code || "request_failed",
             ...(e.fieldErrors && status < 500
               ? { fieldErrors: e.fieldErrors }
               : {}),

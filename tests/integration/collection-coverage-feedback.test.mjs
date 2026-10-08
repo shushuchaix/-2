@@ -203,7 +203,7 @@ test("a run separates confirmed qualification from unknown and failed while reta
   const context = await createApplicationContext({
     cfg,
     dataDir,
-    dependencies: {
+    dependencies: {legacySchema:true,
       registry: createSourceRegistry([provider]),
       catalog: [
         {

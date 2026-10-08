@@ -19,6 +19,9 @@ import {
   identifier,
 } from "./server/validation.mjs";
 import { STATUS_LABELS } from "./store.mjs";
+import {resolveLegacyScope} from './application/legacy-scope.mjs';
+import {packageWorkspace} from './application/package-job-service.mjs';
+import {packageError} from './domain/packages.mjs';
 import {
   projectJobApplication,
   resolveJobId,
@@ -38,7 +41,8 @@ export async function createLegacyRunInput({
 }) {
   const text = validateResume(resumeText);
   context ||= await getDefaultApplicationContext(cfg);
-  operationLease ||= await context.operationGate.acquire("legacy", { signal });
+  const modern=(await context.repository.read()).schemaVersion===3;
+  if(!modern)operationLease ||= await context.operationGate.acquire("legacy", { signal });
   try {
     const budget =
       credentials.modelBudget || (await context.createModelBudget());
@@ -143,6 +147,7 @@ export async function createLegacyRunInput({
       ...extra,
     ];
     const saved = await context.workspaceService.saveProfile({
+      versionName:'兼容简历 · '+randomUUID().slice(0,8),
       submissionId: "legacy-profile-" + randomUUID(),
       text,
       profile: {
@@ -180,8 +185,11 @@ export async function createLegacyRunInput({
       siteIds: options.siteIds || [],
       coverageMode: options.coverageMode || "standard",
     });
+    const scope=modern?{packageId:target.packageId,targetRevisionId:target.revisionId}:undefined;
+    if(modern)operationLease ||= await context.operationGate.acquire('legacy',{scope,signal});
     return {
       targetRevisionId: target.revisionId,
+      ...(scope?{scope}:{}),
       operationLease,
       mode:
         options.useLlm === false ? "rules" : client.available ? "ai" : "rules",
@@ -196,13 +204,13 @@ export async function createLegacyRunInput({
       wechatQueries,
     };
   } catch (error) {
-    await operationLease.release();
+    await operationLease?.release();
     throw error;
   }
 }
 export function snapshotToLegacy(snapshot, { cfg, workspace, registry }) {
   const run = snapshot.run,
-    profile = snapshot.profileRevision?.profile || {};
+    profile = snapshot.profileRevision?.profile || snapshot.profile?.profile || {};
   const evaluations = new Map(snapshot.evaluations.map((e) => [e.jobId, e]));
   const recommendation = {
     high: "高度匹配",
@@ -255,6 +263,7 @@ export function snapshotToLegacy(snapshot, { cfg, workspace, registry }) {
   }
   return {
     runId: run.runId,
+    ...(workspace.schemaVersion===3?{scope:{packageId:run.ownerPackageId,targetRevisionId:run.targetSnapshot.revisionId}}:{}),
     createdAt: run.createdAt || run.startedAt,
     durationMs: Math.max(
       0,
@@ -341,11 +350,12 @@ export async function runPipeline({
     const started = startedRun || (await context.runService.startRun(input));
     runId = started.runId;
     if (signal) {
-      abort = () => void context.runService.cancelRun(runId);
+      abort = () => void context.runService.cancelRun(runId,input.scope);
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
     }
     stop = await context.eventHub.subscribe(runId, {
+      scope:input.scope,
       afterSeq: 0,
       onEvent: (event) => {
         if (event.type === "stage")
@@ -368,8 +378,9 @@ export async function runPipeline({
           });
       },
     });
-    const snapshot = await context.runService.waitForRun(runId),
-      workspace = await context.repository.read(),
+    const snapshot = await context.runService.waitForRun(runId,input.scope),
+      full = await context.repository.read(),
+      workspace = full.schemaVersion===3?packageWorkspace(full,input.scope.packageId):full,
       result = snapshotToLegacy(snapshot, {
         cfg,
         workspace,
@@ -382,7 +393,7 @@ export async function runPipeline({
     stop?.();
     if (abort) signal.removeEventListener("abort", abort);
     permit.release();
-    if (runId) await context.runService.waitForRun(runId).catch(() => {});
+    if (runId) await context.runService.waitForRun(runId,input?.scope).catch(() => {});
     await input?.operationLease?.release();
   }
 }
@@ -390,17 +401,25 @@ export async function saveRun(result, { context } = {}) {
   context ||= resultContexts.get(result);
   if (!context)
     throw Error("Result does not belong to a shared application run");
-  const run = await context.runService.getRun(identifier(result.runId));
+  const selected=resolveLegacyScope({scope:result.scope,runId:result.runId},await context.repository.read(),context.repository.clock.now());
+  const run = await context.runService.getRun(identifier(result.runId),selected);
   if (!run.snapshotRef) throw Error("Run snapshot not saved");
   return path.join(context.repository.dataDir, run.snapshotRef.path);
 }
-export async function loadRun(runId, { context, cfg } = {}) {
+export async function loadRun(runId, { context, cfg,scope } = {}) {
   identifier(runId);
   context ||= await getDefaultApplicationContext(
     cfg || (await import("./config.mjs")).loadConfig({ quiet: true }),
   );
-  const run = (await context.repository.read()).runs[runId];
+  const initial=await context.repository.read();
+  const run = initial.runs[runId];
   if (!run || run.deletedAt) return null;
+  const selected=resolveLegacyScope({scope,runId},initial,context.repository.clock.now());
+  if(initial.schemaVersion===3){
+    if(!run.snapshotRef)throw packageError('version_scope_required','此旧运行没有经过验证的自有快照。');
+    const snapshot=await context.runService.waitForRun(runId,selected);
+    return snapshotToLegacy(snapshot,{cfg:context.cfg,workspace:packageWorkspace(await context.repository.read(),selected.packageId),registry:context.registry});
+  }
   const projectLegacy = async (result) => {
     const w = await context.repository.read(),
       copy = structuredClone(result);
@@ -460,11 +479,12 @@ export async function loadRun(runId, { context, cfg } = {}) {
     registry: context.registry,
   });
 }
-export async function listRuns(limit = 50, { context, cfg } = {}) {
+export async function listRuns(limit = 50, { context, cfg,scope,targetRevisionId,targetId } = {}) {
   context ||= await getDefaultApplicationContext(
     cfg || (await import("./config.mjs")).loadConfig({ quiet: true }),
   );
-  return (await context.runService.listRuns()).slice(0, limit).map((run) => ({
+  const selected=resolveLegacyScope({scope,targetRevisionId,targetId},await context.repository.read(),context.repository.clock.now());
+  return (await context.runService.listRuns(selected)).slice(0, limit).map((run) => ({
     runId: run.runId,
     createdAt: run.createdAt || run.startedAt,
     returned: run.counts.returned ?? run.counts.deduplicated ?? 0,

@@ -32,6 +32,7 @@ import { extractResumeText, looksLikeResume } from "./resume/extract-text.mjs";
 import { createApplicationContext } from "./application/context.mjs";
 import { handleV2Request } from "./server/routes-v2.mjs";
 import { handleV1Request } from "./server/routes-v1.mjs";
+import { handleDiagnosticRead } from "./server/diagnostic-routes.mjs";
 import { readJsonBody as readValidatedJsonBody } from "./server/validation.mjs";
 import { VERSION } from "./version.mjs";
 import { exportResult } from "./export.mjs";
@@ -52,6 +53,40 @@ import {
 
 const PUBLIC_DIR = path.join(ROOT, "public");
 const MAX_BODY = 40 * 1024 * 1024;
+const startupMessages = {
+  control_state_invalid:
+    "控制状态损坏或缺失，已停止业务访问。请保留数据目录并查看安全日志。",
+  ownership_transfer_pending:
+    "历史归属与删除记录需要恢复检查，已停止业务访问。请查看安全日志。",
+  workspace_upgrade_required:
+    "工作区升级未完成，已停止业务访问。请查看安全日志。",
+  workspace_operation_busy:
+    "工作区恢复正在等待活动操作结束，请查看安全日志后重启。",
+  backup_integrity_failed:
+    "管理备份未通过完整性检查，已停止业务访问。请查看安全日志。",
+  purge_file_failed: "永久清理尚未完成，已停止业务访问。请查看安全日志。",
+};
+function safeStartupFailure(error) {
+  const code = Object.hasOwn(startupMessages, error?.code)
+    ? error.code
+    : "application_start_failed";
+  return Object.assign(
+    Error(
+      startupMessages[code] ||
+        "工作区启动未完成，已停止业务访问。请查看安全日志。",
+    ),
+    {
+      status: 503,
+      code,
+      maintenanceFailure: true,
+      ...(/^d-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+        error?.diagnosticId || "",
+      )
+        ? { diagnosticId: error.diagnosticId }
+        : {}),
+    },
+  );
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -126,9 +161,34 @@ async function readJsonBody(req) {
 }
 
 function serveStatic(req, res, cfg, pathname, { allowMissing = false } = {}) {
+  if (pathname === "/index.html") {
+    res.writeHead(302, { Location: "/", ...securityHeaders(req, cfg) });
+    res.end();
+    return;
+  }
+  const destinations = new Set([
+    "workbench",
+    "jobs",
+    "applications",
+    "profiles",
+    "targets",
+    "sources",
+    "logs",
+    "trash",
+    "settings",
+  ]);
+  if (destinations.has(pathname.slice(1))) {
+    res.writeHead(302, {
+      Location: "/#" + pathname,
+      "Cache-Control": "no-cache",
+      ...securityHeaders(req, cfg),
+    });
+    res.end();
+    return;
+  }
   const rel =
     pathname === "/"
-      ? "index.html"
+      ? "app/index.html"
       : decodeURIComponent(pathname).replace(/^\/+/, "");
   const resolved = path.resolve(path.join(PUBLIC_DIR, rel));
   if (
@@ -138,24 +198,31 @@ function serveStatic(req, res, cfg, pathname, { allowMissing = false } = {}) {
     sendJson(req, res, cfg, 403, { error: "非法路径" });
     return;
   }
+  const resource = path
+    .relative(PUBLIC_DIR, resolved)
+    .split(path.sep)
+    .join("/");
+  const sharedAssets = new Set([
+    "login.html",
+    "login.js",
+    "style.css",
+    "js/validation-rules.js",
+    "js/diagnostic-rules.js",
+    "js/version-management.js",
+    "js/components/form-validation.js",
+    "js/components/dom.js",
+  ]);
+  if (!resource.startsWith("app/") && !sharedAssets.has(resource)) {
+    sendJson(req, res, cfg, 404, { error: "资源不存在" });
+    return;
+  }
   fs.readFile(resolved, (err, data) => {
     if (err) {
       if (allowMissing) {
         sendJson(req, res, cfg, 404, { error: "资源不存在" });
         return;
       }
-      fs.readFile(path.join(PUBLIC_DIR, "index.html"), (e2, html) => {
-        if (e2) {
-          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-          res.end("404 Not Found");
-          return;
-        }
-        res.writeHead(200, {
-          "Content-Type": MIME[".html"],
-          ...securityHeaders(req, cfg),
-        });
-        res.end(html);
-      });
+      sendJson(req, res, cfg, 404, { error: "资源不存在" });
       return;
     }
     const ext = path.extname(resolved);
@@ -206,6 +273,8 @@ export function createServer(
   cfg,
   { dataDir = process.env.RJR_DATA_DIR || DATA_ROOT, dependencies = {} } = {},
 ) {
+  if (!fs.existsSync(path.join(PUBLIC_DIR, "app", "index.html")))
+    throw Error("界面构建缺失，请先运行 npm run build:ui。");
   const diagnostics =
     dependencies.diagnostics || createDiagnosticsLog({ dataDir });
   const llm = new DeepSeek(cfg);
@@ -235,18 +304,27 @@ export function createServer(
     storageFile: path.join(dataDir, "quota.json"),
   });
 
+  let startupStatus = "starting",
+    startupFailure;
   const ready = createApplicationContext({
     cfg,
     dataDir,
     dependencies: { ...dependencies, diagnostics, runGate: gate },
   });
-  ready.catch((error) => {
-    void recordDiagnostic(
-      diagnostics,
-      { operation: "application.start", stage: "startup", outcome: "failed" },
-      error,
-    );
-  });
+  ready.then(
+    () => {
+      startupStatus = "ready";
+    },
+    (error) => {
+      startupStatus = "maintenance";
+      startupFailure = safeStartupFailure(error);
+      void recordDiagnostic(
+        diagnostics,
+        { operation: "application.start", stage: "startup", outcome: "failed" },
+        error,
+      );
+    },
+  );
 
   function sessionOf(req) {
     const cookies = parseCookies(req);
@@ -399,12 +477,21 @@ export function createServer(
         if (pathname === "/api/health" && req.method === "GET") {
           const authed = isAuthed(req);
           const base = {
-            ok: true,
+            ok: startupStatus === "ready",
+            status: startupStatus,
+            maintenance: startupStatus === "maintenance",
             version: VERSION,
             authRequired,
             authenticated: authed,
           };
           if (!authed) return sendJson(req, res, cfg, 200, base);
+          if (startupStatus === "maintenance")
+            return sendJson(req, res, cfg, 200, {
+              ...base,
+              code: startupFailure.code,
+              error: startupFailure.message,
+              diagnosticId: startupFailure.diagnosticId,
+            });
           return sendJson(req, res, cfg, 200, {
             ...base,
             exposure: exposure.publicBind ? "public" : "local",
@@ -493,20 +580,47 @@ export function createServer(
           return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
         }
 
+        if (pathname === "/api/maintenance" && req.method === "GET") {
+          await ready.catch(() => {});
+          return sendJson(req, res, cfg, 200, {
+            status: startupStatus,
+            maintenance: startupStatus === "maintenance",
+            ...(startupFailure
+              ? {
+                  code: startupFailure.code,
+                  error: startupFailure.message,
+                  diagnosticId: startupFailure.diagnosticId,
+                }
+              : {}),
+          });
+        }
+
         if (pathname.startsWith("/api/")) {
-          const app = await ready;
-          const context = {
-            ...app,
-            http: {
-              requestId,
-              json: (request, response, status, data) =>
-                sendJson(request, response, cfg, status, data),
-              readJson: readValidatedJsonBody,
-              ip: (request) => clientIp(request, cfg.server.trustProxy),
-            },
+          const requestHttp = {
+            requestId,
+            json: (request, response, status, data) =>
+              sendJson(request, response, cfg, status, data),
+            readJson: readValidatedJsonBody,
+            ip: (request) => clientIp(request, cfg.server.trustProxy),
           };
           for (const [name, value] of Object.entries(securityHeaders(req, cfg)))
             res.setHeader(name, value);
+          let app;
+          try {
+            app = await ready;
+          } catch (error) {
+            // Authentication has already succeeded. The pure whitelist does
+            // not construct a repository or grant any personal business access.
+            if (
+              await handleDiagnosticRead(req, res, {
+                http: requestHttp,
+                diagnostics,
+              })
+            )
+              return;
+            throw safeStartupFailure(error);
+          }
+          const context = { ...app, http: requestHttp };
           if (
             (await handleV2Request(req, res, context)) ||
             (await handleV1Request(req, res, context))
@@ -559,22 +673,45 @@ export function createServer(
           sendJson(req, res, cfg, status, {
             error: storage
               ? "存储写入失败，请检查可用空间和目录写入权限后重试。"
-              : status >= 500
-                ? "服务处理失败，请稍后重试；如持续出现，请提供错误编号。"
-                : e.message || "请求未通过检查。",
+              : e.maintenanceFailure
+                ? e.message
+                : status >= 500
+                  ? "服务处理失败，请稍后重试；如持续出现，请提供错误编号。"
+                  : e.message || "请求未通过检查。",
             code: storage
               ? "storage_write_failed"
-              : status >= 500
-                ? "system_error"
-                : e.code || "request_failed",
+              : e.maintenanceFailure
+                ? e.code
+                : status >= 500
+                  ? "system_error"
+                  : e.code || "request_failed",
             ...(e.fieldErrors && status < 500
               ? { fieldErrors: e.fieldErrors }
               : {}),
-            ...(e.references && status < 500 ? {references:Object.fromEntries(
-              ['targets','runs','evaluations','members','applications','applicationEvents','activeOperations']
-                .filter(key=>Number.isSafeInteger(e.references[key]) && e.references[key]>=0)
-                .map(key=>[key,e.references[key]]))} : {}),
-            ...(typeof e.conflictingRevisionId==='string' && status < 500 ? {conflictingRevisionId:e.conflictingRevisionId} : {}),
+            ...(e.references && status < 500
+              ? {
+                  references: Object.fromEntries(
+                    [
+                      "targets",
+                      "runs",
+                      "evaluations",
+                      "members",
+                      "applications",
+                      "applicationEvents",
+                      "activeOperations",
+                    ]
+                      .filter(
+                        (key) =>
+                          Number.isSafeInteger(e.references[key]) &&
+                          e.references[key] >= 0,
+                      )
+                      .map((key) => [key, e.references[key]]),
+                  ),
+                }
+              : {}),
+            ...(typeof e.conflictingRevisionId === "string" && status < 500
+              ? { conflictingRevisionId: e.conflictingRevisionId }
+              : {}),
             diagnosticId,
           });
         } else {
@@ -670,8 +807,9 @@ export function startServer() {
     process.exit(1);
   });
 
-  const shutdown = () => {
+  const shutdown = async () => {
     console.log("\n  正在关闭服务…");
+    await (await ctx.ready).close();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000);
   };

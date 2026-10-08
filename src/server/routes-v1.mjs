@@ -17,6 +17,9 @@ import {
   invalid,
 } from "./validation.mjs";
 import { STATUSES, STATUS_LABELS } from "../store.mjs";
+import {resolveLegacyScope} from '../application/legacy-scope.mjs';
+import {packageWorkspace} from '../application/package-job-service.mjs';
+import {packageError} from '../domain/packages.mjs';
 export async function handleV1Request(req, res, context) {
   const url = new URL(req.url, "http://localhost"),
     route = url.pathname,
@@ -138,12 +141,15 @@ export async function handleV1Request(req, res, context) {
     return true;
   }
   if (route === "/api/runs" && method === "GET") {
-    send(200, { runs: await listRuns(100, { context }) });
+    const scope=resolveLegacyScope(Object.fromEntries(url.searchParams),await context.repository.read(),context.repository.clock.now());
+    send(200, { runs: await listRuns(100, { context,scope }) });
     return true;
   }
   if ((match = route.match(/^\/api\/runs\/([^/]+)(?:\/(export))?$/))) {
     const id = identifier(decodeURIComponent(match[1]));
+    const current=await context.repository.read(),scope=resolveLegacyScope({...Object.fromEntries(url.searchParams),runId:id},current,context.repository.clock.now());
     if (!match[2] && method === "DELETE") {
+      if(current.schemaVersion===3)throw packageError('version_scope_required','请通过版本回收站管理整包数据。');
       await context.repository.mutateWorkspace((w) => {
         if (w.runs[id]) w.runs[id].deletedAt = new Date().toISOString();
       });
@@ -151,7 +157,7 @@ export async function handleV1Request(req, res, context) {
       return true;
     }
     if (method === "GET") {
-      const run = await loadRun(id, { context });
+      const run = await loadRun(id, { context,scope });
       if (!run) invalid("未找到该运行记录", 404);
       if (match[2]) {
         const result = exportResult(
@@ -170,7 +176,7 @@ export async function handleV1Request(req, res, context) {
     }
   }
   if (route === "/api/tracking/summary" && method === "GET") {
-    const w = await context.repository.read(),
+    const full = await context.repository.read(),scope=resolveLegacyScope(Object.fromEntries(url.searchParams),full,context.repository.clock.now()),w=full.schemaVersion===3?packageWorkspace(full,scope.packageId):full,
       byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0]));
     for (const job of Object.values(w.jobs))
       byStatus[projectJobApplication(w, job.jobId).status]++;
@@ -197,6 +203,7 @@ export async function handleV1Request(req, res, context) {
     if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 1000)
       invalid("Invalid limit");
     const result = await context.jobService.queryJobs({
+      ...resolveLegacyScope(Object.fromEntries(url.searchParams),await context.repository.read(),context.repository.clock.now()),
       status,
       pageSize: 200,
     });
@@ -207,7 +214,7 @@ export async function handleV1Request(req, res, context) {
       page++
     )
       rows.push(
-        ...(await context.jobService.queryJobs({ status, pageSize: 200, page }))
+        ...(await context.jobService.queryJobs({ ...resolveLegacyScope(Object.fromEntries(url.searchParams),await context.repository.read(),context.repository.clock.now()),status, pageSize: 200, page }))
           .items,
       );
     send(200, {
@@ -230,16 +237,18 @@ export async function handleV1Request(req, res, context) {
     const input = await http.readJson(req);
     if (!input.status) invalid("缺少status字段");
     try {
+      const current=await context.repository.read(),id=jobIdentifier(decodeURIComponent(match[1])),scope=resolveLegacyScope({...input,jobId:id},current,context.repository.clock.now());
       send(200, {
         ok: true,
-        job: await context.jobService.updateApplication(
-          jobIdentifier(decodeURIComponent(match[1])),
+        job: await (current.schemaVersion===3?context.jobService.updateJobApplication:context.jobService.updateApplication)(
+          id,
           {
             status: input.status,
             ...(Object.hasOwn(input, "note")
               ? { note: String(input.note) }
               : {}),
           },
+          scope,
         ),
       });
     } catch (error) {

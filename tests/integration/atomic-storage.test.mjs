@@ -166,7 +166,7 @@ test(
       diagnostics = createDiagnosticsLog({ dataDir: dir });
     let attempts = 0,
       mutations = 0;
-    const repo = await openWorkspaceRepository({
+    const repo = await openWorkspaceRepository({allowLegacy:true,
       dataDir: dir,
       diagnostics,
       fsAdapter: {

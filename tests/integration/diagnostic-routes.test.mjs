@@ -7,6 +7,7 @@ function routeFixture(diagnostics) {
   let result;
   return {
     context: {
+      repository:{read:async()=>({schemaVersion:2})},
       diagnostics,
       http: {
         json: (_req, _res, status, data) => {

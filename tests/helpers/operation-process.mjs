@@ -3,7 +3,7 @@ try {
   const { createWorkspaceOperationGate } = await import(
     "../../src/application/workspace-operations.mjs"
   );
-  const repository = await openWorkspaceRepository({
+  const repository = await openWorkspaceRepository({allowLegacy:true,
     dataDir: process.argv[2],
   });
   const lease = await createWorkspaceOperationGate({ repository }).acquire(

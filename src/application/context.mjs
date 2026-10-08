@@ -36,6 +36,12 @@ import {
   recordDiagnostic,
 } from "../infrastructure/diagnostics/log.mjs";
 import { defaultRuntime } from "../infrastructure/diagnostics/fields.mjs";
+import { bootstrapWorkspace } from "../infrastructure/storage/bootstrap-workspace.mjs";
+import { createTrashService } from "./trash-service.mjs";
+import { createPurgeService } from "./purge-service.mjs";
+import { createTrashScheduler } from "./trash-scheduler.mjs";
+import { createLegacyAssignmentService } from "./legacy-assignment-service.mjs";
+import { packageError } from "../domain/packages.mjs";
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
@@ -80,22 +86,29 @@ export async function createApplicationContext({
           dataDir,
           clock: dependencies.clock,
           diagnostics,
+          allowLegacy: true,
+          fsAdapter: dependencies.fsAdapter,
         }),
       () => ({ stage: "startup", runtime: defaultRuntime() }),
     ));
   const migration = await trace(
     "application.migration",
     () =>
-      migrateV1({
-        dataDir: repository.dataDir,
-        repository,
-      }),
+      dependencies.legacySchema === true
+        ? migrateV1({
+            dataDir: repository.dataDir,
+            repository,
+          })
+        : bootstrapWorkspace({ repository, fsAdapter: dependencies.fsAdapter }),
     (result) => ({ issueCount: result.issues?.length || 0 }),
   );
   const operationGate = createWorkspaceOperationGate({ repository });
   const managementUpgrade = await trace(
     "application.migration",
-    () => upgradeWorkspace({ repository, operationGate }),
+    () =>
+      dependencies.legacySchema === true
+        ? upgradeWorkspace({ repository, operationGate })
+        : Promise.resolve({ changed: false }),
     (result) => ({ issueCount: result.changed ? 1 : 0 }),
   );
   const recovery = await trace(
@@ -110,9 +123,46 @@ export async function createApplicationContext({
     }),
   );
   const registry = dependencies.registry || createDefaultSourceRegistry();
+  if (dependencies.legacySchema !== true) repository.enableStrictSchema3?.();
+  let runServiceForTrash;
+  const trashService = createTrashService({
+      repository,
+      cancelPackageAndWait: (id) => runServiceForTrash.cancelPackageAndWait(id),
+    }),
+    purgeService = createPurgeService({
+      repository,
+      trash: trashService,
+      operationGate,
+      fsAdapter: dependencies.fsAdapter,
+      diagnostics,
+    }),
+    assignmentService = createLegacyAssignmentService({ repository }),
+    trashScheduler = createTrashScheduler({
+      trash: trashService,
+      purge: purgeService,
+      clock: repository.clock,
+      timers: dependencies.timers,
+      diagnostics,
+    });
+  trashService.setPurgeService(purgeService);
+  if (dependencies.legacySchema !== true) {
+    await trace("application.recovery", async () => {
+      const assignments = await assignmentService.recoverPending();
+      if (assignments.pending?.length)
+        throw packageError(
+          "ownership_transfer_pending",
+          "历史归属与删除记录需要恢复检查，已停止业务访问。",
+          503,
+        );
+      return assignments;
+    });
+    await purgeService.resumePending();
+    await trashScheduler.sweep();
+  }
   const workspaceService = createWorkspaceService({
       repository,
       operationGate,
+      trashService,
       modelConfig: () => cfg.deepseek,
       sourceIds: () => [
         ...registry.list().map((p) => p.id),
@@ -182,7 +232,9 @@ export async function createApplicationContext({
     catalog: dependencies.catalog,
     config: cfg,
   });
+  runServiceForTrash = runService;
   const sourceService = createSourceService({
+      catalog: dependencies.catalog,
       diagnostics,
       repository,
       registry,
@@ -201,6 +253,20 @@ export async function createApplicationContext({
     exportService = createExportService({ repository });
   let settingsQueue = Promise.resolve();
   const context = {
+    trashService,
+    purgeService,
+    assignmentService,
+    trashScheduler,
+    async close() {
+      await trashScheduler.stop();
+      await settingsQueue;
+      const w = await repository.read();
+      if (w.schemaVersion === 3)
+        for (const p of Object.values(w.packages).filter(
+          (p) => p.state === "active" && p.kind === "target",
+        ))
+          await runService.cancelPackageAndWait(p.packageId);
+    },
     jobCleanupService: createJobCleanupService({ repository, operationGate }),
     operationGate,
     diagnostics,
@@ -363,6 +429,18 @@ export async function createApplicationContext({
     },
     async backup() {
       return trace("application.backup", async () => {
+        if ((await repository.read()).schemaVersion === 3) {
+          await trashScheduler.sweep();
+          if (
+            (await trashService.preview({ expiredOnly: true })).candidates
+              .length
+          )
+            throw inputError(
+              { file: "到期版本正在等待安全清理，请稍后再备份。" },
+              "当前不能备份。",
+              409,
+            );
+        }
         const result = await createBackup({ repository });
         return JSON.parse(await fs.readFile(result.path, "utf8"));
       });
@@ -377,7 +455,7 @@ export async function createApplicationContext({
           });
         }
         if (
-          (await runService.listRuns()).some((r) =>
+          Object.values((await repository.read()).runs).some((r) =>
             ["queued", "running"].includes(r.status),
           )
         )
@@ -389,11 +467,17 @@ export async function createApplicationContext({
         const archivePath = path.join(
           repository.dataDir,
           "backups",
-          "restore-" + randomUUID() + ".json",
+          "workspace-restore-" + randomUUID() + ".json",
         );
         await writeAtomicJson(archivePath, archive);
         try {
-          return await restoreBackup({ repository, archivePath });
+          return await restoreBackup({
+            repository,
+            archivePath,
+            trashService,
+            purgeService,
+            fsAdapter: dependencies.fsAdapter,
+          });
         } catch (error) {
           if (
             error.code === "workspace_operation_busy" ||
@@ -405,10 +489,19 @@ export async function createApplicationContext({
           throw inputError({
             file: "备份格式或完整性检查未通过，请选择软件导出的完整备份文件。",
           });
+        } finally {
+          await fs.unlink(archivePath).catch((error) => {
+            if (error.code !== "ENOENT") throw error;
+          });
         }
       });
     },
   };
+  if (
+    dependencies.legacySchema !== true &&
+    dependencies.startScheduler !== false
+  )
+    trashScheduler.start();
   return context;
 }
 const defaults = new Map();

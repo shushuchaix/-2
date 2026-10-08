@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
-import {runtimeRepository,runtimeGate,exactScope} from './package-runtime-service.mjs';
-import {assertScope,assertOwned,requirePackage,packageError} from '../domain/packages.mjs';
+import {
+  runtimeRepository,
+  runtimeGate,
+  exactScope,
+} from "./package-runtime-service.mjs";
+import {
+  assertScope,
+  assertOwned,
+  requirePackage,
+  packageError,
+} from "../domain/packages.mjs";
 import { selectRunJobFact } from "../domain/job-facts.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
@@ -68,12 +77,15 @@ function createLegacyRunService({
   async function update(id, patch) {
     return (
       await persist(() =>
-        repository.mutateWorkspace((w) => {
-          const run = w.runs[id];
-          if (!run) throw Error("Run not found");
-          Object.assign(run, patch);
-          return run;
-        },{operationLease:active.get(id)?.operationLease}),
+        repository.mutateWorkspace(
+          (w) => {
+            const run = w.runs[id];
+            if (!run) throw Error("Run not found");
+            Object.assign(run, patch);
+            return run;
+          },
+          { operationLease: active.get(id)?.operationLease },
+        ),
       )
     ).result;
   }
@@ -159,20 +171,20 @@ function createLegacyRunService({
         if (checking) return;
         checking = true;
         cancellationRead = (async () => {
-        try {
-          if ((await repository.read()).runs[id]?.cancelRequestedAt)
-            controller.abort();
-          pollFailed = false;
-        } catch (error) {
-          if (!pollFailed)
-            await diagnose("run.poll", error, {
-              phase: "read",
-              outcome: "failed",
-            });
-          pollFailed = true;
-        } finally {
-          checking = false;
-        }
+          try {
+            if ((await repository.read()).runs[id]?.cancelRequestedAt)
+              controller.abort();
+            pollFailed = false;
+          } catch (error) {
+            if (!pollFailed)
+              await diagnose("run.poll", error, {
+                phase: "read",
+                outcome: "failed",
+              });
+            pollFailed = true;
+          } finally {
+            checking = false;
+          }
         })();
       }, 500);
       async function ingest(records) {
@@ -818,6 +830,7 @@ function createLegacyRunService({
         snapshot.events = snapshot.run.events || [];
       } catch (error) {
         finalStatus = "failed";
+        error.code ||= "snapshot_failed";
         const entry = await diagnose("run.snapshot", error);
         await update(id, {
           status: "failed",
@@ -1054,6 +1067,12 @@ function createLegacyRunService({
         throw Error("Run belongs to another process");
       if (run.snapshotRef)
         return { ...(await repository.readRunSnapshot(runId)), run };
+      if (run.issues?.some((issue) => issue.code === "snapshot_failed"))
+        throw packageError(
+          "snapshot_failed",
+          "运行快照未保存，请查看安全诊断日志。",
+          503,
+        );
       return {
         run,
         profileRevision: await workspaceService.getProfileRevision(
@@ -1067,29 +1086,143 @@ function createLegacyRunService({
   };
   return service;
 }
-export function createRunService(options){
- const legacy=createLegacyRunService(options),instances=new Map();const repository=options.repository,gate=options.operationGate||createWorkspaceOperationGate({repository});
- async function instance(scope,runId){const w=await repository.read();assertScope(w,scope,repository.clock.now());if(runId)assertOwned(w,w.runs[runId],scope.packageId);const selected=exactScope(scope);
-  if(!instances.has(selected.packageId)){
-   const repo=runtimeRepository(repository,selected);
-   const workspaceService={...options.workspaceService,
-    async getTargetRevision(id){const v=await repo.read();return Object.values(v.targets).flat().find(t=>t.revisionId===id);},
-    async getProfileRevision(id){const v=await repo.read();return Object.values(v.profiles).flat().find(p=>p.revisionId===id);}
-   };
-   const jobService={...options.jobService,ingestRecords:input=>options.jobService.ingestRecords({...input,scope:selected}),finalizeCoverage:input=>options.jobService.finalizeCoverage({...input,scope:selected})};
-   const evaluationService={...options.evaluationService,evaluate:input=>options.evaluationService.evaluate({...input,scope:selected})};
-   const eventHub=options.eventHub?{publish:(id,type,payload)=>options.eventHub.publish(id,type,payload,selected)}:null;
-   instances.set(selected.packageId,createLegacyRunService({...options,repository:repo,workspaceService,jobService,evaluationService,eventHub,operationGate:runtimeGate(gate,selected)}));
+export function createRunService(options) {
+  const legacy = createLegacyRunService(options),
+    instances = new Map();
+  const repository = options.repository,
+    gate =
+      options.operationGate || createWorkspaceOperationGate({ repository });
+  async function instance(scope, runId) {
+    const w = await repository.read();
+    assertScope(w, scope, repository.clock.now());
+    if (runId) assertOwned(w, w.runs[runId], scope.packageId);
+    const selected = exactScope(scope);
+    if (!instances.has(selected.packageId)) {
+      const repo = runtimeRepository(repository, selected);
+      const workspaceService = {
+        ...options.workspaceService,
+        async getTargetRevision(id) {
+          const v = await repo.read();
+          return Object.values(v.targets)
+            .flat()
+            .find((t) => t.revisionId === id);
+        },
+        async getProfileRevision(id) {
+          const v = await repo.read();
+          return Object.values(v.profiles)
+            .flat()
+            .find((p) => p.revisionId === id);
+        },
+      };
+      const jobService = {
+        ...options.jobService,
+        ingestRecords: (input) =>
+          options.jobService.ingestRecords({ ...input, scope: selected }),
+        finalizeCoverage: (input) =>
+          options.jobService.finalizeCoverage({ ...input, scope: selected }),
+      };
+      const evaluationService = {
+        ...options.evaluationService,
+        evaluate: (input) =>
+          options.evaluationService.evaluate({ ...input, scope: selected }),
+      };
+      const eventHub = options.eventHub
+        ? {
+            publish: (id, type, payload) =>
+              options.eventHub.publish(id, type, payload, selected),
+          }
+        : null;
+      instances.set(
+        selected.packageId,
+        createLegacyRunService({
+          ...options,
+          repository: repo,
+          workspaceService,
+          jobService,
+          evaluationService,
+          eventHub,
+          operationGate: runtimeGate(gate, selected),
+        }),
+      );
+    }
+    return instances.get(selected.packageId);
   }
-  return instances.get(selected.packageId);
- }
- const api={
-  async startRun(input){if((await repository.read()).schemaVersion!==3)return legacy.startRun(input);const service=await instance(input.scope);return service.startRun({...input,targetRevisionId:input.scope.targetRevisionId});},
-  async getRun(id,scope){if((await repository.read()).schemaVersion!==3)return legacy.getRun(id);return (await instance(scope,id)).getRun(id);},
-  async listRuns(filters={}){const w=await repository.read();if(w.schemaVersion!==3)return legacy.listRuns(filters);if(!filters.allTargets)return (await instance(filters)).listRuns(filters);return Object.values(w.runs).filter(r=>w.packages[r.ownerPackageId]?.kind==='target'&&w.packages[r.ownerPackageId]?.state==='active'&&(!filters.status||r.status===filters.status)&&!r.deletedAt).map(r=>({...r,scope:{packageId:r.ownerPackageId,targetRevisionId:w.packages[r.ownerPackageId].versionId},versionName:w.packages[r.ownerPackageId].versionName})).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));},
-  async cancelRun(id,scope){if((await repository.read()).schemaVersion!==3)return legacy.cancelRun(id);return (await instance(scope,id)).cancelRun(id);},
-  async waitForRun(id,scope){if((await repository.read()).schemaVersion!==3)return legacy.waitForRun(id);return (await instance(scope,id)).waitForRun(id);},
-  async cancelPackageAndWait(packageId){const w=await repository.read(),pkg=requirePackage(w,packageId,{now:repository.clock.now()});if(pkg.kind!=='target')return;const scope={packageId,targetRevisionId:pkg.versionId},ids=Object.values(w.runs).filter(r=>r.ownerPackageId===packageId&&!terminal.has(r.status)).map(r=>r.runId);for(const id of ids)await api.cancelRun(id,scope);for(const id of ids)if(instances.has(packageId))await api.waitForRun(id,scope);await gate.recover();for(;;){const current=await repository.read();if(!Object.values(current.runs).some(r=>r.ownerPackageId===packageId&&!terminal.has(r.status))&&!Object.values(current.operationLeases||{}).some(l=>l.packageIds?.includes(packageId)))break;await delay(50);}}
- };
- return api;
+  const api = {
+    async startRun(input) {
+      if ((await repository.read()).schemaVersion !== 3)
+        return legacy.startRun(input);
+      const service = await instance(input.scope);
+      return service.startRun({
+        ...input,
+        targetRevisionId: input.scope.targetRevisionId,
+      });
+    },
+    async getRun(id, scope) {
+      if ((await repository.read()).schemaVersion !== 3)
+        return legacy.getRun(id);
+      return (await instance(scope, id)).getRun(id);
+    },
+    async listRuns(filters = {}) {
+      const w = await repository.read();
+      if (w.schemaVersion !== 3) return legacy.listRuns(filters);
+      if (!filters.allTargets)
+        return (await instance(filters)).listRuns(filters);
+      return Object.values(w.runs)
+        .filter(
+          (r) =>
+            w.packages[r.ownerPackageId]?.kind === "target" &&
+            w.packages[r.ownerPackageId]?.state === "active" &&
+            (!filters.status || r.status === filters.status) &&
+            !r.deletedAt,
+        )
+        .map((r) => ({
+          ...r,
+          scope: {
+            packageId: r.ownerPackageId,
+            targetRevisionId: w.packages[r.ownerPackageId].versionId,
+          },
+          versionName: w.packages[r.ownerPackageId].versionName,
+        }))
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    },
+    async cancelRun(id, scope) {
+      if ((await repository.read()).schemaVersion !== 3)
+        return legacy.cancelRun(id);
+      return (await instance(scope, id)).cancelRun(id);
+    },
+    async waitForRun(id, scope) {
+      if ((await repository.read()).schemaVersion !== 3)
+        return legacy.waitForRun(id);
+      return (await instance(scope, id)).waitForRun(id);
+    },
+    async cancelPackageAndWait(packageId) {
+      const w = await repository.read(),
+        pkg = requirePackage(w, packageId, { now: repository.clock.now() });
+      if (pkg.kind !== "target") return;
+      const scope = { packageId, targetRevisionId: pkg.versionId },
+        ids = Object.values(w.runs)
+          .filter(
+            (r) => r.ownerPackageId === packageId && !terminal.has(r.status),
+          )
+          .map((r) => r.runId);
+      for (const id of ids) await api.cancelRun(id, scope);
+      for (const id of ids)
+        if (instances.has(packageId)) await api.waitForRun(id, scope);
+      await gate.recover();
+      for (;;) {
+        const current = await repository.read();
+        if (
+          !Object.values(current.runs).some(
+            (r) => r.ownerPackageId === packageId && !terminal.has(r.status),
+          ) &&
+          !Object.values(current.operationLeases || {}).some((l) =>
+            l.packageIds?.includes(packageId),
+          )
+        )
+          break;
+        await delay(50);
+      }
+    },
+  };
+  return api;
 }

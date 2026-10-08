@@ -5,6 +5,25 @@ import { createImportService } from "../../src/application/import-service.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 import { createJobService } from "../../src/application/job-service.mjs";
 import { createTempDir } from "../helpers/fixtures.mjs";
+import { apiFixture } from "../helpers/api-fixture.mjs";
+
+test("listed injected source sites can be probed without external requests", async (t) => {
+  const f = await apiFixture(t, {
+    legacySchema: false,
+    dependencies: { startScheduler: false },
+  });
+  const sources = await f.call("/api/v2/sources");
+  assert.ok(sources.data.sites.some((site) => site.siteId === "synthetic-1"));
+  const probe = await f.call("/api/v2/sources/synthetic/probe", {
+    siteId: "synthetic-1",
+  });
+  assert.equal(probe.response.status, 200);
+  assert.equal(probe.data.status, "ready");
+  const foreign = await f.call("/api/v2/sources/synthetic/probe", {
+    siteId: "ncss",
+  });
+  assert.equal(foreign.response.status, 404);
+});
 test("readiness counts distinct automated providers with body evidence only", () => {
   const result = (id, category = "employer") => ({
     sourceId: id,
@@ -50,6 +69,7 @@ test("readiness counts distinct automated providers with body evidence only", ()
 });
 test("imports retain social provenance without fetching prohibited platform bodies", async (t) => {
   const repository = await openWorkspaceRepository({
+    allowLegacy: true,
     dataDir: await createTempDir(t),
   });
   const jobs = createJobService({ repository });

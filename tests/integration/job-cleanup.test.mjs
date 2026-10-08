@@ -244,7 +244,7 @@ test("note changes, forged selections, backup failure and atomic commit failure 
     delete w.runs.missing;
   });
   let failed = false;
-  const faulty = await openWorkspaceRepository({
+  const faulty = await openWorkspaceRepository({allowLegacy:true,
     dataDir: repository.dataDir,
     fsAdapter: {
       ...fs,

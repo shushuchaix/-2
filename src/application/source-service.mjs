@@ -10,6 +10,7 @@ export function createSourceService({
   repository,
   requestFactory,
   diagnostics,
+  catalog,
   clock = repository.clock,
 }) {
   return {
@@ -30,9 +31,12 @@ export function createSourceService({
       const provider = registry.get(sourceId);
       if (!provider) throw Error("Source not found");
       const w = await repository.read();
-      const site = loadSiteCatalog({
-        customSites: w.settings.customSites,
-      }).find((s) => s.siteId === siteId && s.providerId === sourceId);
+      const site = (
+        catalog ||
+        loadSiteCatalog({
+          customSites: w.settings.customSites,
+        })
+      ).find((s) => s.siteId === siteId && s.providerId === sourceId);
       if (siteId && !site) throw Error("Site not found for provider");
       const budget = createSourceBudget({ maxRequests: 6, maxDetails: 2 });
       const started = clock.now();

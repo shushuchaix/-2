@@ -8,7 +8,7 @@ import { openWorkspaceRepository } from "../../src/infrastructure/storage/reposi
 import { recoverWorkspace } from "../../src/infrastructure/storage/recovery.mjs";
 import { createTempDir } from "../helpers/fixtures.mjs";
 async function fixture(t) {
-  const repository = await openWorkspaceRepository({
+  const repository = await openWorkspaceRepository({allowLegacy:true,
     dataDir: await createTempDir(t),
   });
   await repository.mutateWorkspace((w) => {

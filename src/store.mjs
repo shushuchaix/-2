@@ -8,6 +8,10 @@ import {
 } from "./infrastructure/storage/repository.mjs";
 import { migrateV1 } from "./infrastructure/storage/migrate-v1.mjs";
 import { createWorkspaceOperationGate } from "./application/workspace-operations.mjs";
+import {getDefaultApplicationContext} from './application/context.mjs';
+import {resolveLegacyScope} from './application/legacy-scope.mjs';
+import {packageWorkspace} from './application/package-job-service.mjs';
+import {randomUUID} from 'node:crypto';
 import {
   resolveJobId,
   resolveJobIds,
@@ -38,16 +42,10 @@ export const STATUS_LABELS = {
 };
 export const INDEX_PATH = path.join(DATA_ROOT, "workspace.v2.json");
 let ready;
-async function context() {
+async function context(provided) {
+  if(provided)return provided;
   ready ||= (async () => {
-    const repository = await openWorkspaceRepository({ dataDir: DATA_ROOT });
-    await migrateV1({ dataDir: DATA_ROOT, repository });
-    await upgradeWorkspace({ repository });
-    return {
-      repository,
-      operationGate: createWorkspaceOperationGate({ repository }),
-      service: createJobService({ repository }),
-    };
+    const app=await getDefaultApplicationContext((await import('./config.mjs')).loadConfig({quiet:true}));return {...app,service:app.jobService};
   })();
   return ready;
 }
@@ -110,11 +108,12 @@ function view(w) {
         .at(-1) || "",
   };
 }
-export async function loadIndex() {
-  return view(await (await context()).repository.read());
+export async function loadIndex({scope,context:provided,targetRevisionId,targetId}={}) {
+  const ctx=await context(provided),full=await ctx.repository.read(),selected=resolveLegacyScope({scope,targetRevisionId,targetId},full,ctx.repository.clock.now());return view(full.schemaVersion===3?packageWorkspace(full,selected.packageId):full);
 }
-export async function saveIndex(index) {
-  const { repository } = await context();
+export async function saveIndex(index,{scope,context:provided,targetRevisionId,targetId}={}) {
+  const ctx=await context(provided),{ repository } = ctx,full=await repository.read();
+  if(full.schemaVersion===3){const selected=resolveLegacyScope({scope,targetRevisionId,targetId},full,repository.clock.now()),service=ctx.jobService||ctx.service;for(const rec of Object.values(index.jobs||{}))await service.updateJobApplication(rec.jobId||rec.id,{...(Object.hasOwn(rec,'status')?{status:rec.status}:{}),...(Object.hasOwn(rec,'note')?{note:rec.note}:{})},selected);return {ok:true};}
   await repository.mutateWorkspace((w) => {
     for (const rec of Object.values(index.jobs || {})) {
       const id = resolveStoredJobId(w, rec.jobId || rec.id);
@@ -148,12 +147,15 @@ export async function upsert(
     at = new Date().toISOString(),
     persist = true,
     operationLease,
+    scope,
+    context:provided,
   } = {},
 ) {
-  const ctx = await context();
+  const ctx = await context(provided);
+  const initial=await ctx.repository.read();scope=resolveLegacyScope({scope,...(runId&&initial.runs[runId]?{runId}:{})},initial,ctx.repository.clock.now());
   if (persist && !operationLease)
-    return ctx.operationGate.withOperation("legacy", {}, (lease) =>
-      upsert(jobs, { runId, at, persist, operationLease: lease }),
+    return ctx.operationGate.withOperation("legacy", {scope}, (lease) =>
+      upsert(jobs, { runId, at, persist, operationLease: lease,scope,context:ctx }),
     );
   const before = await ctx.repository.read();
   let repository = ctx.repository;
@@ -171,10 +173,14 @@ export async function upsert(
   }
   const service = createJobService({ repository });
   const valid = jobs.filter((j) => j.title && j.url);
+  if(before.schemaVersion===3){
+    runId ||= 'legacy-'+randomUUID();if(!before.runs[runId])await repository.mutateWorkspace(w=>{const target=Object.values(w.targets).flat().find(t=>t.revisionId===scope.targetRevisionId);w.runs[runId]={runId,recordId:randomUUID(),ownerPackageId:scope.packageId,targetSnapshot:structuredClone(target),status:'completed',lastSeq:0,events:[],createdAt:at,counts:{},issues:[],usage:{},snapshotRef:null};},{operationLease});
+  }
   const { jobIds } = await service.ingestRecords({
     runId: runId || "legacy-" + Date.now(),
     records: valid,
     observedAt: at,
+    scope,
   });
   const evaluations = valid.flatMap((j, i) =>
     typeof j.score === "number"
@@ -192,7 +198,7 @@ export async function upsert(
         ]
       : [],
   );
-  if (evaluations.length) await service.saveEvaluations(evaluations);
+  if (evaluations.length&&before.schemaVersion!==3) await service.saveEvaluations(evaluations);
   const added = [],
     ongoing = [];
   const counted = new Set();
@@ -204,7 +210,7 @@ export async function upsert(
       : added
     ).push(j.id || jobIds[i]);
   });
-  const index = view(await repository.read());
+  const updated=await repository.read(),index = view(updated.schemaVersion===3?packageWorkspace(updated,scope.packageId):updated);
   return {
     added,
     ongoing,
@@ -221,9 +227,9 @@ export async function upsert(
     index,
   };
 }
-export async function annotate(jobs = [], diff, { now = Date.now() } = {}) {
-  const index = diff.index || (await loadIndex());
-  const w = await (await context()).repository.read();
+export async function annotate(jobs = [], diff, { now = Date.now(),scope,context:provided } = {}) {
+  const ctx=await context(provided),full=await ctx.repository.read(),selected=resolveLegacyScope({scope},full,ctx.repository.clock.now());const w=full.schemaVersion===3?packageWorkspace(full,selected.packageId):full;
+  const index = full.schemaVersion===3?view(w):diff.index || view(w);
   for (const j of jobs) {
     const rec =
       index.jobs[j.id] ||
@@ -244,14 +250,14 @@ export async function annotate(jobs = [], diff, { now = Date.now() } = {}) {
   }
   return { jobs, disappearedIds: [] };
 }
-export async function setStatus(id, status, note) {
-  const { service } = await context();
+export async function setStatus(id, status, note,{scope,context:provided}={}) {
+  const ctx=await context(provided),full=await ctx.repository.read(),service=ctx.jobService||ctx.service,selected=resolveLegacyScope({scope,...(full.applications[id]?{applicationId:id}:{jobId:id})},full,ctx.repository.clock.now());
   const patch = { status };
   if (note !== undefined) patch.note = note;
-  return service.updateApplication(id, patch);
+  return full.schemaVersion===3?(full.applications[id]?service.updateApplication(id,patch,selected):service.updateJobApplication(id,patch,selected)):service.updateApplication(id, patch);
 }
-export async function summary() {
-  const index = await loadIndex();
+export async function summary(options={}) {
+  const index = await loadIndex(options);
   const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0]));
   for (const rec of Object.values(index.jobs)) byStatus[rec.status]++;
   return {
@@ -265,8 +271,8 @@ export async function summary() {
     updatedAt: index.updatedAt,
   };
 }
-export async function listJobs({ status = "", limit = 200 } = {}) {
-  return Object.values((await loadIndex()).jobs)
+export async function listJobs({ status = "", limit = 200,...options } = {}) {
+  return Object.values((await loadIndex(options)).jobs)
     .filter((r) => !status || r.status === status)
     .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
     .slice(0, limit);

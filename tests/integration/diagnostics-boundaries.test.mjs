@@ -64,7 +64,7 @@ test("successful writes are traced but diagnostic polling never fills its own hi
 test("transaction failures keep the failed storage step and do not commit private data", async (t) => {
   const dataDir = await createTempDir(t),
     diagnostics = createDiagnosticsLog({ dataDir });
-  const repository = await openWorkspaceRepository({
+  const repository = await openWorkspaceRepository({allowLegacy:true,
     dataDir,
     diagnostics,
     fsAdapter: {

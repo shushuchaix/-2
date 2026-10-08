@@ -38,18 +38,20 @@ test("public starter listens and exposes guarded workspace API", async (t) => {
   });
   const origin = "http://127.0.0.1:" + port;
   allowLocalOrigin(origin);
-  let response;
+  let response, health;
   for (let i = 0; i < 50; i++) {
     try {
       response = await fetch(origin + "/api/health", {
         signal: AbortSignal.timeout(2000),
       });
-      break;
-    } catch {
-      await new Promise((r) => setTimeout(r, 100));
-    }
+      health = await response.json();
+      if (health.status === "ready" || health.status === "maintenance") break;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 100));
   }
   assert.equal(response?.status, 200, output);
-  assert.equal((await response.json()).ok, true);
+  assert.equal(health?.status, "ready", output);
+  assert.equal(health.ok, true);
+  assert.equal(health.authRequired, true);
   assert.equal((await fetch(origin + "/api/v2/jobs")).status, 401);
 });

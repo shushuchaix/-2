@@ -49,7 +49,7 @@ async function start(repository) {
   return createApplicationContext({
     cfg,
     dataDir: repository.dataDir,
-    dependencies: { repository },
+    dependencies: {legacySchema:true, repository },
   });
 }
 test("upgrade is idempotent and preserves facts", async (t) => {

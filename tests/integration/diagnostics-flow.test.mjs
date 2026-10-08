@@ -35,7 +35,7 @@ async function flow(
   const context = await createApplicationContext({
     cfg,
     dataDir,
-    dependencies: {
+    dependencies: {legacySchema:true,
       diagnostics,
       registry: createSourceRegistry([provider]),
       catalog: [

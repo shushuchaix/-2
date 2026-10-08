@@ -49,7 +49,7 @@ test("all attempts share hard budget including JSON downgrade and repair", async
   assert.throws(() => twenty.claimRequest(), /budget_exhausted/);
 });
 test("partial model results keep valid items and only invalid missing items fall back", async (t) => {
-  const repository = await openWorkspaceRepository({
+  const repository = await openWorkspaceRepository({allowLegacy:true,
       dataDir: await createTempDir(t),
     }),
     workspace = createWorkspaceService({ repository }),
@@ -178,7 +178,7 @@ test("parallel tasks isolate usage and cached evaluations retain immutable ident
   await Promise.all(clients.map((c) => c.chat("", "x")));
   assert.equal(clients[0].budget.snapshot().requests, 1);
   assert.equal(clients[1].budget.snapshot().requests, 1);
-  const repository = await openWorkspaceRepository({
+  const repository = await openWorkspaceRepository({allowLegacy:true,
       dataDir: await createTempDir(t),
     }),
     workspace = createWorkspaceService({ repository }),

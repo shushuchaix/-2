@@ -7,7 +7,7 @@ import { createWorkspaceService } from "../../src/application/workspace-service.
 import { createJobService } from "../../src/application/job-service.mjs";
 import { job, profile, target, createTempDir } from "../helpers/fixtures.mjs";
 test("rescore keeps prior revisions and application without collecting sources", async (t) => {
-  const repository = await openWorkspaceRepository({
+  const repository = await openWorkspaceRepository({allowLegacy:true,
       dataDir: await createTempDir(t),
     }),
     workspace = createWorkspaceService({ repository }),
@@ -91,7 +91,7 @@ test("rescore keeps prior revisions and application without collecting sources",
   );
 });
 test("rescore cancellation retains completed batch and validates real revisions", async (t) => {
-  const repository = await openWorkspaceRepository({
+  const repository = await openWorkspaceRepository({allowLegacy:true,
       dataDir: await createTempDir(t),
     }),
     workspace = createWorkspaceService({ repository }),

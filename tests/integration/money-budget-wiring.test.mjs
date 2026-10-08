@@ -28,7 +28,7 @@ async function fixture(t, count = 105) {
   const context = await createApplicationContext({
     cfg,
     dataDir: await createTempDir(t),
-    dependencies: {
+    dependencies: {legacySchema:true,
       registry: createSourceRegistry([fakeProvider({ records })]),
       catalog: [
         {

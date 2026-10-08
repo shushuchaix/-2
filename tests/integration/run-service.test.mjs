@@ -1,4 +1,4 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
@@ -14,17 +14,20 @@ import { fakeProvider } from "../helpers/fake-sources.mjs";
 import { recoverWorkspace } from "../../src/infrastructure/storage/recovery.mjs";
 async function fixture(t, providers, gate) {
   const repository = await openWorkspaceRepository({
+      allowLegacy: true,
       dataDir: await createTempDir(t),
     }),
     workspaceService = createWorkspaceService({ repository }),
     jobService = createJobService({ repository }),
     evaluationService = createEvaluationService({ repository });
   const p = await workspaceService.saveProfile({ profile: profile() }),
-    tar = await workspaceService.saveTarget(namedTargetInput({
-      ...target(),
-      sourceIds: providers.map((p) => p.id),
-      profileRevisionId: p.revisionId,
-    }));
+    tar = await workspaceService.saveTarget(
+      namedTargetInput({
+        ...target(),
+        sourceIds: providers.map((p) => p.id),
+        profileRevisionId: p.revisionId,
+      }),
+    );
   const catalog = providers.map((p) => ({
     siteId: p.id + "-1",
     providerId: p.id,
@@ -79,7 +82,9 @@ test("partial runs retain all raw facts and manual state with immutable target s
     targetRevisionId: f.tar.revisionId,
     mode: "rules",
   });
-  await f.workspaceService.saveTarget(namedTargetInput({ ...f.tar, roles: ["新方向"] }));
+  await f.workspaceService.saveTarget(
+    namedTargetInput({ ...f.tar, roles: ["新方向"] }),
+  );
   const result = await f.service.waitForRun(runId);
   assert.equal(result.run.status, "partial");
   assert.equal(result.run.counts.normalized, 2);
@@ -152,29 +157,49 @@ test("empty and all failed outcomes differ and queued cancellation releases one 
   await f.service.waitForRun(first.runId);
   assert.equal(gate.active, 0);
 });
-test('run completion drains an already started cancellation read before snapshot and cleanup',async t=>{
+test("run completion drains an already started cancellation read before snapshot and cleanup", async (t) => {
   let finishSource, pollBegan, finishPoll;
-  const sourceDone=new Promise(r=>finishSource=r), pollStarted=new Promise(r=>pollBegan=r), pollDone=new Promise(r=>finishPoll=r);
-  const f=await fixture(t,[fakeProvider({hold:()=>sourceDone})]);
-  const read=f.repository.read, write=f.repository.writeRunSnapshot;
-  let intercepted=false,pollBusy=false;
-  f.repository.read=async()=>{
-    if(!intercepted && /Timeout\./.test(new Error().stack)) {
-      intercepted=true;pollBusy=true;pollBegan();await pollDone;
-      try{return await read();}finally{pollBusy=false;}
+  const sourceDone = new Promise((r) => (finishSource = r)),
+    pollStarted = new Promise((r) => (pollBegan = r)),
+    pollDone = new Promise((r) => (finishPoll = r));
+  const f = await fixture(t, [fakeProvider({ hold: () => sourceDone })]);
+  const read = f.repository.read,
+    write = f.repository.writeRunSnapshot;
+  let intercepted = false,
+    pollBusy = false;
+  f.repository.read = async () => {
+    if (!intercepted && /Timeout\./.test(new Error().stack)) {
+      intercepted = true;
+      pollBusy = true;
+      pollBegan();
+      await pollDone;
+      try {
+        return await read();
+      } finally {
+        pollBusy = false;
+      }
     }
     return read();
   };
-  f.repository.writeRunSnapshot=async(...args)=>{
-    if(pollBusy)throw Error('snapshot started before cancellation read drained');
+  f.repository.writeRunSnapshot = async (...args) => {
+    if (pollBusy)
+      throw Error("snapshot started before cancellation read drained");
     return write(...args);
   };
-  const run=await f.service.startRun({targetRevisionId:f.tar.revisionId,mode:'rules'});
+  const run = await f.service.startRun({
+    targetRevisionId: f.tar.revisionId,
+    mode: "rules",
+  });
   await pollStarted;
-  const release=setTimeout(finishPoll,600);t.after(()=>{clearTimeout(release);finishPoll();finishSource();});
+  const release = setTimeout(finishPoll, 600);
+  t.after(() => {
+    clearTimeout(release);
+    finishPoll();
+    finishSource();
+  });
   finishSource();
-  assert.equal((await f.service.waitForRun(run.runId)).run.status,'completed');
-  assert.equal(pollBusy,false);
+  assert.equal((await f.service.waitForRun(run.runId)).run.status, "completed");
+  assert.equal(pollBusy, false);
 });
 test("running cancellation saves already ingested observations and terminal snapshot", async (t) => {
   let began;
@@ -218,10 +243,44 @@ test("coverage limits are partial and snapshot write failure is explicit", async
     targetRevisionId: broken.tar.revisionId,
     mode: "rules",
   });
-  await assert.rejects(broken.service.waitForRun(started.runId), /injected/);
+  await assert.rejects(broken.service.waitForRun(started.runId), {
+    code: "snapshot_failed",
+  });
   const persisted = await broken.service.getRun(started.runId);
   assert.equal(persisted.status, "failed");
   assert.ok(persisted.issues.some((i) => i.code === "snapshot_failed"));
+});
+test("a late wait still rejects a snapshot failure after the active task and lease are gone", async (t) => {
+  const f = await fixture(t, [fakeProvider()]);
+  f.repository.writeRunSnapshot = async () => {
+    throw Error("injected private snapshot failure");
+  };
+  const started = await f.service.startRun({
+    targetRevisionId: f.tar.revisionId,
+    mode: "rules",
+  });
+  let w;
+  for (let i = 0; i < 100; i++) {
+    w = await f.repository.read();
+    if (
+      w.runs[started.runId]?.status === "failed" &&
+      !Object.keys(w.operationLeases).length
+    )
+      break;
+    await delay(10);
+  }
+  assert.equal(w.runs[started.runId].status, "failed");
+  assert.equal(Object.keys(w.operationLeases).length, 0);
+  assert.ok(
+    w.runs[started.runId].issues.some((i) => i.code === "snapshot_failed"),
+  );
+  await assert.rejects(
+    () => f.service.waitForRun(started.runId),
+    (error) =>
+      error.code === "snapshot_failed" &&
+      error.status === 503 &&
+      !/injected|private/.test(error.message),
+  );
 });
 test("a second entry preserves live owner tasks and requests cancellation through authority", async (t) => {
   let began, release;

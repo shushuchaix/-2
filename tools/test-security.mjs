@@ -373,7 +373,7 @@ try {
   check('健康信息中的密钥已脱敏', !j.deepseek.keyMasked?.includes(TEST_PASSWORD) && j.deepseek.keyMasked !== process.env.DEEPSEEK_API_KEY);
 
   r = await api('/api/runs');
-  check('登录后可访问历史记录', r.status === 200);
+    check('登录后无目标范围的历史访问明确拒绝', r.status === 409 && (await r.json()).code==='version_scope_required');
 
   // --- 会话伪造 ---
   const savedCookie = cookie;
@@ -451,7 +451,7 @@ try {
   if (server) {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
-    await started.ctx.ready;
+    await (await started.ctx.ready).close?.();
     await started.ctx.diagnostics.list({limit:1});
   }
   fs.rmSync(TMP_DATA, { recursive: true, force: true });

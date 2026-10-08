@@ -6,6 +6,7 @@ import { getDefaultApplicationContext } from "./application/context.mjs";
 import { runPipeline, saveRun } from "./pipeline.mjs";
 import { extractResumeText } from "./resume/extract-text.mjs";
 import { exportResult } from "./export.mjs";
+import {resolveLegacyScope} from './application/legacy-scope.mjs';
 const booleans = new Set([
   "help",
   "h",
@@ -34,6 +35,7 @@ const args = parseArgs(process.argv.slice(2)),
     String(v || "")
       .split(/[,，、;；\s]+/)
       .filter(Boolean);
+let cliContext;
 async function main() {
   if (args.help || args.h) {
     console.log(
@@ -43,7 +45,7 @@ async function main() {
   }
   ensureDataDirs();
   const cfg = loadConfig({ quiet: true }),
-    context = await getDefaultApplicationContext(cfg),
+    context = cliContext=await getDefaultApplicationContext(cfg),
     [group, command, id] = args._;
   if (group === "targets" && command === "list") {
     console.log(
@@ -62,28 +64,32 @@ async function main() {
         revisions.find((t) => t.revisionId === requested) ||
         revisions.filter((t) => t.targetId === requested).at(-1);
     if (!target) throw Error("Target not found");
+    const scope=resolveLegacyScope(target.revisionId===requested?{targetRevisionId:requested}:{targetId:requested},await context.repository.read(),context.repository.clock.now());
     const started = await context.runService.startRun({
+        scope,
         targetRevisionId: target.revisionId,
         mode: args.rules ? "rules" : cfg.deepseek.apiKey ? "ai" : "rules",
       }),
-      result = await context.runService.waitForRun(started.runId);
+      result = await context.runService.waitForRun(started.runId,scope);
     console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (group === "runs" && command === "show") {
-    console.log(JSON.stringify(await context.runService.getRun(id), null, 2));
+    const scope=resolveLegacyScope({runId:id,...(args.target?{targetRevisionId:String(args.target)}:{})},await context.repository.read(),context.repository.clock.now());
+    console.log(JSON.stringify(await context.runService.getRun(id,scope), null, 2));
     return;
   }
   if (group === "applications" && command === "set") {
     if (!args.status) throw Error("--status required");
+    const w=await context.repository.read(),scope=resolveLegacyScope({...(w.applications[id]?{applicationId:id}:{jobId:id}),...(args.target?{targetRevisionId:String(args.target)}:{})},w,context.repository.clock.now());
     console.log(
       JSON.stringify(
-        await context.jobService.updateApplication(id, {
+        await (w.schemaVersion===3&&!w.applications[id]?context.jobService.updateJobApplication:context.jobService.updateApplication)(id, {
           status: args.status,
           ...(Object.hasOwn(args, "note")
             ? { note: String(args.note === true ? "" : args.note) }
             : {}),
-        }),
+        },scope),
         null,
         2,
       ),
@@ -165,4 +171,4 @@ async function main() {
 main().catch((error) => {
   console.error("运行失败：" + error.message);
   process.exitCode = 1;
-});
+}).finally(async()=>{try{await cliContext?.close?.();}catch(error){console.error('关闭失败：'+error.message);process.exitCode=1;}});

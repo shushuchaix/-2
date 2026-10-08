@@ -30,7 +30,7 @@ async function setup(t) {
 }
 test("cross-repository shared leases block exclusive operations and guard business writes", async (t) => {
   const repository = await tempRepository(t),
-    other = await openWorkspaceRepository({ dataDir: repository.dataDir });
+    other = await openWorkspaceRepository({allowLegacy:true, dataDir: repository.dataDir });
   const { createWorkspaceOperationGate } = await gateModule();
   const a = createWorkspaceOperationGate({ repository }),
     b = createWorkspaceOperationGate({ repository: other });
@@ -97,7 +97,7 @@ test("real child-process lease blocks cleanup and is removed only after owner re
 });
 test("a simultaneous collection and cleanup registration can only have one winner", async (t) => {
   const repository = await tempRepository(t),
-    other = await openWorkspaceRepository({ dataDir: repository.dataDir }),
+    other = await openWorkspaceRepository({allowLegacy:true, dataDir: repository.dataDir }),
     { createWorkspaceOperationGate } = await gateModule();
   const results = await Promise.allSettled([
     createWorkspaceOperationGate({ repository }).acquire("cleanup"),

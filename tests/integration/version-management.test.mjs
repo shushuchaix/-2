@@ -84,13 +84,18 @@ test("concurrent equivalent names and retries save exactly one version", async (
     results.find((r) => r.status === "rejected").reason.code,
     "version_name_conflict",
   );
-  const first = results[0].value;
+  const winner = results.findIndex((r) => r.status === "fulfilled"),
+    first = results[winner].value;
+  const winningInput =
+    winner === 0
+      ? input
+      : { ...input, submissionId: "request-2", versionName: " 消防方向 " };
   assert.equal(
-    (await service.saveTarget({ ...input })).revisionId,
+    (await service.saveTarget({ ...winningInput })).revisionId,
     first.revisionId,
   );
   await assert.rejects(
-    service.saveTarget({ ...input, roles: ["机场"] }),
+    service.saveTarget({ ...winningInput, roles: ["机场"] }),
     (e) => e.code === "version_submission_conflict",
   );
   assert.equal((await repository.read()).targets.t1.length, 1);

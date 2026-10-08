@@ -9,12 +9,15 @@ import {
 } from "./validation.mjs";
 import { writeRunEventStream } from "./event-stream.mjs";
 import { handleTrashRequest } from "./trash-routes.mjs";
+import { handlePackageBusinessRequest } from "./package-business-routes.mjs";
+import { UUID_RE, packageError } from "../domain/packages.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { extractResumeText } from "../resume/extract-text.mjs";
 import { analyzeResumeOffline } from "../resume/offline.mjs";
 import { normalizeProfile, analyzeResume } from "../resume/profile.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
+import { handleDiagnosticRead } from "./diagnostic-routes.mjs";
 const decode = (value) => {
   try {
     return decodeURIComponent(value);
@@ -27,6 +30,7 @@ export async function handleV2Request(req, res, context) {
     pathname = url.pathname;
   if (!pathname.startsWith("/api/v2/")) return false;
   if (await handleTrashRequest(req, res, context)) return true;
+  if (await handlePackageBusinessRequest(req, res, context)) return true;
   const route = pathname.slice(7),
     method = req.method;
   const {
@@ -38,92 +42,7 @@ export async function handleV2Request(req, res, context) {
   const send = (status, data) => http.json(req, res, status, data),
     body = () => http.readJson(req);
   let match;
-  if (
-    ["/diagnostics/logs", "/diagnostics/logs/export"].includes(route) &&
-    method === "GET"
-  ) {
-    const exporting = route.endsWith("/export");
-    for (const key of url.searchParams.keys())
-      if (
-        ![
-          "runId",
-          "limit",
-          "level",
-          "category",
-          "diagnosticId",
-          "requestId",
-          "sourceId",
-          "siteId",
-        ].includes(key)
-      )
-        throw inputError({ filters: "日志查询包含不支持的条件。" });
-    const options = {};
-    for (const key of ["runId", "sourceId", "siteId"]) {
-      const value = url.searchParams.get(key);
-      if (value) options[key] = identifier(value);
-    }
-    for (const [key, prefix] of [
-      ["diagnosticId", "d"],
-      ["requestId", "q"],
-    ]) {
-      const value = url.searchParams.get(key);
-      if (value) {
-        if (
-          !new RegExp(
-            "^" +
-              prefix +
-              "-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$",
-          ).test(value)
-        )
-          throw inputError({ [key]: "请填写完整的诊断编号。" });
-        options[key] = value;
-      }
-    }
-    for (const [key, allowed] of [
-      ["level", ["info", "warn", "error", "problem"]],
-      [
-        "category",
-        [
-          "run",
-          "network",
-          "storage",
-          "http",
-          "source",
-          "model",
-          "desktop",
-          "application",
-        ],
-      ],
-    ]) {
-      const value = url.searchParams.get(key);
-      if (value) {
-        if (!allowed.includes(value))
-          throw inputError({ [key]: "请选择支持的日志筛选条件。" });
-        options[key] = value;
-      }
-    }
-    const rawLimit = url.searchParams.get("limit"),
-      limit =
-        rawLimit == null ? (exporting ? undefined : 200) : Number(rawLimit),
-      maximum = exporting ? 5000 : 200;
-    if (
-      limit !== undefined &&
-      (!Number.isSafeInteger(limit) || limit < 1 || limit > maximum)
-    )
-      throw inputError({ limit: "请填写 1–" + maximum + " 的整数。" });
-    if (limit !== undefined) options.limit = limit;
-    if (exporting) {
-      const text = await context.diagnostics.exportText(options);
-      res.writeHead(200, {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Content-Disposition":
-          'attachment; filename="job-radar-diagnostics.txt"',
-        "Cache-Control": "no-store",
-      });
-      res.end(text);
-    } else send(200, await context.diagnostics.list(options));
-    return true;
-  }
+  if (await handleDiagnosticRead(req, res, context)) return true;
   if (route === "/profiles/import-preview" && method === "POST") {
     const input = await body();
     let text = input.resumeText || input.text,
@@ -230,12 +149,27 @@ export async function handleV2Request(req, res, context) {
         ? identifier(revision, { revision: true })
         : identifier(id + "@" + revision, { revision: true })
       : null;
-    const args = { kind, parentId: id, revisionId };
+    const modern = (await context.repository.read()).schemaVersion === 3;
+    const packageId = url.searchParams.get("packageId") || undefined;
+    if (modern && revisionId && !UUID_RE.test(packageId || ""))
+      throw packageError(
+        "package_scope_mismatch",
+        "请指定要管理的版本数据包。",
+      );
+    const args = { kind, parentId: id, revisionId, packageId };
     if (method === "POST" && match[4] === "restore" && revisionId)
-      send(200, await workspace.restoreVersion(args));
-    else if (method === "DELETE" && match[4] === "permanent" && revisionId)
+      send(
+        200,
+        await workspace.restoreVersion({
+          ...args,
+          ...(modern ? { archiveId: (await body()).archiveId } : {}),
+        }),
+      );
+    else if (method === "DELETE" && match[4] === "permanent" && revisionId) {
+      if (modern)
+        throw inputError({ _form: "请在回收站预览整个版本的永久清理后确认。" });
       send(200, await workspace.permanentlyDeleteVersion(args));
-    else if (match[4]) return false;
+    } else if (match[4]) return false;
     else if (method === "POST" && !revisionId)
       send(
         201,
@@ -256,6 +190,11 @@ export async function handleV2Request(req, res, context) {
             { code: "version_parent_mismatch" },
           );
         if (!found) invalid("Profile revision not found", 404);
+        if (modern && found.packageId !== packageId)
+          throw packageError(
+            "package_scope_mismatch",
+            "所选版本与数据包不一致。",
+          );
         send(200, found);
       } else send(200, { revisions });
     } else if (method === "PATCH" && revisionId) {

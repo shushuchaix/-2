@@ -80,7 +80,7 @@ test("write failures and corrupt or future schema never replace valid data", asy
   await repo.mutateWorkspace((w) =>
     w.recoveryRecords.push({ message: "safe" }),
   );
-  const failing = await openWorkspaceRepository({
+  const failing = await openWorkspaceRepository({allowLegacy:true,
     dataDir: repo.dataDir,
     fsAdapter: {
       ...fs,

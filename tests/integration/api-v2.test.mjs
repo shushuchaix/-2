@@ -1,12 +1,20 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 import { profile, target } from "../helpers/fixtures.mjs";
 import { VERSION } from "../../src/version.mjs";
-test("unversioned UI assets revalidate after an upgrade", async (t) => {
+test("built UI and login assets revalidate after an upgrade", async (t) => {
   const f = await apiFixture(t);
-  for (const url of ["/", "/js/pages/workbench.js", "/styles/layout.css"]) {
+  const html = await (await fetch(f.origin + "/")).text();
+  const assets = [
+    ...html.matchAll(/(?:src|href)="(\/app\/assets\/[^\"]+)"/g),
+  ].map((match) => match[1]);
+  assert.ok(
+    assets.some((url) => url.endsWith(".js")) &&
+      assets.some((url) => url.endsWith(".css")),
+  );
+  for (const url of ["/", "/login.js", "/style.css", ...assets]) {
     const response = await fetch(f.origin + url);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "no-cache");
@@ -20,10 +28,13 @@ test("v2 creates real revisions persistent run jobs applications and business ba
       text: "合成确认画像：本科软件工程专业，掌握 Java 开发，拥有项目经验，期望北京工作。",
     });
   assert.equal(p.response.status, 201);
-  const tar = await f.call("/api/v2/targets", namedTargetInput({
-    ...target(),
-    profileRevisionId: p.data.revisionId,
-  }));
+  const tar = await f.call(
+    "/api/v2/targets",
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: p.data.revisionId,
+    }),
+  );
   assert.equal(tar.response.status, 201);
   const run = await f.call("/api/v2/runs", {
     targetRevisionId: tar.data.revisionId,

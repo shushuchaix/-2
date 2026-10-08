@@ -1,6 +1,6 @@
 /** Shared v2 contracts. Missing facts stay null; execution state differs from recommendation. */
-import {assertWorkspaceExtensions} from './workspace-management.mjs';
-import {assertPackageOwnership} from './package-ownership.mjs';
+import { assertWorkspaceExtensions } from "./workspace-management.mjs";
+import { assertPackageOwnership } from "./package-ownership.mjs";
 export const SCHEMA_VERSION = 3;
 export const APPLICATION_STATUSES = [
   "new",
@@ -38,10 +38,10 @@ export const LIFECYCLES = [
 /** @typedef {{evaluationId:string,jobId:string,profileRevisionId:string,targetRevisionId:string,jdHash:string,qualification:object,score:number,components:object,evidence:object[],gaps:string[],completeness:object,status:string,recommendation:string}} Evaluation */
 /** @typedef {{jobId:string,status:string,note:string,resumeRevisionId:string|null,appliedAt:string|null,followUpAt:string|null,events:object[]}} Application */
 /** @typedef {{schemaVersion:2,revision:number,profiles:object,targets:object,jobs:object,observations:object,evaluations:object,applications:object,runs:object,sourceHealth:object,identityAliases:object,duplicateGroups:object,recoveryRecords:object[],migration:object|null,settings:object}} Workspace */
-export function createEmptyWorkspace({schemaVersion = 2} = {}) {
+export function createEmptyWorkspace({ schemaVersion = SCHEMA_VERSION } = {}) {
   return {
     schemaVersion,
-    ...(schemaVersion === 3 ? {packages:{},events:{},files:{}} : {}),
+    ...(schemaVersion === 3 ? { packages: {}, events: {}, files: {} } : {}),
     revision: 0,
     profiles: {},
     targets: {},
@@ -65,7 +65,7 @@ const plain = (value) =>
   (Object.getPrototypeOf(value) === Object.prototype ||
     Object.getPrototypeOf(value) === null);
 export function assertWorkspace(value) {
-  if (!plain(value) || ![2,3].includes(value.schemaVersion))
+  if (!plain(value) || ![2, 3].includes(value.schemaVersion))
     throw new Error("Unsupported workspace schema");
   if (!Number.isSafeInteger(value.revision) || value.revision < 0)
     throw new Error("Invalid workspace revision");
@@ -96,7 +96,9 @@ export function assertWorkspace(value) {
   for (const [id, application] of Object.entries(value.applications))
     if (
       !plain(application) ||
-      (value.schemaVersion === 3 ? application.applicationId !== id : application.jobId !== id) ||
+      (value.schemaVersion === 3
+        ? application.applicationId !== id
+        : application.jobId !== id) ||
       !APPLICATION_STATUSES.includes(application.status)
     )
       throw new Error("Invalid application " + id);

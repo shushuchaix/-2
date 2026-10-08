@@ -1,4 +1,4 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -21,6 +21,7 @@ import { createSourceRegistry } from "../../src/sources/registry.mjs";
 import { buildCollectionPlan } from "../../src/sources/planning.mjs";
 import { loadSiteCatalog } from "../../src/sources/catalog.mjs";
 import { loadRun } from "../../src/pipeline.mjs";
+import { jobFactHash } from "../../src/domain/job-facts.mjs";
 
 async function legacy(t, ambiguous = false) {
   const repository = await tempRepository(t);
@@ -139,10 +140,12 @@ test("review 4: restoring an unfinished run in its former process interrupts it 
   });
   const ctx = await f.ctx.ready;
   const p = await ctx.workspaceService.saveProfile({ profile: profile() });
-  const tar = await ctx.workspaceService.saveTarget(namedTargetInput({
-    ...target(),
-    profileRevisionId: p.revisionId,
-  }));
+  const tar = await ctx.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: p.revisionId,
+    }),
+  );
   const started = await ctx.runService.startRun({
     targetRevisionId: tar.revisionId,
     mode: "rules",
@@ -163,22 +166,29 @@ test("review 4: restoring an unfinished run in its former process interrupts it 
   await ctx.restore(await ctx.backup());
 });
 
-test("review 5: rescoring legacy evaluations returns an unknown prior qualification and preserves manual state", async (t) => {
-  const { repository, jobs } = await legacy(t);
+test("review 5: rescoring an assigned legacy job does not borrow an unrelated prior evaluation and preserves manual state", async (t) => {
+  const { repository, jobs, a } = await legacy(t);
   const workspace = createWorkspaceService({ repository });
   const p = await workspace.saveProfile({ profile: profile() });
-  const tar = await workspace.saveTarget(namedTargetInput({
-    ...target(),
-    profileRevisionId: p.revisionId,
-  }));
+  const tar = await workspace.saveTarget(
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: p.revisionId,
+    }),
+  );
   const jobId = (await jobs.queryJobs()).items[0].jobId;
+  await jobs.ingestRecords({
+    runId: "assigned",
+    targetRevisionId: tar.revisionId,
+    records: [a],
+  });
   const result = await createEvaluationService({ repository }).rescore({
     jobIds: [jobId],
     profileRevisionId: p.revisionId,
     targetRevisionId: tar.revisionId,
     mode: "rules",
   });
-  assert.equal(result.comparison[0].before.qualification, "unknown");
+  assert.equal(result.comparison[0].before, null);
   assert.equal((await jobs.getJob(jobId)).application.status, "applied");
 });
 
@@ -256,25 +266,42 @@ test("review 7: expired transient backoff retries proven sites while unverified 
 test("review 8: selected target uses its own evaluation revision and retains unevaluated facts", async (t) => {
   const repository = await tempRepository(t),
     jobs = createJobService({ repository });
-  await repository.mutateWorkspace((w) => {
-    w.runs.a = { targetSnapshot: target() };
+  const workspace = createWorkspaceService({ repository });
+  const p = await workspace.saveProfile({
+    profileId: "p1",
+    profile: profile(),
   });
-  const { jobIds } = await jobs.ingestRecords({
+  const t1 = await workspace.saveTarget(
+    namedTargetInput(target({ profileRevisionId: p.revisionId })),
+  );
+  const t2 = await workspace.saveTarget(
+    namedTargetInput(
+      target({ targetId: "t2", profileRevisionId: p.revisionId }),
+    ),
+  );
+  const { jobIds, observationIds } = await jobs.ingestRecords({
     runId: "a",
+    targetRevisionId: t1.revisionId,
     records: [job(), job({ sourceRecordId: "2" })],
   });
   await jobs.saveEvaluations([
     {
       evaluationId: "ea",
       jobId: jobIds[0],
-      targetRevisionId: "t1@1",
+      targetRevisionId: t1.revisionId,
+      profileRevisionId: p.revisionId,
+      factContentHash: jobFactHash(job()),
+      observationId: observationIds[0],
       score: 41,
       createdAt: "2026-01-01",
     },
     {
       evaluationId: "eb",
       jobId: jobIds[0],
-      targetRevisionId: "t2@1",
+      targetRevisionId: t2.revisionId,
+      profileRevisionId: p.revisionId,
+      factContentHash: jobFactHash(job()),
+      observationId: observationIds[0],
       score: 99,
       createdAt: "2026-02-01",
     },
@@ -370,10 +397,12 @@ test("review 11b: ordinary collection records source health without requiring a 
     }),
     ctx = await f.ctx.ready;
   const p = await ctx.workspaceService.saveProfile({ profile: profile() });
-  const tar = await ctx.workspaceService.saveTarget(namedTargetInput({
-    ...target(),
-    profileRevisionId: p.revisionId,
-  }));
+  const tar = await ctx.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: p.revisionId,
+    }),
+  );
   const { runId } = await ctx.runService.startRun({
     targetRevisionId: tar.revisionId,
     mode: "rules",

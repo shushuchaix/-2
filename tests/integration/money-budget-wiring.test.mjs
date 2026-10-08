@@ -1,4 +1,4 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createApplicationContext } from "../../src/application/context.mjs";
@@ -83,11 +83,13 @@ async function fixture(t, count = 105) {
     },
   });
   const p = await context.workspaceService.saveProfile({ profile: profile() });
-  const tar = await context.workspaceService.saveTarget(namedTargetInput({
-    ...target(),
-    profileRevisionId: p.revisionId,
-    budgets: { maxModelRequests: 20 },
-  }));
+  const tar = await context.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: p.revisionId,
+      budgets: { maxModelRequests: 20 },
+    }),
+  );
   return {
     context,
     cfg,
@@ -152,6 +154,7 @@ test("saved job rescore uses the same configured money budget", async (t) => {
   await f.context.saveSettings({ budgets: { maxCostCny: 10 } });
   const ingested = await f.context.jobService.ingestRecords({
     runId: "manual",
+    targetRevisionId: f.tar.revisionId,
     records: f.records,
   });
   const result = await f.context.evaluationService.rescore({
@@ -168,11 +171,13 @@ test("saved job rescore uses the same configured money budget", async (t) => {
 test("target currency budget uses the configured model and cannot exceed the workspace ceiling", async (t) => {
   const f = await fixture(t, 6);
   await f.context.saveSettings({ budgets: { maxCostCny: 0 } });
-  const tar = await f.context.workspaceService.saveTarget(namedTargetInput({
-    ...target(),
-    profileRevisionId: f.p.revisionId,
-    budgets: { maxCostCny: 10 },
-  }));
+  const tar = await f.context.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: f.p.revisionId,
+      budgets: { maxCostCny: 10 },
+    }),
+  );
   const started = await f.context.runService.startRun({
     targetRevisionId: tar.revisionId,
     mode: "ai",

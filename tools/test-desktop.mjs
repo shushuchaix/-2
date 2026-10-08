@@ -43,15 +43,18 @@ console.log(`  数据目录：${dataDir}`);
 console.log(`  应用根目录：${ROOT}\n`);
 
 const appUrl = `http://127.0.0.1:${PORT}`;
-let server;
+let server, diagnostics;
 
 try {
   const { startServer } = await import('../src/server.mjs');
   const { DATA_ROOT, IS_DESKTOP, ensureDataDirs } = await import('../src/config.mjs');
   ensureDataDirs();
 
-  server = startServer().server;
+  const started = startServer();
+  server = started.server;
+  diagnostics = started.ctx.diagnostics;
   await new Promise((r) => server.once('listening', r));
+  await started.ctx.ready;
 
   check('标记为桌面模式', IS_DESKTOP === true);
   check('数据目录已重定向', DATA_ROOT === dataDir, DATA_ROOT);
@@ -133,7 +136,11 @@ try {
   check('自检执行', false, e.message);
   if (process.env.DEBUG) console.error(e.stack);
 } finally {
-  if (server) server.close();
+  if (server) {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+  await diagnostics?.list({ limit: 1 });
   fs.rmSync(dataDir, { recursive: true, force: true });
 }
 

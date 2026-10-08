@@ -1,8 +1,138 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 import { fakeProvider } from "../helpers/fake-sources.mjs";
+import { job, profile, target, AT } from "../helpers/fixtures.mjs";
+import { resolveJobId } from "../../src/domain/job-resolution.mjs";
+test("named version lifecycle, all-version cleanup, old ID application update and full backup restoration stay consistent", async (t) => {
+  const f = await apiFixture(t),
+    ctx = await f.ctx.ready;
+  const p = (
+    await f.call("/api/v2/profiles", {
+      profile: profile(),
+      versionName: "合成基础简历",
+    })
+  ).data;
+  const a = (
+    await f.call("/api/v2/targets", {
+      ...namedTargetInput({ ...target(), profileRevisionId: p.revisionId }),
+      versionName: "消防方向",
+    })
+  ).data;
+  const b = (
+    await f.call(
+      "/api/v2/targets/t1",
+      {
+        ...namedTargetInput({ ...target(), profileRevisionId: p.revisionId }),
+        versionName: "机场方向",
+      },
+      "PUT",
+    )
+  ).data;
+  assert.notEqual(a.revisionId, b.revisionId);
+  assert.equal(a.versionName, "消防方向");
+  assert.equal(b.versionName, "机场方向");
+  const saved = await ctx.jobService.ingestRecords({
+      runId: "synthetic-e2e",
+      targetRevisionId: a.revisionId,
+      records: [job()],
+      observedAt: AT,
+    }),
+    id = saved.jobIds[0],
+    oid = saved.observationIds[0];
+  assert.equal(
+    (await f.call("/api/v2/jobs?targetRevisionId=" + a.revisionId)).data
+      .items[0].evaluation,
+    null,
+  );
+  const vpath =
+    "/api/v2/targets/t1/revisions/" + encodeURIComponent(b.revisionId);
+  assert.equal(
+    (await f.call(vpath, { enabled: false }, "PATCH")).data.revisionId,
+    b.revisionId,
+  );
+  assert.equal(
+    (await f.call(vpath, undefined, "DELETE")).data.revisionId,
+    b.revisionId,
+  );
+  assert.equal(
+    (await f.call(vpath + "/restore", {})).data.revisionId,
+    b.revisionId,
+  );
+  await ctx.repository.mutateWorkspace((w) => {
+    w.jobs["copy-e2e"] = { ...structuredClone(w.jobs[id]), jobId: "copy-e2e" };
+    w.observations["ob-copy"] = {
+      ...structuredClone(w.observations[oid]),
+      observationId: "ob-copy",
+      jobId: "copy-e2e",
+      targetRevisionId: b.revisionId,
+      runId: "synthetic-e2e-b",
+    };
+    w.targetMembers[b.revisionId] = {
+      "copy-e2e": {
+        ...structuredClone(w.targetMembers[a.revisionId][id]),
+        factRefs: [{ observationId: "ob-copy" }],
+        currentObservationId: "ob-copy",
+      },
+    };
+  });
+  await f.call(
+    "/api/v2/applications/" + id,
+    { status: "applied", note: "保留人工记录" },
+    "PUT",
+  );
+  const before = await ctx.repository.read(),
+    preview = (await f.call("/api/v2/jobs/duplicates/preview", {})).data;
+  assert.equal(preview.groups.length, 1);
+  assert.deepEqual(
+    preview.groups[0].targetRevisionIds.sort(),
+    [a.revisionId, b.revisionId].sort(),
+  );
+  const merged = (
+    await f.call("/api/v2/jobs/duplicates/apply", {
+      workspaceRevision: preview.workspaceRevision,
+      planHash: preview.planHash,
+      selectedGroupIds: [preview.groups[0].groupId],
+    })
+  ).data;
+  assert.equal(merged.counts.removedEntities, 1);
+  assert.equal(merged.counts.affectedVersions, 2);
+  assert.ok(merged.backupId);
+  const after = await ctx.repository.read();
+  assert.equal(Object.keys(after.jobs).length, 1);
+  assert.deepEqual(after.observations, before.observations);
+  const main = resolveJobId(after, "copy-e2e");
+  assert.equal(main, id);
+  assert.ok(after.targetMembers[b.revisionId][main]);
+  assert.equal(
+    (
+      await f.call(
+        "/api/v2/applications/copy-e2e",
+        { note: "旧编号更新成功" },
+        "PUT",
+      )
+    ).data.jobId,
+    main,
+  );
+  assert.equal(
+    (await f.call("/api/v2/jobs/" + main)).data.application.note,
+    "旧编号更新成功",
+  );
+  const archive = (await f.call("/api/v2/workspace/backup", {})).data;
+  await f.call("/api/v2/applications/" + main, { note: "备份后的修改" }, "PUT");
+  assert.equal(
+    (await f.call("/api/v2/workspace/restore", { archive })).response.status,
+    200,
+  );
+  const restored = await ctx.repository.read();
+  assert.deepEqual(restored.jobRedirects, archive.workspace.jobRedirects);
+  assert.deepEqual(restored.targetMembers, archive.workspace.targetMembers);
+  assert.equal(
+    (await f.call("/api/v2/jobs/copy-e2e")).data.application.note,
+    "旧编号更新成功",
+  );
+});
 test("personal workflow survives restart and exports human records in Markdown", async (t) => {
   const providers = [
     fakeProvider(),
@@ -23,15 +153,18 @@ test("personal workflow survives restart and exports human records in Markdown",
     },
     overrides: { major: "软件工程" },
   });
-  const target = await f.call("/api/v2/targets", namedTargetInput({
-    profileRevisionId: p.data.revisionId,
-    roles: ["Java开发"],
-    cityMode: "any",
-    cities: [],
-    jobTypes: ["campus"],
-    degreePolicy: "eligibility",
-    sourceIds: ["synthetic", "failed"],
-  }));
+  const target = await f.call(
+    "/api/v2/targets",
+    namedTargetInput({
+      profileRevisionId: p.data.revisionId,
+      roles: ["Java开发"],
+      cityMode: "any",
+      cities: [],
+      jobTypes: ["campus"],
+      degreePolicy: "eligibility",
+      sourceIds: ["synthetic", "failed"],
+    }),
+  );
   const started = await f.call("/api/v2/runs", {
       targetRevisionId: target.data.revisionId,
       mode: "rules",

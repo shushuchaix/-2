@@ -4,6 +4,7 @@ import { contentHash } from "./repository.mjs";
 import { writeAtomicJson } from "./atomic.mjs";
 import { resolveJobIdentity, relateJobs } from "../../domain/identity.mjs";
 import { normalizeRecord } from "../../domain/record.mjs";
+import { jobBusinessFingerprint } from "../../domain/job-duplicates.mjs";
 import { APPLICATION_STATUSES } from "../../domain/contracts.mjs";
 import { redactBusiness } from "../../domain/redact.mjs";
 export async function migrateV1({ dataDir, repository, dryRun = false }) {
@@ -92,9 +93,18 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
       skipped.push({ file: runId, reason: e.message });
       return;
     }
+    const same = (stored) => {
+      const relation = relateJobs(stored, r).relation;
+      return (
+        relation === "same" ||
+        (relation !== "distinct" &&
+          resolveJobIdentity(stored).key === identity.key &&
+          jobBusinessFingerprint(stored) === jobBusinessFingerprint(r))
+      );
+    };
     const matches = [
       ...new Set(identity.aliases.flatMap((alias) => aliases[alias] || [])),
-    ].filter((id) => relateJobs(jobs[id].canonical, r).relation === "same");
+    ].filter((id) => same(jobs[id].canonical));
     let id =
       matches.find(
         (id) => resolveJobIdentity(jobs[id].canonical).key === identity.key,
@@ -102,13 +112,8 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
       (matches.length === 1
         ? matches[0]
         : "j-" + contentHash(identity.key).slice(0, 24));
-    if (jobs[id] && relateJobs(jobs[id].canonical, r).relation !== "same")
-      id +=
-        "-" +
-        contentHash([r.cities, r.jobType, r.graduationYear, r.title]).slice(
-          0,
-          12,
-        );
+    if (jobs[id] && !same(jobs[id].canonical))
+      id += "-" + jobBusinessFingerprint(r).slice(0, 24);
     const job = jobs[id] || {
       jobId: id,
       kind: r.kind,

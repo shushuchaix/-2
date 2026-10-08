@@ -345,12 +345,12 @@ function Invoke-RjrTest {
 
 **Interfaces:** Consumes Tasks1–10；selftest继续输出 `<RJR_DATA_DIR>/desktop-self-test.json`；包检查新增本轮新模块存在、敏感运行文件不在包内。
 
-- [ ] **1. 写交付回归。** 合成E2E串联两命名版本→未评分入库→停用→回收站/恢复→跨全部版本重复预览→确认清理→oldID投递修改→备份恢复；断言所有引用、计数、事实与通知。桌面selftest补实际表单点击/按钮、版本名称、10元目标保存、目录bridge、清理及成功通知可见检查，不调用真实来源/模型。
-- [ ] **2. RED。** `Invoke-RjrTest tests/e2e/workspace-flow.test.mjs`，未覆盖流程断言先失败。
-- [ ] **3. 完成自检/包验证和使用说明。** 写清名称规范、停用/回收站/永久删除区别、全部版本清理、疑似/人工保护、旧ID兼容、预览过期、备份整体恢复、真实存储位置。报告仅合成证据与验证结果。
-- [ ] **4. 执行全套离线回归。** `& $rjrNode tools/run-all-tests.mjs --skip-network`；预期非产物检查全部通过，network与产物检查明确跳过，既有415项v2基线与新增测试均通过。不能以只跑新增测试代替最终全套；失败先定位原因再扩大验证范围。新包验证在下一步执行，不能让旧ASAR冒充本轮产物。
-- [ ] **5. 顺序重建 EXE。** 检查本项目程序文件占用，未关闭则说明具体原因；仅已确认路径下运行 `& $rjrNode tools/build-desktop.mjs`。与步骤4串行，避免共用.tmp/dist争用；`& $rjrNode tools/verify-package.mjs` 预期0问题。
-- [ ] **6. 运行实际 EXE。** 为 `.cache/workspace-management-selftest/data` 设置 RJR_DATA_DIR；使用 `Start-Process -WindowStyle Hidden` 启动 `dist/简历岗位雷达-win32-x64/简历岗位雷达.exe --self-test`。检查该data根下结果failed=0、旧30项和新增检查全通过，验证未使用日常APPDATA。最后恢复原环境变量值。
+- [x] **1. 写交付回归。** 合成E2E串联两命名版本→未评分入库→停用→回收站/恢复→跨全部版本重复预览→确认清理→oldID投递修改→备份恢复；断言所有引用、计数、事实与通知。桌面selftest补实际表单点击/按钮、版本名称、10元目标保存、目录bridge、清理及成功通知可见检查，不调用真实来源/模型。
+- [x] **2. RED。** `Invoke-RjrTest tests/e2e/workspace-flow.test.mjs`，未覆盖流程断言先失败。
+- [x] **3. 完成自检/包验证和使用说明。** 写清名称规范、停用/回收站/永久删除区别、全部版本清理、疑似/人工保护、旧ID兼容、预览过期、备份整体恢复、真实存储位置。报告仅合成证据与验证结果。
+- [x] **4. 执行全套离线回归。** `& $rjrNode tools/run-all-tests.mjs --skip-network`；预期非产物检查全部通过，network与产物检查明确跳过，既有415项v2基线与新增测试均通过。不能以只跑新增测试代替最终全套；失败先定位原因再扩大验证范围。新包验证在下一步执行，不能让旧ASAR冒充本轮产物。
+- [x] **5. 顺序重建 EXE。** 检查本项目程序文件占用，未关闭则说明具体原因；仅已确认路径下运行 `& $rjrNode tools/build-desktop.mjs`。与步骤4串行，避免共用.tmp/dist争用；`& $rjrNode tools/verify-package.mjs` 预期0问题。
+- [x] **6. 运行实际 EXE。** 为 `.cache/workspace-management-selftest/data` 设置 RJR_DATA_DIR；使用 `Start-Process -WindowStyle Hidden` 启动 `dist/简历岗位雷达-win32-x64/简历岗位雷达.exe --self-test`。检查该data根下结果failed=0、旧30项和新增检查全通过，验证未使用日常APPDATA。最后恢复原环境变量值。
 - [ ] **7. 独立整分支审查。** 使用 requesting-code-review，审查数据丢失、名称/nonce并发、操作租约、历史事实/hash、人工保护、所有旧ID入口、IPC权限和实际UI流程；修复有证据的问题，重跑受影响及最终必要检查。
 - [ ] **8. Commit / push / PR。** 选择性提交产品/测试/文档，排除.cache、运行数据和私密日志；沿用已有用户授权推送 codex/v2-upgrade，更新既有 PR #1 并确保已附加。等待该提交CI结果，不能沿用旧提交成功状态。报告新EXE绝对路径、验证、备份机制和任何剩余限制。
 

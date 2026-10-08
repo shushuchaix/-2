@@ -72,6 +72,7 @@ let httpServer = null;
 let dataDir = "";
 let appUrl = "";
 let diagnostics;
+let applicationContext;
 let startupPhase = "started";
 const runtime = {
   appVersion: app.getVersion(),
@@ -422,7 +423,7 @@ async function runSelfTest() {
     check(
       "renderer没有Node访问或明文密钥",
       bridge.node === "undefined" &&
-        bridge.methods.length === 5 &&
+        bridge.methods.length === 8 &&
         bridge.methods.every((method) =>
           [
             "isAvailable",
@@ -430,6 +431,9 @@ async function runSelfTest() {
             "deleteKey",
             "getKeyStatus",
             "reportDiagnostic",
+            "getDataLocations",
+            "openDataLocation",
+            "copyDataLocation",
           ].includes(method),
         ) &&
         Object.keys(bridge.status).every((k) =>
@@ -588,6 +592,7 @@ async function runSelfTest() {
     await mainWindow.webContents.executeJavaScript(
       "document.getElementById('desktop-budget-preview')?.remove()",
     );
+    await runWorkspaceSelfTest(check);
     await mainWindow.webContents.executeJavaScript(
       "location.hash='#/workbench'",
     );
@@ -624,6 +629,204 @@ async function runSelfTest() {
     }
   }
   app.exit(failed === 0 ? 0 : 1);
+}
+
+async function runWorkspaceSelfTest(check) {
+  const localCall = async (route, body, method = "POST") => {
+    const response = await fetch(appUrl + "/api/v2" + route, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok)
+      throw Error(
+        "Synthetic self-test API failed: " + route + " " + response.status,
+      );
+    return response.json();
+  };
+  const js = (code) => mainWindow.webContents.executeJavaScript(code);
+  const waitRenderer = async (expression) => {
+    for (let i = 0; i < 80; i++) {
+      if (await js(expression)) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return false;
+  };
+  const locations = await js("desktopBridge.getDataLocations()");
+  check(
+    "桌面固定目录桥接与当前历史位置",
+    locations.data === path.resolve(dataDir) &&
+      locations.history === path.join(path.resolve(dataDir), "runs-v2"),
+  );
+  check(
+    "桌面目录桥接拒绝任意路径",
+    await js(
+      '(async()=>{try{await desktopBridge.openDataLocation("../private");return false;}catch{return true;}})()',
+    ),
+  );
+  await localCall(
+    "/settings",
+    {
+      model: {
+        baseUrl: "https://api.deepseek.com/v1",
+        model: "deepseek-flash",
+      },
+      budgets: { maxCostCny: 10, maxModelRequests: 1000 },
+    },
+    "PUT",
+  );
+  const p = await localCall("/profiles", {
+    versionName: "桌面合成简历",
+    text: "合成消防工程本科简历，熟悉机场消防设施巡检与安全管理，具有校园项目实践经历。",
+    profile: {
+      name: "合成画像",
+      education: "本科",
+      major: "消防工程",
+      skills: ["消防安全"],
+    },
+  });
+  const target = await localCall("/targets", {
+    versionName: "桌面消防基础",
+    profileRevisionId: p.revisionId,
+    roles: ["消防", "机场"],
+    cityMode: "any",
+    cities: [],
+    jobTypes: ["campus"],
+    degreePolicy: "eligibility",
+    budgets: { maxCostCny: 10, maxModelRequests: 1000 },
+  });
+  await js('location.hash="#/profiles"');
+  await waitRenderer(
+    "!!document.querySelector('[data-revision-id=\"" +
+      target.revisionId +
+      "\"]')",
+  );
+  await js(
+    `(()=>{const row=document.querySelector('[data-revision-id="${target.revisionId}"]');[...row.querySelectorAll('button')].find(b=>b.textContent==='新建版本').click();document.getElementById('targetVersionName').value='桌面消防机场升级';document.getElementById('saveTarget').click();document.getElementById('saveTarget').click();})()`,
+  );
+  check(
+    "桌面真实新建命名版本与10元预算保存",
+    await waitRenderer(
+      'document.querySelector("main").textContent.includes("桌面消防机场升级")&&document.querySelector(".shell-feedback").textContent.includes("目标已保存")',
+    ),
+  );
+  const allTargets = (await (await fetch(appUrl + "/api/v2/targets")).json())
+    .targets;
+  const upgraded = allTargets.find((t) => t.versionName === "桌面消防机场升级");
+  check(
+    "桌面忙时提交仅一份且保留金额预算",
+    allTargets.filter((t) => t.versionName === "桌面消防机场升级").length ===
+      1 && upgraded?.budgets.maxCostCny === 10,
+  );
+  if (!upgraded) throw Error("Synthetic target form save failed");
+  await js(
+    `[...document.querySelector('[data-revision-id="${target.revisionId}"]').querySelectorAll('button')].find(b=>b.textContent==='停用').click()`,
+  );
+  check(
+    "桌面精确版本停用与可见成功通知",
+    await waitRenderer(
+      'document.querySelector(".shell-feedback").textContent.includes("已停用")&&!document.querySelector(".shell-feedback").hidden',
+    ),
+  );
+  await js("window.scrollTo(0,document.body.scrollHeight)");
+  check(
+    "桌面长列表通知仍在可见视口",
+    await js(
+      '(()=>{const n=document.querySelector(".shell-feedback"),r=n.getBoundingClientRect();return !n.hidden&&r.top>=0&&r.bottom<=innerHeight+1&&n.getAttribute("aria-live")==="polite"})()',
+    ),
+  );
+  const record = {
+    sourceId: "synthetic",
+    siteId: "synthetic-self-test",
+    sourceRecordId: "fire-airport",
+    sourceRecordIdKind: "authority",
+    identityScope: "synthetic-self-test",
+    urlKind: "job_detail",
+    kind: "job",
+    title: "合成机场消防工程师",
+    company: "合成机场单位",
+    cities: ["广州"],
+    jobType: "campus",
+    degree: "本科",
+    url: "https://jobs.example.com/synthetic-fire",
+    description:
+      "负责机场消防设施巡检、消防安全管理与应急演练，要求本科消防工程相关专业，熟悉消防技术规范。",
+  };
+  const ingested = await applicationContext.jobService.ingestRecords({
+    runId: "self-test",
+    targetRevisionId: target.revisionId,
+    records: [record],
+  });
+  const mainId = ingested.jobIds[0],
+    oid = ingested.observationIds[0];
+  await applicationContext.jobService.updateApplication(mainId, {
+    status: "applied",
+    note: "合成人工记录",
+  });
+  await applicationContext.repository.mutateWorkspace((w) => {
+    w.jobs["copy-desktop-selftest"] = {
+      ...structuredClone(w.jobs[mainId]),
+      jobId: "copy-desktop-selftest",
+    };
+    w.observations["ob-desktop-copy"] = {
+      ...structuredClone(w.observations[oid]),
+      jobId: "copy-desktop-selftest",
+      observationId: "ob-desktop-copy",
+      targetRevisionId: upgraded.revisionId,
+    };
+    w.targetMembers[upgraded.revisionId] = {
+      "copy-desktop-selftest": {
+        ...structuredClone(w.targetMembers[target.revisionId][mainId]),
+        factRefs: [{ observationId: "ob-desktop-copy" }],
+        currentObservationId: "ob-desktop-copy",
+      },
+    };
+  });
+  await js('location.hash="#/jobs"');
+  await waitRenderer('!!document.querySelector("#jobsTarget")');
+  await js(
+    '[...document.querySelectorAll("button")].find(b=>b.textContent==="清理所有版本重复岗位").click()',
+  );
+  await waitRenderer('!!document.querySelector("[data-cleanup-group]")');
+  await js(
+    '[...document.querySelectorAll("button")].find(b=>b.textContent==="确认清理所选重复岗位").click()',
+  );
+  check(
+    "桌面实际全版本清理按钮与备份结果通知",
+    await waitRenderer(
+      'document.querySelector(".cleanup-result")?.textContent.includes("重复实体 1")&&document.querySelector(".cleanup-result")?.textContent.includes("备份")',
+    ),
+  );
+  const redirected = await (
+    await fetch(appUrl + "/api/v2/jobs/copy-desktop-selftest")
+  ).json();
+  check(
+    "桌面清理后旧ID与人工记录仍可访问",
+    redirected.jobId === mainId &&
+      redirected.application.note === "合成人工记录",
+  );
+  await localCall(
+    "/profiles/" +
+      p.profileId +
+      "/revisions/" +
+      encodeURIComponent(p.revisionId),
+    undefined,
+    "DELETE",
+  );
+  await js('location.hash="#/workbench"');
+  await waitRenderer('!!document.querySelector("#workbenchTarget option")');
+  check(
+    "桌面回收站画像阻止真实开始按钮",
+    await js('document.getElementById("startRun").disabled===true'),
+  );
+  await localCall(
+    "/profiles/" +
+      p.profileId +
+      "/revisions/" +
+      encodeURIComponent(p.revisionId) +
+      "/restore",
+    {},
+  );
 }
 
 /* ------------------------------ 启动 ------------------------------ */
@@ -712,7 +915,7 @@ async function boot() {
     dataDir,
     dependencies: { diagnostics },
   });
-  await ready;
+  applicationContext = await ready;
   const port = await listen(server);
   httpServer = server;
   appUrl = `http://127.0.0.1:${port}`;

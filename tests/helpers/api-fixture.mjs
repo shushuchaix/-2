@@ -3,22 +3,29 @@ import { createServer } from "../../src/server.mjs";
 import { loadConfig } from "../../src/config.mjs";
 import { fakeProvider } from "./fake-sources.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
-import { createTempDir } from "./fixtures.mjs";
+import { createTempDir, registerTestResource } from "./fixtures.mjs";
 import { allowLocalOrigin } from "./network-guard.mjs";
-export async function apiFixture(t,options={}) {
-  const dataDir = options.dataDir||await createTempDir(t),
+export async function apiFixture(t, options = {}) {
+  const dataDir = options.dataDir || (await createTempDir(t)),
     cfg = loadConfig({ quiet: true, dataDir });
   cfg.auth.mode = "none";
   cfg.limits.perIpCooldownMs = 0;
   cfg.limits.dailyPerIp = 100;
   cfg.deepseek.apiKey = "";
-  const providers=options.providers||[fakeProvider()];
+  const providers = options.providers || [fakeProvider()];
   cfg.sources = { ...cfg.sources, synthetic: { enabled: true } };
   const ctx = createServer(cfg, {
     dataDir,
     dependencies: {
       registry: createSourceRegistry(providers),
-      catalog: providers.map(provider=>({siteId:provider.id+'-1',providerId:provider.id,category:'job_board',name:'合成源',origin:'https://example.com',status:'ready'})),
+      catalog: providers.map((provider) => ({
+        siteId: provider.id + "-1",
+        providerId: provider.id,
+        category: "job_board",
+        name: "合成源",
+        origin: "https://example.com",
+        status: "ready",
+      })),
       requestFactory: () => async () => {
         throw Error("Unexpected network");
       },
@@ -28,9 +35,10 @@ export async function apiFixture(t,options={}) {
   await once(ctx.server, "listening");
   const origin = "http://127.0.0.1:" + ctx.server.address().port;
   allowLocalOrigin(origin);
-  t.after(async () => {
+  registerTestResource(t, async () => {
     ctx.server.closeAllConnections();
     await new Promise((resolve) => ctx.server.close(resolve));
+    await ctx.diagnostics.list({ limit: 1 });
   });
   // Static asset requests do not wait for application startup in the server.
   // Finish migration before a fixture can be torn down by its first test.

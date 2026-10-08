@@ -374,20 +374,28 @@ export function createJobService({ repository, clock = repository.clock }) {
                 : "possible",
           );
       let items = Object.values(w.jobs).map((job) => {
+        const itemTarget =
+          target ||
+          (filters.targetId
+            ? (w.targets[filters.targetId] || [])
+                .filter((t) => w.targetMembers[t.revisionId]?.[job.jobId])
+                .sort((a, b) => b.revision - a.revision)[0]
+            : null);
+        const itemRevisionId = revisionId || itemTarget?.revisionId;
         const fact = selectVersionJobFact(w, {
-          targetRevisionId: revisionId,
+          targetRevisionId: itemRevisionId,
           jobId: job.jobId,
         });
         const evaluation = selectMatchingEvaluation(w, {
           jobId: job.jobId,
-          targetRevisionId: revisionId,
-          profileRevisionId: target?.profileRevisionId,
+          targetRevisionId: itemRevisionId,
+          profileRevisionId: itemTarget?.profileRevisionId,
           factContentHash: fact.factContentHash,
         });
         return {
           job,
           ...(fact.record ||
-            (revisionId
+            (itemRevisionId
               ? {
                   title: job.canonical.title,
                   company: job.canonical.company,

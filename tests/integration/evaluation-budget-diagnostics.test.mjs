@@ -9,6 +9,7 @@ import {
   evaluationCacheKey,
 } from "../../src/llm/validation.mjs";
 import { contentHash } from "../../src/infrastructure/storage/repository.mjs";
+import { backfillTargetMembers } from "../../src/domain/job-facts.mjs";
 import { cleanMetadata } from "../../src/infrastructure/diagnostics/fields.mjs";
 import { PROMPT_VERSION } from "../../src/llm/prompts.mjs";
 import { RULE_VERSION } from "../../src/domain/ranking.mjs";
@@ -57,23 +58,43 @@ function harness({
   const jobs = Object.fromEntries(
     Array.from({ length: count }, (_, i) => [
       "j-" + i,
-      { canonical: job({ sourceRecordId: String(i), title: "Java岗位" + i }) },
+      {
+        jobId: "j-" + i,
+        canonical: job({ sourceRecordId: String(i), title: "Java岗位" + i }),
+      },
     ]),
   );
   const state = {
+    revision: 0,
+    runs: {},
     jobs,
+    observations: Object.fromEntries(
+      Object.entries(jobs).map(([jobId, stored]) => [
+        "o-" + jobId,
+        {
+          observationId: "o-" + jobId,
+          jobId,
+          targetRevisionId: "t1@1",
+          observedAt: "2026-10-05T00:00:00.000Z",
+          fields: stored.canonical,
+        },
+      ]),
+    ),
     profiles: { p1: [{ revisionId: "p1@1", profile: profile() }] },
     targets: { t1: [target()] },
     evaluations: {},
   };
+  backfillTargetMembers(state);
   const events = [],
     payloads = [];
   const repository = {
     clock: { now: () => 0 },
     read: async () => structuredClone(state),
-    mutateWorkspace: async (action) => {
-      if (mutate) await mutate();
-      action(state);
+    mutateWorkspace: async (action, options = {}) => {
+      if (mutate && !options.operationMaintenance) await mutate();
+      const result = await action(state);
+      state.revision++;
+      return { workspace: structuredClone(state), result };
     },
   };
   const diagnostics = {
@@ -248,6 +269,13 @@ test("282 results with 64 cached AI scores retain 148 AI and 134 rule fallbacks 
       evaluationId: "cached-" + i,
       jobId: "j-" + i,
       cacheKey,
+      jdHash: contentHash({ ...record, retrievedAt: undefined }),
+      observationId: "o-j-" + i,
+      profileRevisionId: "p1@1",
+      targetRevisionId: "t1@1",
+      promptVersion: PROMPT_VERSION,
+      ruleVersion: RULE_VERSION,
+      modelFingerprint: fingerprint,
       status: "ai",
     };
   }

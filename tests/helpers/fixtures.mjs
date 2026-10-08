@@ -65,8 +65,38 @@ export const target = (overrides = {}) => ({
   createdAt: AT,
   ...overrides,
 });
+const cleanupScopes = new WeakMap();
+function cleanupScope(t) {
+  if (!cleanupScopes.has(t)) {
+    const scope = { resources: [], directories: [] };
+    cleanupScopes.set(t, scope);
+    t.after(async () => {
+      const errors = [];
+      for (const cleanup of scope.resources.toReversed()) {
+        try {
+          await cleanup();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      for (const dir of scope.directories) {
+        try {
+          await fs.rm(dir, { recursive: true, force: true });
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length)
+        throw new AggregateError(errors, "Synthetic fixture cleanup failed");
+    });
+  }
+  return cleanupScopes.get(t);
+}
+export function registerTestResource(t, cleanup) {
+  cleanupScope(t).resources.push(cleanup);
+}
 export async function createTempDir(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rjr-test-"));
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  cleanupScope(t).directories.push(dir);
   return dir;
 }

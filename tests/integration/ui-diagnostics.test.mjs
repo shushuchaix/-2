@@ -154,6 +154,7 @@ test("refresh keeps existing logs after failure, blocks duplicate reads and rend
 
 function workbenchFixture(onLogs) {
   const f = uiFixture((path) => {
+    if (path === "/profiles") return { profiles: [] };
     if (path === "/targets")
       return {
         targets: [

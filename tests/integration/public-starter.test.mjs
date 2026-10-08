@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { createTempDir } from "../helpers/fixtures.mjs";
 import { allowLocalOrigin } from "../helpers/network-guard.mjs";
 test("public starter listens and exposes guarded workspace API", async (t) => {
-  const dataDir = await createTempDir(t),
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "rjr-starter-")),
     reservation = net.createServer();
   reservation.listen(0, "127.0.0.1");
   await once(reservation, "listening");
@@ -27,15 +29,21 @@ test("public starter listens and exposes guarded workspace API", async (t) => {
   child.stdout.on("data", (x) => (output += x));
   child.stderr.on("data", (x) => (output += x));
   t.after(async () => {
-    child.kill();
-    if (child.exitCode === null) await once(child, "exit");
+    if (child.exitCode === null) {
+      const exited = once(child, "exit");
+      child.kill();
+      await exited;
+    }
+    await fs.rm(dataDir, { recursive: true, force: true });
   });
   const origin = "http://127.0.0.1:" + port;
   allowLocalOrigin(origin);
   let response;
   for (let i = 0; i < 50; i++) {
     try {
-      response = await fetch(origin + "/api/health");
+      response = await fetch(origin + "/api/health", {
+        signal: AbortSignal.timeout(2000),
+      });
       break;
     } catch {
       await new Promise((r) => setTimeout(r, 100));

@@ -115,6 +115,7 @@ for (const [status, wording, coverage] of [
   test(`workbench replaces running feedback after ${status} while preserving the terminal state`, async () => {
     const finished = run({ status, coverage });
     const f = uiFixture((path) => {
+      if (path === "/profiles") return { profiles: [] };
       if (path === "/targets")
         return {
           targets: [

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { act } from "@testing-library/react";
+import { act, waitFor } from "@testing-library/react";
 import { renderApp, syntheticApi } from "../helpers/react-fixture";
 
 test("terminal progress uses real backend counters and explains page limits and monetary fallback", async (t) => {
@@ -276,4 +276,199 @@ test("cancellation stays pending until final stream state and displays nested ru
     },
   ]);
   await f.screen.findByText("任务已取消");
+});
+
+test("workbench blocks a new run while reading and resumes a queued task with exact-scope cancellation", async (t) => {
+  let releaseList: (value: unknown) => void = () => {};
+  const pendingList = new Promise((resolve) => (releaseList = resolve));
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path, options) => {
+      if (path === "/runs" && options.method !== "POST") return pendingList;
+      if (path === "/runs/resume-queued/events") return new Promise(() => {});
+      if (path === "/runs/resume-queued/cancel") return { status: "cancelled" };
+      return syntheticApi(path, options);
+    },
+  });
+  assert.equal(
+    f.screen.getByRole("button", { name: "更新岗位" }).hasAttribute("disabled"),
+    true,
+  );
+  await f.user.click(f.screen.getByRole("button", { name: "更新岗位" }));
+  assert.equal(
+    f.apiCalls.some((c) => c.path === "/runs" && c.options.method === "POST"),
+    false,
+  );
+  await act(async () => {
+    releaseList({
+      runs: [
+        {
+          runId: "resume-queued",
+          status: "queued",
+          counts: { collected: 1, saved: 0, candidates: 0 },
+        },
+      ],
+    });
+  });
+  await f.screen.findByText("采集 1 条 · 保存 0 条 · 候选 0 条");
+  await waitFor(() =>
+    assert.ok(f.apiCalls.some((c) => c.path === "/runs/resume-queued/events")),
+  );
+  assert.deepEqual(
+    f.apiCalls.find((c) => c.path === "/runs/resume-queued/events")?.scope,
+    { packageId: "A", targetRevisionId: "t1@1" },
+  );
+  await f.user.click(f.screen.getByRole("button", { name: "取消任务" }));
+  await f.screen.findByText("任务已取消");
+  assert.deepEqual(
+    f.apiCalls.find((c) => c.path === "/runs/resume-queued/cancel")?.scope,
+    { packageId: "A", targetRevisionId: "t1@1" },
+  );
+});
+
+test("returning from jobs restores the running task progress and stream without posting a second run", async (t) => {
+  let created = false;
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path, options) => {
+      if (path === "/runs") {
+        if (options.method === "POST") {
+          created = true;
+          return {
+            runId: "resume-running",
+            status: "running",
+            counts: { collected: 4, saved: 3, candidates: 2 },
+          };
+        }
+        return {
+          runs: created
+            ? [
+                {
+                  runId: "resume-running",
+                  status: "running",
+                  counts: { collected: 8, saved: 7, candidates: 6 },
+                },
+              ]
+            : [],
+        };
+      }
+      if (path === "/runs/resume-running/events") return new Promise(() => {});
+      return syntheticApi(path, options);
+    },
+  });
+  await f.user.click(f.screen.getByRole("button", { name: "更新岗位" }));
+  await f.screen.findByText("采集 4 条 · 保存 3 条 · 候选 2 条");
+  const firstStream = f.apiCalls.find(
+    (c) => c.path === "/runs/resume-running/events",
+  );
+  await f.user.click(f.screen.getByRole("link", { name: "岗位库" }));
+  await f.screen.findByLabelText("搜索岗位");
+  assert.equal(firstStream?.options.signal?.aborted, true);
+  await f.user.click(f.screen.getByRole("link", { name: "工作台" }));
+  await f.screen.findByText("采集 8 条 · 保存 7 条 · 候选 6 条");
+  assert.ok(f.screen.getByRole("button", { name: "取消任务" }));
+  await f.user.click(f.screen.getByRole("button", { name: "更新岗位" }));
+  assert.equal(
+    f.apiCalls.filter((c) => c.path === "/runs" && c.options.method === "POST")
+      .length,
+    1,
+  );
+  assert.equal(
+    f.apiCalls.filter((c) => c.path === "/runs/resume-running/events").length,
+    2,
+  );
+  assert.deepEqual(
+    f.apiCalls.filter((c) => c.path === "/runs/resume-running/events").at(-1)
+      ?.scope,
+    { packageId: "A", targetRevisionId: "t1@1" },
+  );
+});
+
+test("switching target aborts pending run recovery and cannot attach a late old-version task", async (t) => {
+  let releaseOld: (value: unknown) => void = () => {};
+  const oldList = new Promise((resolve) => (releaseOld = resolve));
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path, options) => {
+      if (path === "/runs" && options.method !== "POST")
+        return options.scope &&
+          "packageId" in options.scope &&
+          options.scope.packageId === "A"
+          ? oldList
+          : {
+              runs: [
+                {
+                  runId: "current-B",
+                  status: "running",
+                  counts: { collected: 2, saved: 1, candidates: 1 },
+                },
+              ],
+            };
+      if (path === "/runs/current-B/events") return new Promise(() => {});
+      return syntheticApi(path, options);
+    },
+  });
+  const oldRead = f.apiCalls.find(
+    (c) => c.path === "/runs" && c.options.method !== "POST",
+  );
+  assert.ok(oldRead);
+  await f.selectTarget({ packageId: "B", targetRevisionId: "t2@1" });
+  await f.screen.findByText("采集 2 条 · 保存 1 条 · 候选 1 条");
+  assert.equal(oldRead.options.signal?.aborted, true);
+  await act(async () => {
+    releaseOld({
+      runs: [
+        {
+          runId: "OLD_RECOVERY_SENTINEL",
+          status: "running",
+          counts: { collected: 999, saved: 998, candidates: 997 },
+        },
+      ],
+    });
+  });
+  assert.equal(
+    f.screen.queryByText("采集 999 条 · 保存 998 条 · 候选 997 条"),
+    null,
+  );
+  assert.equal(
+    f.apiCalls.some((c) => c.path === "/runs/OLD_RECOVERY_SENTINEL/events"),
+    false,
+  );
+  assert.deepEqual(
+    f.apiCalls.find((c) => c.path === "/runs/current-B/events")?.scope,
+    { packageId: "B", targetRevisionId: "t2@1" },
+  );
+});
+
+test("failed run recovery blocks duplicate start and can be retried in the same scope", async (t) => {
+  let reads = 0;
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path, options) => {
+      if (path === "/runs" && options.method !== "POST") {
+        if (++reads === 1) throw Error("当前任务暂时无法读取");
+        return { runs: [{ runId: "retry-current", status: "running" }] };
+      }
+      if (path === "/runs/retry-current/events") return new Promise(() => {});
+      return syntheticApi(path, options);
+    },
+  });
+  await f.screen.findByText(/当前任务暂时无法读取/);
+  assert.equal(
+    f.screen.getByRole("button", { name: "更新岗位" }).hasAttribute("disabled"),
+    true,
+  );
+  await f.user.click(
+    f.screen.getByRole("button", { name: "重新读取运行任务" }),
+  );
+  await f.screen.findByRole("button", { name: "取消任务" });
+  assert.equal(reads, 2);
+  assert.equal(
+    f.apiCalls.some((c) => c.path === "/runs" && c.options.method === "POST"),
+    false,
+  );
+  assert.deepEqual(
+    f.apiCalls.find((c) => c.path === "/runs/retry-current/events")?.scope,
+    { packageId: "A", targetRevisionId: "t1@1" },
+  );
 });

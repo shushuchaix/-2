@@ -209,7 +209,29 @@ test("job detail uses this version fact record and exposes its own evaluation hi
     },
     evaluation: {
       score: 85,
-      qualification: { status: "pass" },
+      status: "rules_fallback",
+      qualification: {
+        status: "pass",
+        checks: [
+          {
+            type: "degree",
+            status: "pass",
+            requirement: "本科及以上",
+            reason: "合成当前学历比较依据",
+            evidence: { excerpt: "合成岗位学历原文" },
+          },
+          { type: "graduation_year", status: "pass", requirement: [2026, 2027], reason: "合成毕业届核对" },
+        ],
+      },
+      components: {
+        role: {
+          score: 22,
+          max: 22,
+          evidence: [{ matchedText: "合成机场消防命中" }],
+        },
+      },
+      evidence: [{ excerpt: "合成当前匹配原文" }],
+      gaps: ["合成当前待核实证书"],
       recommendation: "high",
     },
     evaluations: [
@@ -218,6 +240,27 @@ test("job detail uses this version fact record and exposes its own evaluation hi
         score: 85,
         matchesCurrentFact: true,
         createdAt: "2026-10-09",
+        status: "rules",
+        qualification: {
+          status: "unknown",
+          checks: [
+            {
+              type: "degree",
+              status: "unknown",
+              reason: "合成历史学历未确认",
+              evidence: null,
+            },
+          ],
+        },
+        components: {
+          skills: {
+            score: 3,
+            max: 45,
+            evidence: [{ matchedText: "合成历史技能命中" }],
+          },
+        },
+        evidence: [{ excerpt: "合成历史匹配原文" }],
+        gaps: ["合成历史需确认学历"],
       },
     ],
     observations: [
@@ -242,6 +285,21 @@ test("job detail uses this version fact record and exposes its own evaluation hi
   assert.ok(f.screen.getByText("本版本完整招聘正文"));
   assert.ok(f.screen.getByText("评价历史"));
   assert.ok(f.screen.getAllByText("符合已知要求").length > 0);
+  for (const text of [
+    "合成当前学历比较依据",
+    "合成岗位学历原文",
+    "合成机场消防命中",
+    "合成当前匹配原文",
+    "合成当前待核实证书",
+    "合成历史学历未确认",
+    "合成历史技能命中",
+    "合成历史匹配原文",
+    "合成历史需确认学历",
+  ])
+    assert.ok(f.screen.getByText(text));
+  assert.ok(f.screen.getByText("22 / 22 分"));
+  assert.ok(f.screen.getByText("3 / 45 分"));
+  assert.ok(f.screen.getByText("要求：2026、2027"));
   assert.deepEqual(f.apiCalls.find((c) => c.path === "/jobs/j-A")?.scope, {
     packageId: "A",
     targetRevisionId: "t1@1",

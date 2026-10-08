@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ApiClient } from "../../lib/types";
 import { useVersionContext } from "../../app/VersionContext";
-import { buildHash } from "../../app/router";
+import { buildHash, parseRoute } from "../../app/router";
 import { useOperation } from "../../lib/hooks";
 import { OperationFeedback } from "../../components/OperationFeedback";
 import { FormFeedback } from "../../components/FormFeedback";
@@ -76,6 +76,19 @@ const status: Record<string, string> = {
   queued: "等待中",
 };
 
+function logRoute(hash: string) {
+  const route = parseRoute(hash);
+  if (route.page !== "logs") return null;
+  return {
+    tab: route.filters.tab === "system" ? "system" : "business",
+    filters: {
+      level: route.filters.level || "",
+      category: route.filters.category || "",
+      diagnosticId: route.filters.diagnosticId || "",
+    },
+  };
+}
+
 function LogSelect({
   name,
   label,
@@ -112,26 +125,44 @@ function LogSelect({
 
 export function LogsPage({ api }: { api: ApiClient }) {
   const context = useVersionContext();
-  const params = new URLSearchParams(window.location.hash.split("?")[1] || "");
-  const [tab, setTab] = useState(
-    params.get("tab") === "system" ? "system" : "business",
-  );
+  const initialRoute = useRef(
+    logRoute(window.location.hash) || {
+      tab: "business",
+      filters: { level: "", category: "", diagnosticId: "" },
+    },
+  ).current;
+  const routeKey = useRef(JSON.stringify(initialRoute));
+  const [tab, setTab] = useState(initialRoute.tab);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [data, setData] = useState<DiagnosticResponse>({ entries: [] });
   const [selected, setSelected] = useState<DiagnosticEntry | null>(null);
   const [loading, setLoading] = useState(false);
   const [readError, setReadError] = useState<unknown>(null);
   const [maintenance, setMaintenance] = useState(false);
-  const [filters, setFilters] = useState({
-    level: "",
-    category: "",
-    diagnosticId: params.get("diagnosticId") || "",
-  });
+  const [filters, setFilters] = useState(initialRoute.filters);
   const [applied, setApplied] = useState(filters);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [refresh, setRefresh] = useState(0);
   const generation = useRef(0);
   const download = useOperation();
+  useEffect(() => {
+    const sync = () => {
+      const next = logRoute(window.location.hash);
+      if (!next) return;
+      const nextKey = JSON.stringify(next);
+      // Only a changed log destination replaces the local draft. Scope-only
+      // and unrelated hash updates must not turn unsaved fields into a query.
+      if (nextKey === routeKey.current) return;
+      routeKey.current = nextKey;
+      setTab(next.tab);
+      setFilters(next.filters);
+      setApplied(next.filters);
+      setErrors({});
+      setSelected(null);
+    };
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
   const readScope =
     context.scope ||
     (context.allTargets ? { allTargets: true as const } : null);
@@ -147,6 +178,21 @@ export function LogsPage({ api }: { api: ApiClient }) {
     if (limit) search.set("limit", "200");
     return search.size ? "?" + search.toString() : "";
   };
+  function navigateTab(value: string) {
+    const nextTab = value === "system" ? "system" : "business";
+    const route = parseRoute(window.location.hash);
+    const nextHash = buildHash({
+      ...route,
+      page: "logs",
+      selection: context.selection,
+      filters: { ...route.filters, tab: nextTab },
+    });
+    // Local tab navigation keeps the unapplied draft. Register the new URL
+    // before its hashchange; external links and browser history still sync.
+    routeKey.current = JSON.stringify(logRoute(nextHash));
+    setTab(nextTab);
+    window.location.hash = nextHash;
+  }
   useEffect(() => {
     const controller = new AbortController();
     const current = ++generation.current;
@@ -246,7 +292,7 @@ export function LogsPage({ api }: { api: ApiClient }) {
           检索历史按目标隔离，系统诊断帮助定位网络、解析、模型和保存错误。
         </p>
       </header>
-      <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
+      <Tabs value={tab} onValueChange={(v) => navigateTab(String(v))}>
         <TabsList>
           <TabsTrigger value="business">业务历史</TabsTrigger>
           <TabsTrigger value="system">系统诊断</TabsTrigger>

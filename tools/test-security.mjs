@@ -460,7 +460,9 @@ try {
     await (await started.ctx.ready).close?.();
     await started.ctx.diagnostics.list({limit:1});
   }
-  fs.rmSync(TMP_DATA, { recursive: true, force: true });
+  // Windows can retain a sharing handle briefly even after every writer drains.
+  // Yield during bounded retries rather than blocking pending close callbacks.
+  await fs.promises.rm(TMP_DATA, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
 }
 
 /* ============================================================

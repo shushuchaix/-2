@@ -12,6 +12,11 @@ test("version rename validates its name and reports success only after the ownin
       opts.method === "PATCH" ? committed : syntheticApi(path, opts),
   });
   await f.user.click(await f.screen.findByRole("button", { name: "版本操作" }));
+  await f.screen.findByRole("menuitem", { name: "重命名" });
+  assert.equal(
+    f.screen.queryByRole("menuitem", { name: /^(启用|停用)$/ }),
+    null,
+  );
   await f.user.click(await f.screen.findByRole("menuitem", { name: "重命名" }));
   await f.user.clear(f.screen.getByLabelText("版本名称"));
   await f.user.click(f.screen.getByRole("button", { name: "保存名称" }));

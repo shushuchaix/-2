@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { act, waitFor } from "@testing-library/react";
 import { renderApp } from "../helpers/react-fixture";
 
 test("business history uses exact owner scope and clears old response when selection changes", async (t) => {
@@ -58,6 +59,224 @@ test("business history uses exact owner scope and clears old response when selec
         c.scope.targetRevisionId === "t2@1",
     ),
   );
+});
+
+test("same-page history diagnostic link synchronizes tab filters export and browser history in the exact scope", async (t) => {
+  const diagnosticId = "d-00000000-0000-4000-8000-000000000005";
+  const f = await renderApp(t, {
+    route: "#/logs?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path) =>
+      path === "/runs"
+        ? {
+            runs: [
+              {
+                runId: "run-diagnostic",
+                status: "failed",
+                issues: [{ code: "ETIMEDOUT", diagnosticId }],
+              },
+            ],
+          }
+        : path.startsWith("/diagnostics/logs/export")
+          ? new Blob(["synthetic-log"])
+          : path.startsWith("/diagnostics/logs")
+            ? { entries: [] }
+            : undefined,
+  });
+  await f.user.click(
+    await f.screen.findByRole("link", { name: "查看更新日志" }),
+  );
+  await waitFor(() =>
+    assert.equal(
+      f.screen
+        .getByRole("tab", { name: "系统诊断" })
+        .getAttribute("aria-selected"),
+      "true",
+    ),
+  );
+  assert.equal(
+    (f.screen.getByLabelText("错误编号") as HTMLInputElement).value,
+    diagnosticId,
+  );
+  await waitFor(() =>
+    assert.ok(
+      f.apiCalls.some(
+        (c) =>
+          c.path.startsWith("/diagnostics/logs?") &&
+          c.path.includes(diagnosticId),
+      ),
+    ),
+  );
+  const read = f.apiCalls
+    .filter((c) => c.path.startsWith("/diagnostics/logs?"))
+    .at(-1)!;
+  assert.deepEqual(read.scope, { packageId: "A", targetRevisionId: "t1@1" });
+  t.mock.method(window.HTMLAnchorElement.prototype, "click", () => {});
+  await f.user.click(f.screen.getByRole("button", { name: "导出日志" }));
+  await f.screen.findAllByText("日志已生成，已开始下载");
+  const exported = f.apiCalls.find((c) =>
+    c.path.startsWith("/diagnostics/logs/export"),
+  )!;
+  assert.equal(
+    new URLSearchParams(exported.path.split("?")[1]).get("diagnosticId"),
+    diagnosticId,
+  );
+  assert.deepEqual(exported.scope, {
+    packageId: "A",
+    targetRevisionId: "t1@1",
+  });
+  window.history.back();
+  await waitFor(() =>
+    assert.equal(
+      f.screen
+        .getByRole("tab", { name: "业务历史" })
+        .getAttribute("aria-selected"),
+      "true",
+    ),
+  );
+  await f.screen.findByText("run-diagnostic");
+  window.history.forward();
+  await waitFor(() =>
+    assert.equal(
+      f.screen
+        .getByRole("tab", { name: "系统诊断" })
+        .getAttribute("aria-selected"),
+      "true",
+    ),
+  );
+  assert.equal(
+    (f.screen.getByLabelText("错误编号") as HTMLInputElement).value,
+    diagnosticId,
+  );
+});
+
+test("switching to business history updates the hash so the same diagnostic link can reopen its system view", async (t) => {
+  const diagnosticId = "d-00000000-0000-4000-8000-000000000009";
+  const f = await renderApp(t, {
+    route: `#/logs?packageId=A&targetRevisionId=t1%401&tab=system&diagnosticId=${diagnosticId}`,
+    apiHandler: (path) =>
+      path === "/runs"
+        ? {
+            runs: [
+              {
+                runId: "same-diagnostic-run",
+                status: "failed",
+                issues: [{ code: "ETIMEDOUT", diagnosticId }],
+              },
+            ],
+          }
+        : path.startsWith("/diagnostics/logs")
+          ? { entries: [] }
+          : undefined,
+  });
+  await f.screen.findByLabelText("错误编号");
+  await f.user.clear(f.screen.getByLabelText("错误编号"));
+  await f.user.type(
+    f.screen.getByLabelText("错误编号"),
+    "UNAPPLIED_FILTER_DRAFT",
+  );
+  await f.user.click(f.screen.getByRole("tab", { name: "业务历史" }));
+  const hash = new URLSearchParams(window.location.hash.split("?")[1]);
+  assert.equal(hash.get("tab"), "business");
+  assert.equal(hash.get("packageId"), "A");
+  assert.equal(hash.get("targetRevisionId"), "t1@1");
+  await f.screen.findByText("same-diagnostic-run");
+  await f.user.click(f.screen.getByRole("tab", { name: "系统诊断" }));
+  assert.equal(
+    (f.screen.getByLabelText("错误编号") as HTMLInputElement).value,
+    "UNAPPLIED_FILTER_DRAFT",
+  );
+  await f.user.click(f.screen.getByRole("tab", { name: "业务历史" }));
+  const before = f.apiCalls.filter((c) =>
+    c.path.startsWith("/diagnostics/logs"),
+  ).length;
+  await f.user.click(
+    await f.screen.findByRole("link", { name: "查看更新日志" }),
+  );
+  await waitFor(() =>
+    assert.equal(
+      f.screen
+        .getByRole("tab", { name: "系统诊断" })
+        .getAttribute("aria-selected"),
+      "true",
+    ),
+  );
+  assert.equal(
+    (f.screen.getByLabelText("错误编号") as HTMLInputElement).value,
+    diagnosticId,
+  );
+  await waitFor(() =>
+    assert.ok(
+      f.apiCalls.filter((c) => c.path.startsWith("/diagnostics/logs")).length >
+        before,
+    ),
+  );
+  const last = f.apiCalls
+    .filter((c) => c.path.startsWith("/diagnostics/logs"))
+    .at(-1)!;
+  assert.equal(
+    new URLSearchParams(last.path.split("?")[1]).get("diagnosticId"),
+    diagnosticId,
+  );
+  assert.deepEqual(last.scope, { packageId: "A", targetRevisionId: "t1@1" });
+});
+
+test("log hash filters synchronize meaningful navigation without overwriting an unrelated-hash draft", async (t) => {
+  const first = "d-00000000-0000-4000-8000-000000000006";
+  const draft = "d-00000000-0000-4000-8000-000000000007";
+  const next = "d-00000000-0000-4000-8000-000000000008";
+  const f = await renderApp(t, {
+    route: `#/logs?packageId=A&targetRevisionId=t1%401&tab=system&level=warn&category=network&diagnosticId=${first}`,
+    apiHandler: (path) =>
+      path.startsWith("/diagnostics/logs") ? { entries: [] } : undefined,
+  });
+  await f.screen.findByLabelText("错误编号");
+  const initial = f.apiCalls
+    .filter((c) => c.path.startsWith("/diagnostics/logs"))
+    .at(-1)!;
+  const query = new URLSearchParams(initial.path.split("?")[1]);
+  assert.equal(query.get("level"), "warn");
+  assert.equal(query.get("category"), "network");
+  await f.user.clear(f.screen.getByLabelText("错误编号"));
+  await f.user.type(f.screen.getByLabelText("错误编号"), draft);
+  const before = f.apiCalls.filter((c) =>
+    c.path.startsWith("/diagnostics/logs"),
+  ).length;
+  await act(async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "http://localhost/" + window.location.hash + "&view=unrelated",
+    );
+    window.dispatchEvent(new Event("hashchange"));
+  });
+  assert.equal(
+    (f.screen.getByLabelText("错误编号") as HTMLInputElement).value,
+    draft,
+  );
+  assert.equal(
+    f.apiCalls.filter((c) => c.path.startsWith("/diagnostics/logs")).length,
+    before,
+  );
+  await act(async () => {
+    window.history.replaceState(
+      null,
+      "",
+      `http://localhost/#/logs?packageId=A&targetRevisionId=t1%401&tab=system&level=error&category=storage&diagnosticId=${next}`,
+    );
+    window.dispatchEvent(new Event("hashchange"));
+  });
+  assert.equal(
+    (f.screen.getByLabelText("错误编号") as HTMLInputElement).value,
+    next,
+  );
+  const applied = f.apiCalls
+    .filter((c) => c.path.startsWith("/diagnostics/logs"))
+    .at(-1)!;
+  const changed = new URLSearchParams(applied.path.split("?")[1]);
+  assert.equal(changed.get("level"), "error");
+  assert.equal(changed.get("category"), "storage");
+  assert.equal(changed.get("diagnosticId"), next);
+  assert.deepEqual(applied.scope, { packageId: "A", targetRevisionId: "t1@1" });
 });
 
 test("system diagnostics render safe context and never arbitrary private fields", async (t) => {

@@ -107,22 +107,24 @@ export function VersionActions({
             >
               重命名
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                void operation.run(
-                  async () => {
-                    await api.request(versionPath(kind, version), {
-                      method: "PATCH",
-                      body: { enabled: version.enabled === false },
-                    });
-                    await onChanged();
-                  },
-                  version.enabled === false ? "版本已启用" : "版本已停用",
-                )
-              }
-            >
-              {version.enabled === false ? "启用" : "停用"}
-            </DropdownMenuItem>
+            {kind === "target" && (
+              <DropdownMenuItem
+                onClick={() =>
+                  void operation.run(
+                    async () => {
+                      await api.request(versionPath(kind, version), {
+                        method: "PATCH",
+                        body: { enabled: version.enabled === false },
+                      });
+                      await onChanged();
+                    },
+                    version.enabled === false ? "版本已启用" : "版本已停用",
+                  )
+                }
+              >
+                {version.enabled === false ? "启用" : "停用"}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onClick={() => {
                 operation.clear();

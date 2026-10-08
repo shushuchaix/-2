@@ -26,6 +26,7 @@ const terminal = new Set([
   "cancelled",
   "interrupted",
 ]);
+const resumable = new Set(["queued", "running", "cancelling"]);
 const stageLabels: Record<string, string> = {
   queued: "等待开始",
   running: "正在更新",
@@ -54,6 +55,9 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
     [run, setRun] = useState<Record<string, unknown> | null>(null),
     [outcome, setOutcome] = useState(""),
     [streamError, setStreamError] = useState<unknown>(null),
+    [recovering, setRecovering] = useState(!!ctx.scope),
+    [recoveryError, setRecoveryError] = useState<unknown>(null),
+    [recoveryAttempt, setRecoveryAttempt] = useState(0),
     [errors, setErrors] = useState<Record<string, string>>({});
   const controller = useRef<AbortController | null>(null),
     generation = useRef(0);
@@ -71,16 +75,51 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
     "/settings",
   );
   useEffect(() => {
-    generation.current++;
-    controller.current?.abort();
     setUserKey("");
+  }, [ctx.generation]);
+  useEffect(() => {
+    const token = ++generation.current;
+    controller.current?.abort();
+    connecting.current = false;
     setRun(null);
     setOutcome("");
+    setStreamError(null);
+    setRecoveryError(null);
+    setRecovering(!!ctx.scope && !ctx.error);
+    if (ctx.scope && !ctx.loading && !ctx.error) {
+      const scope = ctx.scope;
+      const read = new AbortController();
+      controller.current = read;
+      void api
+        .request<{ runs: Record<string, unknown>[] }>("/runs", {
+          scope,
+          signal: read.signal,
+        })
+        .then((result) => {
+          if (token !== generation.current || read.signal.aborted) return;
+          const current = result.runs.find(
+            (item) =>
+              typeof item.runId === "string" &&
+              resumable.has(String(item.status)),
+          );
+          setRecovering(false);
+          if (current) {
+            setRun(current);
+            void connect(String(current.runId), scope);
+          }
+        })
+        .catch((error) => {
+          if (token !== generation.current || read.signal.aborted) return;
+          setRecoveryError(error);
+          setRecovering(false);
+        });
+    }
     return () => {
       generation.current++;
       controller.current?.abort();
+      connecting.current = false;
     };
-  }, [ctx.generation]);
+  }, [api, ctx.generation, ctx.loading, ctx.error, recoveryAttempt]);
   async function connect(runId: string, scope: Scope) {
     if (connecting.current) return;
     connecting.current = true;
@@ -124,11 +163,20 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
       if (token === generation.current && !signal.aborted)
         setStreamError(error);
     } finally {
-      connecting.current = false;
+      if (token === generation.current) connecting.current = false;
     }
   }
   async function start() {
-    if (!ctx.scope || op.busy) return;
+    if (
+      !ctx.scope ||
+      ctx.loading ||
+      ctx.error ||
+      recovering ||
+      recoveryError ||
+      (!!run && !terminal.has(String(run.status))) ||
+      op.busy
+    )
+      return;
     const checked = validateInput("run", {
       mode,
       targetRevisionId: ctx.scope.targetRevisionId,
@@ -223,6 +271,10 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
               !ctx.scope ||
               !target?.profileSnapshot?.text ||
               target?.enabled === false ||
+              ctx.loading ||
+              !!ctx.error ||
+              recovering ||
+              !!recoveryError ||
               running ||
               op.busy
             }
@@ -254,6 +306,19 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
           )}
         </CardFooter>
       </Card>
+      {recovering && ctx.scope && (
+        <p role="status">正在读取当前目标的运行任务…</p>
+      )}
+      <OperationFeedback error={recoveryError} />
+      {!!recoveryError && ctx.scope && (
+        <Button
+          variant="outline"
+          disabled={recovering || ctx.loading}
+          onClick={() => setRecoveryAttempt((attempt) => attempt + 1)}
+        >
+          重新读取运行任务
+        </Button>
+      )}
       <OperationFeedback busy={op.busy} result={op.message} />
       <OperationFeedback
         busy={cancel.busy}

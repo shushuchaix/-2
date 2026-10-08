@@ -15,6 +15,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { FormFeedback } from "../../components/FormFeedback";
 import { OperationFeedback } from "../../components/OperationFeedback";
 import { ApplicationEditor } from "../applications/ApplicationEditor";
+import { EvaluationDetails } from "./EvaluationDetails";
 import {
   factOf,
   qualificationOf,
@@ -48,12 +49,6 @@ export function JobDetailsSheet({
   const fact = row ? factOf(row) : null;
   const sourceUrl = safeExternalUrl(fact?.url),
     applyUrl = safeExternalUrl(fact?.applyUrl);
-  const textList = (value: unknown) =>
-    Array.isArray(value)
-      ? (value.filter((v) => typeof v === "string") as string[])
-      : typeof value === "string"
-        ? [value]
-        : [];
   return (
     <>
       <Sheet
@@ -119,9 +114,12 @@ export function JobDetailsSheet({
                   ? "本版本招聘事实已核实"
                   : "本版本事实尚待核实，历史评价请结合当时依据查看。"}
               </p>
-              {textList(row.evaluation?.reasons).map((reason, i) => (
-                <p key={i}>{reason}</p>
-              ))}
+              {row.evaluation && (
+                <section className="flex flex-col gap-3">
+                  <h2 className="font-semibold">当前评价依据</h2>
+                  <EvaluationDetails evaluation={row.evaluation} />
+                </section>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => setEditing(true)}>记录投递</Button>
                 <Button
@@ -188,9 +186,7 @@ export function JobDetailsSheet({
                       <p className="text-sm text-muted-foreground">
                         {String(e.createdAt ?? e.evaluatedAt ?? "时间待核实")}
                       </p>
-                      {textList(e.reasons).map((reason, j) => (
-                        <p key={j}>{reason}</p>
-                      ))}
+                      <EvaluationDetails evaluation={e} />
                     </div>
                   ))
                 ) : (

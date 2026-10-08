@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ApiClient } from "../../lib/types";
+import { useVersionContext } from "../../app/VersionContext";
+import { buildHash } from "../../app/router";
 import { useOperation } from "../../lib/hooks";
 import { OperationFeedback } from "../../components/OperationFeedback";
 import { Button } from "../../components/ui/button";
@@ -56,6 +58,7 @@ function SiteCard({
   onHealth(health: SourceHealth): void;
 }) {
   const [current, setCurrent] = useState(health);
+  const context = useVersionContext();
   const op = useOperation();
   useEffect(() => setCurrent(health), [health]);
   return (
@@ -86,10 +89,11 @@ function SiteCard({
           {issue.diagnosticId && (
             <a
               className="ml-2 underline"
-              href={
-                "#/logs?tab=system&diagnosticId=" +
-                encodeURIComponent(issue.diagnosticId)
-              }
+              href={buildHash({
+                page: "logs",
+                selection: context.selection,
+                filters: { tab: "system", diagnosticId: issue.diagnosticId },
+              })}
             >
               查看更新日志
             </a>

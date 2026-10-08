@@ -23,6 +23,12 @@ test("business history uses exact owner scope and clears old response when selec
                   status: "completed",
                   stage: "finished",
                   counts: { accepted: 4 },
+                  issues: [
+                    {
+                      code: "ETIMEDOUT",
+                      diagnosticId: "d-00000000-0000-4000-8000-000000000004",
+                    },
+                  ],
                 },
               ],
             };
@@ -36,6 +42,12 @@ test("business history uses exact owner scope and clears old response when selec
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(f.screen.queryByText("private-run-a"), null);
+  const diagnosticLink = f.screen.getByRole("link", { name: "查看更新日志" });
+  const linkedScope = new URLSearchParams(
+    diagnosticLink.getAttribute("href")?.split("?")[1],
+  );
+  assert.equal(linkedScope.get("packageId"), "B");
+  assert.equal(linkedScope.get("targetRevisionId"), "t2@1");
   const requests = f.apiCalls.filter((c) => c.path === "/runs");
   assert.ok(
     requests.some(

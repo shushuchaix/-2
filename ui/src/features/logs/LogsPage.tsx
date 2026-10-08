@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ApiClient } from "../../lib/types";
 import { useVersionContext } from "../../app/VersionContext";
+import { buildHash } from "../../app/router";
 import { useOperation } from "../../lib/hooks";
 import { OperationFeedback } from "../../components/OperationFeedback";
 import { FormFeedback } from "../../components/FormFeedback";
@@ -298,10 +299,14 @@ export function LogsPage({ api }: { api: ApiClient }) {
                         {issue.diagnosticId && (
                           <a
                             className="ml-2 underline"
-                            href={
-                              "#/logs?tab=system&diagnosticId=" +
-                              encodeURIComponent(issue.diagnosticId)
-                            }
+                            href={buildHash({
+                              page: "logs",
+                              selection: context.selection,
+                              filters: {
+                                tab: "system",
+                                diagnosticId: issue.diagnosticId,
+                              },
+                            })}
                           >
                             查看更新日志
                           </a>

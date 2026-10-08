@@ -278,7 +278,8 @@ function completeness(record) {
     Math.min(1000, String(record.description || "").length) / 1000
   );
 }
-export function buildWorkspaceDuplicatePlan(w) {
+export function buildWorkspaceDuplicatePlan(w,options={}) {
+  if(w.schemaVersion===3&&!w._scope)return buildOwnedDuplicatePlan(w,options);
   const jobs = Object.values(w.jobs),
     manual = manualAssociations(w),
     manualIds = new Set(manual.flatMap((a) => a.jobIds));
@@ -455,7 +456,11 @@ export function applyWorkspaceDuplicatePlan(w, plan, { operationId, at }) {
           time < kept.targetFirstSeen[target]
         )
           kept.targetFirstSeen[target] = time;
-      w.jobRedirects[id] = { toJobId: g.keepJobId, operationId, mergedAt: at };
+      w.jobRedirects[id] = { toJobId: g.keepJobId, operationId, mergedAt: at,...(w.schemaVersion===3?{ownerPackageId:kept.ownerPackageId,originalRecordId:removed.recordId}:{}) };
+      if(w.schemaVersion===3){
+        if(removed.ownerPackageId!==kept.ownerPackageId)throw Error('Cross package duplicate merge');
+        for(const key of ['observations','evaluations','applications','events'])for(const r of Object.values(w[key]||{}))if(r.jobId===id){if(r.ownerPackageId!==kept.ownerPackageId)throw Error('Cross package duplicate reference');r.originalJobId ||= id;r.jobId=g.keepJobId;}
+      }
       delete w.jobs[id];
       removedEntities++;
     }
@@ -531,4 +536,19 @@ export function applyWorkspaceDuplicatePlan(w, plan, { operationId, at }) {
     possiblePairs: plan.possiblePairs.length,
     protectedGroups: plan.protectedGroups.length,
   };
+}
+function ownedDuplicateView(w,packageId){
+ const v=structuredClone(w);v._scope={packageId};
+ for(const key of ['jobs','observations','evaluations','applications','runs','events','files','jobRedirects'])v[key]=Object.fromEntries(Object.entries(v[key]||{}).filter(([,r])=>r.ownerPackageId===packageId));
+ for(const key of ['profiles','targets'])v[key]=Object.fromEntries(Object.entries(v[key]).map(([id,list])=>[id,list.filter(r=>r.ownerPackageId===packageId)]).filter(([,list])=>list.length));
+ v.targetMembers=Object.fromEntries(Object.entries(v.targetMembers||{}).filter(([id])=>Object.values(v.targets).flat().some(t=>t.revisionId===id)));
+ v.identityAliases=Object.fromEntries(Object.entries(v.identityAliases).map(([id,ids])=>[id,ids.filter(jobId=>v.jobs[jobId]||v.jobRedirects[jobId])]).filter(([,ids])=>ids.length));
+ return v;
+}
+function buildOwnedDuplicatePlan(w,{packageIds,allVersions=true,now=Date.now()}={}){
+ const chosen=Object.values(w.packages).filter(p=>['target','legacy_unassigned'].includes(p.kind)&&(!packageIds||packageIds.includes(p.packageId))&&(p.state==='active'||p.state==='trashed'&&Date.parse(p.purgeAt)>now)).sort((a,b)=>a.packageId.localeCompare(b.packageId));
+ const packages=chosen.map(p=>{const plan=buildWorkspaceDuplicatePlan(ownedDuplicateView(w,p.packageId));const meta={packageId:p.packageId,archiveId:p.archiveId||null,purgeAt:p.purgeAt||null};return {...meta,versionName:p.versionName,kind:p.kind,counts:plan.counts,groups:plan.groups.map(g=>({...g,...meta})),possiblePairs:plan.possiblePairs.map(g=>({...g,...meta}))};});
+ const groups=packages.flatMap(p=>p.groups),possiblePairs=packages.flatMap(p=>p.possiblePairs),protectedGroups=groups.filter(g=>g.protected),counts={confirmedGroups:0,removedEntities:0,collapsedVersionEntries:0,affectedVersions:0,possiblePairs:0,protectedGroups:0};
+ for(const p of packages)for(const [key,n]of Object.entries(p.counts))counts[key]=(counts[key]||0)+n;
+ return {workspaceRevision:w.revision,planHash:digest({workspaceHash:workspaceDuplicateHash(w),packages:chosen.map(p=>({packageId:p.packageId,archiveId:p.archiveId,purgeAt:p.purgeAt}))}),groups,possiblePairs,protectedGroups,packages,counts,totals:counts,packageIds:chosen.map(p=>p.packageId),allVersions};
 }

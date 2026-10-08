@@ -329,7 +329,7 @@ test("caught paged HTTP errors keep status and diagnostic ids in collection and 
       (e) => e.operation === "run.collect" && e.error?.status === 503,
     ),
   );
-  const probe = await app.sourceService.probe("ncss", "ncss");
+  const probe = await app.sourceService.probe("ncss", "ncss-1");
   assert.match(probe.issues[0].diagnosticId || "", /^d-/);
   const all = await app.diagnostics.list();
   assert.ok(

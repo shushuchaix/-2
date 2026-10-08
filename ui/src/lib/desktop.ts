@@ -1,0 +1,16 @@
+import type { DesktopAdapter, DesktopBridge } from "./types";
+export function createDesktopAdapter(bridge?: DesktopBridge): DesktopAdapter {
+  const unavailable = async () => {
+    throw Error("此操作需要桌面版，请在桌面软件中重试。");
+  };
+  return {
+    available: !!bridge,
+    isAvailable: () => bridge?.isAvailable() ?? Promise.resolve(false),
+    getKeyStatus: (p) => bridge?.getKeyStatus(p) ?? unavailable(),
+    saveKey: (p, k) => bridge?.saveKey(p, k) ?? unavailable(),
+    deleteKey: (p) => bridge?.deleteKey(p) ?? unavailable(),
+    getDataLocations: () => bridge?.getDataLocations() ?? unavailable(),
+    openDataLocation: (k) => bridge?.openDataLocation(k) ?? unavailable(),
+    copyDataLocation: (k) => bridge?.copyDataLocation(k) ?? unavailable(),
+  };
+}

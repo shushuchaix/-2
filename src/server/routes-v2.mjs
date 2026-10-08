@@ -215,8 +215,12 @@ export async function handleV2Request(req, res, context) {
     } else return false;
     return true;
   }
-  if ((match = route.match(/^\/(profiles|targets)\/([^/]+)\/revisions(?:\/([^/]+))?(?:\/(restore|permanent))?$/))) {
-    const kind=match[1]==='profiles'?'profile':'target';
+  if (
+    (match = route.match(
+      /^\/(profiles|targets)\/([^/]+)\/revisions(?:\/([^/]+))?(?:\/(restore|permanent))?$/,
+    ))
+  ) {
+    const kind = match[1] === "profiles" ? "profile" : "target";
     const id = identifier(decode(match[2])),
       revision = match[3] ? decode(match[3]) : null;
     const revisionId = revision
@@ -224,31 +228,43 @@ export async function handleV2Request(req, res, context) {
         ? identifier(revision, { revision: true })
         : identifier(id + "@" + revision, { revision: true })
       : null;
-    const args={kind,parentId:id,revisionId};
-    if (method === 'POST' && match[4]==='restore' && revisionId) send(200,await workspace.restoreVersion(args));
-    else if (method === 'DELETE' && match[4]==='permanent' && revisionId) send(200,await workspace.permanentlyDeleteVersion(args));
+    const args = { kind, parentId: id, revisionId };
+    if (method === "POST" && match[4] === "restore" && revisionId)
+      send(200, await workspace.restoreVersion(args));
+    else if (method === "DELETE" && match[4] === "permanent" && revisionId)
+      send(200, await workspace.permanentlyDeleteVersion(args));
     else if (match[4]) return false;
     else if (method === "POST" && !revisionId)
       send(
         201,
-        await workspace[kind==='profile'?'saveProfile':'saveTarget']({
+        await workspace[kind === "profile" ? "saveProfile" : "saveTarget"]({
           ...redactBusiness(await body()),
-          [kind+'Id']: id,
+          [kind + "Id"]: id,
         }),
       );
     else if (method === "GET") {
-      const all=await workspace[kind==='profile'?'listProfiles':'listTargets']();
-      const revisions = all.filter(p=>p[kind+'Id']===id);
+      const all =
+        await workspace[kind === "profile" ? "listProfiles" : "listTargets"]();
+      const revisions = all.filter((p) => p[kind + "Id"] === id);
       if (revisionId) {
         const found = revisions.find((p) => p.revisionId === revisionId);
-        if (!found && all.some(p=>p.revisionId===revisionId)) throw Object.assign(inputError({revisionId:'该版本不属于所选项目。'}),{code:'version_parent_mismatch'});
+        if (!found && all.some((p) => p.revisionId === revisionId))
+          throw Object.assign(
+            inputError({ revisionId: "该版本不属于所选项目。" }),
+            { code: "version_parent_mismatch" },
+          );
         if (!found) invalid("Profile revision not found", 404);
         send(200, found);
       } else send(200, { revisions });
-    } else if (method === 'PATCH' && revisionId) {
-      const input=await body();
-      if (Object.keys(input).some(k=>!['versionName','enabled'].includes(k))) throw inputError({_form:'此接口只修改版本名称或启停状态，请使用新建版本保存配置。'});
-      send(200,await workspace.updateVersion({...args,...input}));
+    } else if (method === "PATCH" && revisionId) {
+      const input = await body();
+      if (
+        Object.keys(input).some((k) => !["versionName", "enabled"].includes(k))
+      )
+        throw inputError({
+          _form: "此接口只修改版本名称或启停状态，请使用新建版本保存配置。",
+        });
+      send(200, await workspace.updateVersion({ ...args, ...input }));
     } else if (method === "DELETE" && revisionId)
       send(200, await workspace.archiveVersion(args));
     else return false;
@@ -273,13 +289,31 @@ export async function handleV2Request(req, res, context) {
         .at(-1);
     if (!previous) invalid("Target not found", 404);
     const input = await body();
-    if (method==='PATCH') {
-      if (!input.revisionId) throw inputError({revisionId:'请指定要管理的版本，不能自动修改最新版本。'});
-      if (Object.keys(input).some(k=>!['revisionId','versionName','enabled'].includes(k))) throw inputError({_form:'管理操作不接受配置修改。'});
-      send(200,await workspace.updateVersion({kind:'target',parentId:id,revisionId:identifier(input.revisionId,{revision:true}),versionName:input.versionName,enabled:input.enabled}));
+    if (method === "PATCH") {
+      if (!input.revisionId)
+        throw inputError({
+          revisionId: "请指定要管理的版本，不能自动修改最新版本。",
+        });
+      if (
+        Object.keys(input).some(
+          (k) => !["revisionId", "versionName", "enabled"].includes(k),
+        )
+      )
+        throw inputError({ _form: "管理操作不接受配置修改。" });
+      send(
+        200,
+        await workspace.updateVersion({
+          kind: "target",
+          parentId: id,
+          revisionId: identifier(input.revisionId, { revision: true }),
+          versionName: input.versionName,
+          enabled: input.enabled,
+        }),
+      );
       return true;
     }
-    if (!input.versionName) throw inputError({versionName:'请为新版本填写不同名称。'});
+    if (!input.versionName)
+      throw inputError({ versionName: "请为新版本填写不同名称。" });
     if (input.profileRevisionId)
       identifier(input.profileRevisionId, { revision: true });
     send(
@@ -370,8 +404,11 @@ export async function handleV2Request(req, res, context) {
     ))
   ) {
     const id = jobIdentifier(decode(match[1]));
-    if (!match[2] && method === "GET") send(200, await jobs.getJob(id));
-    else if (match[2] === "application" && ["POST", "PUT"].includes(method))
+    if (!match[2] && method === "GET") {
+      const targetRevisionId = url.searchParams.get("targetRevisionId");
+      if (targetRevisionId) identifier(targetRevisionId, { revision: true });
+      send(200, await jobs.getJob(id, { targetRevisionId }));
+    } else if (match[2] === "application" && ["POST", "PUT"].includes(method))
       send(
         200,
         await jobs.updateApplication(id, applicationPatch(await body())),

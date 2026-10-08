@@ -8,6 +8,14 @@ import {
 } from "../llm/validation.mjs";
 import { evaluationPrompt, PROMPT_VERSION } from "../llm/prompts.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
+import { resolveJobId, resolveJobIds } from "../domain/job-resolution.mjs";
+import {
+  backfillTargetMembers,
+  selectVersionJobFact,
+  selectRunJobFact,
+  selectMatchingEvaluation,
+  resolveEvaluationFactBasis,
+} from "../domain/job-facts.mjs";
 export function createEvaluationService({
   repository,
   cache = new Map(),
@@ -31,6 +39,7 @@ export function createEvaluationService({
         started = clock.now();
       signal?.throwIfAborted();
       const workspace = await repository.read();
+      backfillTargetMembers(workspace);
       const p = Object.values(workspace.profiles)
           .flat()
           .find((p) => p.revisionId === profileRevisionId),
@@ -42,9 +51,7 @@ export function createEvaluationService({
         throw Error("Target profile revision mismatch");
       if (!Array.isArray(jobIds) || jobIds.length > 5000)
         throw Error("Invalid job selection");
-      const ids = [...new Set(jobIds)];
-      for (const id of ids)
-        if (!workspace.jobs[id]) throw Error("Job not found: " + id);
+      const ids = resolveJobIds(workspace, jobIds);
       if (!["rules", "ai", "auto"].includes(mode))
         throw Error("Invalid evaluation mode");
       const newBudget =
@@ -72,30 +79,70 @@ export function createEvaluationService({
         issues = [];
       const pending = [];
       for (const id of ids) {
-        const record = { ...workspace.jobs[id].canonical, jobId: id };
+        const memberFact = selectVersionJobFact(workspace, {
+          targetRevisionId,
+          jobId: id,
+        });
+        const fact =
+          runId && memberFact.status === "verified"
+            ? selectRunJobFact(workspace, { runId, jobId: id })
+            : memberFact;
+        if (fact.status !== "verified")
+          throw Object.assign(
+            Error("该岗位不属于此目标版本，或缺少可验证的版本事实。"),
+            { status: 409, code: "version_fact_unavailable" },
+          );
+        const record = { ...fact.record, jobId: id };
         const jdHash = contentHash({ ...record, retrievedAt: undefined });
         const cacheKey = evaluationCacheKey({
-          jdHash,
+          jdHash: fact.factContentHash,
           profileRevisionId,
           targetRevisionId,
           promptVersion: PROMPT_VERSION,
           ruleVersion: RULE_VERSION,
           modelFingerprint: fingerprint,
         });
-        const existing =
+        const candidate =
           cache.get(cacheKey) ||
           Object.values(workspace.evaluations).find(
             (e) =>
               e.cacheKey === cacheKey && ["rules", "ai"].includes(e.status),
+          ) ||
+          Object.values(workspace.evaluations).find(
+            (e) =>
+              ["rules", "ai"].includes(e.status) &&
+              e.profileRevisionId === profileRevisionId &&
+              e.targetRevisionId === targetRevisionId &&
+              e.promptVersion === PROMPT_VERSION &&
+              e.ruleVersion === RULE_VERSION &&
+              e.modelFingerprint === fingerprint &&
+              e.cacheKey ===
+                evaluationCacheKey({
+                  jdHash: e.jdHash,
+                  profileRevisionId,
+                  targetRevisionId,
+                  promptVersion: PROMPT_VERSION,
+                  ruleVersion: RULE_VERSION,
+                  modelFingerprint: fingerprint,
+                }) &&
+              resolveEvaluationFactBasis(workspace, e).factContentHash ===
+                fact.factContentHash,
           );
+        const existing =
+          candidate &&
+          resolveEvaluationFactBasis(workspace, candidate).factContentHash ===
+            fact.factContentHash
+            ? candidate
+            : null;
         if (existing) {
-          evaluations.push(structuredClone(existing));
+          evaluations.push({ ...structuredClone(existing), jobId: id });
           continue;
         }
         pending.push({
           record,
           jdHash,
           cacheKey,
+          fact,
           draft: evaluateRules(record, p.profile, target),
         });
       }
@@ -251,50 +298,54 @@ export function createEvaluationService({
             ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
           });
         }
-        const completed = batch.map(({ record, jdHash, cacheKey, draft }) => {
-          const model = valid.get(record.jobId);
-          const evaluation = {
-            ...draft,
-            evaluationId: "ev-" + randomUUID(),
-            jobId: record.jobId,
-            profileRevisionId,
-            targetRevisionId,
-            jdHash,
-            promptVersion: PROMPT_VERSION,
-            modelFingerprint: fingerprint,
-            cacheKey,
-            runId,
-            createdAt: new Date(clock.now()).toISOString(),
-            status: model ? "ai" : ai ? "rule_fallback" : "rules",
-          };
-          if (model) {
-            evaluation.modelAdvice = {
-              score: Math.round(model.score),
-              reasons: model.reasons,
-              gaps: model.gaps,
-              evidence: model.evidence,
+        const completed = batch.map(
+          ({ record, jdHash, cacheKey, draft, fact }) => {
+            const model = valid.get(record.jobId);
+            const evaluation = {
+              ...draft,
+              evaluationId: "ev-" + randomUUID(),
+              jobId: record.jobId,
+              profileRevisionId,
+              targetRevisionId,
+              jdHash,
+              factContentHash: fact.factContentHash,
+              observationId: fact.observationIds[0],
+              promptVersion: PROMPT_VERSION,
+              modelFingerprint: fingerprint,
+              cacheKey,
+              runId,
+              createdAt: new Date(clock.now()).toISOString(),
+              status: model ? "ai" : ai ? "rule_fallback" : "rules",
             };
-            evaluation.score =
-              draft.qualification.status === "fail"
-                ? Math.min(49, Math.round(model.score))
-                : Math.round(model.score);
-            evaluation.recommendation =
-              draft.qualification.status === "fail"
-                ? "not_recommended"
-                : draft.recommendation === "insufficient"
-                  ? "insufficient"
-                  : evaluation.score >= 75 &&
-                      draft.qualification.status === "pass"
-                    ? "high"
-                    : evaluation.score >= 50
-                      ? "consider"
-                      : "low";
-          }
-          return evaluation;
-        });
+            if (model) {
+              evaluation.modelAdvice = {
+                score: Math.round(model.score),
+                reasons: model.reasons,
+                gaps: model.gaps,
+                evidence: model.evidence,
+              };
+              evaluation.score =
+                draft.qualification.status === "fail"
+                  ? Math.min(49, Math.round(model.score))
+                  : Math.round(model.score);
+              evaluation.recommendation =
+                draft.qualification.status === "fail"
+                  ? "not_recommended"
+                  : draft.recommendation === "insufficient"
+                    ? "insufficient"
+                    : evaluation.score >= 75 &&
+                        draft.qualification.status === "pass"
+                      ? "high"
+                      : evaluation.score >= 50
+                        ? "consider"
+                        : "low";
+            }
+            return evaluation;
+          },
+        );
         await repository.mutateWorkspace((w) => {
           for (const e of completed) {
-            if (!w.jobs[e.jobId])
+            if (!resolveJobId(w, e.jobId, { allowMissing: true }))
               throw Error("Job disappeared during evaluation");
             w.evaluations[e.evaluationId] = e;
           }
@@ -361,13 +412,25 @@ export function createEvaluationService({
       };
     },
     async rescore(input) {
-      const before = await repository.read(),
-        ids = new Set(input.jobIds || []);
+      const before = await repository.read();
+      backfillTargetMembers(before);
+      const ids = new Set(resolveJobIds(before, input.jobIds || []));
       const previous = new Map();
-      for (const evaluation of Object.values(before.evaluations)
-        .filter((e) => ids.has(e.jobId))
-        .sort((a, b) => String(a.createdAt).localeCompare(b.createdAt)))
-        previous.set(evaluation.jobId, evaluation);
+      for (const jobId of ids) {
+        const fact = selectVersionJobFact(before, {
+          targetRevisionId: input.targetRevisionId,
+          jobId,
+        });
+        previous.set(
+          jobId,
+          selectMatchingEvaluation(before, {
+            jobId,
+            targetRevisionId: input.targetRevisionId,
+            profileRevisionId: input.profileRevisionId,
+            factContentHash: fact.factContentHash,
+          }),
+        );
+      }
       const result = await this.evaluate({ ...input, runId: null });
       const summary = (e) =>
         e

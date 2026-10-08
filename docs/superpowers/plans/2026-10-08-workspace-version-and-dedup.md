@@ -176,7 +176,7 @@ function Invoke-RjrTest {
 - Extend `ingestRecords({runId,records,observedAt,targetRevisionId,provenanceOperationId})`；run 从冻结版本传入，import 可传目标版本或不归属。
 - Extend `queryJobs(filters)`/`getJob(id,{targetRevisionId}={})`，严格成员过滤/版本事实；新评价追加 `observationId,factContentHash`。旧 jdHash 保持原值。
 
-- [ ] **1. 写失败测试。** 同实体两个版本、一个未评价记录、目标级旧关联、import-UUID 无 runs 节点、v1 `observation.record`。精确查询同时传 targetId/versionId，父版本不符报错。断言：
+- [x] **1. 写失败测试。** 同实体两个版本、一个未评价记录、目标级旧关联、import-UUID 无 runs 节点、v1 `observation.record`。精确查询同时传 targetId/versionId，父版本不符报错。断言：
   ```js
   assert.equal(versionWithoutEvaluation.total, 1);
   assert.equal(otherVersion.total, 0);
@@ -186,11 +186,11 @@ function Invoke-RjrTest {
   assert.equal(oldEvaluation.jdHash, beforeHash);
   ```
   旧完整记录 hash、包含旧jobId的 jdHash、v1正文 hash 分别校验；无法对应显示 historical，不借最新分。正文/学历改变 hash 改变，内部 ID/时间改变 hash 不变。
-- [ ] **2. RED。** `Invoke-RjrTest tests/integration/job-membership.test.mjs tests/integration/evaluation-facts.test.mjs tests/integration/rescore.test.mjs`。
-- [ ] **3. 实现回填与版本事实投影。** 优先 run冻结目标+观察，评价仅补充可验证关系；没有事实证据标缺失。按 observedAt、稳定 observationId 选择版本当前依据，factRefs 保留所有证据；不假分配目标级旧数据。升级/旧恢复接回填，完成后 membershipVersion=1。
-- [ ] **4. 接入入库、查询、详情及 evaluate/rescore。** 缓存同时约束事实 hash、画像/目标/prompt/rule/model；旧缓存命中返回主 ID 投影，不改旧评价。rescore 只取指定版本成员及其事实，原始观察与 snapshot 不改写。
-- [ ] **5. GREEN。** 运行步骤 2 加 `tests/integration/evaluation.test.mjs tests/integration/run-service.test.mjs tests/e2e/migration-recovery.test.mjs`；同版本成员最多一条，无评价也可见。
-- [ ] **6. Commit。** `git commit -m "feat: scope jobs and evaluations to version fact evidence"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/integration/job-membership.test.mjs tests/integration/evaluation-facts.test.mjs tests/integration/rescore.test.mjs`。
+- [x] **3. 实现回填与版本事实投影。** 优先 run冻结目标+观察，评价仅补充可验证关系；没有事实证据标缺失。按 observedAt、稳定 observationId 选择版本当前依据，factRefs 保留所有证据；不假分配目标级旧数据。升级/旧恢复接回填，完成后 membershipVersion=1。
+- [x] **4. 接入入库、查询、详情及 evaluate/rescore。** 缓存同时约束事实 hash、画像/目标/prompt/rule/model；旧缓存命中返回主 ID 投影，不改旧评价。rescore 只取指定版本成员及其事实，原始观察与 snapshot 不改写。
+- [x] **5. GREEN。** 运行步骤 2 加 `tests/integration/evaluation.test.mjs tests/integration/run-service.test.mjs tests/e2e/migration-recovery.test.mjs`；同版本成员最多一条，无评价也可见。
+- [x] **6. Commit。** `git commit -m "feat: scope jobs and evaluations to version fact evidence"`。
 
 ## Task 5：跨进程操作门禁与回收站可运行状态
 

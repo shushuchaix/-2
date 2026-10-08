@@ -103,6 +103,7 @@ export function createImportService({
         runId: "import-" + randomUUID(),
         records: [record],
         observedAt: at,
+        targetRevisionId: input.targetRevisionId,
       });
       if (Object.hasOwn(input, "note"))
         for (const id of result.jobIds)

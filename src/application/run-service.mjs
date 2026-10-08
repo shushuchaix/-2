@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { selectRunJobFact } from "../domain/job-facts.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
@@ -169,7 +170,11 @@ export function createRunService({
       async function ingest(records) {
         let operation = "run.ingest";
         try {
-          const result = await jobService.ingestRecords({ runId: id, records });
+          const result = await jobService.ingestRecords({
+            runId: id,
+            records,
+            targetRevisionId: targetSnapshot.revisionId,
+          });
           for (const jobId of result.jobIds) jobIds.add(jobId);
           for (const jobId of result.newForTarget) newForTarget.add(jobId);
           for (const record of records) {
@@ -511,7 +516,10 @@ export function createRunService({
         }
         let workspaceNow = await repository.read();
         const ordered = [...jobIds]
-          .map((jobId) => ({ jobId, ...workspaceNow.jobs[jobId].canonical }))
+          .map((jobId) => ({
+            jobId,
+            ...selectRunJobFact(workspaceNow, { runId: id, jobId }).record,
+          }))
           .sort(
             (a, b) =>
               evaluateRules(b, profileRevision.profile, targetSnapshot).score -
@@ -602,7 +610,10 @@ export function createRunService({
         await stage("expanding");
         workspaceNow = await repository.read();
         const notices = [...jobIds]
-          .map((jobId) => workspaceNow.jobs[jobId].canonical)
+          .map(
+            (jobId) =>
+              selectRunJobFact(workspaceNow, { runId: id, jobId }).record,
+          )
           .filter(
             (r) =>
               r.kind !== "job" &&
@@ -780,7 +791,10 @@ export function createRunService({
       const snapshot = {
         run: workspace.runs[id],
         profileRevision,
-        jobs: [...jobIds].map((jobId) => workspace.jobs[jobId]),
+        jobs: [...jobIds].map((jobId) => ({
+          ...workspace.jobs[jobId],
+          canonical: selectRunJobFact(workspace, { runId: id, jobId }).record,
+        })),
         evaluations: evaluations.length ? evaluations : persisted,
         events: workspace.runs[id].events || [],
       };

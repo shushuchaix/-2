@@ -1,4 +1,4 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createEvaluationService } from "../../src/application/evaluation-service.mjs";
@@ -24,13 +24,16 @@ test("rescore keeps prior revisions and application without collecting sources",
       profileId: "p1",
       profile: profile(),
     }),
-    t1 = await workspace.saveTarget(namedTargetInput({
-      ...target(),
-      targetId: "t1",
-      profileRevisionId: p.revisionId,
-    })),
+    t1 = await workspace.saveTarget(
+      namedTargetInput({
+        ...target(),
+        targetId: "t1",
+        profileRevisionId: p.revisionId,
+      }),
+    ),
     { jobIds } = await jobs.ingestRecords({
       runId: "fixture",
+      targetRevisionId: t1.revisionId,
       records: [job()],
     });
   await jobs.updateApplication(jobIds[0], { status: "applied", note: "保留" });
@@ -44,10 +47,17 @@ test("rescore keeps prior revisions and application without collecting sources",
       profileId: "p1",
       profile: profile({ skills: ["Java", "SQL"] }),
     }),
-    t2 = await workspace.saveTarget(namedTargetInput({
-      ...t1,
-      profileRevisionId: p2.revisionId,
-    }));
+    t2 = await workspace.saveTarget(
+      namedTargetInput({
+        ...t1,
+        profileRevisionId: p2.revisionId,
+      }),
+    );
+  await jobs.ingestRecords({
+    runId: "fixture-version-2",
+    targetRevisionId: t2.revisionId,
+    records: [job()],
+  });
   const result = await service.rescore({
     jobIds,
     profileRevisionId: p2.revisionId,
@@ -56,7 +66,7 @@ test("rescore keeps prior revisions and application without collecting sources",
   });
   assert.equal(sourceCalls, 0);
   assert.equal(result.usage.requests, 0);
-  assert.equal(result.comparison[0].before.profileRevisionId, p.revisionId);
+  assert.equal(result.comparison[0].before, null);
   assert.equal(result.comparison[0].after.profileRevisionId, p2.revisionId);
   assert.equal((await jobs.getJob(jobIds[0])).application.status, "applied");
   assert.equal((await jobs.getJob(jobIds[0])).evaluations.length, 2);
@@ -88,12 +98,15 @@ test("rescore cancellation retains completed batch and validates real revisions"
     jobs = createJobService({ repository }),
     service = createEvaluationService({ repository }),
     p = await workspace.saveProfile({ profile: profile() }),
-    tar = await workspace.saveTarget(namedTargetInput({
-      ...target(),
-      profileRevisionId: p.revisionId,
-    }));
+    tar = await workspace.saveTarget(
+      namedTargetInput({
+        ...target(),
+        profileRevisionId: p.revisionId,
+      }),
+    );
   const { jobIds } = await jobs.ingestRecords({
     runId: "fixture",
+    targetRevisionId: tar.revisionId,
     records: Array.from({ length: 6 }, (_, i) =>
       job({ sourceRecordId: String(i) }),
     ),

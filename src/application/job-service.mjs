@@ -13,6 +13,12 @@ import { resolveJobIdentity, relateJobs } from "../domain/identity.mjs";
 import { jobBusinessFingerprint } from "../domain/job-duplicates.mjs";
 import { resolveJobId, jobIdMatches } from "../domain/job-resolution.mjs";
 import { deriveLifecycle } from "../domain/lifecycle.mjs";
+import {
+  addTargetMemberFact,
+  backfillTargetMembers,
+  selectVersionJobFact,
+  selectMatchingEvaluation,
+} from "../domain/job-facts.mjs";
 const date = (v) => {
   if (!isCalendarDate(v)) throw Error("Invalid date");
   return v;
@@ -37,7 +43,13 @@ export function createJobService({ repository, clock = repository.clock }) {
       ];
   };
   return {
-    async ingestRecords({ runId, records, observedAt = now() }) {
+    async ingestRecords({
+      runId,
+      records,
+      observedAt = now(),
+      targetRevisionId,
+      provenanceOperationId,
+    }) {
       date(observedAt);
       return (
         await repository.mutateWorkspace((w) => {
@@ -45,6 +57,15 @@ export function createJobService({ repository, clock = repository.clock }) {
             observationIds = [],
             newForTarget = [];
           const targetId = w.runs[runId]?.targetSnapshot?.targetId;
+          const revisionId =
+            targetRevisionId || w.runs[runId]?.targetSnapshot?.revisionId;
+          if (
+            revisionId &&
+            !Object.values(w.targets)
+              .flat()
+              .some((t) => t.revisionId === revisionId)
+          )
+            throw inputError({ targetRevisionId: "未找到目标版本。" });
           for (const input of records) {
             const record = normalizeRecord(input);
             for (const key of [
@@ -191,6 +212,8 @@ export function createJobService({ repository, clock = repository.clock }) {
                 observationId: oid,
                 jobId: id,
                 runId,
+                ...(revisionId ? { targetRevisionId: revisionId } : {}),
+                ...(provenanceOperationId ? { provenanceOperationId } : {}),
                 sourceId: record.sourceId,
                 siteId: record.siteId,
                 sourceRecordId: record.sourceRecordId,
@@ -200,6 +223,17 @@ export function createJobService({ repository, clock = repository.clock }) {
                 fields: record,
                 evidence: record.evidence,
               };
+            if (revisionId) {
+              const wasMember = !!w.targetMembers?.[revisionId]?.[id];
+              addTargetMemberFact(w, {
+                targetRevisionId: revisionId,
+                jobId: id,
+                observationId: oid,
+                provenanceOperationId,
+              });
+              if (!wasMember && !newForTarget.includes(id))
+                newForTarget.push(id);
+            }
             jobIds.push(id);
             observationIds.push(oid);
           }
@@ -289,27 +323,56 @@ export function createJobService({ repository, clock = repository.clock }) {
       ).result;
     },
     async queryJobs(filters = {}) {
-      assertInput("filters", filters);
+      assertInput("filters", {
+        ...filters,
+        targetRevisionId: ["all", "unassigned"].includes(
+          filters.targetRevisionId,
+        )
+          ? undefined
+          : filters.targetRevisionId,
+      });
       const w = await repository.read();
+      backfillTargetMembers(w);
+      const revisionId = ["all", "unassigned"].includes(
+        filters.targetRevisionId,
+      )
+        ? null
+        : filters.targetRevisionId;
+      const target = revisionId
+        ? Object.values(w.targets)
+            .flat()
+            .find((t) => t.revisionId === revisionId)
+        : null;
+      if (
+        revisionId &&
+        (!target || (filters.targetId && target.targetId !== filters.targetId))
+      )
+        throw inputError({
+          targetRevisionId: "目标版本不存在或与所属目标不匹配。",
+        });
       let items = Object.values(w.jobs).map((job) => {
-        const evaluations = Object.values(w.evaluations)
-          .filter(
-            (e) =>
-              jobIdMatches(w, e.jobId, job.jobId) &&
-              (!filters.targetRevisionId ||
-                e.targetRevisionId === filters.targetRevisionId) &&
-              (!filters.targetId ||
-                (w.targets[filters.targetId] || []).some(
-                  (t) => t.revisionId === e.targetRevisionId,
-                ) ||
-                e.targetRevisionId?.startsWith(filters.targetId + "@")),
-          )
-          .sort((a, b) =>
-            String(b.createdAt || "").localeCompare(a.createdAt || ""),
-          );
+        const fact = selectVersionJobFact(w, {
+          targetRevisionId: revisionId,
+          jobId: job.jobId,
+        });
+        const evaluation = selectMatchingEvaluation(w, {
+          jobId: job.jobId,
+          targetRevisionId: revisionId,
+          profileRevisionId: target?.profileRevisionId,
+          factContentHash: fact.factContentHash,
+        });
         return {
           job,
-          ...job.canonical,
+          ...(fact.record ||
+            (revisionId
+              ? {
+                  title: job.canonical.title,
+                  company: job.canonical.company,
+                  kind: job.kind,
+                  cities: [],
+                }
+              : job.canonical)),
+          fact,
           jobId: job.jobId,
           application: w.applications[job.jobId] || {
             jobId: job.jobId,
@@ -317,13 +380,21 @@ export function createJobService({ repository, clock = repository.clock }) {
             note: "",
             events: [],
           },
-          evaluation: evaluations[0] || null,
+          evaluation: evaluation ? { ...evaluation, jobId: job.jobId } : null,
         };
       });
-      if (filters.targetRevisionId && !filters.targetId)
-        items = items.filter((i) => i.evaluation);
+      if (revisionId)
+        items = items.filter((i) => w.targetMembers[revisionId]?.[i.jobId]);
+      if (filters.targetRevisionId === "unassigned")
+        items = items.filter(
+          (i) => !Object.values(w.targetMembers).some((m) => m[i.jobId]),
+        );
       if (filters.targetId)
-        items = items.filter((i) => i.job.targetFirstSeen[filters.targetId]);
+        items = items.filter((i) =>
+          (w.targets[filters.targetId] || []).some(
+            (t) => w.targetMembers[t.revisionId]?.[i.jobId],
+          ),
+        );
       if (filters.status)
         items = items.filter((i) => i.application.status === filters.status);
       if (filters.kind) items = items.filter((i) => i.kind === filters.kind);
@@ -369,10 +440,20 @@ export function createJobService({ repository, clock = repository.clock }) {
         pageSize,
       };
     },
-    async getJob(id) {
+    async getJob(id, { targetRevisionId } = {}) {
       const w = await repository.read();
+      backfillTargetMembers(w);
+      const requestedJobId = id;
       id = resolveStoredJobId(w, id);
       const job = w.jobs[id];
+      if (
+        targetRevisionId &&
+        !Object.values(w.targets)
+          .flat()
+          .some((t) => t.revisionId === targetRevisionId)
+      )
+        throw inputError({ targetRevisionId: "未找到目标版本。" });
+      const fact = selectVersionJobFact(w, { targetRevisionId, jobId: id });
       const relatedIds = new Set(
         job.duplicateGroupIds.flatMap(
           (g) => w.duplicateGroups[g]?.jobIds || [],
@@ -380,7 +461,25 @@ export function createJobService({ repository, clock = repository.clock }) {
       );
       relatedIds.delete(id);
       return {
-        job,
+        job: targetRevisionId
+          ? {
+              ...job,
+              canonical: fact.record || {
+                title: job.canonical.title,
+                company: job.canonical.company,
+                kind: job.kind,
+                cities: [],
+              },
+            }
+          : job,
+        jobId: id,
+        requestedJobId,
+        fact,
+        evaluation: selectMatchingEvaluation(w, {
+          jobId: id,
+          targetRevisionId,
+          factContentHash: fact.factContentHash,
+        }),
         observations: Object.values(w.observations).filter((o) =>
           jobIdMatches(w, o.jobId, id),
         ),

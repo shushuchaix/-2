@@ -4,9 +4,9 @@ import path from "node:path";
 export const AT = "2026-10-05T00:00:00.000Z";
 let versionInputNumber = 0;
 export const namedTargetInput = (input = {}) => ({
+  ...input,
   versionName: "合成目标 " + ++versionInputNumber,
   submissionId: "fixture-" + versionInputNumber,
-  ...input,
 });
 export const job = (overrides = {}) => ({
   sourceId: "synthetic",

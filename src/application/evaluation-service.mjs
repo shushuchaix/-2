@@ -3,7 +3,7 @@ import {runtimeRepository,runtimeGate,assertRuntimeJobs} from './package-runtime
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { evaluateRules, RULE_VERSION } from "../domain/ranking.mjs";
-import { createModelBudget } from "../llm/budget.mjs";
+import { createModelBudget, effectiveModelBudgets, capModelBudget } from "../llm/budget.mjs";
 import {
   validateModelResults,
   evaluationCacheKey,
@@ -66,10 +66,16 @@ function createLegacyEvaluationService({
           const ids = resolveJobIds(workspace, jobIds);
           if (!["rules", "ai", "auto"].includes(mode))
             throw Error("Invalid evaluation mode");
-          const newBudget =
+          const effectiveBudgets = effectiveModelBudgets(workspace.settings?.budgets, target.budgets);
+          const newBudget = capModelBudget(
             modelClient?.budget ||
-            (await budgetFactory?.()) ||
-            createModelBudget();
+            (await budgetFactory?.({ budgets: effectiveBudgets })) ||
+            createModelBudget(), effectiveBudgets);
+          // Preserve caller accounting without mutating a potentially shared client.
+          if (modelClient && modelClient.budget !== newBudget) {
+            modelClient = Object.create(modelClient);
+            modelClient.budget = newBudget;
+          }
           const client =
               modelClient ||
               ((mode === "ai" || mode === "auto") && modelFactory

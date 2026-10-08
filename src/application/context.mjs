@@ -28,7 +28,10 @@ import { loadSiteCatalog } from "../sources/catalog.mjs";
 import { createRequestClient } from "../infrastructure/http/client.mjs";
 import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 import { DeepSeek } from "../llm/deepseek.mjs";
-import { createConfiguredModelBudget } from "../llm/budget.mjs";
+import {
+  createConfiguredModelBudget,
+  effectiveModelBudgets,
+} from "../llm/budget.mjs";
 import { RunGate } from "../limits.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
 import {
@@ -41,7 +44,7 @@ import { createTrashService } from "./trash-service.mjs";
 import { createPurgeService } from "./purge-service.mjs";
 import { createTrashScheduler } from "./trash-scheduler.mjs";
 import { createLegacyAssignmentService } from "./legacy-assignment-service.mjs";
-import { packageError } from "../domain/packages.mjs";
+import { packageError, assertScope } from "../domain/packages.mjs";
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
@@ -203,10 +206,10 @@ export async function createApplicationContext({
       repository,
       operationGate,
       modelFactory,
-      budgetFactory: async () =>
+      budgetFactory: async ({ budgets } = {}) =>
         createConfiguredModelBudget({
           modelConfig: cfg.deepseek,
-          budgets: (await repository.read()).settings.budgets,
+          budgets: budgets || (await repository.read()).settings.budgets,
         }),
       diagnostics,
     }),
@@ -287,10 +290,20 @@ export async function createApplicationContext({
     migration,
     managementUpgrade,
     recovery,
-    async createModelBudget() {
+    async createModelBudget(scope) {
+      const workspace = await repository.read();
+      if (scope) assertScope(workspace, scope, repository.clock.now());
+      const target =
+        scope &&
+        Object.values(workspace.targets)
+          .flat()
+          .find((v) => v.revisionId === scope.targetRevisionId);
       return createConfiguredModelBudget({
         modelConfig: cfg.deepseek,
-        budgets: (await repository.read()).settings.budgets,
+        budgets: effectiveModelBudgets(
+          workspace.settings.budgets,
+          target?.budgets,
+        ),
       });
     },
     async getCatalog() {

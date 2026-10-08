@@ -21,6 +21,7 @@ import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 import {
   createModelBudget,
   createConfiguredModelBudget,
+  effectiveModelBudgets,
 } from "../llm/budget.mjs";
 import { evaluateRules } from "../domain/ranking.mjs";
 import { expandArticles } from "../match/article.mjs";
@@ -925,12 +926,7 @@ function createLegacyRunService({
       const modelConfig = structuredClone(config.deepseek || {});
       if (mode !== "rules" && !credentials.modelBudget) {
         const settings = (await repository.read()).settings.budgets || {},
-          budgets = { ...settings, ...target.budgets };
-        if (settings.maxCostCny != null && target.budgets?.maxCostCny != null)
-          budgets.maxCostCny = Math.min(
-            settings.maxCostCny,
-            target.budgets.maxCostCny,
-          );
+          budgets = effectiveModelBudgets(settings, target.budgets);
         credentials = {
           ...credentials,
           modelBudget: createConfiguredModelBudget({ modelConfig, budgets }),

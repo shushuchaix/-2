@@ -142,7 +142,7 @@ export async function handlePackageBusinessRequest(req, res, context) {
     let modelClient;
     if (["ai", "auto"].includes(mode)) {
       const credentials = userCredentials(input, context.cfg),
-        budget = await context.createModelBudget();
+        budget = await context.createModelBudget(selected);
       modelClient = context.modelFactory({
         credentials,
         budget,

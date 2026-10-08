@@ -223,3 +223,44 @@ export function createConfiguredModelBudget({
     });
   return createModelBudget({ maxRequests: budgets.maxModelRequests ?? 20 });
 }
+
+export function effectiveModelBudgets(settings = {}, target = {}) {
+  const budgets = { ...settings, ...target };
+  if (settings.maxCostCny != null && target.maxCostCny != null)
+    budgets.maxCostCny = Math.min(settings.maxCostCny, target.maxCostCny);
+  return budgets;
+}
+
+// Keep the original accounting shared across retries and stages. A caller-supplied
+// client cannot widen this operation's ceiling or start an unpriced money request.
+export function capModelBudget(budget, { maxCostCny } = {}) {
+  if (maxCostCny == null) return budget;
+  const ceiling = Math.round(maxCostCny * 100) * 10000;
+  function exceeds(output = budget.snapshot().maxOutputTokens) {
+    const snapshot = budget.snapshot();
+    return (
+      snapshot.maxCostCny == null ||
+      Math.round((snapshot.costUpperBoundCny || 0) * MICRO_CNY) +
+        CONTEXT_TOKENS * INPUT_MICRO_CNY +
+        output * OUTPUT_MICRO_CNY >
+        ceiling
+    );
+  }
+  return Object.freeze({
+    ...budget,
+    isExhausted(options = {}) {
+      return exceeds(options.maxOutputTokens) || budget.isExhausted(options);
+    },
+    claimRequest(options = {}) {
+      if (exceeds(options.maxOutputTokens)) throw exhausted();
+      return budget.claimRequest(options);
+    },
+    snapshot() {
+      const snapshot = budget.snapshot();
+      return {
+        ...snapshot,
+        maxCostCny: Math.min(snapshot.maxCostCny ?? maxCostCny, maxCostCny),
+      };
+    },
+  });
+}

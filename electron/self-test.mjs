@@ -308,14 +308,39 @@ export async function runWorkspaceSelfTest({
   };
   const resizeViewport = async (width, height = 900) => {
     let requested = width;
+    const attempts = [];
     for (let attempt = 0; attempt < 4; attempt++) {
       window.setContentSize(requested, height);
       await delay(250);
       const actual = await js("innerWidth");
-      if (actual === width) return;
-      requested += width - actual;
+      attempts.push({ requested, actual });
+      if (actual === width)
+        return {
+          requestedWidth: width,
+          nativeRequestedWidth: requested,
+          attempts,
+        };
+      requested += Math.sign(width - actual);
     }
-    throw Error("self_test_viewport_width_mismatch: " + width);
+    // Fractional Windows DPI can quantize the odd 375px viewport to 374/376.
+    // Use the narrower real viewport; keep the exact tablet/desktop breakpoints.
+    const narrower =
+      width === 375 && attempts.find((item) => item.actual === 374);
+    if (narrower) {
+      window.setContentSize(narrower.requested, height);
+      await delay(250);
+      if ((await js("innerWidth")) === narrower.actual)
+        return {
+          requestedWidth: width,
+          nativeRequestedWidth: narrower.requested,
+          rounded: true,
+          attempts,
+        };
+    }
+    throw Error(
+      "self_test_viewport_width_mismatch: " +
+        JSON.stringify({ width, dpr: await js("devicePixelRatio"), attempts }),
+    );
   };
   const api = async (route, body, method) => {
     const response = await fetch(origin + "/api/v2" + route, {
@@ -598,12 +623,19 @@ export async function runWorkspaceSelfTest({
       );
       await click("关闭预览");
       for (const width of [375, 768, 1024, 1440]) {
-        await resizeViewport(width);
-        const geometry = await js(
-          "({width:innerWidth,dpr:devicePixelRatio,overflow:document.documentElement.scrollWidth>innerWidth+1})",
-        );
+        const sizing = await resizeViewport(width);
+        const geometry = {
+          ...sizing,
+          ...(await js(
+            "({width:innerWidth,dpr:devicePixelRatio,overflow:document.documentElement.scrollWidth>innerWidth+1})",
+          )),
+        };
         check(
-          "岗位库" + width + "px 无页面横向溢出",
+          "岗位库请求" +
+            width +
+            "px / 实际" +
+            geometry.width +
+            "px 无页面横向溢出",
           !geometry.overflow,
           geometry,
         );
@@ -857,14 +889,21 @@ export async function runWorkspaceSelfTest({
     });
     await phase("响应式窗口、长中文与字体放大截图", async () => {
       for (const width of [375, 768, 1024, 1440]) {
-        await resizeViewport(width);
+        const sizing = await resizeViewport(width);
         await js("location.hash='#/settings'");
         await wait("document.querySelector('h1')?.textContent==='设置'");
         await wait("Boolean(document.getElementById('model.model'))");
-        const geometry = await js(
-          "({width:innerWidth,dpr:devicePixelRatio,overflow:document.documentElement.scrollWidth>innerWidth+1})",
+        const geometry = {
+          ...sizing,
+          ...(await js(
+            "({width:innerWidth,dpr:devicePixelRatio,overflow:document.documentElement.scrollWidth>innerWidth+1})",
+          )),
+        };
+        check(
+          "请求" + width + "px / 实际" + geometry.width + "px 无页面横向溢出",
+          !geometry.overflow,
+          geometry,
         );
-        check(width + "px 无页面横向溢出", !geometry.overflow, geometry);
         const filename = `ui-${width}-${String(geometry.dpr).replace(".", "_")}.png`;
         fs.writeFileSync(
           path.join(dataDir, filename),

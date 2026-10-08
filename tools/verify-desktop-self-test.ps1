@@ -13,16 +13,19 @@ try {
     $env:RJR_DATA_DIR = $testPath
     $argumentList = @('--self-test', ('--force-device-scale-factor=' + $scale.ToString([Globalization.CultureInfo]::InvariantCulture)))
     $process = Start-Process -FilePath $resolvedExe -ArgumentList $argumentList -WindowStyle Hidden -PassThru -RedirectStandardOutput ($testPath + '-stdout.log') -RedirectStandardError ($testPath + '-stderr.log')
+    $null = $process.Handle
     Write-Output ('SELF_TEST_SCALE=' + $scale + ' PID=' + $process.Id + ' DIRECTORY=' + $testPath)
     $deadline = [DateTime]::UtcNow.AddSeconds(180)
     while (!$process.WaitForExit(1000)) {
       if ([DateTime]::UtcNow -gt $deadline) { throw ('Self-test did not finish; inspect synthetic process ' + $process.Id + ' and ' + $testPath) }
     }
-    $process.Refresh()
+    $process.WaitForExit()
+    $testExitCode = $process.ExitCode
+    Write-Output ('SELF_TEST_EXIT=' + $testExitCode)
     $reportPath = Join-Path $testPath 'desktop-self-test.json'
     if (!(Test-Path -LiteralPath $reportPath)) { throw ('Missing self-test report: ' + $testPath) }
-    $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
-    if ($process.ExitCode -ne 0 -or $report.failed -ne 0 -or !$report.synthetic -or $report.network.externalRequests -ne 0) {
+    $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($null -eq $testExitCode -or $testExitCode -ne 0 -or $report.failed -ne 0 -or !$report.synthetic -or $report.network.externalRequests -ne 0) {
       $report.results | Where-Object { !$_.ok } | ConvertTo-Json -Depth 8 | Write-Output
       throw ('Desktop self-test failed: ' + $reportPath)
     }

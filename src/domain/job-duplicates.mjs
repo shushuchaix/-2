@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import {
+  resolveJobId,
+  resolveApplicationAssociation,
+} from "./job-resolution.mjs";
+import { jobFactHash } from "./job-facts.mjs";
 export const identityText = (value) =>
   String(value ?? "")
     .normalize("NFKC")
@@ -245,5 +250,288 @@ export function classifyJobDuplicate(
   return {
     relation: "distinct",
     reasonCodes: ["insufficient_identity_evidence"],
+  };
+}
+const digest = (value) =>
+  createHash("sha256")
+    .update(JSON.stringify(stable(value)))
+    .digest("hex");
+export const workspaceDuplicateHash = (w) =>
+  digest({ ...w, revision: undefined, operationLeases: undefined });
+const hasManualRecord = (a) =>
+  (a.status && a.status !== "new") ||
+  !!a.note ||
+  !!a.appliedAt ||
+  !!a.followUpAt ||
+  !!a.resumeRevisionId ||
+  !!a.events?.length;
+function manualAssociations(w) {
+  return Object.values(w.applications || {})
+    .filter(hasManualRecord)
+    .map((application) => ({
+      applicationId: application.jobId,
+      jobIds: resolveApplicationAssociation(w, application).jobIds,
+    }));
+}
+function completeness(record) {
+  return (
+    Object.values(jobBusinessContent(record)).filter(
+      (v) => v !== null && v !== "" && (!Array.isArray(v) || v.length),
+    ).length +
+    Math.min(1000, String(record.description || "").length) / 1000
+  );
+}
+export function buildWorkspaceDuplicatePlan(w) {
+  const jobs = Object.values(w.jobs),
+    manual = manualAssociations(w),
+    manualIds = new Set(manual.flatMap((a) => a.jobIds));
+  const rank = (a, b) =>
+    Number(manualIds.has(b.jobId)) - Number(manualIds.has(a.jobId)) ||
+    Number(b.canonical.sourceRecordIdKind === "authority") -
+      Number(a.canonical.sourceRecordIdKind === "authority") ||
+    completeness(b.canonical) - completeness(a.canonical) ||
+    String(a.firstSeen || "").localeCompare(String(b.firstSeen || "")) ||
+    a.jobId.localeCompare(b.jobId);
+  jobs.sort(rank);
+  const indexes = new Map(),
+    pairs = new Map(),
+    possiblePairs = [];
+  const keys = (r) => {
+    const values = [
+      "fields:" +
+        JSON.stringify([identityText(r.company), identityText(r.title)]),
+    ];
+    if (identityText(r.company))
+      values.push("company:" + identityText(r.company));
+    if (r.sourceRecordIdKind === "authority")
+      values.push(
+        "id:" + JSON.stringify([source(r), scope(r), String(r.sourceRecordId)]),
+      );
+    if (r.url)
+      try {
+        values.push("url:" + canonicalizeSourceUrl(r.url, r.urlPolicy));
+      } catch {
+        /* invalid hints do not prove identity */
+      }
+    return values;
+  };
+  const pairKey = (a, b) => JSON.stringify([a, b].sort());
+  for (const job of jobs) {
+    const candidates = new Set(
+      keys(job.canonical).flatMap((k) => indexes.get(k) || []),
+    );
+    for (const other of candidates) {
+      const result = classifyJobDuplicate(job.canonical, other.canonical);
+      pairs.set(pairKey(job.jobId, other.jobId), result);
+      if (result.relation === "possible")
+        possiblePairs.push({
+          jobIds: [job.jobId, other.jobId].sort(),
+          reasonCodes: result.reasonCodes,
+        });
+    }
+    for (const key of keys(job.canonical)) {
+      if (!indexes.has(key)) indexes.set(key, []);
+      indexes.get(key).push(job);
+    }
+  }
+  const used = new Set(),
+    groups = [];
+  for (const root of jobs) {
+    if (used.has(root.jobId)) continue;
+    const members = [root];
+    for (const candidate of jobs) {
+      if (candidate === root || used.has(candidate.jobId)) continue;
+      if (
+        members.every(
+          (m) =>
+            pairs.get(pairKey(m.jobId, candidate.jobId))?.relation ===
+            "confirmed",
+        )
+      )
+        members.push(candidate);
+    }
+    if (members.length < 2) continue;
+    members.forEach((j) => used.add(j.jobId));
+    const ids = members.map((j) => j.jobId),
+      applications = manual.filter((a) =>
+        a.jobIds.some((id) => ids.includes(id)),
+      );
+    const targetRevisionIds = Object.entries(w.targetMembers || {})
+      .filter(([, m]) => ids.some((id) => m[id]))
+      .map(([id]) => id)
+      .sort();
+    groups.push({
+      groupId: "dg-" + digest([...ids].sort()).slice(0, 24),
+      keepJobId: root.jobId,
+      removeJobIds: ids.slice(1).sort(),
+      reasonCodes: [
+        ...new Set(
+          members
+            .slice(1)
+            .flatMap(
+              (m) => pairs.get(pairKey(root.jobId, m.jobId)).reasonCodes,
+            ),
+        ),
+      ].sort(),
+      targetRevisionIds,
+      protected: applications.length > 1,
+      protectedReason:
+        applications.length > 1 ? "multiple_manual_applications" : null,
+      manualApplicationCount: applications.length,
+    });
+  }
+  const protectedGroups = groups.filter((g) => g.protected),
+    eligible = groups.filter((g) => !g.protected);
+  const collapsed = (g) =>
+    Object.values(w.targetMembers || {}).reduce(
+      (n, m) =>
+        n +
+        Math.max(
+          0,
+          [g.keepJobId, ...g.removeJobIds].filter((id) => m[id]).length - 1,
+        ),
+      0,
+    );
+  const counts = {
+    confirmedGroups: groups.length,
+    removedEntities: eligible.reduce((n, g) => n + g.removeJobIds.length, 0),
+    collapsedVersionEntries: eligible.reduce((n, g) => n + collapsed(g), 0),
+    affectedVersions: new Set(eligible.flatMap((g) => g.targetRevisionIds))
+      .size,
+    possiblePairs: possiblePairs.length,
+    protectedGroups: protectedGroups.length,
+  };
+  return {
+    workspaceRevision: w.revision,
+    planHash: workspaceDuplicateHash(w),
+    groups,
+    possiblePairs: possiblePairs.sort((a, b) =>
+      JSON.stringify(a.jobIds).localeCompare(JSON.stringify(b.jobIds)),
+    ),
+    protectedGroups,
+    counts,
+  };
+}
+export function applyWorkspaceDuplicatePlan(w, plan, { operationId, at }) {
+  const groups = plan.groups.filter((g) => !g.protected),
+    affected = new Set();
+  let removedEntities = 0,
+    collapsedVersionEntries = 0;
+  w.jobRedirects ||= {};
+  for (const g of groups) {
+    const kept = w.jobs[g.keepJobId],
+      ids = [g.keepJobId, ...g.removeJobIds];
+    for (const id of g.removeJobIds) {
+      const removed = w.jobs[id];
+      if (!removed) throw Error("Duplicate entity disappeared");
+      for (const [key, value] of Object.entries(removed.canonical))
+        if (
+          kept.canonical[key] === null ||
+          kept.canonical[key] === undefined ||
+          kept.canonical[key] === "" ||
+          (Array.isArray(kept.canonical[key]) && !kept.canonical[key].length)
+        )
+          kept.canonical[key] = structuredClone(value);
+      kept.sourceRefs = [
+        ...new Map(
+          [...(kept.sourceRefs || []), ...(removed.sourceRefs || [])].map(
+            (r) => [digest(r), r],
+          ),
+        ).values(),
+      ];
+      kept.identityAliases = [
+        ...new Set([
+          ...(kept.identityAliases || []),
+          ...(removed.identityAliases || []),
+        ]),
+      ];
+      if (String(removed.firstSeen || "") < String(kept.firstSeen || ""))
+        kept.firstSeen = removed.firstSeen;
+      if (String(removed.lastSeen || "") > String(kept.lastSeen || ""))
+        kept.lastSeen = removed.lastSeen;
+      kept.targetFirstSeen ||= {};
+      for (const [target, time] of Object.entries(
+        removed.targetFirstSeen || {},
+      ))
+        if (
+          !kept.targetFirstSeen[target] ||
+          time < kept.targetFirstSeen[target]
+        )
+          kept.targetFirstSeen[target] = time;
+      w.jobRedirects[id] = { toJobId: g.keepJobId, operationId, mergedAt: at };
+      delete w.jobs[id];
+      removedEntities++;
+    }
+    for (const [version, members] of Object.entries(w.targetMembers || {})) {
+      const existing = ids.filter((id) => members[id]);
+      if (!existing.length) continue;
+      affected.add(version);
+      collapsedVersionEntries += existing.length - 1;
+      const all = existing.map((id) => members[id]),
+        factRefs = [
+          ...new Map(
+            all
+              .flatMap((m) => m.factRefs || [])
+              .map((ref) => [ref.observationId, ref]),
+          ).values(),
+        ];
+      const observations = factRefs
+          .map((r) => w.observations[r.observationId])
+          .filter(Boolean)
+          .sort(
+            (a, b) =>
+              String(b.observedAt || "").localeCompare(
+                String(a.observedAt || ""),
+              ) || b.observationId.localeCompare(a.observationId),
+          ),
+        current = observations[0];
+      const times = all
+        .flatMap((m) => [m.firstSeen, m.lastSeen])
+        .filter(Boolean)
+        .sort();
+      members[g.keepJobId] = {
+        ...structuredClone(all[0]),
+        factRefs,
+        currentObservationId: current?.observationId || null,
+        factContentHash: current
+          ? jobFactHash(current.fields || current.record)
+          : null,
+        firstSeen: times[0] || null,
+        lastSeen: times.at(-1) || null,
+      };
+      for (const id of g.removeJobIds) delete members[id];
+    }
+  }
+  for (const redirect of Object.values(w.jobRedirects))
+    redirect.toJobId = resolveJobId(w, redirect.toJobId);
+  for (const [alias, ids] of Object.entries(w.identityAliases))
+    w.identityAliases[alias] = [
+      ...new Set(
+        ids
+          .map((id) => resolveJobId(w, id, { allowMissing: true }))
+          .filter(Boolean),
+      ),
+    ];
+  for (const [groupId, group] of Object.entries(w.duplicateGroups || {})) {
+    group.jobIds = [
+      ...new Set(
+        group.jobIds
+          .map((id) => resolveJobId(w, id, { allowMissing: true }))
+          .filter(Boolean),
+      ),
+    ];
+    if (group.jobIds.length < 2) delete w.duplicateGroups[groupId];
+  }
+  for (const job of Object.values(w.jobs))
+    job.duplicateGroupIds = Object.values(w.duplicateGroups || {})
+      .filter((g) => g.jobIds.includes(job.jobId))
+      .map((g) => g.groupId);
+  return {
+    confirmedGroups: groups.length,
+    removedEntities,
+    collapsedVersionEntries,
+    affectedVersions: affected.size,
+    possiblePairs: plan.possiblePairs.length,
+    protectedGroups: plan.protectedGroups.length,
   };
 }

@@ -369,6 +369,22 @@ export async function handleV2Request(req, res, context) {
     else return false;
     return true;
   }
+  if (route === "/jobs/duplicates/preview" && method === "POST") {
+    send(200, await context.jobCleanupService.preview());
+    return true;
+  }
+  if (route === "/jobs/duplicates/apply" && method === "POST") {
+    const input = await body();
+    send(
+      200,
+      await context.jobCleanupService.apply({
+        workspaceRevision: input.workspaceRevision,
+        planHash: input.planHash,
+        selectedGroupIds: input.selectedGroupIds,
+      }),
+    );
+    return true;
+  }
   if (route === "/jobs/evaluations" && method === "POST") {
     const input = await body();
     identifier(input.profileRevisionId, { revision: true });

@@ -16,6 +16,7 @@ import {
 import { createWorkspaceService } from "./workspace-service.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { createJobService } from "./job-service.mjs";
+import { createJobCleanupService } from "./job-cleanup-service.mjs";
 import { createEvaluationService } from "./evaluation-service.mjs";
 import { createSourceService } from "./source-service.mjs";
 import { createImportService } from "./import-service.mjs";
@@ -200,6 +201,7 @@ export async function createApplicationContext({
     exportService = createExportService({ repository });
   let settingsQueue = Promise.resolve();
   const context = {
+    jobCleanupService: createJobCleanupService({ repository, operationGate }),
     operationGate,
     diagnostics,
     cfg,

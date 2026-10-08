@@ -227,7 +227,7 @@ function Invoke-RjrTest {
 - Produces `createJobCleanupService({repository,operationGate,clock})` 的 `preview()` 与 `apply({workspaceRevision,planHash,selectedGroupIds}) -> {operationId,counts,backupId}`；POST `/api/v2/jobs/duplicates/preview` 和 `/apply` 在动态 jobID 路由之前匹配。
 - counts 固定 `{confirmedGroups,removedEntities,collapsedVersionEntries,affectedVersions,possiblePairs,protectedGroups}`；planHash 排除 revision/operationLeases，包含所有影响合并及人工保护的业务状态。
 
-- [ ] **1. 写失败测试。** 全部正常/停用/历史/回收站成员和未归属重复都参与；同ID多版本引用不算删除。一组只有一个人工记录保留它，两条直接或间接 legacy 人工记录保护整组；链式三记录不全并。断言：
+- [x] **1. 写失败测试。** 全部正常/停用/历史/回收站成员和未归属重复都参与；同ID多版本引用不算删除。一组只有一个人工记录保留它，两条直接或间接 legacy 人工记录保护整组；链式三记录不全并。断言：
   ```js
   assert.equal(result.counts.removedEntities, 2);
   assert.equal(result.counts.collapsedVersionEntries, 1);
@@ -237,11 +237,11 @@ function Invoke-RjrTest {
   assert.equal(staleError.code, 'duplicate_plan_stale');
   ```
   覆盖预览后备注/版本/岗位改变、伪造组选中、备份失败/原子写失败无部分删除、空清理；成功后重发原apply返回过期预览，不再次删除或生成成功计数。所有历史 hashes 保持。
-- [ ] **2. RED。** `Invoke-RjrTest tests/integration/job-cleanup.test.mjs tests/unit/job-duplicates.test.mjs`。
-- [ ] **3. 实现确定性计划。** 先按安全身份候选索引缩小比较，再逐对判定；每组所有成员互相 confirmed。主记录按人工→权威→完整度→最早→ID选择。未知/疑似不选中，人工保护按独立 application 记录去重计数，不仅查看 jobs 上的状态。
-- [ ] **4. 实现清理事务。** acquire 时在锁内验证 preview revision，再在业务 mutate 内要求 `w.revision===lease.acquiredRevision` 且 hash相符，避免自身租约误报过期。该锁内先对准确副本 createBackup，成功后合并非冲突事实/sourceRefs/aliases、全部 members及factRefs，生成扁平 redirects并移除多余实体。投递记录、观察、评价、快照不改写；最后验证引用。租约释放在 finally。
-- [ ] **5. GREEN。** 运行步骤 2 加 `tests/integration/workspace-operations.test.mjs tests/e2e/migration-recovery.test.mjs`；用清理前备份整体恢复并核对业务数据，不提供单组撤销。
-- [ ] **6. Commit。** `git commit -m "feat: preview and safely clean duplicates across all versions"`。
+- [x] **2. RED。** `Invoke-RjrTest tests/integration/job-cleanup.test.mjs tests/unit/job-duplicates.test.mjs`。
+- [x] **3. 实现确定性计划。** 先按安全身份候选索引缩小比较，再逐对判定；每组所有成员互相 confirmed。主记录按人工→权威→完整度→最早→ID选择。未知/疑似不选中，人工保护按独立 application 记录去重计数，不仅查看 jobs 上的状态。
+- [x] **4. 实现清理事务。** acquire 时在锁内验证 preview revision，再在业务 mutate 内要求 `w.revision===lease.acquiredRevision` 且 hash相符，避免自身租约误报过期。该锁内先对准确副本 createBackup，成功后合并非冲突事实/sourceRefs/aliases、全部 members及factRefs，生成扁平 redirects并移除多余实体。投递记录、观察、评价、快照不改写；最后验证引用。租约释放在 finally。
+- [x] **5. GREEN。** 运行步骤 2 加 `tests/integration/workspace-operations.test.mjs tests/e2e/migration-recovery.test.mjs`；用清理前备份整体恢复并核对业务数据，不提供单组撤销。
+- [x] **6. Commit。** `git commit -m "feat: preview and safely clean duplicates across all versions"`。
 
 ## Task 7：旧 ID、历史事实与兼容入口完整接通
 

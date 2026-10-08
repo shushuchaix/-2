@@ -1,5 +1,10 @@
 import { inputError } from "../../public/js/validation-rules.js";
 import { versionNameKey } from "./workspace-management.mjs";
+import { createHash } from "node:crypto";
+export const versionNameHash = (kind, name) =>
+  createHash("sha256")
+    .update(JSON.stringify([kind, versionNameKey(name)]))
+    .digest("hex");
 export function normalizeVersionName(value) {
   if (typeof value !== "string")
     throw inputError({ versionName: "请填写版本名称（1–60 个字符）。" });
@@ -10,7 +15,7 @@ export function normalizeVersionName(value) {
 }
 export function assertVersionNameAvailable(
   w,
-  { kind, versionName, revisionId = null },
+  { kind, versionName, revisionId = null, control },
 ) {
   const normalized = normalizeVersionName(versionName);
   const packageOccupied = Object.values(w.packages || {}).find(
@@ -20,7 +25,12 @@ export function assertVersionNameAvailable(
       p.state !== "purged" &&
       versionNameKey(p.versionName) === normalized.nameKey,
   );
-  if (packageOccupied)
+  const pendingName = Object.values(control?.purgeTasks || {}).some(
+    (t) =>
+      t.phase !== "completed" &&
+      t.nameHash === versionNameHash(kind, normalized.versionName),
+  );
+  if (packageOccupied || pendingName)
     throw Object.assign(
       inputError(
         { versionName: "该版本名称已被占用，请查看已有版本或使用其他名称。" },
@@ -29,7 +39,7 @@ export function assertVersionNameAvailable(
       ),
       {
         code: "version_name_conflict",
-        conflictingRevisionId: packageOccupied.versionId,
+        conflictingRevisionId: packageOccupied?.versionId,
       },
     );
   const occupied = Object.entries(w.versionMetadata || {}).find(

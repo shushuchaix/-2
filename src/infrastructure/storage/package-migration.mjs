@@ -56,6 +56,7 @@ export function normalizeBackupOwnership({
   snapshots = {},
   control,
   now = Date.now(),
+  applyLedger = true,
 }) {
   const c = structuredClone(control || createEmptyControl());
   const at = time(now),
@@ -82,15 +83,16 @@ export function normalizeBackupOwnership({
           c.versionHighWater[counter],
         );
       }
-    const filtered = applyDeletionLedger(w, c),
+    const filtered = applyLedger ? applyDeletionLedger(w, c) : w,
       retained = {};
     for (const [id, s] of Object.entries(ownedSnapshots))
       if (
         filtered.runs[id] &&
         s.ownerPackageId === filtered.runs[id].ownerPackageId &&
-        !Object.values(c.deletionLedger).some((d) =>
-          d.recordIds?.includes(s.recordId),
-        )
+        (!applyLedger ||
+          !Object.values(c.deletionLedger).some((d) =>
+            d.recordIds?.includes(s.recordId),
+          ))
       )
         retained[id] = s;
     assertWorkspace(filtered);
@@ -549,7 +551,16 @@ export function normalizeBackupOwnership({
   w.recoveryRecords = (old.recoveryRecords || []).map((note) => {
     const run = runMap.get(note.runId);
     return run
-      ? { ...note, runId: run.runId, ownerPackageId: run.ownerPackageId }
+      ? {
+          ...note,
+          recordId: identity("record", [
+            "recovery",
+            contentHash(note),
+            run.ownerPackageId,
+          ]),
+          runId: run.runId,
+          ownerPackageId: run.ownerPackageId,
+        }
       : note;
   });
   return finish(w, ownedSnapshots);

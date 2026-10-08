@@ -163,6 +163,7 @@ export function createPackageVersionService({
           ? "简历 " + at().slice(0, 10) + " " + randomUUID().slice(0, 8)
           : null);
       const normalized = assertVersionNameAvailable(w, {
+        control: tx.control,
         kind,
         versionName: name,
       });
@@ -321,13 +322,14 @@ export function createPackageVersionService({
     async updateVersion(args) {
       return (
         await repository.mutateWorkspace(
-          (w) => {
+          (w, tx) => {
             Object.assign(w, normalizeWorkspaceExtensions(w));
             const r = locate(w, args),
               p = requirePackage(w, r.ownerPackageId, { now: clock.now() }),
               meta = w.versionMetadata[r.revisionId];
             if (args.versionName !== undefined) {
               const name = assertVersionNameAvailable(w, {
+                control: tx.control,
                 kind: p.kind,
                 versionName: args.versionName,
                 revisionId: r.revisionId,

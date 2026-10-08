@@ -7,14 +7,44 @@ import { normalizeRecord } from "../../domain/record.mjs";
 import { jobBusinessFingerprint } from "../../domain/job-duplicates.mjs";
 import { APPLICATION_STATUSES } from "../../domain/contracts.mjs";
 import { redactBusiness } from "../../domain/redact.mjs";
-export async function migrateV1({ dataDir, repository, dryRun = false }) {
+export async function migrateV1({
+  dataDir,
+  repository,
+  dryRun = false,
+  memoryOnly = false,
+}) {
+  // Managed backup sanitation supplies already verified strings. Keep the
+  // conversion inside its caller's memory repository, without rereading files
+  // or producing another unfiltered backup.
+  const memoryInputs =
+    typeof memoryOnly === "object" ? memoryOnly?.inputs : null;
+  if (
+    memoryInputs !== null &&
+    (!Array.isArray(memoryInputs) ||
+      memoryInputs.some(
+        (i) =>
+          !i ||
+          typeof i.path !== "string" ||
+          typeof i.body !== "string" ||
+          !/^(?:job-index\.json|runs\/[A-Za-z0-9_-][A-Za-z0-9_.-]*\.json)$/.test(
+            i.path,
+          ),
+      ) ||
+      new Set(memoryInputs.map((i) => i.path)).size !== memoryInputs.length)
+  )
+    throw Error("Invalid memory migration inputs");
+  const memoryMap =
+    memoryInputs && new Map(memoryInputs.map((i) => [i.path, i.body]));
+  const readLegacy = async (relative) => {
+    if (!memoryMap) return fs.readFile(path.join(dataDir, relative), "utf8");
+    if (!memoryMap.has(relative))
+      throw Object.assign(Error("Legacy input absent"), { code: "ENOENT" });
+    return memoryMap.get(relative);
+  };
   const inputs = [];
   let index = null;
   try {
-    const body = await fs.readFile(
-      path.join(dataDir, "job-index.json"),
-      "utf8",
-    );
+    const body = await readLegacy("job-index.json");
     inputs.push({ path: "job-index.json", body });
     try {
       index = JSON.parse(body);
@@ -26,14 +56,18 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
   } catch (e) {
     if (e.code !== "ENOENT") throw e;
   }
-  const names = await fs.readdir(path.join(dataDir, "runs")).catch((e) => {
-    if (e.code === "ENOENT") return [];
-    throw e;
-  });
+  const names = memoryMap
+    ? [...memoryMap.keys()]
+        .filter((p) => p.startsWith("runs/"))
+        .map((p) => p.slice(5))
+    : await fs.readdir(path.join(dataDir, "runs")).catch((e) => {
+        if (e.code === "ENOENT") return [];
+        throw e;
+      });
   const runs = [],
     skipped = [];
   for (const name of names.filter((n) => n.endsWith(".json")).sort()) {
-    const body = await fs.readFile(path.join(dataDir, "runs", name), "utf8");
+    const body = await readLegacy("runs/" + name);
     inputs.push({ path: "runs/" + name, body });
     try {
       const run = JSON.parse(body);
@@ -218,29 +252,35 @@ export async function migrateV1({ dataDir, repository, dryRun = false }) {
     },
     conflicts,
     skipped,
-    backupPath: path.join(dataDir, "backups", "v1-" + hash.slice(0, 16)),
+    backupPath: memoryOnly
+      ? null
+      : path.join(dataDir, "backups", "v1-" + hash.slice(0, 16)),
     manifestPath: null,
   };
-  summary.manifestPath = path.join(summary.backupPath, "manifest.json");
+  summary.manifestPath = memoryOnly
+    ? null
+    : path.join(summary.backupPath, "manifest.json");
   if (dryRun) return summary;
-  await fs.mkdir(summary.backupPath, { recursive: true });
-  for (const input of inputs) {
-    const p = path.join(summary.backupPath, input.path);
-    await fs.mkdir(path.dirname(p), { recursive: true });
-    await fs.writeFile(p, input.body, { flag: "wx" }).catch(async (e) => {
-      if (e.code !== "EEXIST") throw e;
-      if ((await fs.readFile(p, "utf8")) !== input.body)
-        throw Error("Backup conflict");
+  if (!memoryOnly) {
+    await fs.mkdir(summary.backupPath, { recursive: true });
+    for (const input of inputs) {
+      const p = path.join(summary.backupPath, input.path);
+      await fs.mkdir(path.dirname(p), { recursive: true });
+      await fs.writeFile(p, input.body, { flag: "wx" }).catch(async (e) => {
+        if (e.code !== "EEXIST") throw e;
+        if ((await fs.readFile(p, "utf8")) !== input.body)
+          throw Error("Backup conflict");
+      });
+    }
+    await writeAtomicJson(summary.manifestPath, {
+      version: 1,
+      inputHash: hash,
+      files: inputs.map((i) => ({ path: i.path, hash: contentHash(i.body) })),
+      counts: summary.counts,
+      conflicts,
+      skipped,
     });
   }
-  await writeAtomicJson(summary.manifestPath, {
-    version: 1,
-    inputHash: hash,
-    files: inputs.map((i) => ({ path: i.path, hash: contentHash(i.body) })),
-    counts: summary.counts,
-    conflicts,
-    skipped,
-  });
   const legacyRuns = {};
   for (const run of runs) {
     const id = run.runId;

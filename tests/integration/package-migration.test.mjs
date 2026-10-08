@@ -105,7 +105,7 @@ export async function seedLegacy(
   );
   const adapter = failOnce(fs);
   if (failPhase) adapter.arm(failPhase);
-  const repo = await openWorkspaceRepository({
+  const repo = await openWorkspaceRepository({allowLegacy:true,
     dataDir: repository.dataDir,
     fsAdapter: adapter,
   });
@@ -300,7 +300,7 @@ test("failed main migration commit retains legacy and prepared identities for re
     raw,
   );
   const ids = (await f.control.read()).identityIndex;
-  const repo = await openWorkspaceRepository({ dataDir: f.dataDir });
+  const repo = await openWorkspaceRepository({allowLegacy:true, dataDir: f.dataDir });
   await bootstrapWorkspace({
     repository: repo,
     clock: { now: () => new Date("2026-10-10T00:00:00.000Z") },

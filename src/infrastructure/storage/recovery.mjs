@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { contentHash } from "./repository.mjs";
 import { hasLiveOwner } from "./process-owner.mjs";
 import { createWorkspaceOperationGate } from "../../application/workspace-operations.mjs";
@@ -35,14 +36,21 @@ export async function recoverWorkspace(
       try {
         if (run.snapshotRef.path !== "runs-v2/" + run.runId + ".json")
           throw Error("Unsafe snapshot reference");
-        const s = await repository.readRunSnapshot(run.runId);
+        const s =
+          w.schemaVersion === 3
+            ? await repository.withMaintenanceTransaction(
+                (tx) => tx.readSnapshot(run.runId),
+                { operationMaintenance: true },
+              )
+            : await repository.readRunSnapshot(run.runId);
         if (contentHash(s) !== run.snapshotRef.hash)
           throw Error("Snapshot hash mismatch");
       } catch (e) {
         issues.push({
           code: e.code === "ENOENT" ? "missing_snapshot" : "invalid_snapshot",
           runId: run.runId,
-          message: e.message,
+          message:
+            w.schemaVersion === 3 ? "运行快照未通过完整性检查。" : e.message,
         });
       }
     }
@@ -66,10 +74,18 @@ export async function recoverWorkspace(
       ])
         if (
           !draft.recoveryRecords.some(
-            (i) => contentHash(i) === contentHash(issue),
+            (i) => i.code === issue.code && i.runId === issue.runId,
           )
         )
-          draft.recoveryRecords.push(issue);
+          draft.recoveryRecords.push(
+            w.schemaVersion === 3 && draft.runs[issue.runId]
+              ? {
+                  ...issue,
+                  recordId: randomUUID(),
+                  ownerPackageId: draft.runs[issue.runId].ownerPackageId,
+                }
+              : issue,
+          );
     });
   return { interruptedRunIds, orphanSnapshots, issues };
 }

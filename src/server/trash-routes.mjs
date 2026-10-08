@@ -14,6 +14,32 @@ export async function handleTrashRequest(req, res, context) {
     throw packageError("trash_unavailable", "回收站服务尚未就绪。", 503);
   const send = (data) => context.http.json(req, res, 200, data),
     body = () => context.http.readJson(req);
+  const purge = context.purgeService;
+  if (route === "/trash/purge" && req.method === "POST") {
+    if (!purge)
+      throw packageError("purge_unavailable", "永久清理服务尚未就绪。", 503);
+    const input = await body(),
+      preview = input.preview || input;
+    send(
+      await purge.execute(preview, {
+        reason: preview?.scope?.emptyAll ? "empty" : "manual",
+      }),
+    );
+    return true;
+  }
+  if (route === "/trash/retry" && req.method === "POST") {
+    if (!purge)
+      throw packageError("purge_unavailable", "永久清理服务尚未就绪。", 503);
+    send(await purge.resumePending());
+    return true;
+  }
+  const operation = /^\/trash\/operations\/([0-9a-f-]+)$/.exec(route);
+  if (operation && req.method === "GET") {
+    if (!purge)
+      throw packageError("purge_unavailable", "永久清理服务尚未就绪。", 503);
+    send(await purge.getStatus(id(operation[1], "operationId")));
+    return true;
+  }
   if (route === "/trash" && req.method === "GET") {
     for (const key of url.searchParams.keys())
       if (!["kind", "search", "sort"].includes(key))

@@ -10,8 +10,9 @@ export function packageRecords(w) {
     }
   for (const key of PRIVATE_MAPS) for (const r of Object.values(w[key]||{})) {
     result.push({collection:key,record:r});
-    if(key==='applications')for(const event of r.events||[])result.push({collection:'events',record:event,parentOwnerPackageId:r.ownerPackageId});
+    if(key==='applications'||key==='runs')for(const event of r.events||[])result.push({collection:'events',record:event,parentOwnerPackageId:r.ownerPackageId});
   }
+  for(const r of w.recoveryRecords||[])if(r.ownerPackageId)result.push({collection:'events',record:r});
   return result;
 }
 export function assertPackageOwnership(w) {

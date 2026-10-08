@@ -352,7 +352,7 @@ function Invoke-RjrTest {
 - [x] **5. 顺序重建 EXE。** 检查本项目程序文件占用，未关闭则说明具体原因；仅已确认路径下运行 `& $rjrNode tools/build-desktop.mjs`。与步骤4串行，避免共用.tmp/dist争用；`& $rjrNode tools/verify-package.mjs` 预期0问题。
 - [x] **6. 运行实际 EXE。** 为 `.cache/workspace-management-selftest/data` 设置 RJR_DATA_DIR；使用 `Start-Process -WindowStyle Hidden` 启动 `dist/简历岗位雷达-win32-x64/简历岗位雷达.exe --self-test`。检查该data根下结果failed=0、旧30项和新增检查全通过，验证未使用日常APPDATA。最后恢复原环境变量值。
 - [x] **7. 独立整分支审查。** 使用 requesting-code-review，审查数据丢失、名称/nonce并发、操作租约、历史事实/hash、人工保护、所有旧ID入口、IPC权限和实际UI流程；修复有证据的问题，重跑受影响及最终必要检查。
-- [ ] **8. Commit / push / PR。** 选择性提交产品/测试/文档，排除.cache、运行数据和私密日志；沿用已有用户授权推送 codex/v2-upgrade，更新既有 PR #1 并确保已附加。等待该提交CI结果，不能沿用旧提交成功状态。报告新EXE绝对路径、验证、备份机制和任何剩余限制。
+- [x] **8. Commit / push / PR。** 选择性提交产品/测试/文档，排除.cache、运行数据和私密日志；沿用已有用户授权推送 codex/v2-upgrade，更新既有 PR #1 并确保已附加。等待该提交CI结果，不能沿用旧提交成功状态。报告新EXE绝对路径、验证、备份机制和任何剩余限制。
 
 ## 自审结果与执行边界
 

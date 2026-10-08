@@ -18,6 +18,26 @@ const writer = (dir, message) =>
     child.on("error", reject);
     child.on("exit", (c) => (c === 0 ? resolve() : reject(Error(err))));
   });
+test('Windows transient lock open and release failures retry without executing twice', async t => {
+  const repo = await tempRepository(t);
+  let opens=0, removals=0, calls=0;
+  await withWorkspaceLock(repo.dataDir,()=>{calls++;},{platform:'win32',pollMs:1,fsAdapter:{...fs,
+    async open(...args){if(++opens===1)throw Object.assign(Error('busy'),{code:'EPERM'});return fs.open(...args);},
+    async unlink(...args){if(++removals===1)throw Object.assign(Error('busy'),{code:'EACCES'});return fs.unlink(...args);},
+  }});
+  assert.equal(opens,2);assert.equal(removals,2);assert.equal(calls,1);
+  await assert.rejects(fs.stat(path.join(repo.dataDir,'.workspace.lock')),{code:'ENOENT'});
+});
+test('persistent Windows lock permission failure and other platform errors remain bounded', async t => {
+  const repo=await tempRepository(t);
+  for(const platform of ['win32','linux']){
+    let attempts=0;
+    await assert.rejects(withWorkspaceLock(repo.dataDir,()=>assert.fail('cannot acquire'),{
+      platform,timeoutMs:0,fsAdapter:{...fs,async open(){attempts++;throw Object.assign(Error('permission'),{code:'EPERM'});}},
+    }),{code:'EPERM'});
+    assert.equal(attempts,1);
+  }
+});
 test("two processes and concurrent transactions preserve every write", async (t) => {
   const repo = await tempRepository(t);
   await Promise.all([writer(repo.dataDir, "a"), writer(repo.dataDir, "b")]);

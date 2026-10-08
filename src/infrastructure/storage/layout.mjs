@@ -15,6 +15,9 @@ export function resolveDataLayout(dataDir) {
     backups: path.join(root, "backups"),
     cache: path.join(root, "cache"),
     logs: path.join(root, "logs"),
+    control: path.join(root, "control"),
+    controlState: path.join(root, "control", "state.json"),
+    controlInitialized: path.join(root, "control", "initialized.json"),
   });
 }
 export function ensureDataLayout(layout, { fsAdapter = fs } = {}) {

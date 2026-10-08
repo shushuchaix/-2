@@ -149,12 +149,14 @@ export function createRunService({
     }
     try {
       let checking = false,
-        pollFailed = false;
+        pollFailed = false,
+        cancellationRead = Promise.resolve();
       // Keep an active run alive until it observes cross-entry cancellation.
       // The finally block releases this handle when execution reaches a terminal state.
-      const cancellationPoll = setInterval(async () => {
+      const cancellationPoll = setInterval(() => {
         if (checking) return;
         checking = true;
+        cancellationRead = (async () => {
         try {
           if ((await repository.read()).runs[id]?.cancelRequestedAt)
             controller.abort();
@@ -169,6 +171,7 @@ export function createRunService({
         } finally {
           checking = false;
         }
+        })();
       }, 500);
       async function ingest(records) {
         let operation = "run.ingest";
@@ -786,6 +789,7 @@ export function createRunService({
         }
       } finally {
         clearInterval(cancellationPoll);
+        await cancellationRead;
         permit?.release();
       }
       const workspace = await repository.read();

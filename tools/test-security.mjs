@@ -289,10 +289,10 @@ section('四、HTTP 集成测试（进程内启动，全数据源关闭以便快
 
 // 隔离环境与测试配置已在文件顶部的「零、隔离运行环境」中建好，
 // 这里只需启动服务（config.mjs 会自己读到 TMP_DATA/config.json）。
-let server;
+let server, started;
 try {
   const { startServer } = await import('../src/server.mjs');
-  const started = startServer();
+  started = startServer();
   server = started.server;
   await new Promise((r) => server.once('listening', r));
 
@@ -447,9 +447,14 @@ try {
   check('HTTP 集成测试执行', false, e.message);
   if (process.env.DEBUG) console.error(e.stack);
 } finally {
-  // 整个临时数据目录一起删掉，仓库里的 config.json / data/ 自始至终没被碰过
+  // Stop HTTP callbacks and drain startup/log writes before removing their temporary directory.
+  if (server) {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    await started.ctx.ready;
+    await started.ctx.diagnostics.list({limit:1});
+  }
   fs.rmSync(TMP_DATA, { recursive: true, force: true });
-  if (server) server.close();
 }
 
 /* ============================================================

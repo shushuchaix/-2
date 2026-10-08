@@ -152,6 +152,30 @@ test("empty and all failed outcomes differ and queued cancellation releases one 
   await f.service.waitForRun(first.runId);
   assert.equal(gate.active, 0);
 });
+test('run completion drains an already started cancellation read before snapshot and cleanup',async t=>{
+  let finishSource, pollBegan, finishPoll;
+  const sourceDone=new Promise(r=>finishSource=r), pollStarted=new Promise(r=>pollBegan=r), pollDone=new Promise(r=>finishPoll=r);
+  const f=await fixture(t,[fakeProvider({hold:()=>sourceDone})]);
+  const read=f.repository.read, write=f.repository.writeRunSnapshot;
+  let intercepted=false,pollBusy=false;
+  f.repository.read=async()=>{
+    if(!intercepted && /Timeout\./.test(new Error().stack)) {
+      intercepted=true;pollBusy=true;pollBegan();await pollDone;
+      try{return await read();}finally{pollBusy=false;}
+    }
+    return read();
+  };
+  f.repository.writeRunSnapshot=async(...args)=>{
+    if(pollBusy)throw Error('snapshot started before cancellation read drained');
+    return write(...args);
+  };
+  const run=await f.service.startRun({targetRevisionId:f.tar.revisionId,mode:'rules'});
+  await pollStarted;
+  const release=setTimeout(finishPoll,600);t.after(()=>{clearTimeout(release);finishPoll();finishSource();});
+  finishSource();
+  assert.equal((await f.service.waitForRun(run.runId)).run.status,'completed');
+  assert.equal(pollBusy,false);
+});
 test("running cancellation saves already ingested observations and terminal snapshot", async (t) => {
   let began;
   const started = new Promise((r) => (began = r));

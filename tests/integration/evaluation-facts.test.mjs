@@ -139,7 +139,7 @@ test("version facts constrain evaluation, caches, and latest score projection", 
   });
   const original = structuredClone(first.evaluations[0]);
   assert.ok(original.observationId);
-  assert.match(original.factContentHash, /^job-fact-v1:/);
+  assert.match(original.factContentHash, /^job-fact-v2:/);
   await jobs.ingestRecords({
     runId: "import-new",
     targetRevisionId: a.revisionId,

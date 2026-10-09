@@ -58,7 +58,10 @@ export function ingestRecordsDraft(w, input) {
   )
     throw inputError({ targetRevisionId: "未找到目标版本。" });
   for (const input of records) {
-    const record = normalizeRecord(input);
+    const record = normalizeRecord({
+      ...input,
+      retrievedAt: input.retrievedAt || observedAt,
+    });
     for (const key of [
       "status",
       "note",

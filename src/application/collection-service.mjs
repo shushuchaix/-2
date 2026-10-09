@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  assessApplicationResponse,
+  assessRecruitmentEvidence,
+} from "../domain/recruitment-evidence.mjs";
 import { assertScope, packageError } from "../domain/packages.mjs";
 import {
   createCollectionRoot,
@@ -1335,6 +1339,48 @@ export function createCollectionService({
     }
   }
   async function enrichRecord(record, context) {
+    const evidence = assessRecruitmentEvidence({ record, now: clock.now() });
+    if (
+      record.kind === "job" &&
+      record.applyUrl &&
+      evidence.bodyVerified &&
+      evidence.openingStatus === "open" &&
+      evidence.applicationStatus !== "available"
+    ) {
+      try {
+        record = {
+          ...record,
+          applicationVerification: assessApplicationResponse(
+            await context.request(record.applyUrl, {
+              signal: context.signal,
+              maxBytes: 1048576,
+              maxRetries: 0,
+              diagnosticContext: {
+                sourceId: record.sourceId,
+                endpointKind: "application",
+              },
+            }),
+            at(),
+          ),
+        };
+      } catch (error) {
+        context.signal?.throwIfAborted();
+        if (
+          ["source_budget_exhausted", "collection_stale_epoch"].includes(
+            error.code,
+          )
+        )
+          throw error;
+        record = {
+          ...record,
+          applicationVerification: {
+            status: "unknown",
+            checkedAt: at(),
+            formVerified: false,
+          },
+        };
+      }
+    }
     const officialLinks = [];
     for (const link of record.externalLinks || [])
       try {
@@ -1371,6 +1417,36 @@ export function createCollectionService({
       description: [enriched.description, ...extracts.map((a) => a.text)]
         .filter(Boolean)
         .join("\n"),
+      attachmentRows: extracts.flatMap((a) => {
+        const groups = new Map();
+        for (const b of a.blocks) {
+          const rowNumber = b.row || b.location?.row;
+          if (!rowNumber) continue;
+          const key =
+            a.url +
+            "|" +
+            JSON.stringify({
+              sheet: b.location?.sheet,
+              table: b.location?.table,
+              page: b.location?.page,
+            }) +
+            "|" +
+            rowNumber;
+          const row = groups.get(key) || {
+            jobRowId: key,
+            sourceUrl: a.url,
+            cells: [],
+            ambiguous: false,
+          };
+          row.cells.push(b);
+          row.ambiguous ||= b.ambiguousMerge === true;
+          groups.set(key, row);
+        }
+        return [...groups.values()].map((r) => ({
+          ...r,
+          text: r.cells.map((b) => b.text).join("\n"),
+        }));
+      }),
       evidence: [
         ...(enriched.evidence || []),
         ...extracts.flatMap((a) =>

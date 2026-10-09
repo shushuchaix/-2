@@ -1,21 +1,119 @@
 {
-  "version": 1,
+  "version": 2,
+  "recruitmentCategories": [
+    "state_firefighter",
+    "dedicated_firefighter",
+    "fire_technical",
+    "aviation_related",
+    "unknown"
+  ],
   "skills": [
-    {"id":"java","name":"Java","aliases":[],"related":["Spring","Spring Boot","SpringBoot"]},
-    {"id":"javascript","name":"JavaScript","aliases":["JS","ECMAScript"],"related":["React","Vue","Node.js"]},
-    {"id":"c","name":"C","aliases":["C语言"],"related":[]},
-    {"id":"cpp","name":"C++","aliases":["CPP","Cplusplus"],"related":[]},
-    {"id":"csharp","name":"C#","aliases":["CSharp"],"related":[".NET"]},
-    {"id":"go","name":"Go","aliases":["Golang"],"related":[]},
-    {"id":"r","name":"R","aliases":["R语言"],"related":[]},
-    {"id":"python","name":"Python","aliases":[],"related":["Django","Flask"]},
-    {"id":"springboot","name":"Spring Boot","aliases":["SpringBoot"],"related":["Spring"]}
+    {
+      "id": "java",
+      "name": "Java",
+      "aliases": [],
+      "related": ["Spring", "Spring Boot", "SpringBoot"]
+    },
+    {
+      "id": "javascript",
+      "name": "JavaScript",
+      "aliases": ["JS", "ECMAScript"],
+      "related": ["React", "Vue", "Node.js"]
+    },
+    { "id": "c", "name": "C", "aliases": ["C语言"], "related": [] },
+    {
+      "id": "cpp",
+      "name": "C++",
+      "aliases": ["CPP", "Cplusplus"],
+      "related": []
+    },
+    {
+      "id": "csharp",
+      "name": "C#",
+      "aliases": ["CSharp"],
+      "related": [".NET"]
+    },
+    { "id": "go", "name": "Go", "aliases": ["Golang"], "related": [] },
+    { "id": "r", "name": "R", "aliases": ["R语言"], "related": [] },
+    {
+      "id": "python",
+      "name": "Python",
+      "aliases": [],
+      "related": ["Django", "Flask"]
+    },
+    {
+      "id": "springboot",
+      "name": "Spring Boot",
+      "aliases": ["SpringBoot"],
+      "related": ["Spring"]
+    }
   ],
   "families": [
-    {"id":"software","majors":["计算机","软件","信息安全","网络工程","人工智能","数据科学"],"roles":["软件","开发","程序员","网络安全","信息安全","渗透测试","SIEM"]},
-    {"id":"fire_safety","majors":["消防","安全工程","安全科学","应急技术","职业健康"],"roles":["消防","防火","应急救援","安全生产","职业健康","EHS","HSE"]},
-    {"id":"aviation","majors":["航空","飞行","空中交通","民航"],"roles":["航空","机场","飞行","民航","空中交通"]},
-    {"id":"manufacturing","majors":["机械","制造","材料","电气","自动化"],"roles":["机械","制造","材料","工艺","电气","自动化","设备"]},
-    {"id":"business","majors":["会计","财务","金融","人力资源","法学","工商管理","市场营销","物流"],"roles":["会计","财务","金融","人力资源","法务","营销","物流","采购"]}
+    {
+      "id": "software",
+      "majors": [
+        "计算机",
+        "软件",
+        "信息安全",
+        "网络工程",
+        "人工智能",
+        "数据科学"
+      ],
+      "roles": [
+        "软件",
+        "开发",
+        "程序员",
+        "网络安全",
+        "信息安全",
+        "渗透测试",
+        "SIEM"
+      ]
+    },
+    {
+      "id": "fire_safety",
+      "majors": ["消防", "安全工程", "安全科学", "应急技术", "职业健康"],
+      "roles": [
+        "消防",
+        "防火",
+        "应急救援",
+        "安全生产",
+        "职业健康",
+        "EHS",
+        "HSE"
+      ]
+    },
+    {
+      "id": "aviation",
+      "majors": ["航空", "飞行", "空中交通", "民航"],
+      "roles": ["航空", "机场", "飞行", "民航", "空中交通"]
+    },
+    {
+      "id": "manufacturing",
+      "majors": ["机械", "制造", "材料", "电气", "自动化"],
+      "roles": ["机械", "制造", "材料", "工艺", "电气", "自动化", "设备"]
+    },
+    {
+      "id": "business",
+      "majors": [
+        "会计",
+        "财务",
+        "金融",
+        "人力资源",
+        "法学",
+        "工商管理",
+        "市场营销",
+        "物流"
+      ],
+      "roles": [
+        "会计",
+        "财务",
+        "金融",
+        "人力资源",
+        "法务",
+        "营销",
+        "物流",
+        "采购"
+      ]
+    }
   ]
 }

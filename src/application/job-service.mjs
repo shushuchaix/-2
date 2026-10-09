@@ -1,4 +1,8 @@
-import {ingestRecordsDraft} from '../domain/ingest-records.mjs';
+import { ingestRecordsDraft } from "../domain/ingest-records.mjs";
+import {
+  assessRecruitmentEvidence,
+  gateRecommendation,
+} from "../domain/recruitment-evidence.mjs";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { createPackageJobService } from "./package-job-service.mjs";
 import {
@@ -54,9 +58,25 @@ function createLegacyJobService({ repository, clock = repository.clock }) {
       ];
   };
   return {
-    async ingestRecords({runId,records,observedAt=now(),targetRevisionId,provenanceOperationId}) {
-return (await repository.mutateWorkspace(w=>ingestRecordsDraft(w,{runId,records,observedAt,targetRevisionId,provenanceOperationId}))).result;
-},
+    async ingestRecords({
+      runId,
+      records,
+      observedAt = now(),
+      targetRevisionId,
+      provenanceOperationId,
+    }) {
+      return (
+        await repository.mutateWorkspace((w) =>
+          ingestRecordsDraft(w, {
+            runId,
+            records,
+            observedAt,
+            targetRevisionId,
+            provenanceOperationId,
+          }),
+        )
+      ).result;
+    },
     async finalizeCoverage({ runId, coverage = [], detailEvidence = [] }) {
       return (
         await repository.mutateWorkspace((w) => {
@@ -214,7 +234,17 @@ return (await repository.mutateWorkspace(w=>ingestRecordsDraft(w,{runId,records,
           duplicateStatus: duplicateStatuses.get(job.jobId) || "normal",
           jobId: job.jobId,
           application: projectJobApplication(w, job.jobId),
-          evaluation: evaluation ? { ...evaluation, jobId: job.jobId } : null,
+          recruitmentEvidence: assessRecruitmentEvidence({
+            record: fact.record || job.canonical,
+            now: clock.now(),
+          }),
+          evaluation: evaluation
+            ? gateRecommendation(
+                { ...evaluation, jobId: job.jobId },
+                fact.record || job.canonical,
+                clock.now(),
+              )
+            : null,
         };
       });
       if (revisionId)
@@ -333,7 +363,17 @@ return (await repository.mutateWorkspace(w=>ingestRecordsDraft(w,{runId,records,
         requestedJobId,
         fact,
         targetRevisionId: targetRevisionId || null,
-        evaluation: evaluation ? { ...evaluation, jobId: id } : null,
+        recruitmentEvidence: assessRecruitmentEvidence({
+          record: fact.record || job.canonical,
+          now: clock.now(),
+        }),
+        evaluation: evaluation
+          ? gateRecommendation(
+              { ...evaluation, jobId: id },
+              fact.record || job.canonical,
+              clock.now(),
+            )
+          : null,
         observations: Object.values(w.observations).filter((o) =>
           jobIdMatches(w, o.jobId, id),
         ),
@@ -518,9 +558,26 @@ return (await repository.mutateWorkspace(w=>ingestRecordsDraft(w,{runId,records,
   };
 }
 export function createJobService(options) {
-  const legacy=createLegacyJobService(options),scoped=createPackageJobService({...options,legacyFactory:createLegacyJobService});
-  return Object.fromEntries([...new Set([...Object.keys(legacy),...Object.keys(scoped)])].map(name=>[name,async(...args)=>{
-    const w=await options.repository.read();const implementation=w.schemaVersion===3?scoped:legacy;
-    if(!implementation[name])throw Object.assign(Error('该入口需要准确的目标版本。'),{code:'version_scope_required',status:409});return implementation[name](...args);
-  }]));
+  const legacy = createLegacyJobService(options),
+    scoped = createPackageJobService({
+      ...options,
+      legacyFactory: createLegacyJobService,
+    });
+  return Object.fromEntries(
+    [...new Set([...Object.keys(legacy), ...Object.keys(scoped)])].map(
+      (name) => [
+        name,
+        async (...args) => {
+          const w = await options.repository.read();
+          const implementation = w.schemaVersion === 3 ? scoped : legacy;
+          if (!implementation[name])
+            throw Object.assign(Error("该入口需要准确的目标版本。"), {
+              code: "version_scope_required",
+              status: 409,
+            });
+          return implementation[name](...args);
+        },
+      ],
+    ),
+  );
 }

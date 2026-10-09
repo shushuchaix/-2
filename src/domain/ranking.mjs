@@ -1,12 +1,18 @@
 import fs from "node:fs";
 import { evaluateQualification } from "./qualification.mjs";
 import { findSkillEvidence, termEvidence, majorRoleFit } from "./skills.mjs";
+import {
+  assessRecruitmentEvidence,
+  isVerifiedRecommendation,
+} from "./recruitment-evidence.mjs";
 const config = JSON.parse(
   fs.readFileSync(new URL("./ranking-config.json", import.meta.url), "utf8"),
 );
 export const RULE_VERSION = config.ruleVersion;
 export function evaluateRules(record, profile, target = {}, options = {}) {
-  const qualification = evaluateQualification(record, profile, target),
+  const qualification = evaluateQualification(record, profile, target, {
+      now: options.now,
+    }),
     description = String(record.description || ""),
     text = [record.title, description].join("\n"),
     skills = (profile.skills || [])
@@ -91,10 +97,18 @@ export function evaluateRules(record, profile, target = {}, options = {}) {
     missing: Object.keys(fields).filter((k) => !fields[k]),
   };
   const insufficient = !fields.description || record.kind !== "job";
+  const recruitmentEvidence = assessRecruitmentEvidence({
+      record,
+      now: options.now,
+    }),
+    verified = isVerifiedRecommendation({
+      qualification,
+      evidence: recruitmentEvidence,
+    });
   const recommendation =
     qualification.status === "fail"
       ? "not_recommended"
-      : insufficient
+      : insufficient || !verified
         ? "insufficient"
         : score >= config.thresholds.high && qualification.status === "pass"
           ? "high"
@@ -103,6 +117,8 @@ export function evaluateRules(record, profile, target = {}, options = {}) {
             : "low";
   return {
     qualification,
+    recruitmentEvidence,
+    recommended: verified,
     score,
     ruleScore: score,
     components,

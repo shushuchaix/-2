@@ -4,6 +4,7 @@ import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
 import { canonicalizeSourceUrl } from "../../domain/identity.mjs";
 import { validatePublicUrl } from "../../infrastructure/http/public-url.mjs";
+import { readJobPostingEvidence } from "../../domain/recruitment-evidence.mjs";
 function listLocation(site, value) {
   const url = validatePublicUrl(value),
     base = new URL(site.template.listUrl);
@@ -168,9 +169,8 @@ export default createPagedProvider({
   async detail(record, ctx) {
     const site = ctx.sites.find((s) => s.siteId === record.siteId);
     if (!site?.template) throw Error("Notice site template missing");
-    const document = noticeDocument(
-      await ctx.request(record.url, { signal: ctx.signal }),
-    );
+    const response = await ctx.request(record.url, { signal: ctx.signal }),
+      document = noticeDocument(response);
     const node = document.querySelector(site.template.bodyRule);
     if (!node) {
       const e = Error("Notice body selector missing");
@@ -204,6 +204,7 @@ export default createPagedProvider({
       publishedAt: explicitDate(dateNode?.textContent) || record.publishedAt,
       attachments,
       detailStatus: "complete",
+      ...readJobPostingEvidence(response.text, { ...record, description }),
       evidence: [
         ...record.evidence,
         {

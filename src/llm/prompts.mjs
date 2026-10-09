@@ -1,5 +1,5 @@
 import { anonymizeModelProfile } from "../domain/model-profile.mjs";
-export const PROMPT_VERSION = "matching-2.1.1";
+export const PROMPT_VERSION = "matching-2.2.0-evidence";
 export function evaluationPrompt(profile, records) {
   return {
     system:
@@ -10,6 +10,8 @@ export function evaluationPrompt(profile, records) {
         jobId: r.jobId,
         title: r.title,
         description: String(r.description || "").slice(0, 12000),
+        conditions: r.conditions || [],
+        recruitmentEvidence: r.recruitmentEvidence || null,
       })),
       schema: {
         results: [

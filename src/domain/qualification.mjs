@@ -1,5 +1,6 @@
 import { clauseAt, isSoftRequirement } from "../match/requirements.mjs";
 import { termEvidence } from "./skills.mjs";
+import { extractRecruitmentConditions } from "./recruitment-evidence.mjs";
 const degrees = [
   ["博士", 5],
   ["PhD", 5],
@@ -42,7 +43,7 @@ const check = (type, status, requirement, evidence, reason, extra = {}) => ({
   reason,
   ...extra,
 });
-export function evaluateQualification(record, profile, target = {}) {
+function evaluateLegacyQualification(record, profile, target = {}) {
   const text = String(record.description || ""),
     checks = [];
   if (record.kind !== "job" || !text.trim())
@@ -199,7 +200,7 @@ export function evaluateQualification(record, profile, target = {}) {
       ...(record.requiredCertificates || [])
         .map((c) => (typeof c === "string" ? c : c.name))
         .filter(Boolean),
-      ...knownCertificates.filter((c) => termEvidence(text, c).length),
+      // Certificate text is handled by evidence-aware conditions below.
     ]),
   ];
   for (const name of certificates) {
@@ -243,6 +244,174 @@ export function evaluateQualification(record, profile, target = {}) {
     status: relevant.some((c) => c.status === "fail")
       ? "fail"
       : relevant.some((c) => c.status === "unknown") || !relevant.length
+        ? "unknown"
+        : "pass",
+    checks,
+  };
+}
+export function evaluateEvidenceQualification({
+  profileSnapshot: profile,
+  conditions = [],
+  sourceEvidence = [],
+  now = Date.now(),
+}) {
+  const checks = conditions.map((c) => {
+    const evidence = (c.evidenceRefs || []).map((id) =>
+      sourceEvidence.find((e) => e.evidenceId === id),
+    );
+    const supported =
+      evidence.length > 0 &&
+      evidence.every(
+        (e) =>
+          e?.status === "verified" &&
+          e.sourceExcerpt &&
+          !(e.confidence < 85) &&
+          !e.ambiguous &&
+          (!c.jobRowId ||
+            e.appliesTo?.jobRowId === c.jobRowId ||
+            e.appliesTo?.sharedCondition === true),
+      );
+    let status =
+      c.preferred || c.required === false
+        ? "pass"
+        : !supported
+          ? "unknown"
+          : null;
+    if (!status) {
+      const values = c.values || [];
+      if (c.type === "major") {
+        const own = String(profile.major || "").normalize("NFKC");
+        status = !own
+          ? "unknown"
+          : values.some((v) => own === String(v).normalize("NFKC"))
+            ? "pass"
+            : "fail";
+      } else if (c.type === "certificate") {
+        const certificates = (profile.certificates || []).map((v) =>
+            typeof v === "string" ? { name: v } : v,
+          ),
+          confirmed =
+            profile.explicitFacts?.certificates === true ||
+            profile.explicitFacts?.certificates?.confirmed === true;
+        const own = certificates.find(
+          (v) =>
+            values.some((name) => String(v.name || "").includes(name)) &&
+            (!c.grade ||
+              String(v.name || "").includes(c.grade) ||
+              v.grade === c.grade),
+        );
+        status = !own
+          ? confirmed
+            ? "fail"
+            : "unknown"
+          : c.registrationRequired
+            ? !own.registrationValidUntil
+              ? "unknown"
+              : Date.parse(own.registrationValidUntil) < Number(now)
+                ? "fail"
+                : Number.isFinite(Date.parse(own.registrationValidUntil))
+                  ? "pass"
+                  : "unknown"
+            : "pass";
+      } else if (c.type === "formal_experience") {
+        const years = profile.formalExperienceYears ?? profile.experienceYears;
+        status =
+          years == null
+            ? "unknown"
+            : Number(years) >= Number(values[0])
+              ? "pass"
+              : "fail";
+      } else if (c.type === "age") {
+        let age = profile.age;
+        if (
+          age == null &&
+          profile.birthDate &&
+          Number.isFinite(Date.parse(profile.birthDate))
+        ) {
+          const birth = new Date(profile.birthDate),
+            today = new Date(now);
+          age =
+            today.getUTCFullYear() -
+            birth.getUTCFullYear() -
+            (today.toISOString().slice(5, 10) < birth.toISOString().slice(5, 10)
+              ? 1
+              : 0);
+        }
+        status =
+          age == null
+            ? "unknown"
+            : Number(age) <= Number(values[0])
+              ? "pass"
+              : "fail";
+      } else if (c.type === "physical")
+        status =
+          profile.explicitFacts?.physicalQualified === true
+            ? "pass"
+            : profile.explicitFacts?.physicalQualified === false
+              ? "fail"
+              : "unknown";
+      else status = "unknown";
+    }
+    return check(
+      c.type,
+      status,
+      c.values,
+      evidence
+        .filter(Boolean)
+        .map((e) => e.sourceExcerpt)
+        .join("\n"),
+      !supported
+        ? "条件证据不完整或未确认对应岗位行"
+        : c.preferred
+          ? "优先条件，不是淘汰门槛"
+          : "按明确岗位条件与本版本确认事实比较",
+      {
+        required: c.required !== false,
+        preferred: c.preferred === true,
+        evidenceRefs: c.evidenceRefs || [],
+      },
+    );
+  });
+  const required = checks.filter((c) => c.required && !c.preferred);
+  return {
+    status: required.some((c) => c.status === "fail")
+      ? "fail"
+      : required.some((c) => c.status === "unknown")
+        ? "unknown"
+        : "pass",
+    checks,
+  };
+}
+export function evaluateQualification(
+  record,
+  profile,
+  target = {},
+  options = {},
+) {
+  const extracted = extractRecruitmentConditions(record),
+    legacy = evaluateLegacyQualification(
+      { ...record, requiredCertificates: [] },
+      profile,
+      target,
+    );
+  const conditions = record.conditions?.length
+    ? record.conditions
+    : extracted.conditions;
+  const checked = evaluateEvidenceQualification({
+    profileSnapshot: profile,
+    conditions,
+    sourceEvidence: [
+      ...(record.sourceEvidence || []),
+      ...extracted.sourceEvidence,
+    ],
+    now: options.now,
+  });
+  const checks = [...legacy.checks, ...checked.checks],
+    required = checks.filter((c) => c.required !== false && !c.preferred);
+  return {
+    status: required.some((c) => c.status === "fail")
+      ? "fail"
+      : required.some((c) => c.status === "unknown") || !required.length
         ? "unknown"
         : "pass",
     checks,

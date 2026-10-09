@@ -1,4 +1,5 @@
 import { JOB_KINDS, JOB_TYPES } from "./contracts.mjs";
+import { prepareRecruitmentRecord } from "./recruitment-evidence.mjs";
 export function normalizeRecord(input) {
   const record = structuredClone(input);
   const sourceId = record.sourceId || record.source || "manual";
@@ -12,7 +13,7 @@ export function normalizeRecord(input) {
         : /社招|社会/.test(rawType)
           ? "social"
           : "unknown";
-  return {
+  return prepareRecruitmentRecord({
     ...record,
     sourceId,
     siteId: record.siteId || record.extra?.university || sourceId,
@@ -38,5 +39,5 @@ export function normalizeRecord(input) {
       record.graduationYear || record.extra?.graduationYear || null,
     evidence: record.evidence || [],
     parserVersion: record.parserVersion || "legacy-1",
-  };
+  });
 }

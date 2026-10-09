@@ -1,4 +1,4 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import announcements from "../../src/sources/adapters/official-announcements.mjs";
@@ -203,7 +203,8 @@ test("a run separates confirmed qualification from unknown and failed while reta
   const context = await createApplicationContext({
     cfg,
     dataDir,
-    dependencies: {legacySchema:true,
+    dependencies: {
+      legacySchema: true,
       registry: createSourceRegistry([provider]),
       catalog: [
         {
@@ -221,10 +222,12 @@ test("a run separates confirmed qualification from unknown and failed while reta
     },
   });
   const p = await context.workspaceService.saveProfile({ profile: profile() });
-  const tar = await context.workspaceService.saveTarget(namedTargetInput({
-    ...target(),
-    profileRevisionId: p.revisionId,
-  }));
+  const tar = await context.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: p.revisionId,
+    }),
+  );
   const { runId } = await context.runService.startRun({
     targetRevisionId: tar.revisionId,
     mode: "rules",
@@ -235,7 +238,8 @@ test("a run separates confirmed qualification from unknown and failed while reta
   assert.equal(result.run.counts.eligible, 1);
   assert.equal(result.run.counts.qualificationUnknown, 1);
   assert.equal(result.run.counts.qualificationFailed, 1);
-  assert.equal(result.run.counts.shortlisted, 2);
+  // Qualification candidates remain saved, but no current application proof means no recommendation.
+  assert.equal(result.run.counts.shortlisted, 0);
   const stored = await context.runService.getRun(runId);
   assert.equal(stored.counts.qualificationUnknown, 1);
   assert.equal(stored.counts.qualificationFailed, 1);

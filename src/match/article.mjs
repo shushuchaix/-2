@@ -200,14 +200,12 @@ export async function expandArticles(
     diagnosticContext = {},
   } = {},
 ) {
-  const candidates = articles
-    .slice(0, maxExpand)
-    .flatMap((article) =>
-      articleParts(article.description || "").map((description) => ({
-        ...article,
-        description,
-      })),
-    );
+  const candidates = articles.slice(0, maxExpand).flatMap((article) =>
+    articleParts(article.description || "").map((description) => ({
+      ...article,
+      description,
+    })),
+  );
   if (candidates.length === 0)
     return { jobs: [], expanded: 0, skipped: 0, noJob: 0, failed: 0 };
 
@@ -299,6 +297,12 @@ export async function expandArticles(
           ]),
         );
         const derived = positionToJob(article, verified, verifiedArticle);
+        const rows = (article.attachmentRows || []).filter(
+            (r) =>
+              r.text.includes(p.title) &&
+              r.text.includes(p.requirementsExcerpt),
+          ),
+          row = rows.length === 1 && !rows[0].ambiguous ? rows[0] : null;
         jobs.push({
           ...derived,
           sourceId: article.sourceId,
@@ -323,6 +327,38 @@ export async function expandArticles(
           sourceRecordIdKind: "generated",
           urlKind: "notice_detail",
           description: p.requirementsExcerpt,
+          jobRowId: row?.jobRowId || null,
+          rowAmbiguous: !!article.attachmentRows?.length && !row,
+          sourceEvidence: [
+            {
+              evidenceId:
+                "article-" + normKey(p.title + " " + p.requirementsExcerpt),
+              field: "description",
+              sourceExcerpt: p.requirementsExcerpt,
+              sourceUrl: row?.sourceUrl || article.url,
+              sourceId: article.sourceId,
+              sourceKind: row ? "attachment" : "article",
+              status:
+                article.attachmentRows?.length && !row ? "unknown" : "verified",
+              contentHash: article.bodyHash || null,
+              parserVersion: "article-literal-3",
+              confidence: row
+                ? Math.min(...row.cells.map((c) => c.confidence))
+                : (article.ocrConfidence ?? 100),
+              location: row
+                ? {
+                    jobRowId: row.jobRowId,
+                    cells: row.cells.map((c) => c.location),
+                  }
+                : {
+                    start: text.indexOf(p.requirementsExcerpt),
+                    end:
+                      text.indexOf(p.requirementsExcerpt) +
+                      p.requirementsExcerpt.length,
+                  },
+              appliesTo: { jobRowId: row?.jobRowId || null },
+            },
+          ],
           derivedFrom: article.sourceRecordId || article.url,
           evidence: [
             { field: "title", excerpt: p.title, url: article.url },

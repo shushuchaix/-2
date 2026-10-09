@@ -165,7 +165,7 @@ export function assertWorkspaceExtensions(w) {
         m.factContentHash !== undefined &&
         m.factContentHash !== null &&
         (typeof m.factContentHash !== "string" ||
-          !/^job-fact-v1:[a-f0-9]{64}$/.test(m.factContentHash))
+          !/^job-fact-v[12]:[a-f0-9]{64}$/.test(m.factContentHash))
       )
         throw Error("Invalid member fact hash");
     }

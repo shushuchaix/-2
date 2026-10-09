@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { jobBusinessContent } from "./job-duplicates.mjs";
 import { resolveJobId, jobIdMatches } from "./job-resolution.mjs";
-import {packageError} from './packages.mjs';
+import { packageError } from "./packages.mjs";
 const hash = (v) =>
   createHash("sha256")
     .update(typeof v === "string" ? v : JSON.stringify(v))
@@ -16,11 +16,47 @@ const stable = (v) =>
             .map((k) => [k, stable(v[k])]),
         )
       : v;
-export const jobFactHash = (record) => {
+export const legacyJobFactHash = (record) => {
   const business = jobBusinessContent(record);
   delete business.account;
   delete business.platform;
   return "job-fact-v1:" + hash(stable(business));
+};
+export const jobFactHash = (record) => {
+  if (
+    !record.conditions &&
+    !record.sourceEvidence &&
+    !record.applicationVerification &&
+    !record.recruitmentEvidence
+  )
+    return legacyJobFactHash(record);
+  const business = jobBusinessContent(record);
+  delete business.account;
+  delete business.platform;
+  return (
+    "job-fact-v2:" +
+    hash(
+      stable({
+        ...business,
+        applyUrl: record.applyUrl || null,
+        longTermRecruiting: record.longTermRecruiting === true,
+        conditions: record.conditions || [],
+        sourceEvidence: (record.sourceEvidence || []).map(
+          ({ observedAt, ...e }) => e,
+        ),
+        evidenceConflicts: record.evidenceConflicts || [],
+        bodyStatus: record.bodyStatus || record.detailStatus || null,
+        bodyIncomplete: record.bodyIncomplete === true,
+        applicationVerification: record.applicationVerification
+          ? {
+              status: record.applicationVerification.status,
+              formVerified: record.applicationVerification.formVerified,
+              challenge: record.applicationVerification.challenge,
+            }
+          : null,
+      }),
+    )
+  );
 };
 const fields = (o) => o?.fields || o?.record || null;
 const latest = (observations) =>
@@ -53,7 +89,19 @@ export function addTargetMemberFact(
   if (!target)
     throw Object.assign(Error("Target revision not found"), { status: 400 });
   jobId = resolveJobId(w, jobId);
-  if(w.schemaVersion===3){const owner=w.jobs[jobId]?.ownerPackageId||w._scope?.packageId;if(owner!==target.ownerPackageId||(observationId&&(w.observations[observationId]?.ownerPackageId||w._scope?.packageId)!==owner))throw packageError('package_scope_mismatch','岗位事实只能归入自有目标包。');}
+  if (w.schemaVersion === 3) {
+    const owner = w.jobs[jobId]?.ownerPackageId || w._scope?.packageId;
+    if (
+      owner !== target.ownerPackageId ||
+      (observationId &&
+        (w.observations[observationId]?.ownerPackageId ||
+          w._scope?.packageId) !== owner)
+    )
+      throw packageError(
+        "package_scope_mismatch",
+        "岗位事实只能归入自有目标包。",
+      );
+  }
   w.targetMembers ||= {};
   const members = (w.targetMembers[targetRevisionId] ||= {});
   const member = (members[jobId] ||= {
@@ -80,7 +128,11 @@ export function resolveEvaluationFactBasis(w, evaluation) {
   const matches = observations.filter((o) => {
     const r = fields(o);
     if (evaluation.factContentHash)
-      return jobFactHash(r) === evaluation.factContentHash;
+      return (
+        jobFactHash(r) === evaluation.factContentHash ||
+        (evaluation.factContentHash.startsWith("job-fact-v1:") &&
+          legacyJobFactHash(r) === evaluation.factContentHash)
+      );
     if (!evaluation.jdHash) return false;
     return [
       hash({ ...r, jobId: evaluation.jobId, retrievedAt: undefined }),

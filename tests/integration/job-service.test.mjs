@@ -30,6 +30,14 @@ test("independent classifications include unevaluated, unknown, all and unassign
       sourceRecordId: String(i),
       url: "https://jobs.example.com/" + i,
       kind: i === 6 ? "company_campaign" : "job",
+      detailStatus: "complete",
+      deadlineAt: "2029-01-01",
+      applyUrl: "https://jobs.example.com/apply",
+      applicationVerification: {
+        status: 200,
+        formVerified: true,
+        checkedAt: new Date(repository.clock.now()).toISOString(),
+      },
     });
     const saved = await s.ingestRecords({
       runId: "r" + i,
@@ -47,7 +55,9 @@ test("independent classifications include unevaluated, unknown, all and unassign
           profileRevisionId: p.revisionId,
           targetRevisionId: v.revisionId,
           recommendation: recommendations[i],
-          qualification: { status: i === 0 ? "pass" : "unknown" },
+          qualification: {
+            status: i < 3 ? "pass" : i === 4 ? "fail" : "unknown",
+          },
           score: 80 - i,
           createdAt: AT,
         },

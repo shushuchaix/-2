@@ -22,6 +22,7 @@ import {
 import { createWorkspaceService } from "./workspace-service.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { createJobService } from "./job-service.mjs";
+import { createJobVerificationService } from "./job-verification-service.mjs";
 import { createJobCleanupService } from "./job-cleanup-service.mjs";
 import { createEvaluationService } from "./evaluation-service.mjs";
 import { createSourceService } from "./source-service.mjs";
@@ -439,6 +440,14 @@ export async function createApplicationContext({
     jobService,
     evaluationService,
     eventHub,
+    jobVerificationService: createJobVerificationService({
+      repository,
+      registry,
+      activityContext: collectionService
+        ? (ref, callback) =>
+            collectionService.withActivityContext(ref, callback)
+        : undefined,
+    }),
     runService,
     collectionService,
     contentReadService,

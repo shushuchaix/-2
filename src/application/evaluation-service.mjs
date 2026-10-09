@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
-import {runtimeRepository,runtimeGate,assertRuntimeJobs} from './package-runtime-service.mjs';
+import { gateRecommendation } from "../domain/recruitment-evidence.mjs";
+import {
+  runtimeRepository,
+  runtimeGate,
+  assertRuntimeJobs,
+} from "./package-runtime-service.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { evaluateRules, RULE_VERSION } from "../domain/ranking.mjs";
-import { createModelBudget, effectiveModelBudgets, capModelBudget } from "../llm/budget.mjs";
+import {
+  createModelBudget,
+  effectiveModelBudgets,
+  capModelBudget,
+} from "../llm/budget.mjs";
 import {
   validateModelResults,
   evaluationCacheKey,
@@ -67,11 +76,16 @@ function createLegacyEvaluationService({
           const ids = resolveJobIds(workspace, jobIds);
           if (!["rules", "ai", "auto"].includes(mode))
             throw Error("Invalid evaluation mode");
-          const effectiveBudgets = effectiveModelBudgets(workspace.settings?.budgets, target.budgets);
+          const effectiveBudgets = effectiveModelBudgets(
+            workspace.settings?.budgets,
+            target.budgets,
+          );
           const newBudget = capModelBudget(
             modelClient?.budget ||
-            (await budgetFactory?.({ budgets: effectiveBudgets })) ||
-            createModelBudget(), effectiveBudgets);
+              (await budgetFactory?.({ budgets: effectiveBudgets })) ||
+              createModelBudget(),
+            effectiveBudgets,
+          );
           // Preserve caller accounting without mutating a potentially shared client.
           if (modelClient && modelClient.budget !== newBudget) {
             modelClient = Object.create(modelClient);
@@ -123,7 +137,9 @@ function createLegacyEvaluationService({
               ruleVersion: RULE_VERSION,
               modelFingerprint: fingerprint,
             });
-            const cacheKey=workspace._scope?contentHash([workspace._scope.packageId,rawCacheKey]):rawCacheKey;
+            const cacheKey = workspace._scope
+              ? contentHash([workspace._scope.packageId, rawCacheKey])
+              : rawCacheKey;
             const reusable = (e) =>
               e &&
               ["rules", "ai"].includes(e.status) &&
@@ -163,7 +179,13 @@ function createLegacyEvaluationService({
                 ? candidate
                 : null;
             if (existing) {
-              evaluations.push({ ...structuredClone(existing), jobId: id });
+              evaluations.push(
+                gateRecommendation(
+                  { ...structuredClone(existing), jobId: id },
+                  record,
+                  clock.now(),
+                ),
+              );
               continue;
             }
             pending.push({
@@ -171,7 +193,9 @@ function createLegacyEvaluationService({
               jdHash,
               cacheKey,
               fact,
-              draft: evaluateRules(record, p.profile, target),
+              draft: evaluateRules(record, p.profile, target, {
+                now: clock.now(),
+              }),
             });
           }
           const cachedCount = evaluations.length;
@@ -373,7 +397,7 @@ function createLegacyEvaluationService({
                             ? "consider"
                             : "low";
                 }
-                return evaluation;
+                return gateRecommendation(evaluation, record, clock.now());
               },
             );
             await repository.mutateWorkspace(
@@ -511,13 +535,42 @@ function createLegacyEvaluationService({
     },
   };
 }
-export function createEvaluationService(options){
- const legacy=createLegacyEvaluationService(options),instances=new Map();
- const gate=options.operationGate||createWorkspaceOperationGate({repository:options.repository});
- async function invoke(method,input){const w=await options.repository.read();if(w.schemaVersion!==3)return legacy[method](input);
-  const target=await assertRuntimeJobs(options.repository,input.scope,input.jobIds,input.runId),scope={packageId:input.scope.packageId,targetRevisionId:input.scope.targetRevisionId};
-  if(!instances.has(scope.packageId))instances.set(scope.packageId,createLegacyEvaluationService({...options,repository:runtimeRepository(options.repository,scope),operationGate:runtimeGate(gate,scope)}));
-  return instances.get(scope.packageId)[method]({...input,targetRevisionId:scope.targetRevisionId,profileRevisionId:target.profileSnapshot.revisionId});
- }
- return {evaluate:input=>invoke('evaluate',input),rescore:input=>invoke('rescore',input)};
+export function createEvaluationService(options) {
+  const legacy = createLegacyEvaluationService(options),
+    instances = new Map();
+  const gate =
+    options.operationGate ||
+    createWorkspaceOperationGate({ repository: options.repository });
+  async function invoke(method, input) {
+    const w = await options.repository.read();
+    if (w.schemaVersion !== 3) return legacy[method](input);
+    const target = await assertRuntimeJobs(
+        options.repository,
+        input.scope,
+        input.jobIds,
+        input.runId,
+      ),
+      scope = {
+        packageId: input.scope.packageId,
+        targetRevisionId: input.scope.targetRevisionId,
+      };
+    if (!instances.has(scope.packageId))
+      instances.set(
+        scope.packageId,
+        createLegacyEvaluationService({
+          ...options,
+          repository: runtimeRepository(options.repository, scope),
+          operationGate: runtimeGate(gate, scope),
+        }),
+      );
+    return instances
+      .get(scope.packageId)
+      [
+        method
+      ]({ ...input, targetRevisionId: scope.targetRevisionId, profileRevisionId: target.profileSnapshot.revisionId });
+  }
+  return {
+    evaluate: (input) => invoke("evaluate", input),
+    rescore: (input) => invoke("rescore", input),
+  };
 }

@@ -24,6 +24,9 @@ export function registerCollectionIpc({
         platform: input.platform,
         accountRef: input.accountRef,
         remember: input.remember ?? false,
+        testUrl: input.testUrl
+          ? publicCollectionUrl(input.testUrl).href
+          : undefined,
       });
     }),
   );

@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { sharedSocialScheduler, isSocialOrigin } from "../http/scheduler.mjs";
 import { spawn as defaultSpawn } from "node:child_process";
 import {
   validateWorkerRequest,
@@ -384,5 +385,14 @@ export function createAnonymousWorker({
     },
     snapshot: () => ({ workers: active.size }),
   };
+  const read = service.read;
+  service.read = (input) =>
+    isSocialOrigin(input.publicRoute.url)
+      ? sharedSocialScheduler.run(
+          new URL(input.publicRoute.url).origin,
+          () => read(input),
+          { signal: input.signal },
+        )
+      : read(input);
   return service;
 }

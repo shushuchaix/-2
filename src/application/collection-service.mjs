@@ -16,6 +16,10 @@ import { readProviderPage } from "../sources/collection-page.mjs";
 import { runtimeRepository } from "./package-runtime-service.mjs";
 import { cancellableSleep } from "../infrastructure/http/scheduler.mjs";
 import { sourceRefreshDelay } from "../sources/source-quality.mjs";
+import { contentKey, queueContentDraft } from "../sources/content-queue.mjs";
+import { expandArticles } from "../match/article.mjs";
+import { normalizeRecord } from "../domain/record.mjs";
+import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 const terminal = new Set(["completed", "cancelled"]);
 const stale = () =>
   packageError("collection_stale_epoch", "活动已停止或进度已变化，请刷新。");
@@ -37,6 +41,7 @@ export function createCollectionService({
   modelConfig,
   runGate,
   diagnostics,
+  officialSites = [],
 }) {
   const active = new Map();
   const at = () => new Date(clock.now()).toISOString();
@@ -219,8 +224,13 @@ export function createCollectionService({
       replan = false,
       credentials = {},
       automatic = false,
+      mode,
     }) {
-      if (!idValid(requestId) || typeof replan !== "boolean")
+      if (
+        !idValid(requestId) ||
+        typeof replan !== "boolean" ||
+        (mode !== undefined && !["rules", "ai", "auto"].includes(mode))
+      )
         throw packageError("validation_failed", "续采参数无效。", 400);
       const before = await service.get(ref),
         old = before.collectionProgress;
@@ -340,6 +350,7 @@ export function createCollectionService({
                 p.epoch++;
               }
               if (!automatic) {
+                if (mode) root.collectionMode = mode;
                 p.manualPaused = false;
                 p.refreshReady = true;
                 for (const u of Object.values(p.units))
@@ -412,6 +423,7 @@ export function createCollectionService({
         token: claim.token,
         credentials,
         permit,
+        automatic,
       };
       active.set(ref.activityId, task);
       task.promise = Promise.resolve()
@@ -467,6 +479,7 @@ export function createCollectionService({
               observedAt: at(),
               provenanceOperationId: operationLease.operationId,
             });
+            queueContentDraft(p, unitId, page.records, Number(clock.now()));
             unit.committedPageKeys.push(page.pageKey);
             unit.committedPages++;
             unit.roundPages = (unit.roundPages || 0) + 1;
@@ -501,13 +514,19 @@ export function createCollectionService({
             unit.seenIds = [
               ...new Set([
                 ...(unit.seenIds || []),
-                ...page.records.map((r) =>
-                  contentHash([
-                    r.sourceId,
-                    r.identityScope,
-                    r.sourceRecordId || r.url,
-                  ]),
-                ),
+                ...page.records
+                  .filter(
+                    (r) =>
+                      !r.retryEligible &&
+                      (!r.bodyStatus || r.bodyStatus === "complete"),
+                  )
+                  .map((r) =>
+                    contentHash([
+                      r.sourceId,
+                      r.identityScope,
+                      r.sourceRecordId || r.url,
+                    ]),
+                  ),
               ]),
             ].slice(-5000);
             const child = w.runs[token.sliceRunId];
@@ -706,9 +725,93 @@ export function createCollectionService({
         signal,
         operationLease: lease,
         collectionGuard: { ref, token },
+        ref,
+        token,
+        readService,
       };
       await emit(token.sliceRunId, "stage", { stage: "collecting" }, ref.scope);
       let root = await service.get(ref);
+      const makeContext = async (unit) => {
+        const w = await repository.read(),
+          pkg = assertScope(w, ref.scope, clock.now());
+        return {
+          scope: ref.scope,
+          runId: token.sliceRunId,
+          sites: [unit.site],
+          queries: [unit.query],
+          targetSnapshot: root.targetSnapshot,
+          profileRevision: root.profileSnapshot,
+          config: {
+            ...task.credentials.sourceConfig,
+            ...w.settings.sourceOverrides,
+            [unit.sourceId]: {
+              ...task.credentials.sourceConfig?.[unit.sourceId],
+              ...w.settings.sourceOverrides?.[unit.sourceId],
+              ...pkg.collectionSettings?.sourceOverrides?.[unit.sourceId],
+            },
+          },
+          sessionRefs: pkg.collectionSettings?.sessionRefs || {},
+          budget: budgets.sources,
+          clock,
+          readService,
+          ref,
+          token,
+          operationLease: lease,
+          request,
+          signal,
+          officialSites,
+        };
+      };
+      // Retry detail independently of list checkpoints. Explicit resume also retries auth.
+      for (const [key, pending] of Object.entries(
+        root.collectionProgress.pendingBodies || {},
+      ).slice(0, 10)) {
+        signal.throwIfAborted();
+        if (
+          task.automatic &&
+          pending.nextDueAt &&
+          Date.parse(pending.nextDueAt) > Number(clock.now())
+        )
+          continue;
+        const unit = root.collectionProgress.units[pending.unitId],
+          provider = registry.get(pending.record.sourceId);
+        if (!unit || !provider) continue;
+        const ctx = await makeContext(unit);
+        let record = pending.record;
+        try {
+          record = await provider.fetchDetail(record, ctx);
+          record = await enrichRecord(record, ctx);
+        } catch (e) {
+          if (
+            signal.aborted ||
+            [
+              "collection_stale_epoch",
+              "workspace_write_failed",
+              "source_budget_exhausted",
+            ].includes(e.code)
+          )
+            throw e;
+          record = { ...record, bodyStatus: "incomplete", retryEligible: true };
+        }
+        await mutateCurrent(ref, token, lease, (w, r) => {
+          const p = r.collectionProgress;
+          if (!record.retryEligible && record.bodyStatus === "complete") {
+            const result = ingestRecordsDraft(w, {
+              scope: ref.scope,
+              runId: token.sliceRunId,
+              records: [record],
+              observedAt: at(),
+              provenanceOperationId: lease.operationId,
+            });
+            const child = w.runs[token.sliceRunId];
+            child.jobIds = [
+              ...new Set([...(child.jobIds || []), ...result.jobIds]),
+            ];
+          }
+          queueContentDraft(p, pending.unitId, [record], Number(clock.now()));
+          if (p.pendingBodies[key]) p.pendingBodies[key].attempts++;
+        });
+      }
       const now = Number(clock.now()),
         eligible = Object.values(root.collectionProgress.units).filter(
           (u) =>
@@ -751,7 +854,7 @@ export function createCollectionService({
               queries: [unit.query],
               targetSnapshot: root.targetSnapshot,
               profileRevision: root.profileSnapshot,
-              config: task.credentials.sourceConfig || {},
+              ...(await makeContext(unit)),
               budget: budgets.sources,
               clock,
               readService,
@@ -777,7 +880,9 @@ export function createCollectionService({
               let record = original;
               if (
                 !record.description ||
-                record.description.trim().length < 30
+                record.description.trim().length < 30 ||
+                record.retryEligible ||
+                (record.bodyStatus && record.bodyStatus !== "complete")
               ) {
                 try {
                   record = await provider.fetchDetail(record, context);
@@ -788,21 +893,17 @@ export function createCollectionService({
                     e.code === "workspace_write_failed"
                   )
                     throw e;
-                  record = { ...record, detailStatus: "unavailable" };
+                  record = {
+                    ...record,
+                    detailStatus: "unavailable",
+                    bodyStatus: "incomplete",
+                    retryEligible: true,
+                  };
                   issues.push({ code: e.code || "detail_unavailable" });
                   if (e.code === "source_budget_exhausted") stopCode = e.code;
                 }
               }
-              if (record.attachments?.length && attachmentService) {
-                record = await attachmentService.enrich({
-                  record,
-                  ref,
-                  token,
-                  operationLease: lease,
-                  request,
-                  signal,
-                });
-              }
+              record = await enrichRecord(record, context);
               records.push(record);
             }
             page = { ...page, records, issues };
@@ -883,22 +984,219 @@ export function createCollectionService({
         if (stopCode || !advanced) break;
       }
       root = await service.get(ref);
+      for (const [key, pending] of Object.entries(
+        root.collectionProgress.pendingOfficialLinks || {},
+      ).slice(0, 10)) {
+        if (
+          task.automatic &&
+          pending.nextDueAt &&
+          Date.parse(pending.nextDueAt) > Number(clock.now())
+        )
+          continue;
+        const provider = registry.get("official-announcements"),
+          unit = root.collectionProgress.units[pending.unitId];
+        if (!provider || !unit) continue;
+        try {
+          const ctx = { ...(await makeContext(unit)), sites: [pending.site] },
+            seed = normalizeRecord({
+              ...pending.record,
+              sourceId: "official-announcements",
+              siteId: pending.site.siteId,
+              identityScope: pending.site.siteId,
+              sourceRecordId: pending.url,
+              sourceRecordIdKind: "hint",
+              url: pending.url,
+              description: null,
+              company: null,
+              cities: [],
+              attachments: [],
+              externalLinks: [],
+              officialLinks: [],
+              bodyStatus: "incomplete",
+              retryEligible: true,
+              linkedFrom: {
+                sourceId: pending.record.sourceId,
+                url: pending.record.url,
+              },
+            });
+          let record = await provider.fetchDetail(seed, ctx);
+          record = {
+            ...record,
+            bodyStatus: "complete",
+            retryEligible: false,
+            checkedAt: at(),
+          };
+          record = await enrichRecord(record, ctx);
+          await mutateCurrent(ref, token, lease, (w, r) => {
+            const result = ingestRecordsDraft(w, {
+                scope: ref.scope,
+                runId: token.sliceRunId,
+                records: [record],
+                observedAt: at(),
+                provenanceOperationId: lease.operationId,
+              }),
+              child = w.runs[token.sliceRunId];
+            child.jobIds = [
+              ...new Set([...(child.jobIds || []), ...result.jobIds]),
+            ];
+            queueContentDraft(
+              r.collectionProgress,
+              pending.unitId,
+              [record],
+              Number(clock.now()),
+            );
+            r.collectionProgress.officialLinkCache[key] = {
+              jobIds: result.jobIds,
+              completedAt: at(),
+            };
+            delete r.collectionProgress.pendingOfficialLinks[key];
+          });
+        } catch (e) {
+          signal.throwIfAborted();
+          if (
+            [
+              "source_budget_exhausted",
+              "collection_stale_epoch",
+              "workspace_write_failed",
+            ].includes(e.code)
+          )
+            throw e;
+          await mutateCurrent(ref, token, lease, (_w, r) => {
+            const item = r.collectionProgress.pendingOfficialLinks[key];
+            item.attempts++;
+            item.lastErrorCode = e.code || "official_body_unavailable";
+            item.nextDueAt = new Date(
+              Number(clock.now()) + 600000,
+            ).toISOString();
+          });
+        }
+      }
+      root = await service.get(ref);
+      const articleQueue = Object.entries(
+        root.collectionProgress.pendingArticles || {},
+      ).slice(0, 10);
+      const modelClient =
+        root.collectionMode === "rules"
+          ? undefined
+          : modelFactory?.({
+              budget: budgets.model,
+              signal,
+              credentials: task.credentials,
+              modelConfig,
+              diagnosticContext: { runId: token.sliceRunId },
+            });
+      for (const [key, pending] of articleQueue) {
+        if (!modelClient) break;
+        try {
+          const expanded = await expandArticles(
+            modelClient,
+            {},
+            [pending.record],
+            {
+              concurrency: 1,
+              signal,
+              diagnostics,
+              diagnosticContext: { runId: token.sliceRunId },
+            },
+          );
+          signal.throwIfAborted();
+          await mutateCurrent(ref, token, lease, (w, r) => {
+            const p = r.collectionProgress;
+            if (expanded.failed) {
+              p.pendingArticles[key].attempts++;
+              return;
+            }
+            const records = expanded.jobs.map(normalizeRecord),
+              result = ingestRecordsDraft(w, {
+                scope: ref.scope,
+                runId: token.sliceRunId,
+                records,
+                observedAt: at(),
+                provenanceOperationId: lease.operationId,
+              }),
+              child = w.runs[token.sliceRunId];
+            child.jobIds = [
+              ...new Set([...(child.jobIds || []), ...result.jobIds]),
+            ];
+            child.counts.newForTarget += result.newForTarget.length;
+            child.counts.deduplicated = child.jobIds.length;
+            p.articleCache[key] = { jobIds: result.jobIds, completedAt: at() };
+            delete p.pendingArticles[key];
+          });
+        } catch (e) {
+          if (
+            signal.aborted ||
+            ["collection_stale_epoch", "workspace_write_failed"].includes(
+              e.code,
+            )
+          )
+            throw e;
+          if (e.code === "model_budget_exhausted") {
+            stopCode = e.code;
+            break;
+          }
+          throw e;
+        }
+      }
+      root = await service.get(ref);
       checkToken(root, token, false);
       const p = root.collectionProgress,
+        evaluationWorkspace = await repository.read(),
+        collectedChild = evaluationWorkspace.runs[token.sliceRunId],
+        evaluatedJobIds = new Set(
+          (collectedChild.evaluationIds || []).map(
+            (id) => evaluationWorkspace.evaluations[id]?.jobId,
+          ),
+        ),
+        collectedJobIds = (collectedChild.jobIds || []).filter(
+          (id) => !evaluatedJobIds.has(id),
+        ),
         all = Object.values(p.units),
         refresh = Boolean(
           (await repository.read()).packages[ref.scope.packageId]
             .collectionSettings?.refreshEnabled,
         );
+      if (collectedJobIds.length && evaluationService) {
+        const evaluation = await evaluationService.evaluate({
+          scope: ref.scope,
+          jobIds: collectedJobIds,
+          mode: root.collectionMode || "rules",
+          runId: token.sliceRunId,
+          signal,
+          modelClient,
+          operationLease: lease,
+          collectionGuard: { ref, token: { ...token } },
+        });
+        await mutateCurrent(ref, token, lease, (w) => {
+          const child = w.runs[token.sliceRunId];
+          child.evaluationIds = [
+            ...new Set([
+              ...child.evaluationIds,
+              ...evaluation.evaluations.map((e) => e.evaluationId),
+            ]),
+          ];
+        });
+      }
       const remaining = all.filter((u) => u.status !== "completed"),
         future = remaining.some(
           (u) => u.nextDueAt && Date.parse(u.nextDueAt) > Number(clock.now()),
         );
       const status = stopCode
         ? "budget_exhausted"
-        : !remaining.length
+        : !remaining.length &&
+            !Object.keys(p.pendingBodies || {}).length &&
+            !Object.keys(p.pendingOfficialLinks || {}).length &&
+            !Object.keys(p.pendingArticles || {}).length
           ? "completed"
-          : remaining.every((u) => u.status === "waiting_for_auth")
+          : (remaining.length &&
+                remaining.every((u) => u.status === "waiting_for_auth")) ||
+              (!remaining.length &&
+                Object.keys(p.pendingBodies || {}).length &&
+                Object.values(p.pendingBodies).every(
+                  (b) => b.status === "waiting_for_auth",
+                ) &&
+                !Object.keys(p.pendingArticles || {}).length &&
+                !Object.keys(p.pendingOfficialLinks || {}).length)
             ? "waiting_for_auth"
             : "paused";
       await mutateCurrent(ref, token, lease, (w, r) => {
@@ -908,7 +1206,10 @@ export function createCollectionService({
         p.revision++;
         p.updatedAt = at();
         p.manualPaused = false;
-        p.refreshReady = status === "paused" && refresh;
+        p.refreshReady =
+          status === "paused" &&
+          refresh &&
+          !(Object.keys(p.pendingArticles || {}).length && !modelClient);
         const child = w.runs[token.sliceRunId];
         child.status =
           stopCode || child.issues.length ? "partial" : "completed";
@@ -916,9 +1217,25 @@ export function createCollectionService({
         child.finishedAt = at();
       });
     } catch (e) {
+      await recordDiagnostic(
+        diagnostics,
+        {
+          operation: "run.failure",
+          runId: token.sliceRunId,
+          phase: "collect",
+          outcome: "failed",
+          code: e.code || "collection_failed",
+        },
+        e,
+      );
       if (!signal.aborted)
         await mutateCurrent(ref, token, lease, (w, r) => {
-          r.collectionProgress.status = "paused";
+          r.collectionProgress.status = [
+            "source_budget_exhausted",
+            "model_budget_exhausted",
+          ].includes(e.code)
+            ? "budget_exhausted"
+            : "paused";
           r.collectionProgress.activeSliceRunId = null;
           r.collectionProgress.revision++;
           r.collectionProgress.refreshReady = false;
@@ -1016,6 +1333,58 @@ export function createCollectionService({
         });
       });
     }
+  }
+  async function enrichRecord(record, context) {
+    const officialLinks = [];
+    for (const link of record.externalLinks || [])
+      try {
+        const u = new URL(link.url),
+          site = officialSites.find(
+            (s) =>
+              s.providerId === "official-announcements" &&
+              s.template?.bodyRule &&
+              s.origin === u.origin,
+          );
+        if (site && u.pathname !== "/")
+          officialLinks.push({ url: u.href, site });
+      } catch {}
+    record = { ...record, officialLinks };
+    if (!record.attachments?.length || !attachmentService) return record;
+    const enriched = await attachmentService.enrich({ record, ...context });
+    const extracts = [];
+    for (const a of enriched.attachments || [])
+      if (a.extraction?.status === "extracted") {
+        const blocks = [
+          ...(a.extraction.blocks || []),
+          ...(a.extraction.tables || []).flatMap((t) => t.cells || []),
+        ].filter((b) => b.confidence >= 85 && !b.ambiguousMerge);
+        if (blocks.length)
+          extracts.push({
+            url: a.url,
+            text: blocks.map((b) => b.text).join("\n"),
+            blocks,
+          });
+      }
+    if (!extracts.length) return enriched;
+    return {
+      ...enriched,
+      description: [enriched.description, ...extracts.map((a) => a.text)]
+        .filter(Boolean)
+        .join("\n"),
+      evidence: [
+        ...(enriched.evidence || []),
+        ...extracts.flatMap((a) =>
+          a.blocks.map((b) => ({
+            field: "description",
+            excerpt: b.text,
+            url: a.url,
+            kind: "attachment",
+            location: b.location,
+            confidence: b.confidence,
+          })),
+        ),
+      ],
+    };
   }
   return service;
 }

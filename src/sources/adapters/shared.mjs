@@ -394,6 +394,7 @@ export function createPagedProvider({
             kind: record.kind,
             jobType: record.jobType,
             hasRequirements:
+              (!record.bodyStatus || record.bodyStatus === "complete") &&
               typeof record.description === "string" &&
               record.description.trim().length >= 30,
           });

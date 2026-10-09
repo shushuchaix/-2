@@ -545,6 +545,7 @@ async function boot() {
         }),
     });
     applicationContext.collectionBrowser = collectionBrowser;
+    applicationContext.contentReadService?.setBrowser(collectionBrowser);
     registerCollectionIpc({
       ipcMain,
       browser: collectionBrowser,

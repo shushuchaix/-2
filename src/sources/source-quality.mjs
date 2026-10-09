@@ -35,6 +35,7 @@ export function assessSourceProbe({
       r &&
       typeof r.description === "string" &&
       r.description.trim().length >= 30 &&
+      (!r.bodyStatus || r.bodyStatus === "complete") &&
       !["discovery_only", "incomplete", "restricted"].includes(r.detailStatus),
   );
   const list = valid.length > 0 && listSample.status === 200,

@@ -119,6 +119,7 @@ export interface DesktopBridge {
     platform: "wechat" | "weibo";
     accountRef: string;
     remember?: boolean;
+    testUrl?: string;
   }): Promise<{ sessionRef: string; state: string; remembered: boolean }>;
   verifyCollectionSession?(input: {
     scope: Scope;

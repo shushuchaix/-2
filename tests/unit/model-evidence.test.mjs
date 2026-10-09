@@ -2,6 +2,33 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { validateModelResults } from "../../src/llm/validation.mjs";
 import { expandArticles } from "../../src/match/article.mjs";
+test("announcement extraction no longer drops positions after eight", async () => {
+  const titles = Array.from({ length: 12 }, (_, i) => "消防岗位" + i),
+    description = titles.map((t) => t + "：本科要求。").join("\n");
+  const result = await expandArticles(
+    {
+      chatJson: async () => ({
+        isRecruiting: true,
+        positions: titles.map((title) => ({
+          title,
+          requirementsExcerpt: title + "：本科要求。",
+        })),
+      }),
+    },
+    {},
+    [
+      {
+        sourceId: "wechat",
+        siteId: "wechat",
+        sourceRecordId: "many",
+        title: "单位招聘公告",
+        url: "https://mp.weixin.qq.com/s/many",
+        description,
+      },
+    ],
+  );
+  assert.equal(result.jobs.length, 12);
+});
 
 test("an AI score without source evidence must fall back", () => {
   const result = validateModelResults(

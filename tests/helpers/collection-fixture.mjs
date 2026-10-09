@@ -6,7 +6,14 @@ import { createCollectionRoot } from "../../src/domain/collection.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
 export async function collectionFixture(
   t,
-  { providers = [], limits = {}, transport, clock } = {},
+  {
+    providers = [],
+    limits = {},
+    transport,
+    clock,
+    modelFactory,
+    evaluationService,
+  } = {},
 ) {
   let f;
   f = await packageBusinessFixture(t, {
@@ -33,6 +40,8 @@ export async function collectionFixture(
       repository: f.repository,
       operationGate: f.operationGate,
       registry: createSourceRegistry(providers),
+      modelFactory,
+      evaluationService,
       ledger: f.ledger,
       planner: async () => ({
         units,

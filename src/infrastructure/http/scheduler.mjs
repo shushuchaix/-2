@@ -119,3 +119,11 @@ export function createScheduler({
   };
 }
 export const sharedScheduler = createScheduler();
+export const sharedSocialScheduler = createScheduler({
+  maxPerOrigin: 1,
+  minIntervalMs: 3000,
+});
+export const isSocialOrigin = (value) =>
+  /^(?:mp\.weixin\.qq\.com|(?:m\.)?weibo\.cn|(?:www\.)?weibo\.com)$/.test(
+    new URL(value).hostname,
+  );

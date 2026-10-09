@@ -58,6 +58,9 @@ import { buildCollectionPlan } from "../sources/planning.mjs";
 import { createAnonymousWorker } from "../infrastructure/collection/worker-client.mjs";
 import { createEgressProxy } from "../infrastructure/collection/egress-proxy.mjs";
 import { verifyCollectionRuntime } from "../infrastructure/collection/runtime.mjs";
+import { createContentReadService } from "./content-read-service.mjs";
+import { assertCollectionWrite } from "../domain/collection.mjs";
+import { contentHash } from "../infrastructure/storage/repository.mjs";
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
@@ -300,6 +303,28 @@ export async function createApplicationContext({
     config: cfg,
   });
   runServiceForTrash = runService;
+  const contentReadService =
+    dependencies.contentReadService ||
+    createContentReadService({
+      anonymousWorker,
+      clock: repository.clock,
+      claimEnhancement: async ({ ref, token, url, operationLease }) =>
+        (
+          await repository.mutateWorkspace(
+            (w) => {
+              assertScope(w, ref.scope, repository.clock.now());
+              assertCollectionWrite(w, { ref, token });
+              const p = w.runs[ref.activityId].collectionProgress;
+              p.enhancementAttempts ||= {};
+              const key = contentHash(url);
+              if (p.enhancementAttempts[key]) return false;
+              p.enhancementAttempts[key] = true;
+              return true;
+            },
+            { operationLease },
+          )
+        ).result,
+    });
   const collectionService =
     dependencies.legacySchema === true
       ? null
@@ -308,6 +333,8 @@ export async function createApplicationContext({
           operationGate,
           registry,
           requestFactory,
+          readService: contentReadService,
+          officialSites: dependencies.catalog || loadSiteCatalog(),
           ledger: createCollectionLedger({ repository }),
           attachmentService: createAttachmentService({
             ledger: createCollectionLedger({ repository }),
@@ -411,6 +438,7 @@ export async function createApplicationContext({
     eventHub,
     runService,
     collectionService,
+    contentReadService,
     collectionRefresh,
     attachmentCleanup,
     anonymousWorker,

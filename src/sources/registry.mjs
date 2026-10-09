@@ -7,6 +7,8 @@ import tencent from "./adapters/tencent.mjs";
 import smartrecruiters from "./adapters/smartrecruiters.mjs";
 import greenhouse from "./adapters/greenhouse.mjs";
 import { socialProviders } from "./adapters/social-discovery.mjs";
+import wechatPublic from "./adapters/wechat-public.mjs";
+import weiboPublic from "./adapters/weibo-public.mjs";
 export function createSourceRegistry(providers) {
   const entries = new Map();
   for (const provider of providers) {
@@ -33,7 +35,7 @@ export function createSourceRegistry(providers) {
 }
 export function createDefaultSourceRegistry() {
   return createSourceRegistry([
-    ...legacyProviders,
+    ...legacyProviders.filter((p) => p.id !== "wechat"),
     ncss,
     job91,
     announcements,
@@ -41,6 +43,8 @@ export function createDefaultSourceRegistry() {
     tencent,
     smartrecruiters,
     greenhouse,
-    ...socialProviders,
+    ...socialProviders.filter((p) => p.id !== "weibo"),
+    wechatPublic,
+    weiboPublic,
   ]);
 }

@@ -8,6 +8,7 @@ import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { assertScope, packageError } from "../domain/packages.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assessSourceProbe } from "../sources/source-quality.mjs";
+import { canonicalSocialUrl } from "../sources/social-content.mjs";
 const privateKeys = new Set([
   "accountIds",
   "articleUrls",
@@ -31,6 +32,21 @@ function validateConfig(provider, config) {
       )
         throw inputError({ [key]: "请填写最多100个有效公开标识或链接。" });
       if (/Urls$/.test(key)) for (const url of value) validatePublicUrl(url);
+      if (key === "articleUrls" && ["wechat", "weibo"].includes(provider.id))
+        for (const url of value) canonicalSocialUrl(url, provider.id);
+      if (
+        key === "accountIds" &&
+        ["wechat", "weibo"].includes(provider.id) &&
+        value.some(
+          (v) =>
+            !(
+              provider.id === "wechat"
+                ? /^[A-Za-z0-9_=+-]{1,200}$/
+                : /^\d{1,30}$/
+            ).test(v),
+        )
+      )
+        throw inputError({ accountIds: "请填写该平台的有效公开账号标识。" });
     } else if (typeof value !== type)
       throw inputError({ [key]: "设置格式不正确。" });
   }
@@ -50,22 +66,20 @@ export function createSourceService({
     async listScopedSources({ scope }) {
       const w = await repository.read(),
         pkg = assertScope(w, scope, clock.now());
-      return registry
-        .list()
-        .map((p) => ({
-          sourceId: p.id,
-          name: p.name,
-          capabilities: p.capabilities,
-          configSchema: p.configSchema,
-          config: {
-            ...(w.settings.sourceOverrides[p.id] || {}),
-            ...(pkg.collectionSettings?.sourceOverrides[p.id] || {}),
-          },
-          health: Object.values({
-            ...w.sourceHealth,
-            ...pkg.collectionSettings?.sourceVerification,
-          }).filter((h) => h.sourceId === p.id),
-        }));
+      return registry.list().map((p) => ({
+        sourceId: p.id,
+        name: p.name,
+        capabilities: p.capabilities,
+        configSchema: p.configSchema,
+        config: {
+          ...(w.settings.sourceOverrides[p.id] || {}),
+          ...(pkg.collectionSettings?.sourceOverrides[p.id] || {}),
+        },
+        health: Object.values({
+          ...w.sourceHealth,
+          ...pkg.collectionSettings?.sourceVerification,
+        }).filter((h) => h.sourceId === p.id),
+      }));
     },
     async saveScopedConfig({ scope, sourceId, config = {} }) {
       const provider = registry.get(sourceId);
@@ -107,6 +121,9 @@ export function createSourceService({
         signal,
         operationLease,
         collectionGuard,
+        ref: activityRef,
+        token,
+        readService,
       }) => {
         const context = {
           scope,
@@ -118,6 +135,11 @@ export function createSourceService({
           request,
           signal,
           config,
+          ref: activityRef,
+          token,
+          readService,
+          operationLease,
+          sessionRefs: pkg.collectionSettings?.sessionRefs || {},
         };
         const list = await provider.collect({ ...context, onBatch: undefined });
         const details = [],

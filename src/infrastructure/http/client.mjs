@@ -5,7 +5,13 @@ import { createDnsLookup } from "./dns.mjs";
 export { socketTransport } from "./transport.mjs";
 import { resolvePublicUrl, validatePublicUrl } from "./public-url.mjs";
 import { createSourceBudget } from "./budget.mjs";
-import { sharedScheduler, cancellableSleep, abortError } from "./scheduler.mjs";
+import {
+  sharedScheduler,
+  sharedSocialScheduler,
+  isSocialOrigin,
+  cancellableSleep,
+  abortError,
+} from "./scheduler.mjs";
 import { createResponseCache } from "./cache.mjs";
 
 const elapsed = (clock, start) => Math.max(0, Math.round(clock.now() - start));
@@ -251,7 +257,11 @@ export function createRequestClient({
           entered = false,
           response;
         try {
-          response = await scheduler.run(
+          response = await (
+            scheduler === sharedScheduler && isSocialOrigin(url.href)
+              ? sharedSocialScheduler
+              : scheduler
+          ).run(
             url.origin,
             async () => {
               entered = true;

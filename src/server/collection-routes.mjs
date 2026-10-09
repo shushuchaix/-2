@@ -54,6 +54,7 @@ export async function handleCollectionRequest(req, res, context) {
         ref,
         requestId: input.requestId,
         replan: input.replan === true,
+        mode: input.mode || (input.useAI ? "ai" : undefined),
         credentials: input.useAI ? userCredentials(input, context.cfg) : {},
       }),
     );

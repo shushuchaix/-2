@@ -7,7 +7,10 @@ import {
   attachNetworkPolicy,
   classifyBrowserBody,
 } from "./network-policy.mjs";
-import { cancellableSleep } from "../../src/infrastructure/http/scheduler.mjs";
+import {
+  cancellableSleep,
+  sharedSocialScheduler,
+} from "../../src/infrastructure/http/scheduler.mjs";
 const failure = (code, message) => Object.assign(Error(message), { code });
 export function createCollectionBrowser({
   BrowserWindow,
@@ -389,14 +392,25 @@ export function createCollectionBrowser({
         }
       }
     },
-    async openLogin({ ref, platform, accountRef, remember = false }) {
+    async openLogin({ ref, platform, accountRef, remember = false, testUrl }) {
       await assertScope?.(ref.scope);
       if (stopping || windows.size >= 20)
         throw failure(
           "collection_browser_unavailable",
           "请先关闭其他采集窗口。",
         );
-      const routePolicy = platformPolicy(platform),
+      const routePolicy = platformPolicy(platform);
+      if (
+        platform === "wechat" &&
+        (!testUrl ||
+          !allowsRoute(testUrl, routePolicy) ||
+          !/^\/s(?:\/|$)/.test(new URL(testUrl).pathname))
+      )
+        throw failure(
+          "collection_article_required",
+          "请提供要验证的公开公众号文章地址。",
+        );
+      const entryUrl = platform === "wechat" ? testUrl : routePolicy.entryUrl,
         entry = await sessionStore.create({
           scope: ref.scope,
           platform,
@@ -418,7 +432,7 @@ export function createCollectionBrowser({
         });
         throw error;
       }
-      item.window.loadURL(routePolicy.entryUrl).catch(() => {});
+      item.window.loadURL(entryUrl).catch(() => {});
       return {
         sessionRef: entry.sessionRef,
         state: "unverified",
@@ -505,5 +519,10 @@ export function createCollectionBrowser({
     },
     snapshot: () => ({ activeReads: reads, windows: windows.size }),
   };
+  const read = service.read;
+  service.read = (input) =>
+    sharedSocialScheduler.run(new URL(input.url).origin, () => read(input), {
+      signal: input.signal,
+    });
   return service;
 }

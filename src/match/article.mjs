@@ -6,6 +6,7 @@ import { chunk, normKey, pool, sanitizeText, truncate } from "../util/text.mjs";
 import { normalizeDate } from "../util/html.mjs";
 import { extractTechTerms } from "../util/skills.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
+import { articleParts } from "../sources/content-queue.mjs";
 
 const SYSTEM = `你是招聘信息抽取助手，负责从中文微信公众号文章中抽取校园招聘 / 实习岗位。
 
@@ -13,7 +14,7 @@ const SYSTEM = `你是招聘信息抽取助手，负责从中文微信公众号�
 1. 只抽取文章里**明确写出**的信息，绝不编造公司名、城市、学历、薪资或截止时间；未提及的一律留空字符串。
 2. 先判断体裁：经验分享、行业资讯、求职鸡汤、培训广告、活动通知等都**不是**招聘公告，此时 isRecruiting=false 且 positions 为空数组。
 3. 一篇文章可能汇总多家公司的岗位（如「校招信息汇编」）。此时要逐个岗位给出各自的 company；若整篇只讲一家公司，company 可留空，由外部沿用文章级公司名。
-4. 最多抽取 8 个岗位。**如果文章只写了「招聘岗位详见附件 / 详见招聘简章」而没有列出任何具体岗位名称，就把 positions 留空**，不要把指引语当成岗位名。
+4. 逐一抽取当前正文片段内所有明确岗位，不以固定岗位数量截断。**如果文章只写了「招聘岗位详见附件 / 详见招聘简章」而没有列出任何具体岗位名称，就把 positions 留空**，不要把指引语当成岗位名。
 5. summary 用一句话概括该岗位的关键要求（60 字以内），不要照抄整段。
 6. 严格输出 JSON，不要任何解释或 Markdown 围栏。`;
 
@@ -191,7 +192,7 @@ export async function expandArticles(
   _profile,
   articles,
   {
-    maxExpand = 5,
+    maxExpand = Infinity,
     concurrency = 3,
     log = () => {},
     signal,
@@ -199,7 +200,14 @@ export async function expandArticles(
     diagnosticContext = {},
   } = {},
 ) {
-  const candidates = articles.slice(0, maxExpand);
+  const candidates = articles
+    .slice(0, maxExpand)
+    .flatMap((article) =>
+      articleParts(article.description || "").map((description) => ({
+        ...article,
+        description,
+      })),
+    );
   if (candidates.length === 0)
     return { jobs: [], expanded: 0, skipped: 0, noJob: 0, failed: 0 };
 
@@ -212,11 +220,17 @@ export async function expandArticles(
   await pool(candidates, concurrency, async (article) => {
     try {
       signal?.throwIfAborted();
-      const text = truncate(article.description, 6000);
+      const text = article.description || "";
       const res = await llm.chatJson(
         SYSTEM,
         `## 文章标题\n${article.title}\n\n## 公众号\n${article.extra?.account || "未知"}\n\n## 文章正文\n${text}\n\n请按下面结构输出 JSON：\n${SCHEMA}`,
-        { temperature: 0.1, maxTokens: 2200, signal, diagnosticContext },
+        {
+          temperature: 0.1,
+          maxTokens: 4000,
+          signal,
+          diagnosticContext,
+          repair: false,
+        },
       );
 
       if (
@@ -233,9 +247,9 @@ export async function expandArticles(
         return;
       }
 
-      const usable = res.positions
-        .filter((p) => p && !isPlaceholderTitle(p.title))
-        .slice(0, 8);
+      const usable = res.positions.filter(
+        (p) => p && !isPlaceholderTitle(p.title),
+      );
       const dropped = res.positions.length - usable.length;
       if (usable.length === 0) {
         // 整篇都是「详见招聘简章」这类指引语，说明文章只给了线索没给岗位
@@ -301,6 +315,11 @@ export async function expandArticles(
                 (verified.city || ""),
             ),
           kind: "job",
+          bodyStatus: article.bodyStatus,
+          publishedAt: article.publishedAt,
+          deadlineAt: verifiedArticle.deadline || null,
+          applyUrl: article.applyUrl || null,
+          parserVersion: "article-literal-2",
           sourceRecordIdKind: "generated",
           urlKind: "notice_detail",
           description: p.requirementsExcerpt,
@@ -327,7 +346,15 @@ export async function expandArticles(
           (dropped ? `（过滤掉 ${dropped} 条占位描述）` : ""),
       );
     } catch (e) {
-      if (signal?.aborted) throw e;
+      if (
+        signal?.aborted ||
+        [
+          "model_budget_exhausted",
+          "collection_stale_epoch",
+          "workspace_write_failed",
+        ].includes(e.code)
+      )
+        throw e;
       failed++;
       await recordDiagnostic(
         diagnostics,
@@ -346,7 +373,7 @@ export async function expandArticles(
       );
       article.extra = {
         ...(article.extra || {}),
-        expandedResult: `failed: ${e.message}`,
+        expandedResult: "failed",
       };
       log(`  文章抽取失败：${e.message}`);
     } finally {
@@ -357,7 +384,7 @@ export async function expandArticles(
   });
 
   return {
-    jobs,
+    jobs: [...new Map(jobs.map((job) => [job.sourceRecordId, job])).values()],
     expanded,
     skipped: articles.length - candidates.length,
     noJob,

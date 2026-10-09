@@ -12,5 +12,11 @@ export function createDesktopAdapter(bridge?: DesktopBridge): DesktopAdapter {
     getDataLocations: () => bridge?.getDataLocations() ?? unavailable(),
     openDataLocation: (k) => bridge?.openDataLocation(k) ?? unavailable(),
     copyDataLocation: (k) => bridge?.copyDataLocation(k) ?? unavailable(),
+    openCollectionLogin: (input) =>
+      bridge?.openCollectionLogin?.(input) ?? unavailable(),
+    verifyCollectionSession: (input) =>
+      bridge?.verifyCollectionSession?.(input) ?? unavailable(),
+    clearCollectionSession: (input) =>
+      bridge?.clearCollectionSession?.(input) ?? unavailable(),
   };
 }

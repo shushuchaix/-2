@@ -113,6 +113,23 @@ export interface ApiClient {
   ): Promise<void>;
 }
 export interface DesktopBridge {
+  openCollectionLogin?(input: {
+    scope: Scope;
+    activityId?: string;
+    platform: "wechat" | "weibo";
+    accountRef: string;
+    remember?: boolean;
+  }): Promise<{ sessionRef: string; state: string; remembered: boolean }>;
+  verifyCollectionSession?(input: {
+    scope: Scope;
+    activityId: string;
+    sessionRef: string;
+    testUrl: string;
+  }): Promise<{ sessionRef: string; state: string; bodyStatus: string }>;
+  clearCollectionSession?(input: {
+    scope: Scope;
+    sessionRef: string;
+  }): Promise<{ status: string }>;
   isAvailable(): Promise<unknown>;
   getKeyStatus(provider: string): Promise<unknown>;
   saveKey(provider: string, key: string): Promise<unknown>;

@@ -152,11 +152,23 @@ export async function createApplicationContext({
         cleanup: attachmentCleanup,
       });
   await attachmentCleanup.resumePending();
+  await dependencies.recoverOwnedResources?.();
+  const cleanupPackage = async (id) => {
+    const resources = await dependencies.cleanupOwnedResources?.(id),
+      attachments = await attachmentCleanup.cleanupPackage(id);
+    return {
+      status: [resources?.status, attachments.status].includes(
+        "cleanup_pending",
+      )
+        ? "cleanup_pending"
+        : "clean",
+    };
+  };
   let runServiceForTrash;
   const trashService = createTrashService({
       repository,
       cancelPackageAndWait: (id) => runServiceForTrash.cancelPackageAndWait(id),
-      cleanupPackage: (id) => attachmentCleanup.cleanupPackage(id),
+      cleanupPackage,
     }),
     purgeService = createPurgeService({
       repository,
@@ -164,7 +176,7 @@ export async function createApplicationContext({
       operationGate,
       fsAdapter: dependencies.fsAdapter,
       diagnostics,
-      cleanupPackage: (id) => attachmentCleanup.cleanupPackage(id),
+      cleanupPackage,
     }),
     assignmentService = createLegacyAssignmentService({ repository }),
     trashScheduler = createTrashScheduler({
@@ -360,6 +372,7 @@ export async function createApplicationContext({
           await runService.cancelPackageAndWait(p.packageId);
       await attachmentCleanup.resumePending();
       await ocr.close?.();
+      await dependencies.stopOwnedResources?.();
     },
     jobCleanupService: createJobCleanupService({ repository, operationGate }),
     operationGate,

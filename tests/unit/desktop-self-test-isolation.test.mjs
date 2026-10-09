@@ -116,10 +116,7 @@ test("Node and Chromium guards allow only the exact actual loopback origin and r
       ["about:blank", false],
       ["data:image/png;base64,AA==", false],
     ]) {
-      let result;
-      callback({ url }, (v) => {
-        result = v;
-      });
+      const result = await new Promise((resolve) => callback({ url }, resolve));
       assert.equal(result.cancel, cancel, url);
     }
     assert.equal(guard.report().externalRequests, 0);

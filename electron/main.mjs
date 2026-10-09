@@ -19,8 +19,15 @@ import {
   ipcMain,
   safeStorage,
   clipboard,
+  session,
 } from "electron";
 import path from "node:path";
+import { createCollectionSessions } from "./collection/sessions.mjs";
+import { createCollectionBrowser } from "./collection/browser.mjs";
+import { registerCollectionIpc } from "./collection/ipc.mjs";
+import { createEgressProxy } from "../src/infrastructure/collection/egress-proxy.mjs";
+import { createCollectionLedger } from "../src/application/collection-ledger.mjs";
+import { assertScope } from "../src/domain/packages.mjs";
 import { resolveDataLayout } from "../src/infrastructure/storage/layout.mjs";
 import { registerDirectoryIpc } from "./directories.mjs";
 import { awaitDesktopContext } from "./startup.mjs";
@@ -322,6 +329,10 @@ async function createWindow() {
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
+    if (!SELF_TEST)
+      shutdownDesktop()
+        .then(() => app.quit())
+        .catch(() => app.quit());
   });
 
   if (SELF_TEST) {
@@ -421,6 +432,7 @@ async function boot() {
     cfg.auth.mode = "none";
 
   const credentials = createCredentialService({ dataDir, safeStorage });
+  const collectionSessions = createCollectionSessions({ dataDir, safeStorage });
   startupPhase = "read";
   try {
     const key = SELF_TEST ? "" : await credentials.readForModel("deepseek");
@@ -474,7 +486,16 @@ async function boot() {
   startupPhase = "load";
   const { server, ready } = createServer(cfg, {
     dataDir,
-    dependencies: { ...(selfTestEnvironment?.dependencies || {}), diagnostics },
+    dependencies: {
+      ...(selfTestEnvironment?.dependencies || {}),
+      diagnostics,
+      recoverOwnedResources: () => collectionSessions.resumePending(),
+      cleanupOwnedResources: (id) =>
+        collectionBrowser
+          ? collectionBrowser.closePackage(id)
+          : collectionSessions.cleanupPackage(id),
+      stopOwnedResources: () => collectionBrowser?.stop(),
+    },
   });
   applicationContext = await awaitDesktopContext(ready, {
     selfTest: SELF_TEST,
@@ -483,6 +504,48 @@ async function boot() {
   httpServer = server;
   appUrl = `http://127.0.0.1:${port}`;
   selfTestNetwork?.setAllowedOrigin(appUrl);
+  if (applicationContext?.collectionService) {
+    collectionBrowser = createCollectionBrowser({
+      BrowserWindow,
+      session,
+      ledger: createCollectionLedger({
+        repository: applicationContext.repository,
+      }),
+      egressProxy: createEgressProxy({
+        offlineAllows: selfTestNetwork?.allows,
+      }),
+      sessionStore: collectionSessions,
+      offlineAllows: selfTestNetwork?.allows,
+      assertScope: async (scope) =>
+        assertScope(
+          await applicationContext.repository.read(),
+          scope,
+          applicationContext.repository.clock.now(),
+        ),
+      rememberSession: async ({ scope, platform, sessionRef }) =>
+        applicationContext.repository.mutateWorkspace((w) => {
+          const pkg = assertScope(
+            w,
+            scope,
+            applicationContext.repository.clock.now(),
+          );
+          pkg.collectionSettings ||= {
+            sourceOverrides: {},
+            sessionRefs: {},
+            refreshEnabled: false,
+          };
+          pkg.collectionSettings.sessionRefs[platform] = sessionRef;
+        }),
+    });
+    applicationContext.collectionBrowser = collectionBrowser;
+    registerCollectionIpc({
+      ipcMain,
+      browser: collectionBrowser,
+      context: applicationContext,
+      getWindow: () => mainWindow,
+      getOrigin: () => appUrl,
+    });
+  }
   await recordDiagnostic(diagnostics, {
     operation: "desktop.ready",
     stage: "startup",
@@ -497,6 +560,23 @@ async function boot() {
 }
 
 /* --------------------------- 应用生命周期 --------------------------- */
+let collectionBrowser,
+  shutdownPromise,
+  shutdownComplete = false;
+function shutdownDesktop() {
+  return (shutdownPromise ||= Promise.resolve().then(async () => {
+    await applicationContext?.close?.();
+    await collectionBrowser?.stop();
+    if (httpServer) httpServer.close();
+    shutdownComplete = true;
+  }));
+}
+app.on("before-quit", (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (shutdownPromise) return;
+  shutdownDesktop().finally(() => app.quit());
+});
 // 只允许开一个实例，第二次启动时聚焦已有窗口
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -578,14 +658,7 @@ if (!gotLock) {
   });
 
   app.on("window-all-closed", async () => {
-    await applicationContext?.close?.();
-    if (httpServer) {
-      try {
-        httpServer.close();
-      } catch {
-        /* 忽略 */
-      }
-    }
+    await shutdownDesktop();
     app.quit();
   });
 }

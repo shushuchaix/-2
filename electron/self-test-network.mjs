@@ -2,6 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 import tls from "node:tls";
+import { attachNetworkPolicy } from "./collection/network-policy.mjs";
 
 // Loaded only by --self-test. Reject before invoking any original transport.
 export function installSelfTestNetworkGuard({
@@ -147,26 +148,29 @@ export function installSelfTestNetworkGuard({
       globalThis.WebSocket = Original;
     });
   }
-  let rendererSession = null;
+  const sessionDisposers = new Map();
   const attachSession = (value) => {
-    rendererSession = value;
-    value.webRequest.onBeforeRequest(
-      { urls: ["<all_urls>"] },
-      (details, callback) => {
-        const local = /^(?:about:blank|data:|blob:)/.test(details.url),
-          cancel = !local && !allows(details.url);
-        if (cancel) blocked.push({ code: "renderer_network_forbidden" });
-        callback({ cancel });
-      },
+    if (sessionDisposers.has(value)) return;
+    sessionDisposers.set(
+      value,
+      attachNetworkPolicy(value, "offline-self-test", {
+        async authorize(details) {
+          const local = /^(?:about:blank|data:|blob:)/.test(details.url),
+            cancel = !local && !allows(details.url);
+          if (cancel) blocked.push({ code: "renderer_network_forbidden" });
+          return { cancel };
+        },
+      }),
     );
   };
   if (session) attachSession(session);
   return {
     setAllowedOrigin,
     attachSession,
+    allows,
     report: () => ({ externalRequests: 0, blockedRequests: blocked.length }),
     dispose() {
-      rendererSession?.webRequest.onBeforeRequest(null);
+      for (const dispose of sessionDisposers.values()) dispose();
       for (const restore of restorers.reverse()) restore();
     },
   };

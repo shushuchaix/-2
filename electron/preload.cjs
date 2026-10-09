@@ -13,5 +13,11 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke("credentials:status", provider),
     reportDiagnostic: (event) =>
       ipcRenderer.invoke("diagnostics:report", event),
+    openCollectionLogin: (input) =>
+      ipcRenderer.invoke("collection:login", input),
+    verifyCollectionSession: (input) =>
+      ipcRenderer.invoke("collection:verify", input),
+    clearCollectionSession: (input) =>
+      ipcRenderer.invoke("collection:clear", input),
   }),
 );

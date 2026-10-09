@@ -12,6 +12,7 @@ import { filterBackup } from "./backup-filter.mjs";
 import { createTrashService } from "../../application/trash-service.mjs";
 import { createPurgeService } from "../../application/purge-service.mjs";
 import { isExpired, packageError } from "../../domain/packages.mjs";
+import { normalizeCollectionWorkspace } from "../../domain/collection.mjs";
 export async function createBackup({
   repository,
   clock = repository.clock,
@@ -63,6 +64,21 @@ export async function createBackup({
       };
     }
   }
+  normalizeCollectionWorkspace(workspace, {
+    restored: true,
+    clearSessions: true,
+  });
+  for (const [id, snapshot] of Object.entries(runSnapshots))
+    if (workspace.runs[id]?.collectionRole) {
+      if (snapshot.run)
+        snapshot.run = structuredClone({
+          ...workspace.runs[id],
+          snapshotRef: null,
+        });
+      workspace.runs[id].snapshotRef.hash = contentHash(snapshot);
+      for (const file of Object.values(workspace.files || {}))
+        if (file.runId === id) file.hash = workspace.runs[id].snapshotRef.hash;
+    }
   const manifest = {
     version: 1,
     schemaVersion: workspace.schemaVersion,

@@ -22,6 +22,7 @@ export function filterBackup({
       control,
       now,
       applyLedger: false,
+      restored: true,
     }),
     c = result.control;
   let w = result.workspace;
@@ -131,7 +132,7 @@ export function filterBackup({
       for (const value of Object.values(v)) visit(value);
     };
     visit(snapshot);
-    if (affected) {
+    if (affected || run.collectionRole) {
       if (snapshot.run)
         snapshot.run = structuredClone({ ...run, snapshotRef: null });
       if (snapshot.targetSnapshot)

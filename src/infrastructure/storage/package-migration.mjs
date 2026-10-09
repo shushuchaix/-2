@@ -9,6 +9,7 @@ import {
   countPackageRecords,
 } from "../../domain/package-ownership.mjs";
 import { packageError, RETENTION_MS } from "../../domain/packages.mjs";
+import { normalizeCollectionWorkspace } from "../../domain/collection.mjs";
 
 const flat = (w, key) => Object.values(w[key] || {}).flat();
 const time = (value) => new Date(value).toISOString();
@@ -57,6 +58,7 @@ export function normalizeBackupOwnership({
   control,
   now = Date.now(),
   applyLedger = true,
+  restored = false,
 }) {
   const c = structuredClone(control || createEmptyControl());
   const at = time(now),
@@ -131,7 +133,10 @@ export function normalizeBackupOwnership({
   };
   if (workspace.schemaVersion === 3)
     return finish(
-      normalizeWorkspaceExtensions(workspace),
+      normalizeCollectionWorkspace(normalizeWorkspaceExtensions(workspace), {
+        restored,
+        clearSessions: restored,
+      }),
       structuredClone(snapshots),
     );
   assertWorkspace(workspace);

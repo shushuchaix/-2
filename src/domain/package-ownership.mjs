@@ -1,4 +1,5 @@
 import {PACKAGE_KINDS, PACKAGE_STATES, UUID_RE, packageError} from './packages.mjs';
+import {assertCollectionRun, assertCollectionSettings} from './collection.mjs';
 const plain = v => v && typeof v === 'object' && !Array.isArray(v);
 export const PRIVATE_MAPS = ['jobs','observations','evaluations','runs','applications','events','files'];
 export function packageRecords(w) {
@@ -25,6 +26,7 @@ export function assertPackageOwnership(w) {
     versionIds.add(p.kind+':'+p.versionId);
     if(['trashed','purge_pending'].includes(p.state)&&(!UUID_RE.test(p.archiveId)||!Number.isFinite(Date.parse(p.archivedAt))||!Number.isFinite(Date.parse(p.purgeAt))))throw Error('Invalid package archive');
     if(p.state==='active'&&(p.archiveId!==null||p.archivedAt!==null||p.purgeAt!==null))throw Error('Invalid active package archive');
+    assertCollectionSettings(p.collectionSettings);
   }
   for(const key of ['events','files'])if(!plain(w[key]))throw Error('Invalid workspace '+key);
   const ids=new Set();
@@ -47,6 +49,7 @@ export function assertPackageOwnership(w) {
       for(const ref of m.factRefs||[])if(w.observations[ref.observationId]?.ownerPackageId!==target.ownerPackageId)throw Error('Target fact ownership mismatch');
     }
   }
+  for(const run of Object.values(w.runs||{}))assertCollectionRun(run,w);
 }
 export function countPackageRecords(w,packageId) {
   const counts=Object.fromEntries(['profiles','targets',...PRIVATE_MAPS].map(k=>[k,0]));

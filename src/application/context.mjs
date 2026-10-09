@@ -55,6 +55,9 @@ import { createCollectionService } from "./collection-service.mjs";
 import { createCollectionRefresh } from "./collection-refresh.mjs";
 import { createCollectionLedger } from "./collection-ledger.mjs";
 import { buildCollectionPlan } from "../sources/planning.mjs";
+import { createAnonymousWorker } from "../infrastructure/collection/worker-client.mjs";
+import { createEgressProxy } from "../infrastructure/collection/egress-proxy.mjs";
+import { verifyCollectionRuntime } from "../infrastructure/collection/runtime.mjs";
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
@@ -153,7 +156,29 @@ export async function createApplicationContext({
       });
   await attachmentCleanup.resumePending();
   await dependencies.recoverOwnedResources?.();
+  const collectionRuntime =
+    dependencies.collectionRuntime ||
+    (dependencies.collectionRuntimeRoot
+      ? await verifyCollectionRuntime({
+          root: dependencies.collectionRuntimeRoot,
+        })
+      : {
+          verified: false,
+          capabilities: { static: false, dynamic: false, enhanced: false },
+        });
+  const anonymousWorker =
+    dependencies.anonymousWorker ||
+    createAnonymousWorker({
+      runtime: collectionRuntime,
+      ledger: createCollectionLedger({ repository }),
+      egressProxy: createEgressProxy(),
+      cleanup: attachmentCleanup,
+      tempRoot: attachmentLayout.attachmentTemp,
+      clock: repository.clock,
+      diagnostics,
+    });
   const cleanupPackage = async (id) => {
+    await anonymousWorker.closePackage(id);
     const resources = await dependencies.cleanupOwnedResources?.(id),
       attachments = await attachmentCleanup.cleanupPackage(id);
     return {
@@ -372,6 +397,7 @@ export async function createApplicationContext({
           await runService.cancelPackageAndWait(p.packageId);
       await attachmentCleanup.resumePending();
       await ocr.close?.();
+      await anonymousWorker.stop();
       await dependencies.stopOwnedResources?.();
     },
     jobCleanupService: createJobCleanupService({ repository, operationGate }),
@@ -387,6 +413,8 @@ export async function createApplicationContext({
     collectionService,
     collectionRefresh,
     attachmentCleanup,
+    anonymousWorker,
+    collectionRuntime,
     sourceService,
     importService,
     exportService,

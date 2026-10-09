@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "platform": "win32",
+  "arch": "x64",
+  "python": {
+    "version": "3.14.8",
+    "url": "https://www.python.org/ftp/python/3.14.8/python-3.14.8-embed-amd64.zip",
+    "sha256": "a93abe456ab01bd96d7a085b3cdb6566b3063f4241360d114142fbdb07f0a310"
+  },
+  "packages": {
+    "scrapling": "0.4.15",
+    "playwright": "1.62.0",
+    "patchright": "1.62.1",
+    "browserforge": "1.2.4",
+    "apify-fingerprint-datapoints": "0.15.0"
+  },
+  "capabilities": ["static", "dynamic", "enhanced"],
+  "browsers": {
+    "playwright": [
+      {
+        "name": "chromium",
+        "revision": "1234",
+        "browserVersion": "151.0.7922.34"
+      }
+    ],
+    "patchright": [
+      {
+        "name": "chromium",
+        "revision": "1234",
+        "browserVersion": "151.0.7922.34"
+      }
+    ]
+  },
+  "runtimeInstallation": false
+}

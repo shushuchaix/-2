@@ -43,10 +43,44 @@ test("workbench_private_authenticated_and_unrelated_routes_are_rejected", async 
     "http://127.0.0.1:3000/",
     "file:///c:/private",
     "https://mp.weixin.qq.com/s?access_token=secret",
+    "https://mp.weixin.qq.com/s?pass_ticket=secret",
     "https://evil.example.org/",
     "https://mp.weixin.qq.com/cgi-bin/message",
   ])
     assert.equal((await p.authorize({ url, method: "GET" })).cancel, true);
+});
+
+test("weibo automatic navigation uses public route allowlist including decoded paths", async () => {
+  const p = createPagePolicy({
+    routePolicy: platformPolicy("weibo"),
+    reserve: async () => {},
+  });
+  for (const pathname of [
+    "/chat/123",
+    "/%6dessages",
+    "/ajax/messages",
+    "/unknown-private-area",
+  ])
+    assert.equal(
+      (
+        await p.authorize({
+          url: "https://weibo.com" + pathname,
+          resourceType: "mainFrame",
+          method: "GET",
+        })
+      ).cancel,
+      true,
+    );
+  assert.equal(
+    (
+      await p.authorize({
+        url: "https://m.weibo.cn/api/statuses/show?id=123",
+        resourceType: "xhr",
+        method: "GET",
+      })
+    ).cancel,
+    false,
+  );
 });
 test("a_challenge_200_is_not_a_complete_body_and_login_text_inside_a_job_is_allowed", () => {
   assert.equal(

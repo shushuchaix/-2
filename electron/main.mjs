@@ -488,6 +488,13 @@ async function boot() {
     dataDir,
     dependencies: {
       ...(selfTestEnvironment?.dependencies || {}),
+      ...(!SELF_TEST
+        ? {
+            collectionRuntimeRoot: app.isPackaged
+              ? path.join(process.resourcesPath, "collection-runtime")
+              : path.join(APP_ROOT, ".cache/collection-runtime-dev"),
+          }
+        : { collectionRuntime: { verified: false, capabilities: {} } }),
       diagnostics,
       recoverOwnedResources: () => collectionSessions.resumePending(),
       cleanupOwnedResources: (id) =>

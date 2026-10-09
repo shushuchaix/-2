@@ -1,6 +1,6 @@
 import { validatePublicUrl } from "../../src/infrastructure/http/public-url.mjs";
 const material =
-  /^(?:.*token|api_?key|auth(?:orization)?|cookie|ticket|signature|x-amz-signature|code|password|secret)$/i;
+  /^(?:.*token|api_?key|key|uin|pass_ticket|wx_header|auth(?:orization)?|cookie|ticket|signature|x-amz-signature|code|password|secret)$/i;
 export function publicCollectionUrl(value) {
   const url = validatePublicUrl(value);
   if (url.hash || [...url.searchParams.keys()].some((k) => material.test(k)))
@@ -52,8 +52,8 @@ export function platformPolicy(platform) {
       ],
       bodySelector: ".weibo-text",
       publicPath: (url) =>
-        !/(?:message|chat|direct|follow|fans|friends|oauth)/i.test(
-          url.pathname,
+        /^(?:\/(?:detail|status|u|profile)\/[A-Za-z0-9]+\/?|\/[0-9]+\/[A-Za-z0-9]+\/?|\/api\/(?:container\/getIndex|statuses\/(?:show|extend)|profile)|\/ajax\/(?:statuses\/(?:show|longtext|mymblog)|profile\/info))$/.test(
+          decodeURIComponent(url.pathname),
         ),
     };
   throw Object.assign(Error("Unsupported collection platform"), {

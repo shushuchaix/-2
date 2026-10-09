@@ -1,0 +1,5 @@
+scrapling[fetchers]==0.4.15
+playwright==1.62.0
+patchright==1.62.1
+browserforge==1.2.4
+apify-fingerprint-datapoints==0.15.0

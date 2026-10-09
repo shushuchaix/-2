@@ -10,7 +10,14 @@ export function createEgressProxy({
   resolvePublicUrl = defaultResolve,
   connect = (options) => net.connect(options),
   offlineAllows,
+  connectPorts = [443],
 } = {}) {
+  if (
+    !Array.isArray(connectPorts) ||
+    !connectPorts.length ||
+    connectPorts.some((p) => ![80, 443].includes(p))
+  )
+    throw Error("Egress ports invalid");
   const clients = new Map(),
     sockets = new Set();
   let server, port, starting;
@@ -141,6 +148,19 @@ export function createEgressProxy({
           };
           delete headers["proxy-authorization"];
           delete headers["proxy-connection"];
+          const requestHeaderBytes = Buffer.byteLength(
+            req.method +
+              " " +
+              resolved.url.pathname +
+              resolved.url.search +
+              " HTTP/1.1\r\n" +
+              Object.entries(headers)
+                .map(([k, v]) => k + ": " + v)
+                .join("\r\n") +
+              "\r\n\r\n",
+          );
+          if (!consume(client, requestHeaderBytes))
+            throw Error("Egress byte limit");
           const outgoing = http.request(
             {
               hostname: resolved.url.hostname,
@@ -152,6 +172,24 @@ export function createEgressProxy({
               createConnection: () => socket,
             },
             (response) => {
+              if (
+                !consume(
+                  client,
+                  Buffer.byteLength(
+                    "HTTP/1.1 " +
+                      response.statusCode +
+                      " " +
+                      response.statusMessage +
+                      "\r\n" +
+                      response.rawHeaders.join("\r\n") +
+                      "\r\n\r\n",
+                  ),
+                )
+              ) {
+                response.destroy();
+                res.destroy();
+                return;
+              }
               res.writeHead(response.statusCode, response.headers);
               response.on("data", (b) => {
                 if (consume(client, b.length)) res.write(b);
@@ -180,9 +218,13 @@ export function createEgressProxy({
           return;
         }
         try {
-          const match = /^([A-Za-z0-9.-]+):443$/.exec(req.url);
-          if (!match) throw Error("Egress tunnel target denied");
-          const resolved = await pinned(client, "https://" + match[1] + "/"),
+          const match = /^([A-Za-z0-9.-]+):(80|443)$/.exec(req.url);
+          if (!match || !connectPorts.includes(Number(match[2])))
+            throw Error("Egress tunnel target denied");
+          const resolved = await pinned(
+              client,
+              (match[2] === "443" ? "https://" : "http://") + match[1] + "/",
+            ),
             upstream = await open(resolved);
           client.sockets.add(downstream);
           sockets.add(downstream);

@@ -1,0 +1,18 @@
+{
+  "version": "tessdata-best-int-4.0.0",
+  "upstream": "https://github.com/naptha/tessdata",
+  "files": [
+    {
+      "name": "eng.traineddata.gz",
+      "sourcePackage": "@tesseract.js-data/eng@1.0.0",
+      "bytes": 2952873,
+      "sha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91"
+    },
+    {
+      "name": "chi_sim.traineddata.gz",
+      "sourcePackage": "@tesseract.js-data/chi_sim@1.0.0",
+      "bytes": 1718768,
+      "sha256": "b8a23f10c7de500891eb458a8adc9cc58ab7f242f08b7d149f5e9aea4ad5db7c"
+    }
+  ]
+}

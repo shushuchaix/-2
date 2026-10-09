@@ -30,6 +30,7 @@ export function createPurgeService({
   clock = repository.clock,
   fsAdapter = fs,
   diagnostics,
+  cleanupPackage,
 }) {
   const layout = resolveDataLayout(repository.dataDir),
     now = () => new Date(clock.now()).toISOString();
@@ -202,6 +203,15 @@ export function createPurgeService({
           "私有记录清理校验未通过。",
           503,
         );
+      if (cleanupPackage) {
+        const cleaned = await cleanupPackage(task.packageId);
+        if (cleaned?.status === "cleanup_pending")
+          throw packageError(
+            "attachment_cleanup_pending",
+            "版本临时文件仍待清理。",
+            503,
+          );
+      }
       const c = structuredClone(tx.control);
       c.purgeTasks[operationId] = {
         ...c.purgeTasks[operationId],

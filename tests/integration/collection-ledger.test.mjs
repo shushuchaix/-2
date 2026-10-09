@@ -14,6 +14,27 @@ const modelConfig = {
   baseUrl: "https://api.deepseek.com/v1",
   model: "deepseek-flash",
 };
+test("physical_attachment_bytes_repeat_and_retry_are_reserved_before_transport", async (t) => {
+  const f = await fixture(t, {
+    maxAttachmentBytes: 100,
+    maxTotalAttachmentBytes: 150,
+  });
+  const budgets = await createActivityBudgets({
+    ...f,
+    operationLease: f.lease,
+    modelConfig,
+  });
+  const first = await budgets.sources.claimRequest("attachment", {
+    bytesUpperBound: 100,
+  });
+  await budgets.sources.settleRequest(first, { bytes: 60 });
+  await assert.rejects(
+    budgets.sources.claimRequest("retry", { bytesUpperBound: 100 }),
+    (e) =>
+      e.code === "source_budget_exhausted" && e.budgetKind === "attachments",
+  );
+  assert.equal((await f.ledger.snapshot(f.ref)).usedBytes, 60);
+});
 async function fixture(t, limits = {}) {
   const f = await packageBusinessFixture(t),
     { a } = await f.twoTargets();

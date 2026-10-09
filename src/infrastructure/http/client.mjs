@@ -286,12 +286,15 @@ export function createRequestClient({
                 dnsMs += attemptDnsMs;
               }
               phase = "budget";
-              await budget.claimRequest(
+              const requestReservation = await budget.claimRequest(
                 redirects
                   ? "redirect"
                   : retries
                     ? "retry"
                     : options.kind || "request",
+                options.kind === "attachment"
+                  ? { bytesUpperBound: byteLimit }
+                  : undefined,
               );
               phase = "transport";
               const transportStarted = clock.now();
@@ -325,6 +328,9 @@ export function createRequestClient({
                 throw Object.assign(Error("Binary response missing"), {
                   code: "response_bytes_missing",
                 });
+              await budget.settleRequest?.(requestReservation, {
+                bytes: responseSize(result),
+              });
               return {
                 ...result,
                 url: result.url || url.href,

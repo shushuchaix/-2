@@ -18,6 +18,13 @@ export function resolveDataLayout(dataDir) {
     control: path.join(root, "control"),
     controlState: path.join(root, "control", "state.json"),
     controlInitialized: path.join(root, "control", "initialized.json"),
+    attachmentTemp: path.join(root, "cache", "attachment-temp"),
+    attachmentManifest: path.join(
+      root,
+      "control",
+      "attachment-cleanup",
+      "manifest.json",
+    ),
   });
 }
 export function ensureDataLayout(layout, { fsAdapter = fs } = {}) {

@@ -151,6 +151,7 @@ export function createTrashService({
   clock = repository.clock,
   cancelPackageAndWait,
   purgeService,
+  cleanupPackage,
 }) {
   let purge = purgeService;
   const at = () => new Date(clock.now()).toISOString();
@@ -186,6 +187,15 @@ export function createTrashService({
             "该版本仍有检索、评分或导入操作，请等待结束或取消后归档。",
           );
         await cancelPackageAndWait(packageId);
+      }
+      if (cleanupPackage) {
+        const cleaned = await cleanupPackage(packageId);
+        if (cleaned?.status === "cleanup_pending")
+          throw packageError(
+            "attachment_cleanup_pending",
+            "临时文件仍被占用，请重试归档。",
+            503,
+          );
       }
       return repository.withMaintenanceTransaction(async (tx) => {
         const w = structuredClone(tx.workspace),

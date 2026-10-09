@@ -102,6 +102,8 @@ function usageOf(p) {
     if (r.kind === "detail_credit") usedDetails++;
     if (r.kind === "attachment_credit") {
       usedAttachments++;
+    }
+    if (r.bytesUpperBound) {
       usedBytes += pending
         ? r.bytesUpperBound || 0
         : (r.verifiedUsage?.bytes ?? r.bytesUpperBound ?? 0);
@@ -226,6 +228,14 @@ export function createCollectionLedger({
           kind === "attachment_credit" &&
           (used.usedAttachments + 1 > (limits.maxAttachments ?? 40) ||
             bytesUpperBound > (limits.maxAttachmentBytes ?? 20971520) ||
+            used.usedBytes + bytesUpperBound >
+              (limits.maxTotalAttachmentBytes ?? 209715200))
+        )
+          throw exhausted("attachments");
+        if (
+          kind !== "model" &&
+          bytesUpperBound &&
+          (bytesUpperBound > (limits.maxAttachmentBytes ?? 20971520) ||
             used.usedBytes + bytesUpperBound >
               (limits.maxTotalAttachmentBytes ?? 209715200))
         )
@@ -387,11 +397,23 @@ export async function createActivityBudgets({
       }),
     );
   const sources = {
-    async claimRequest(kind = "request") {
+    async claimRequest(kind = "request", { bytesUpperBound = 0 } = {}) {
       return reserve({
         kind: kinds.has(kind) ? kind : "request",
         requestUpperBound: 1,
+        bytesUpperBound,
       });
+    },
+    async settleRequest(reservation, { bytes }) {
+      if (reservation?.bytesUpperBound)
+        return remember(
+          await ledger.settle({
+            ref,
+            reservationId: reservation.reservationId,
+            operationLease,
+            verifiedUsage: { requests: 1, bytes },
+          }),
+        );
     },
     async claimDetail(key) {
       return reserve({ kind: "detail_credit", resourceKey: key });

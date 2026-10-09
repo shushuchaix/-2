@@ -1,7 +1,11 @@
 import zlib from "node:zlib";
 export function readZipEntries(
   buffer,
-  { maxExpandedBytes = 41943040, maxEntries = 5000 } = {},
+  {
+    maxExpandedBytes = 41943040,
+    maxEntries = 5000,
+    maxCompressionRatio = Infinity,
+  } = {},
 ) {
   const fail = (message) => {
     throw new Error("ZIP " + message);
@@ -65,6 +69,8 @@ export function readZipEntries(
     if (flags & 1) fail("encrypted entry unsupported");
     if (method !== 0 && method !== 8) fail("unsupported compression method");
     if (plainSize > maxExpandedBytes - expanded) fail("expanded size limit");
+    if (plainSize > Math.max(1, compressed) * maxCompressionRatio)
+      fail("compression ratio limit");
     bounds(local, 30);
     if (local >= start || buffer.readUInt32LE(local) !== 0x04034b50)
       fail("invalid local offset");

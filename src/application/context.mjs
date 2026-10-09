@@ -1,4 +1,10 @@
 import fs from "node:fs/promises";
+import { resolveDataLayout } from "../infrastructure/storage/layout.mjs";
+import { createAttachmentCleanup } from "../attachments/cleanup.mjs";
+import { createAttachmentService } from "../attachments/service.mjs";
+import { createLocalOcr } from "../attachments/ocr.mjs";
+import { createDocConverter } from "../attachments/doc-converter.mjs";
+import { createConditionalCache } from "../infrastructure/http/conditional-cache.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -131,10 +137,26 @@ export async function createApplicationContext({
   );
   const registry = dependencies.registry || createDefaultSourceRegistry();
   if (dependencies.legacySchema !== true) repository.enableStrictSchema3?.();
+  const attachmentLayout = resolveDataLayout(repository.dataDir),
+    attachmentCleanup =
+      dependencies.attachmentCleanup ||
+      createAttachmentCleanup({
+        tempRoot: attachmentLayout.attachmentTemp,
+        manifestPath: attachmentLayout.attachmentManifest,
+      }),
+    ocr = dependencies.ocr || createLocalOcr(),
+    docConverter =
+      dependencies.docConverter ||
+      createDocConverter({
+        executable: dependencies.docConverterExecutable,
+        cleanup: attachmentCleanup,
+      });
+  await attachmentCleanup.resumePending();
   let runServiceForTrash;
   const trashService = createTrashService({
       repository,
       cancelPackageAndWait: (id) => runServiceForTrash.cancelPackageAndWait(id),
+      cleanupPackage: (id) => attachmentCleanup.cleanupPackage(id),
     }),
     purgeService = createPurgeService({
       repository,
@@ -142,6 +164,7 @@ export async function createApplicationContext({
       operationGate,
       fsAdapter: dependencies.fsAdapter,
       diagnostics,
+      cleanupPackage: (id) => attachmentCleanup.cleanupPackage(id),
     }),
     assignmentService = createLegacyAssignmentService({ repository }),
     trashScheduler = createTrashScheduler({
@@ -249,6 +272,14 @@ export async function createApplicationContext({
           registry,
           requestFactory,
           ledger: createCollectionLedger({ repository }),
+          attachmentService: createAttachmentService({
+            ledger: createCollectionLedger({ repository }),
+            cleanup: attachmentCleanup,
+            cache: createConditionalCache({ repository }),
+            ocr,
+            converter: docConverter,
+            clock: repository.clock,
+          }),
           events: eventHub,
           evaluationService,
           modelFactory,
@@ -327,6 +358,8 @@ export async function createApplicationContext({
           (p) => p.state === "active" && p.kind === "target",
         ))
           await runService.cancelPackageAndWait(p.packageId);
+      await attachmentCleanup.resumePending();
+      await ocr.close?.();
     },
     jobCleanupService: createJobCleanupService({ repository, operationGate }),
     operationGate,
@@ -340,6 +373,7 @@ export async function createApplicationContext({
     runService,
     collectionService,
     collectionRefresh,
+    attachmentCleanup,
     sourceService,
     importService,
     exportService,

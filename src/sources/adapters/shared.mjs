@@ -91,8 +91,39 @@ export function createPagedProvider({
   const provider = {
     id,
     name,
-    capabilities,
+    capabilities: {
+      resumablePages: true,
+      body: !!detail,
+      attachments: false,
+      ...capabilities,
+    },
     configSchema: { enabled: "boolean" },
+    async collectPage(input) {
+      const { site, query = {}, cursor = null, context = {} } = input;
+      const page = cursor?.page ?? 1;
+      if (!Number.isSafeInteger(page) || page < 1 || page > 20)
+        throw Object.assign(Error("Invalid collection page"), {
+          code: "collection_cursor_invalid",
+        });
+      const ctx = {
+        ...context,
+        ...input,
+        sites: context.sites || [site],
+        page,
+        cursor,
+      };
+      const response = await listPage(site, query, page, ctx);
+      const limited = response.coverageScope === "limited";
+      const done = limited || !response.hasMore;
+      return {
+        ...response,
+        records: response.records || [],
+        issues: response.issues || [],
+        done,
+        nextCursor: done ? null : response.nextCursor || { page: page + 1 },
+        parserVersion: id + "-1",
+      };
+    },
     async collect(ctx) {
       const records = [],
         issues = [],
@@ -108,7 +139,8 @@ export function createPagedProvider({
             truncated = false,
             coverageScope,
             truncationReason,
-            currentPage = 1;
+            currentPage = 1,
+            cursor = null;
           const queryIndex = ctx.queryIndex ?? localQueryIndex;
           const pageDiagnostic = (event, error) =>
             ctx.reportDiagnostic
@@ -120,7 +152,7 @@ export function createPagedProvider({
           try {
             for (
               let page = 1;
-              page <= Math.min(2, query.pageLimit || 1);
+              page <= Math.min(20, query.pageLimit || 1);
               page++
             ) {
               currentPage = page;
@@ -137,6 +169,7 @@ export function createPagedProvider({
                 ...ctx,
                 queryIndex,
                 page,
+                cursor,
                 request:
                   ctx.request &&
                   ((url, options = {}) =>
@@ -150,6 +183,7 @@ export function createPagedProvider({
                     })),
               });
               pages++;
+              cursor = response.nextCursor || { page: page + 1 };
               raw += response.raw ?? response.records.length;
               for (const issue of response.issues || []) {
                 const entry = await ctx.reportError?.(
@@ -192,11 +226,11 @@ export function createPagedProvider({
                   0,
                   (ctx.clock?.now?.() ?? Date.now()) - pageStarted,
                 ),
-                pageLimit: Math.min(2, query.pageLimit || 1),
+                pageLimit: Math.min(20, query.pageLimit || 1),
                 truncationReason: limited
                   ? "listing_only"
                   : response.hasMore &&
-                      page === Math.min(2, query.pageLimit || 1)
+                      page === Math.min(20, query.pageLimit || 1)
                     ? "page_limit"
                     : undefined,
                 counts: {
@@ -319,7 +353,7 @@ export function createPagedProvider({
     },
     async fetchDetail(record, ctx) {
       ctx.signal?.throwIfAborted();
-      ctx.budget?.claimDetail(
+      await ctx.budget?.claimDetail(
         record.sourceId + "/" + record.siteId + "/" + record.sourceRecordId,
       );
       return detail

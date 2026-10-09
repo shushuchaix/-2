@@ -3,6 +3,23 @@ import { createPagedProvider, baseRecord } from "./shared.mjs";
 import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
 import { canonicalizeSourceUrl } from "../../domain/identity.mjs";
+import { validatePublicUrl } from "../../infrastructure/http/public-url.mjs";
+function listLocation(site, value) {
+  const url = validatePublicUrl(value),
+    base = new URL(site.template.listUrl);
+  const prefix =
+    site.template.paginationPathPrefix ||
+    base.pathname.slice(0, base.pathname.lastIndexOf("/") + 1);
+  if (
+    url.origin !== base.origin ||
+    url.origin !== new URL(site.origin).origin ||
+    !url.pathname.startsWith(prefix)
+  )
+    throw Object.assign(Error("公告分页链接不属于允许的招聘栏目。"), {
+      code: "pagination_scope",
+    });
+  return url.href;
+}
 export function noticeDocument(response) {
   if ([401, 403].includes(response.status)) {
     const e = Error("HTTP forbidden");
@@ -33,23 +50,27 @@ export default createPagedProvider({
     jobTypes: ["campus", "social", "unknown"],
     kinds: ["recruitment_notice"],
     detail: true,
+    attachments: true,
   },
   async listPage(site, query, page, ctx) {
-    if (page > 1)
+    const template = site.template;
+    const paginated =
+      template?.paginationVerified === true && !!template.nextPageRule;
+    if (page > 1 && !paginated)
       return {
         records: [],
         hasMore: false,
         coverageScope: "limited",
         truncationReason: "listing_only",
       };
-    const template = site.template;
     if (!template?.listUrl || !template.linkRule || !template.bodyRule) {
       const e = Error("Verified notice template required");
       e.code = "parse_error";
       throw e;
     }
+    const listUrl = listLocation(site, ctx.cursor?.url || template.listUrl);
     const document = noticeDocument(
-      await ctx.request(template.listUrl, { signal: ctx.signal }),
+      await ctx.request(listUrl, { signal: ctx.signal }),
     );
     const records = [],
       seen = new Set();
@@ -66,7 +87,7 @@ export default createPagedProvider({
       if (!raw) continue;
       let url;
       try {
-        url = canonicalizeSourceUrl(new URL(raw, template.listUrl).href);
+        url = canonicalizeSourceUrl(new URL(raw, listUrl).href);
       } catch {
         continue;
       }
@@ -100,7 +121,7 @@ export default createPagedProvider({
           evidence: [
             {
               field: "title",
-              url: template.listUrl,
+              url: listUrl,
               selector: template.linkRule,
             },
             {
@@ -112,17 +133,36 @@ export default createPagedProvider({
         }),
       );
     }
-    if (!document.querySelector(template.linkRule)) {
+    if (
+      !document.querySelector(template.linkRule) &&
+      !(template.emptyRule && document.querySelector(template.emptyRule))
+    ) {
       const e = Error("Notice list selector missing");
       e.code = "parse_error";
       throw e;
     }
+    let nextCursor = null;
+    if (paginated) {
+      const next = document
+        .querySelector(template.nextPageRule)
+        ?.getAttribute("href");
+      if (next) {
+        const nextUrl = listLocation(site, new URL(next, listUrl).href);
+        if (nextUrl === listUrl)
+          throw Object.assign(Error("pagination_cycle"), {
+            code: "pagination_cycle",
+          });
+        nextCursor = { page: page + 1, url: nextUrl };
+      }
+    }
     return {
       records,
       raw: records.length,
-      hasMore: false,
-      coverageScope: "limited",
-      truncationReason: "listing_only",
+      hasMore: !!nextCursor,
+      nextCursor,
+      ...(!paginated
+        ? { coverageScope: "limited", truncationReason: "listing_only" }
+        : {}),
     };
   },
   async detail(record, ctx) {

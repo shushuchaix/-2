@@ -17,7 +17,9 @@ export function createSourceRegistry(providers) {
       !provider.configSchema ||
       ["collect", "fetchDetail", "probe"].some(
         (key) => typeof provider[key] !== "function",
-      )
+      ) ||
+      (provider.collectPage !== undefined &&
+        typeof provider.collectPage !== "function")
     )
       throw Error("Invalid source contract");
     if (entries.has(provider.id))

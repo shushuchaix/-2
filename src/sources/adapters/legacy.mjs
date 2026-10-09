@@ -35,6 +35,9 @@ export function createLegacyProvider(id, { collector } = {}) {
   const module = modules[id];
   if (!module) throw Error("Unknown legacy source");
   const capabilities = {
+    resumablePages: false,
+    body: typeof module.fetchDetail === "function",
+    attachments: false,
     category:
       id === "wechat"
         ? "social_discovery"
@@ -83,7 +86,7 @@ export function createLegacyProvider(id, { collector } = {}) {
                 targetYear: ctx.targetSnapshot?.graduationYear || "",
                 cities: ctx.targetSnapshot?.cities || [],
                 city: ctx.queries?.[0]?.city || "全国",
-                maxPages: Math.min(2, ctx.queries?.[0]?.pageLimit || 1),
+                maxPages: Math.min(20, ctx.queries?.[0]?.pageLimit || 1),
                 maxHosts: 1,
                 maxDetail: 0,
                 maxPerKeyword: 12,

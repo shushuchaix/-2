@@ -99,9 +99,13 @@ export default createPagedProvider({
       records,
       issues,
       raw: d.data.list.length,
-      hasMore:
-        d.data.list.length >= 20 &&
-        Number(d.data.pagenation?.count || 0) > page * 20,
+      hasMore: Number.isFinite(
+        Number(d.data.pagenation?.count ?? d.data.pagenation?.total),
+      )
+        ? Number(d.data.pagenation.count ?? d.data.pagenation.total) > page * 20
+        : Number.isFinite(Number(d.data.pagenation?.pages))
+          ? Number(d.data.pagenation.pages) > page
+          : d.data.list.length >= 20,
     };
   },
   async detail(r, ctx) {

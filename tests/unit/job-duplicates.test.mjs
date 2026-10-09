@@ -27,10 +27,11 @@ for (const [field, value] of Object.entries({
       experience: "一年",
       workMode: "onsite",
       level: "初级",
+      certificateRequirementStatus: "none",
     });
     assert.equal(
       relateJobs(left, { ...left, [field]: value }).relation,
-      "distinct",
+      field === "requiredCertificates" ? "possible" : "distinct",
     );
   });
 }

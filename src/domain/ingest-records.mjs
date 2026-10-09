@@ -8,7 +8,11 @@ import { normalizeRecord } from "./record.mjs";
 import { resolveJobIdentity, relateJobs } from "./identity.mjs";
 import { jobBusinessFingerprint } from "./job-duplicates.mjs";
 import { resolveJobId } from "./job-resolution.mjs";
-import { addTargetMemberFact } from "./job-facts.mjs";
+import { addTargetMemberFact, jobFactHash } from "./job-facts.mjs";
+import {
+  mergeRecruitmentFacts,
+  findDuplicateCandidates,
+} from "./duplicate-candidates.mjs";
 import { assertScope, assertOwned, packageError } from "./packages.mjs";
 import {
   packageWorkspace,
@@ -88,6 +92,14 @@ export function ingestRecordsDraft(w, input) {
     ]
       .map((id) => w.jobs[resolveJobId(w, id, { allowMissing: true })])
       .filter(Boolean);
+    for (const pair of findDuplicateCandidates({
+      records: [record],
+      existingJobs: Object.values(w.jobs),
+    })) {
+      const candidate = w.jobs[pair.existingJobId];
+      if (candidate && !candidates.includes(candidate))
+        candidates.push(candidate);
+    }
     const matches = candidates.filter(
       (j) => relateJobs(j.canonical, record).relation === "same",
     );
@@ -138,7 +150,7 @@ export function ingestRecordsDraft(w, input) {
     }
     const id = stored.jobId;
     stored.canonical = {
-      ...record,
+      ...mergeRecruitmentFacts(stored.canonical, record),
       ...(identity.strength !== "strong" &&
       resolveJobIdentity(stored.canonical).strength === "strong"
         ? Object.fromEntries(
@@ -152,7 +164,6 @@ export function ingestRecordsDraft(w, input) {
             ].map((k) => [k, stored.canonical[k]]),
           )
         : {}),
-      description: record.description || stored.canonical.description,
     };
     stored.lastSeen =
       observedAt > stored.lastSeen ? observedAt : stored.lastSeen;
@@ -211,6 +222,13 @@ export function ingestRecordsDraft(w, input) {
         contentHash: hash,
         fields: record,
         evidence: record.evidence,
+        factRevision:
+          Math.max(
+            0,
+            ...Object.values(w.observations)
+              .filter((o) => o.jobId === id)
+              .map((o) => o.factRevision || 0),
+          ) + 1,
       };
     if (revisionId) {
       const wasMember = !!w.targetMembers?.[revisionId]?.[id];
@@ -221,6 +239,49 @@ export function ingestRecordsDraft(w, input) {
         provenanceOperationId,
       });
       if (!wasMember && !newForTarget.includes(id)) newForTarget.push(id);
+      if (
+        jobFactHash(stored.canonical) !== jobFactHash(record) &&
+        w.targetMembers[revisionId][id].factContentHash !==
+          jobFactHash(stored.canonical)
+      ) {
+        const member = w.targetMembers[revisionId][id],
+          combinedId =
+            "z-" +
+            contentHash([
+              id,
+              runId,
+              stored.canonical,
+              member.factRefs.map((r) => r.observationId),
+            ]).slice(0, 32);
+        if (!w.observations[combinedId])
+          w.observations[combinedId] = {
+            ...structuredClone(w.observations[oid]),
+            observationId: combinedId,
+            sourceKind: "combined_evidence",
+            derivedFromObservationIds: member.factRefs
+              .filter(
+                (r) =>
+                  w.observations[r.observationId]?.sourceKind !==
+                  "combined_evidence",
+              )
+              .map((r) => r.observationId),
+            fields: structuredClone(stored.canonical),
+            contentHash: contentHash(stored.canonical),
+            factRevision:
+              Math.max(
+                0,
+                ...member.factRefs.map(
+                  (r) => w.observations[r.observationId]?.factRevision || 0,
+                ),
+              ) + 1,
+          };
+        addTargetMemberFact(w, {
+          targetRevisionId: revisionId,
+          jobId: id,
+          observationId: combinedId,
+          provenanceOperationId,
+        });
+      }
     }
     jobIds.push(id);
     observationIds.push(oid);

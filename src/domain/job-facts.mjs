@@ -17,7 +17,31 @@ const stable = (v) =>
         )
       : v;
 export const legacyJobFactHash = (record) => {
-  const business = jobBusinessContent(record);
+  const business = Object.fromEntries(
+    [
+      "kind",
+      "title",
+      "company",
+      "cities",
+      "jobType",
+      "graduationYear",
+      "cohort",
+      "batch",
+      "recruitmentBatch",
+      "recruitmentYear",
+      "level",
+      "degree",
+      "experience",
+      "requiredCertificates",
+      "workMode",
+      "employmentMode",
+      "requirements",
+      "description",
+      "publishedAt",
+      "deadlineAt",
+      "salary",
+    ].map((k) => [k, record[k] ?? null]),
+  );
   delete business.account;
   delete business.platform;
   return "job-fact-v1:" + hash(stable(business));
@@ -27,7 +51,9 @@ export const jobFactHash = (record) => {
     !record.conditions &&
     !record.sourceEvidence &&
     !record.applicationVerification &&
-    !record.recruitmentEvidence
+    !record.recruitmentEvidence &&
+    !record.major &&
+    !record.contractType
   )
     return legacyJobFactHash(record);
   const business = jobBusinessContent(record);
@@ -63,6 +89,7 @@ const latest = (observations) =>
   observations.sort(
     (a, b) =>
       String(b.observedAt || "").localeCompare(String(a.observedAt || "")) ||
+      (b.factRevision || 0) - (a.factRevision || 0) ||
       b.observationId.localeCompare(a.observationId),
   )[0];
 function refreshMember(w, member) {

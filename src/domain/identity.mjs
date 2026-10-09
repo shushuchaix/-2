@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { conditionIdentity } from "./duplicate-candidates.mjs";
 import {
   classifyJobDuplicate,
   canonicalizeSourceUrl,
@@ -25,7 +26,11 @@ export function resolveJobIdentity(record, { provenance = record } = {}) {
     record.degree || null,
     record.experience || null,
     record.requiredCertificates || [],
-    record.workMode || record.employmentMode || null,
+    record.workMode || null,
+    record.employmentMode || null,
+    record.contractType || null,
+    record.major || null,
+    (record.conditions || []).map(conditionIdentity),
   ]);
   const occurrenceHash = createHash("sha256")
     .update(occurrenceKey)
@@ -75,6 +80,11 @@ export function resolveJobIdentity(record, { provenance = record } = {}) {
   }
   if (record.url)
     aliases.push("url:" + canonicalizeSourceUrl(record.url, record.urlPolicy));
+  if (
+    record.verifiedJobLocator?.verified &&
+    record.verifiedJobLocator.kind === "job_detail"
+  )
+    aliases.push("url:" + canonicalizeSourceUrl(record.verifiedJobLocator.url));
   return {
     key,
     strength,

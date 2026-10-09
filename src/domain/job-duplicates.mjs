@@ -4,6 +4,13 @@ import {
   resolveApplicationAssociation,
 } from "./job-resolution.mjs";
 import { jobFactHash } from "./job-facts.mjs";
+import {
+  recruitmentConflicts,
+  sharedVerifiedJobLocator,
+  mergeRecruitmentFacts,
+  mergeSourceEvidenceDraft,
+  conditionIdentity,
+} from "./duplicate-candidates.mjs";
 export const identityText = (value) =>
   String(value ?? "")
     .normalize("NFKC")
@@ -46,6 +53,9 @@ const businessFields = [
   "requiredCertificates",
   "workMode",
   "employmentMode",
+  "contractType",
+  "major",
+  "majorRequired",
   "requirements",
   "description",
   "publishedAt",
@@ -55,7 +65,10 @@ const businessFields = [
   "platform",
 ];
 export function jobBusinessContent(r) {
-  return Object.fromEntries(businessFields.map((k) => [k, r[k] ?? null]));
+  return {
+    ...Object.fromEntries(businessFields.map((k) => [k, r[k] ?? null])),
+    conditions: (r.conditions || []).map(conditionIdentity),
+  };
 }
 export function jobBusinessFingerprint(r) {
   return createHash("sha256")
@@ -122,6 +135,7 @@ export function classifyJobDuplicate(
   right,
   { leftProvenance = left, rightProvenance = right } = {},
 ) {
+  const evidenceConflicts = recruitmentConflicts(left, right);
   const conflicts = [];
   for (const [field, a, b] of [
     ["kind", left.kind, right.kind],
@@ -137,11 +151,7 @@ export function classifyJobDuplicate(
     ["level", level(left), level(right)],
     ["degree", left.degree, right.degree],
     ["experience", left.experience, right.experience],
-    [
-      "work_mode",
-      left.workMode || left.employmentMode,
-      right.workMode || right.employmentMode,
-    ],
+    ["work_mode", left.workMode, right.workMode],
   ])
     if (known(a) && known(b) && identityText(a) !== identityText(b))
       conflicts.push("different_" + field);
@@ -153,10 +163,7 @@ export function classifyJobDuplicate(
     JSON.stringify(aCities) !== JSON.stringify(bCities)
   )
     conflicts.push("different_cities");
-  if (
-    JSON.stringify(certificates(left)) !== JSON.stringify(certificates(right))
-  )
-    conflicts.push("different_certificates");
+  // Missing certificates are unknown, not an explicit contradictory requirement.
   const authorityA =
     leftProvenance.sourceRecordIdKind === "authority" &&
     known(left.sourceRecordId);
@@ -190,6 +197,13 @@ export function classifyJobDuplicate(
       reasonCodes: fuzzy ? ["similar_company_title"] : conflicts,
     };
   }
+  if (evidenceConflicts.length)
+    return {
+      relation: evidenceConflicts.some((c) => c.decision === "distinct")
+        ? "distinct"
+        : "possible",
+      reasonCodes: evidenceConflicts.map((c) => c.code),
+    };
   const fieldsMatch =
     company &&
     company === identityText(right.company) &&
@@ -217,10 +231,18 @@ export function classifyJobDuplicate(
     } catch {
       /* invalid URL is not proof */
     }
-  if (fieldsMatch && sameAuthority)
+  if (
+    sameAuthority &&
+    (!company ||
+      !identityText(right.company) ||
+      company === identityText(right.company)) &&
+    (!title || !rightTitle || title === rightTitle)
+  )
     return { relation: "confirmed", reasonCodes: ["authority_id"] };
   if (fieldsMatch && specificUrl)
     return { relation: "confirmed", reasonCodes: ["specific_job_url"] };
+  if (fieldsMatch && sharedVerifiedJobLocator(left, right))
+    return { relation: "confirmed", reasonCodes: ["verified_job_locator"] };
   const exactBusiness =
     jobBusinessFingerprint(left) === jobBusinessFingerprint(right);
   const manual =
@@ -278,8 +300,9 @@ function completeness(record) {
     Math.min(1000, String(record.description || "").length) / 1000
   );
 }
-export function buildWorkspaceDuplicatePlan(w,options={}) {
-  if(w.schemaVersion===3&&!w._scope)return buildOwnedDuplicatePlan(w,options);
+export function buildWorkspaceDuplicatePlan(w, options = {}) {
+  if (w.schemaVersion === 3 && !w._scope)
+    return buildOwnedDuplicatePlan(w, options);
   const jobs = Object.values(w.jobs),
     manual = manualAssociations(w),
     manualIds = new Set(manual.flatMap((a) => a.jobIds));
@@ -422,14 +445,17 @@ export function applyWorkspaceDuplicatePlan(w, plan, { operationId, at }) {
     for (const id of g.removeJobIds) {
       const removed = w.jobs[id];
       if (!removed) throw Error("Duplicate entity disappeared");
-      for (const [key, value] of Object.entries(removed.canonical))
-        if (
-          kept.canonical[key] === null ||
-          kept.canonical[key] === undefined ||
-          kept.canonical[key] === "" ||
-          (Array.isArray(kept.canonical[key]) && !kept.canonical[key].length)
-        )
-          kept.canonical[key] = structuredClone(value);
+      mergeSourceEvidenceDraft(w, {
+        scope:
+          w.schemaVersion === 3
+            ? {
+                packageId: kept.ownerPackageId,
+                targetRevisionId: w.packages[kept.ownerPackageId].versionId,
+              }
+            : undefined,
+        keptJobId: g.keepJobId,
+        mergedJobId: id,
+      });
       kept.sourceRefs = [
         ...new Map(
           [...(kept.sourceRefs || []), ...(removed.sourceRefs || [])].map(
@@ -456,10 +482,33 @@ export function applyWorkspaceDuplicatePlan(w, plan, { operationId, at }) {
           time < kept.targetFirstSeen[target]
         )
           kept.targetFirstSeen[target] = time;
-      w.jobRedirects[id] = { toJobId: g.keepJobId, operationId, mergedAt: at,...(w.schemaVersion===3?{ownerPackageId:kept.ownerPackageId,originalRecordId:removed.recordId}:{}) };
-      if(w.schemaVersion===3){
-        if(removed.ownerPackageId!==kept.ownerPackageId)throw Error('Cross package duplicate merge');
-        for(const key of ['observations','evaluations','applications','events'])for(const r of Object.values(w[key]||{}))if(r.jobId===id){if(r.ownerPackageId!==kept.ownerPackageId)throw Error('Cross package duplicate reference');r.originalJobId ||= id;r.jobId=g.keepJobId;}
+      w.jobRedirects[id] = {
+        toJobId: g.keepJobId,
+        operationId,
+        mergedAt: at,
+        ...(w.schemaVersion === 3
+          ? {
+              ownerPackageId: kept.ownerPackageId,
+              originalRecordId: removed.recordId,
+            }
+          : {}),
+      };
+      if (w.schemaVersion === 3) {
+        if (removed.ownerPackageId !== kept.ownerPackageId)
+          throw Error("Cross package duplicate merge");
+        for (const key of [
+          "observations",
+          "evaluations",
+          "applications",
+          "events",
+        ])
+          for (const r of Object.values(w[key] || {}))
+            if (r.jobId === id) {
+              if (r.ownerPackageId !== kept.ownerPackageId)
+                throw Error("Cross package duplicate reference");
+              r.originalJobId ||= id;
+              r.jobId = g.keepJobId;
+            }
       }
       delete w.jobs[id];
       removedEntities++;
@@ -487,6 +536,49 @@ export function applyWorkspaceDuplicatePlan(w, plan, { operationId, at }) {
               ) || b.observationId.localeCompare(a.observationId),
           ),
         current = observations[0];
+      if (current) {
+        const original = observations.filter(
+            (o) => o.sourceKind !== "combined_evidence",
+          ),
+          combined = original
+            .toSorted(
+              (a, b) =>
+                String(a.observedAt || "").localeCompare(
+                  String(b.observedAt || ""),
+                ) || (a.factRevision || 0) - (b.factRevision || 0),
+            )
+            .reduce(
+              (r, o) =>
+                r
+                  ? mergeRecruitmentFacts(r, o.fields || o.record)
+                  : structuredClone(o.fields || o.record),
+              null,
+            );
+        if (
+          combined &&
+          jobFactHash(combined) !==
+            jobFactHash(current.fields || current.record)
+        ) {
+          const oid =
+            "z-" + digest([operationId, version, g.keepJobId, combined]);
+          w.observations[oid] = {
+            ...structuredClone(current),
+            observationId: oid,
+            jobId: g.keepJobId,
+            sourceKind: "combined_evidence",
+            derivedFromObservationIds: original.map((o) => o.observationId),
+            fields: combined,
+            observedAt: at,
+            factRevision:
+              Math.max(0, ...observations.map((o) => o.factRevision || 0)) + 1,
+          };
+          factRefs.push({
+            observationId: oid,
+            provenanceOperationId: operationId,
+          });
+          observations.unshift(w.observations[oid]);
+        }
+      }
       const times = all
         .flatMap((m) => [m.firstSeen, m.lastSeen])
         .filter(Boolean)
@@ -494,9 +586,9 @@ export function applyWorkspaceDuplicatePlan(w, plan, { operationId, at }) {
       members[g.keepJobId] = {
         ...structuredClone(all[0]),
         factRefs,
-        currentObservationId: current?.observationId || null,
-        factContentHash: current
-          ? jobFactHash(current.fields || current.record)
+        currentObservationId: observations[0]?.observationId || null,
+        factContentHash: observations[0]
+          ? jobFactHash(observations[0].fields || observations[0].record)
           : null,
         firstSeen: times[0] || null,
         lastSeen: times.at(-1) || null,
@@ -537,18 +629,112 @@ export function applyWorkspaceDuplicatePlan(w, plan, { operationId, at }) {
     protectedGroups: plan.protectedGroups.length,
   };
 }
-function ownedDuplicateView(w,packageId){
- const v=structuredClone(w);v._scope={packageId};
- for(const key of ['jobs','observations','evaluations','applications','runs','events','files','jobRedirects'])v[key]=Object.fromEntries(Object.entries(v[key]||{}).filter(([,r])=>r.ownerPackageId===packageId));
- for(const key of ['profiles','targets'])v[key]=Object.fromEntries(Object.entries(v[key]).map(([id,list])=>[id,list.filter(r=>r.ownerPackageId===packageId)]).filter(([,list])=>list.length));
- v.targetMembers=Object.fromEntries(Object.entries(v.targetMembers||{}).filter(([id])=>Object.values(v.targets).flat().some(t=>t.revisionId===id)));
- v.identityAliases=Object.fromEntries(Object.entries(v.identityAliases).map(([id,ids])=>[id,ids.filter(jobId=>v.jobs[jobId]||v.jobRedirects[jobId])]).filter(([,ids])=>ids.length));
- return v;
+function ownedDuplicateView(w, packageId) {
+  const v = structuredClone(w);
+  v._scope = { packageId };
+  for (const key of [
+    "jobs",
+    "observations",
+    "evaluations",
+    "applications",
+    "runs",
+    "events",
+    "files",
+    "jobRedirects",
+  ])
+    v[key] = Object.fromEntries(
+      Object.entries(v[key] || {}).filter(
+        ([, r]) => r.ownerPackageId === packageId,
+      ),
+    );
+  for (const key of ["profiles", "targets"])
+    v[key] = Object.fromEntries(
+      Object.entries(v[key])
+        .map(([id, list]) => [
+          id,
+          list.filter((r) => r.ownerPackageId === packageId),
+        ])
+        .filter(([, list]) => list.length),
+    );
+  v.targetMembers = Object.fromEntries(
+    Object.entries(v.targetMembers || {}).filter(([id]) =>
+      Object.values(v.targets)
+        .flat()
+        .some((t) => t.revisionId === id),
+    ),
+  );
+  v.identityAliases = Object.fromEntries(
+    Object.entries(v.identityAliases)
+      .map(([id, ids]) => [
+        id,
+        ids.filter((jobId) => v.jobs[jobId] || v.jobRedirects[jobId]),
+      ])
+      .filter(([, ids]) => ids.length),
+  );
+  return v;
 }
-function buildOwnedDuplicatePlan(w,{packageIds,allVersions=true,now=Date.now()}={}){
- const chosen=Object.values(w.packages).filter(p=>['target','legacy_unassigned'].includes(p.kind)&&(!packageIds||packageIds.includes(p.packageId))&&(p.state==='active'||p.state==='trashed'&&Date.parse(p.purgeAt)>now)).sort((a,b)=>a.packageId.localeCompare(b.packageId));
- const packages=chosen.map(p=>{const plan=buildWorkspaceDuplicatePlan(ownedDuplicateView(w,p.packageId));const meta={packageId:p.packageId,archiveId:p.archiveId||null,purgeAt:p.purgeAt||null};return {...meta,versionName:p.versionName,kind:p.kind,counts:plan.counts,groups:plan.groups.map(g=>({...g,...meta})),possiblePairs:plan.possiblePairs.map(g=>({...g,...meta}))};});
- const groups=packages.flatMap(p=>p.groups),possiblePairs=packages.flatMap(p=>p.possiblePairs),protectedGroups=groups.filter(g=>g.protected),counts={confirmedGroups:0,removedEntities:0,collapsedVersionEntries:0,affectedVersions:0,possiblePairs:0,protectedGroups:0};
- for(const p of packages)for(const [key,n]of Object.entries(p.counts))counts[key]=(counts[key]||0)+n;
- return {workspaceRevision:w.revision,planHash:digest({workspaceHash:workspaceDuplicateHash(w),packages:chosen.map(p=>({packageId:p.packageId,archiveId:p.archiveId,purgeAt:p.purgeAt}))}),groups,possiblePairs,protectedGroups,packages,counts,totals:counts,packageIds:chosen.map(p=>p.packageId),allVersions};
+function buildOwnedDuplicatePlan(
+  w,
+  { packageIds, allVersions = true, now = Date.now() } = {},
+) {
+  const chosen = Object.values(w.packages)
+    .filter(
+      (p) =>
+        ["target", "legacy_unassigned"].includes(p.kind) &&
+        (!packageIds || packageIds.includes(p.packageId)) &&
+        (p.state === "active" ||
+          (p.state === "trashed" && Date.parse(p.purgeAt) > now)),
+    )
+    .sort((a, b) => a.packageId.localeCompare(b.packageId));
+  const packages = chosen.map((p) => {
+    const plan = buildWorkspaceDuplicatePlan(
+      ownedDuplicateView(w, p.packageId),
+    );
+    const meta = {
+      packageId: p.packageId,
+      archiveId: p.archiveId || null,
+      purgeAt: p.purgeAt || null,
+    };
+    return {
+      ...meta,
+      versionName: p.versionName,
+      kind: p.kind,
+      counts: plan.counts,
+      groups: plan.groups.map((g) => ({ ...g, ...meta })),
+      possiblePairs: plan.possiblePairs.map((g) => ({ ...g, ...meta })),
+    };
+  });
+  const groups = packages.flatMap((p) => p.groups),
+    possiblePairs = packages.flatMap((p) => p.possiblePairs),
+    protectedGroups = groups.filter((g) => g.protected),
+    counts = {
+      confirmedGroups: 0,
+      removedEntities: 0,
+      collapsedVersionEntries: 0,
+      affectedVersions: 0,
+      possiblePairs: 0,
+      protectedGroups: 0,
+    };
+  for (const p of packages)
+    for (const [key, n] of Object.entries(p.counts))
+      counts[key] = (counts[key] || 0) + n;
+  return {
+    workspaceRevision: w.revision,
+    planHash: digest({
+      workspaceHash: workspaceDuplicateHash(w),
+      packages: chosen.map((p) => ({
+        packageId: p.packageId,
+        archiveId: p.archiveId,
+        purgeAt: p.purgeAt,
+      })),
+    }),
+    groups,
+    possiblePairs,
+    protectedGroups,
+    packages,
+    counts,
+    totals: counts,
+    packageIds: chosen.map((p) => p.packageId),
+    allVersions,
+  };
 }

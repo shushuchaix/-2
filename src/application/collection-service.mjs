@@ -15,6 +15,7 @@ import {
 import { readProviderPage } from "../sources/collection-page.mjs";
 import { runtimeRepository } from "./package-runtime-service.mjs";
 import { cancellableSleep } from "../infrastructure/http/scheduler.mjs";
+import { sourceRefreshDelay } from "../sources/source-quality.mjs";
 const terminal = new Set(["completed", "cancelled"]);
 const stale = () =>
   packageError("collection_stale_epoch", "活动已停止或进度已变化，请刷新。");
@@ -417,6 +418,7 @@ export function createCollectionService({
         .then(() => execute(ref, task))
         .finally(async () => {
           try {
+            await Promise.allSettled([...(task.pending || [])]);
             await lease.release();
           } finally {
             permit?.release?.();
@@ -472,6 +474,12 @@ export function createCollectionService({
             unit.status = page.done ? "completed" : "pending";
             unit.lastErrorCode = null;
             unit.lastSuccessAt = at();
+            unit.lastAttemptAt = at();
+            unit.refreshDelayMs = sourceRefreshDelay({
+              changes: result.newForTarget.length,
+              total: page.records.length,
+              previousMs: unit.refreshDelayMs,
+            });
             unit.seenCursorHashes ||= [];
             if (
               page.cursorHash &&
@@ -484,7 +492,7 @@ export function createCollectionService({
             ) {
               unit.status = "pending";
               unit.nextDueAt = new Date(
-                Number(clock.now()) + 86400000,
+                Number(clock.now()) + unit.refreshDelayMs,
               ).toISOString();
               unit.refreshRound = (unit.refreshRound || 0) + 1;
               unit.roundPages = 0;
@@ -622,6 +630,24 @@ export function createCollectionService({
     setAttachmentService(value) {
       attachmentService = value;
     },
+    async withActivityContext(ref, callback) {
+      const root = rootFor(await repository.read(), ref),
+        task = active.get(ref.activityId);
+      if (!task?.apiContext || root.collectionProgress.status !== "collecting")
+        throw packageError(
+          "collection_probe_unavailable",
+          "请在活动运行期间使用累计预算探针。",
+        );
+      task.controller.signal.throwIfAborted();
+      const pending = Promise.resolve().then(() => callback(task.apiContext));
+      task.pending ||= new Set();
+      task.pending.add(pending);
+      try {
+        return await pending;
+      } finally {
+        task.pending.delete(pending);
+      }
+    },
   };
   async function stopActivity(ref, status, manual) {
     await repository.mutateWorkspace((w) => {
@@ -674,6 +700,13 @@ export function createCollectionService({
         signal,
         diagnosticContext: { runId: token.sliceRunId },
       });
+      task.apiContext = {
+        budget: budgets.sources,
+        request,
+        signal,
+        operationLease: lease,
+        collectionGuard: { ref, token },
+      };
       await emit(token.sliceRunId, "stage", { stage: "collecting" }, ref.scope);
       let root = await service.get(ref);
       const now = Number(clock.now()),
@@ -967,9 +1000,15 @@ export function createCollectionService({
       await mutateCurrent(ref, token, lease, (w, r) => {
         const u = r.collectionProgress.units[unit.unitId];
         u.lastErrorCode = idValid(code) ? code : "source_unavailable";
+        u.lastAttemptAt = at();
+        u.refreshDelayMs = sourceRefreshDelay({
+          failed: true,
+          previousMs: u.refreshDelayMs,
+        });
         u.status = auth ? "waiting_for_auth" : "pending";
         u.nextDueAt =
-          nextDueAt || new Date(Number(clock.now()) + 3600000).toISOString();
+          nextDueAt ||
+          new Date(Number(clock.now()) + u.refreshDelayMs).toISOString();
         w.runs[token.sliceRunId].issues.push({
           code: u.lastErrorCode,
           sourceId: u.sourceId,

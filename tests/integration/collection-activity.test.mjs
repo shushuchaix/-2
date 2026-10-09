@@ -75,6 +75,8 @@ test("application_old_run_entry_starts_an_activity_and_history_counts_the_slice_
           category: "job_board",
           name: "synthetic",
           status: "ready",
+          verifiedAt: new Date(f.clock.now()).toISOString(),
+          probeEvidence: [{ hasRequirements: true }],
           origin: "https://jobs.example.org",
         },
       ],

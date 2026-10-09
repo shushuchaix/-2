@@ -5,6 +5,37 @@ import { redactBusiness } from "../domain/redact.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
 import { recordSourceHealth } from "./source-health.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
+import { assertScope, packageError } from "../domain/packages.mjs";
+import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
+import { assessSourceProbe } from "../sources/source-quality.mjs";
+const privateKeys = new Set([
+  "accountIds",
+  "articleUrls",
+  "sessionRef",
+  "sessionRefs",
+  "queries",
+  "keywords",
+]);
+function validateConfig(provider, config) {
+  assertInput("sourceConfig", config);
+  for (const [key, value] of Object.entries(config)) {
+    if (/cookie|authorization|password|api.?key|token|secret/i.test(key))
+      throw inputError({ [key]: "来源配置不能保存凭据，请使用专用会话。" });
+    const type = provider.configSchema[key];
+    if (!type) throw inputError({ [key]: "此来源不支持该设置项。" });
+    if (type === "array") {
+      if (
+        !Array.isArray(value) ||
+        value.length > 100 ||
+        value.some((v) => typeof v !== "string" || !v.trim() || v.length > 4096)
+      )
+        throw inputError({ [key]: "请填写最多100个有效公开标识或链接。" });
+      if (/Urls$/.test(key)) for (const url of value) validatePublicUrl(url);
+    } else if (typeof value !== type)
+      throw inputError({ [key]: "设置格式不正确。" });
+  }
+  return structuredClone(config);
+}
 export function createSourceService({
   registry,
   repository,
@@ -12,8 +43,199 @@ export function createSourceService({
   diagnostics,
   catalog,
   clock = repository.clock,
+  operationGate = createWorkspaceOperationGate({ repository }),
+  activityContext,
 }) {
   return {
+    async listScopedSources({ scope }) {
+      const w = await repository.read(),
+        pkg = assertScope(w, scope, clock.now());
+      return registry
+        .list()
+        .map((p) => ({
+          sourceId: p.id,
+          name: p.name,
+          capabilities: p.capabilities,
+          configSchema: p.configSchema,
+          config: {
+            ...(w.settings.sourceOverrides[p.id] || {}),
+            ...(pkg.collectionSettings?.sourceOverrides[p.id] || {}),
+          },
+          health: Object.values({
+            ...w.sourceHealth,
+            ...pkg.collectionSettings?.sourceVerification,
+          }).filter((h) => h.sourceId === p.id),
+        }));
+    },
+    async saveScopedConfig({ scope, sourceId, config = {} }) {
+      const provider = registry.get(sourceId);
+      if (!provider) throw inputError({ sourceId: "招聘来源已不存在。" });
+      const saved = validateConfig(provider, config);
+      return (
+        await repository.mutateWorkspace((w) => {
+          const pkg = assertScope(w, scope, clock.now());
+          pkg.collectionSettings ||= {
+            sourceOverrides: {},
+            sessionRefs: {},
+            refreshEnabled: false,
+          };
+          pkg.collectionSettings.sourceOverrides[sourceId] = saved;
+          return saved;
+        })
+      ).result;
+    },
+    async probeScopedSource({ scope, sourceId, siteId, ref }) {
+      const w = await repository.read(),
+        pkg = assertScope(w, scope, clock.now()),
+        provider = registry.get(sourceId);
+      if (!provider)
+        throw packageError("source_not_found", "招聘来源不存在。", 404);
+      const site = (
+        catalog || loadSiteCatalog({ customSites: w.settings.customSites })
+      ).find(
+        (s) => s.providerId === sourceId && (!siteId || s.siteId === siteId),
+      );
+      if (!site)
+        throw packageError("site_not_found", "未找到该来源的站点。", 404);
+      const config = {
+        ...w.settings.sourceOverrides[sourceId],
+        ...pkg.collectionSettings?.sourceOverrides[sourceId],
+      };
+      const probe = async ({
+        budget,
+        request,
+        signal,
+        operationLease,
+        collectionGuard,
+      }) => {
+        const context = {
+          scope,
+          sites: [site],
+          queries: [{ keyword: "", pageLimit: 1 }],
+          targetSnapshot: { cities: [] },
+          clock,
+          budget,
+          request,
+          signal,
+          config,
+        };
+        const list = await provider.collect({ ...context, onBatch: undefined });
+        const details = [],
+          issues = [...(list.issues || [])];
+        for (const record of list.records.slice(0, 2))
+          try {
+            details.push(await provider.fetchDetail(record, context));
+          } catch (e) {
+            signal?.throwIfAborted();
+            issues.push({ code: e.code || "detail_unavailable" });
+          }
+        const quality = assessSourceProbe({
+          site,
+          listSample: {
+            status: issues.some((i) =>
+              ["restricted", "http_forbidden", "captcha"].includes(i.code),
+            )
+              ? 403
+              : 200,
+            records: list.records,
+          },
+          detailSample: details,
+          now: clock.now(),
+        });
+        const result = {
+          ...quality,
+          status:
+            quality.verification === "ready"
+              ? "ready"
+              : quality.verification === "restricted"
+                ? "restricted"
+                : list.records.length
+                  ? "parse_error"
+                  : "empty",
+          sampleCount: list.records.length,
+          issues: [...issues, ...quality.issues],
+          budget: budget.snapshot(),
+        };
+        await repository.mutateWorkspace(
+          (d) => {
+            const owner = assertScope(d, scope, clock.now());
+            if (collectionGuard) {
+              const r = d.runs[collectionGuard.ref.activityId],
+                p = r?.collectionProgress,
+                t = collectionGuard.token;
+              if (
+                r?.ownerPackageId !== scope.packageId ||
+                p?.epoch !== t.epoch ||
+                p.activeSliceRunId !== t.sliceRunId ||
+                p.status !== "collecting"
+              )
+                throw packageError(
+                  "collection_stale_epoch",
+                  "活动已停止，探针结果未保存。",
+                );
+            }
+            if (
+              ["social", "social_discovery"].includes(
+                provider.capabilities.category,
+              )
+            ) {
+              owner.collectionSettings ||= {
+                sourceOverrides: {},
+                sessionRefs: {},
+                refreshEnabled: false,
+              };
+              owner.collectionSettings.sourceVerification ||= {};
+              owner.collectionSettings.sourceVerification[
+                sourceId + "/" + site.siteId
+              ] = {
+                sourceId,
+                siteId: site.siteId,
+                status: result.status,
+                capabilities: quality.capabilities,
+                checkedAt: result.checkedAt,
+                lastSuccessAt:
+                  result.status === "ready" ? result.checkedAt : null,
+              };
+            } else
+              recordSourceHealth(
+                d,
+                {
+                  sourceId,
+                  siteId: site.siteId,
+                  status: result.status,
+                  sampleCount: result.sampleCount,
+                  capabilities: quality.capabilities,
+                },
+                clock.now(),
+              );
+          },
+          { operationLease },
+        );
+        return result;
+      };
+      if (ref) {
+        if (!activityContext)
+          throw packageError(
+            "collection_probe_unavailable",
+            "活动探针当前不可用。",
+          );
+        return activityContext({ ...ref, scope }, probe);
+      }
+      const lease = await operationGate.acquire("collect", { scope });
+      try {
+        const budget = createSourceBudget({ maxRequests: 6, maxDetails: 2 });
+        return await probe({
+          budget,
+          request: requestFactory({
+            budget,
+            diagnosticContext: { sourceId, siteId: site.siteId },
+          }),
+          operationLease: lease,
+        });
+      } finally {
+        await lease.release();
+      }
+    },
     async listSources() {
       const w = await repository.read();
       return registry.list().map((p) => ({
@@ -123,6 +345,17 @@ export function createSourceService({
       return result;
     },
     async saveSourceConfig(input) {
+      if (
+        Object.keys(input.config || {}).some(
+          (k) =>
+            privateKeys.has(k) ||
+            /cookie|authorization|password|api.?key|token|secret/i.test(k),
+        )
+      )
+        throw inputError({
+          config:
+            "全局设置只能保存公开工具配置；账号与查询设置必须属于目标版本。",
+        });
       if (!registry.get(input.sourceId))
         throw inputError({ sourceId: "招聘来源已不存在，请刷新后重新选择。" });
       assertInput("sourceConfig", input.config || {});

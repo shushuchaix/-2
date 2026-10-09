@@ -30,6 +30,41 @@ export function loadSiteCatalog({ customSites = [] } = {}) {
     ids.add(site.siteId);
     validatePublicUrl(site.origin);
     validatePublicUrl(site.evidenceUrl);
-    return structuredClone(site);
+    const normalized = structuredClone(site);
+    normalized.allowedDomains ||= [
+      ...new Set([
+        new URL(site.origin).hostname,
+        ...(site.institutionUrl ? [new URL(site.institutionUrl).hostname] : []),
+      ]),
+    ];
+    if (
+      !Array.isArray(normalized.allowedDomains) ||
+      normalized.allowedDomains.some(
+        (host) =>
+          typeof host !== "string" ||
+          host.includes("/") ||
+          validatePublicUrl("https://" + host).hostname !== host,
+      )
+    )
+      throw Error("Invalid catalog allowed domains");
+    normalized.jobFamilies ||= normalized.majorFamilies || [];
+    normalized.regions ||= [];
+    if (
+      [normalized.jobFamilies, normalized.regions].some(
+        (values) =>
+          !Array.isArray(values) ||
+          values.some((v) => typeof v !== "string" || v.length > 200),
+      )
+    )
+      throw Error("Invalid catalog recruiting metadata");
+    normalized.adapter ||= site.providerId;
+    normalized.identityEvidence ||= {
+      url: site.evidenceUrl,
+      kind: "official_entry",
+      checkedAt: site.verifiedAt || null,
+    };
+    if (normalized.identityEvidence.url)
+      validatePublicUrl(normalized.identityEvidence.url);
+    return normalized;
   });
 }

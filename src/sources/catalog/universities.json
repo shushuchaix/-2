@@ -21,7 +21,19 @@
     "aliases": [
       "西电",
       "西安电子科技大学"
-    ]
+    ],
+    "allowedDomains": [
+      "job.xidian.edu.cn"
+    ],
+    "jobFamilies": [
+      "it"
+    ],
+    "adapter": "university",
+    "identityEvidence": {
+      "url": "https://job.xidian.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "university-job.neuq.edu.cn",
@@ -45,7 +57,19 @@
     "aliases": [
       "东秦",
       "东北大学秦皇岛分校"
-    ]
+    ],
+    "allowedDomains": [
+      "job.neuq.edu.cn"
+    ],
+    "jobFamilies": [
+      "it"
+    ],
+    "adapter": "university",
+    "identityEvidence": {
+      "url": "https://job.neuq.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "university-myjob.dlmu.edu.cn",
@@ -69,7 +93,19 @@
     "aliases": [
       "大连海事大学",
       "大连海事"
-    ]
+    ],
+    "allowedDomains": [
+      "myjob.dlmu.edu.cn"
+    ],
+    "jobFamilies": [
+      "it"
+    ],
+    "adapter": "university",
+    "identityEvidence": {
+      "url": "https://myjob.dlmu.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "university-job.sdufe.edu.cn",
@@ -93,7 +129,19 @@
     "aliases": [
       "山财",
       "山东财经大学"
-    ]
+    ],
+    "allowedDomains": [
+      "job.sdufe.edu.cn"
+    ],
+    "jobFamilies": [
+      "finance"
+    ],
+    "adapter": "university",
+    "identityEvidence": {
+      "url": "https://job.sdufe.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "university-career.zjnu.edu.cn",
@@ -117,7 +165,19 @@
     "aliases": [
       "浙师大",
       "浙江师范大学"
-    ]
+    ],
+    "allowedDomains": [
+      "career.zjnu.edu.cn"
+    ],
+    "jobFamilies": [
+      "normal"
+    ],
+    "adapter": "university",
+    "identityEvidence": {
+      "url": "https://career.zjnu.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "university-jy.xmu.edu.cn",
@@ -141,7 +201,19 @@
     "aliases": [
       "厦大",
       "厦门大学"
-    ]
+    ],
+    "allowedDomains": [
+      "jy.xmu.edu.cn"
+    ],
+    "jobFamilies": [
+      "general"
+    ],
+    "adapter": "university",
+    "identityEvidence": {
+      "url": "https://jy.xmu.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "university-job.zzu.edu.cn",
@@ -165,7 +237,19 @@
     "aliases": [
       "郑大",
       "郑州大学"
-    ]
+    ],
+    "allowedDomains": [
+      "job.zzu.edu.cn"
+    ],
+    "jobFamilies": [
+      "general"
+    ],
+    "adapter": "university",
+    "identityEvidence": {
+      "url": "https://job.zzu.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "university-job.zjxu.edu.cn",
@@ -189,7 +273,19 @@
     "aliases": [
       "嘉兴大学",
       "嘉兴学院"
-    ]
+    ],
+    "allowedDomains": [
+      "job.zjxu.edu.cn"
+    ],
+    "jobFamilies": [
+      "general"
+    ],
+    "adapter": "university",
+    "identityEvidence": {
+      "url": "https://job.zjxu.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "chenyun-cafuc",
@@ -207,7 +303,17 @@
     },
     "evidenceUrl": "https://jy.cafuc.edu.cn",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "jy.cafuc.edu.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "chenyun",
+    "identityEvidence": {
+      "url": "https://jy.cafuc.edu.cn",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "91job-seu",
@@ -246,7 +352,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "seu.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://seu.91job.org.cn/sub-station/home/10286",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:02.236Z"
+    }
   },
   {
     "siteId": "91job-hhu",
@@ -285,7 +401,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "hhu.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://hhu.91job.org.cn/sub-station/home/10294",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:01.320Z"
+    }
   },
   {
     "siteId": "91job-nuaa",
@@ -324,7 +450,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "nuaa.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://nuaa.91job.org.cn/sub-station/home/10287",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:01.640Z"
+    }
   },
   {
     "siteId": "91job-njust",
@@ -363,7 +499,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njust.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njust.91job.org.cn/sub-station/home/10288",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:04.726Z"
+    }
   },
   {
     "siteId": "91job-njau",
@@ -402,7 +548,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njau.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njau.91job.org.cn/sub-station/home/10307",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:04.747Z"
+    }
   },
   {
     "siteId": "91job-njnu",
@@ -441,7 +597,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njnu.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njnu.91job.org.cn/sub-station/home/10319",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:05.535Z"
+    }
   },
   {
     "siteId": "91job-njtech",
@@ -480,7 +646,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njtech.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njtech.91job.org.cn/sub-station/home/10291",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:10.821Z"
+    }
   },
   {
     "siteId": "91job-njupt",
@@ -519,7 +695,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njupt.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njupt.91job.org.cn/sub-station/home/10293",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:08.240Z"
+    }
   },
   {
     "siteId": "91job-nuist",
@@ -558,7 +744,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "nuist.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://nuist.91job.org.cn/sub-station/home/10300",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:09.399Z"
+    }
   },
   {
     "siteId": "91job-njfu",
@@ -597,7 +793,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njfu.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njfu.91job.org.cn/sub-station/home/10298",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:12.886Z"
+    }
   },
   {
     "siteId": "91job-cpu",
@@ -636,7 +842,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "cpu.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://cpu.91job.org.cn/sub-station/home/10316",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:12.833Z"
+    }
   },
   {
     "siteId": "91job-njmu",
@@ -675,7 +891,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njmu.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njmu.91job.org.cn/sub-station/home/10312",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:14.124Z"
+    }
   },
   {
     "siteId": "91job-njucm",
@@ -714,7 +940,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njucm.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njucm.91job.org.cn/sub-station/home/10315",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:17.500Z"
+    }
   },
   {
     "siteId": "91job-njue",
@@ -753,7 +989,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "njue.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://njue.91job.org.cn/sub-station/home/10327",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:16.488Z"
+    }
   },
   {
     "siteId": "91job-nau",
@@ -792,7 +1038,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "nau.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://nau.91job.org.cn/sub-station/home/11287",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:17.782Z"
+    }
   },
   {
     "siteId": "91job-suda",
@@ -831,7 +1087,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "suda.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://suda.91job.org.cn/sub-station/home/10285",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:20.399Z"
+    }
   },
   {
     "siteId": "91job-cczu",
@@ -870,7 +1136,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "cczu.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://cczu.91job.org.cn/sub-station/home/10292",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:21.361Z"
+    }
   },
   {
     "siteId": "91job-jiangnan",
@@ -909,7 +1185,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "jiangnan.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://jiangnan.91job.org.cn/sub-station/home/10295",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:22.506Z"
+    }
   },
   {
     "siteId": "91job-ujs",
@@ -948,7 +1234,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "ujs.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://ujs.91job.org.cn/sub-station/home/10299",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:25.620Z"
+    }
   },
   {
     "siteId": "91job-yzu",
@@ -987,7 +1283,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "yzu.91job.org.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "university-91job",
+    "identityEvidence": {
+      "url": "https://yzu.91job.org.cn/sub-station/home/11117",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:25.700Z"
+    }
   },
   {
     "siteId": "official-nju",
@@ -1005,6 +1311,193 @@
     },
     "evidenceUrl": "https://job.nju.edu.cn/",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "job.nju.edu.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "official-announcements",
+    "identityEvidence": {
+      "url": "https://job.nju.edu.cn/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "name": "中国人民警察大学",
+    "institutionUrl": "http://jy.cppu.edu.cn/",
+    "evidenceUrl": "https://www.cppu.edu.cn/",
+    "origin": "http://jy.cppu.edu.cn",
+    "category": "university",
+    "jobFamilies": [
+      "消防工程",
+      "消防安全管理",
+      "消防检测维保",
+      "安全工程"
+    ],
+    "regions": [
+      "河北",
+      "广东"
+    ],
+    "suggestedAdapter": "pending",
+    "identitySource": "学校官网招生就业导航直接链接该入口；官方消防工程专业介绍确认方向",
+    "relevanceEvidenceUrl": "https://www.cppu.edu.cn/info/1273/6052.htm",
+    "locationEvidenceUrl": "https://www.cppu.edu.cn/xxgk/xxjj.htm",
+    "entryRead": "校官网及专业介绍已读；就业门户HTTP和HTTPS均打开失败",
+    "status": "candidate",
+    "verifiedAt": null,
+    "siteId": "official-85f26b75dd32196a",
+    "providerId": "official-announcements",
+    "adapter": "official-announcements",
+    "adapterVerification": "unverified",
+    "entryUrl": "http://jy.cppu.edu.cn/",
+    "allowedDomains": [
+      "jy.cppu.edu.cn"
+    ],
+    "capabilities": {
+      "list": "unverified",
+      "body": "unverified",
+      "date": "unverified",
+      "attachments": "unverified",
+      "apply": "unverified"
+    },
+    "identityEvidence": {
+      "url": "https://www.cppu.edu.cn/",
+      "kind": "official_identity",
+      "description": "学校官网招生就业导航直接链接该入口；官方消防工程专业介绍确认方向",
+      "checkedAt": "2026-10-09T07:00:00Z"
+    }
+  },
+  {
+    "name": "河南理工大学",
+    "institutionUrl": "https://hpu.bysjy.com.cn/",
+    "evidenceUrl": "https://www.hpu.edu.cn/index.htm",
+    "origin": "https://hpu.bysjy.com.cn",
+    "category": "university",
+    "jobFamilies": [
+      "消防工程",
+      "安全工程",
+      "消防安全管理",
+      "应急救援"
+    ],
+    "regions": [
+      "河南"
+    ],
+    "suggestedAdapter": "pending",
+    "identitySource": "学校官网招生就业导航直接链接此就业网；安全学院官网确认消防工程专业",
+    "relevanceEvidenceUrl": "https://www6.hpu.edu.cn/safe/info/1010/2402.htm",
+    "entryRead": "实际读到2026年10月招聘公告和宣讲会列表，标注云研科技；岗位正文未读",
+    "status": "candidate",
+    "verifiedAt": null,
+    "siteId": "official-c738f71905918585",
+    "providerId": "official-announcements",
+    "adapter": "official-announcements",
+    "adapterVerification": "unverified",
+    "entryUrl": "https://hpu.bysjy.com.cn/",
+    "allowedDomains": [
+      "hpu.bysjy.com.cn"
+    ],
+    "capabilities": {
+      "list": "unverified",
+      "body": "unverified",
+      "date": "unverified",
+      "attachments": "unverified",
+      "apply": "unverified"
+    },
+    "identityEvidence": {
+      "url": "https://www.hpu.edu.cn/index.htm",
+      "kind": "official_identity",
+      "description": "学校官网招生就业导航直接链接此就业网；安全学院官网确认消防工程专业",
+      "checkedAt": "2026-10-09T07:00:00Z"
+    }
+  },
+  {
+    "name": "西安科技大学",
+    "institutionUrl": "https://jy.xust.edu.cn/",
+    "evidenceUrl": "https://www.xust.edu.cn/",
+    "origin": "https://jy.xust.edu.cn",
+    "category": "university",
+    "jobFamilies": [
+      "消防工程",
+      "安全工程",
+      "消防设计",
+      "应急救援"
+    ],
+    "regions": [
+      "陕西"
+    ],
+    "suggestedAdapter": "pending",
+    "identitySource": "学校官网就业导航直接链接此入口；安全学院官网确认消防工程专业",
+    "relevanceEvidenceUrl": "https://aqxy.xust.edu.cn/info/1035/1337.htm",
+    "entryRead": "就业入口已读，标注云研科技；招聘数据仍为JS模板占位符",
+    "status": "candidate",
+    "verifiedAt": null,
+    "siteId": "official-92038145590ecfba",
+    "providerId": "official-announcements",
+    "adapter": "official-announcements",
+    "adapterVerification": "unverified",
+    "entryUrl": "https://jy.xust.edu.cn/",
+    "allowedDomains": [
+      "jy.xust.edu.cn"
+    ],
+    "capabilities": {
+      "list": "unverified",
+      "body": "unverified",
+      "date": "unverified",
+      "attachments": "unverified",
+      "apply": "unverified"
+    },
+    "identityEvidence": {
+      "url": "https://www.xust.edu.cn/",
+      "kind": "official_identity",
+      "description": "学校官网就业导航直接链接此入口；安全学院官网确认消防工程专业",
+      "checkedAt": "2026-10-09T07:00:00Z"
+    }
+  },
+  {
+    "name": "中国矿业大学",
+    "institutionUrl": "https://cumt.91job.org.cn/sub-station/home/10290",
+    "evidenceUrl": "https://www.cumt.edu.cn/",
+    "origin": "https://cumt.91job.org.cn",
+    "category": "university",
+    "tenantId": "10290",
+    "jobFamilies": [
+      "消防工程",
+      "安全工程",
+      "消防检测维保",
+      "职业安全健康"
+    ],
+    "regions": [
+      "江苏"
+    ],
+    "suggestedAdapter": "university-91job",
+    "identitySource": "当前校官网就业指导导航直连tenant 10290；官方指南确认使用91JOB",
+    "officialEntryUrl": "https://www.91job.org.cn/sub-station/home/10290",
+    "additionalIdentityEvidenceUrl": "https://xxgk.cumt.edu.cn/c5/f8/c1962a509432/page.htm",
+    "relevanceEvidenceUrl": "https://safe.cumt.edu.cn/xygk/xyjj.htm",
+    "entryRead": "cumt子域实际跳转至tenant 10290；两个官方入口均为JS壳，列表API正文未验证",
+    "status": "candidate",
+    "verifiedAt": null,
+    "siteId": "official-5e6e62b1f6776968",
+    "providerId": "university-91job",
+    "adapter": "university-91job",
+    "adapterVerification": "unverified",
+    "entryUrl": "https://cumt.91job.org.cn/sub-station/home/10290",
+    "allowedDomains": [
+      "cumt.91job.org.cn"
+    ],
+    "capabilities": {
+      "list": "unverified",
+      "body": "unverified",
+      "date": "unverified",
+      "attachments": "unverified",
+      "apply": "unverified"
+    },
+    "identityEvidence": {
+      "url": "https://www.cumt.edu.cn/",
+      "kind": "official_identity",
+      "description": "当前校官网就业指导导航直连tenant 10290；官方指南确认使用91JOB",
+      "checkedAt": "2026-10-09T07:00:00Z"
+    }
   }
 ]

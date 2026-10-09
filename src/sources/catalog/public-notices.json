@@ -45,7 +45,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "www.ict.ac.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "official-announcements",
+    "identityEvidence": {
+      "url": "https://www.ict.ac.cn/rczp/202510/t20251015_7989499.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:31.561Z"
+    }
   },
   {
     "siteId": "public-iscas",
@@ -93,7 +103,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "www.iscas.ac.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "official-announcements",
+    "identityEvidence": {
+      "url": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260717_8251365.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:34.784Z"
+    }
   },
   {
     "siteId": "public-iop",
@@ -141,7 +161,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "www.iop.cas.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "official-announcements",
+    "identityEvidence": {
+      "url": "https://www.iop.cas.cn/zszp/zp/202608/t20260817_8261008.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:34.414Z"
+    }
   },
   {
     "siteId": "public-gibh",
@@ -189,7 +219,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "gibh.cas.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "official-announcements",
+    "identityEvidence": {
+      "url": "https://gibh.cas.cn/rczp/202609/t20260904_8278624.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:36.768Z"
+    }
   },
   {
     "siteId": "public-las",
@@ -237,7 +277,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "las.cas.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "official-announcements",
+    "identityEvidence": {
+      "url": "https://las.cas.cn/edu/rczp/202605/t20260525_8208837.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:40.039Z"
+    }
   },
   {
     "siteId": "public-ipe",
@@ -285,6 +335,16 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "ipe.cas.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "official-announcements",
+    "identityEvidence": {
+      "url": "https://ipe.cas.cn/rcdw/rczp/202608/t20260818_8261766.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:40.650Z"
+    }
   }
 ]

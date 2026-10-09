@@ -16,7 +16,17 @@
     },
     "evidenceUrl": "https://sou.zhaopin.com/",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "sou.zhaopin.com"
+    ],
+    "jobFamilies": [],
+    "adapter": "zhaopin",
+    "identityEvidence": {
+      "url": "https://sou.zhaopin.com/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "shixiseng",
@@ -35,7 +45,17 @@
     },
     "evidenceUrl": "https://www.shixiseng.com/",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "www.shixiseng.com"
+    ],
+    "jobFamilies": [],
+    "adapter": "shixiseng",
+    "identityEvidence": {
+      "url": "https://www.shixiseng.com/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "nowcoder",
@@ -54,7 +74,17 @@
     },
     "evidenceUrl": "https://www.nowcoder.com/jobs/school/jobs",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "www.nowcoder.com"
+    ],
+    "jobFamilies": [],
+    "adapter": "nowcoder",
+    "identityEvidence": {
+      "url": "https://www.nowcoder.com/jobs/school/jobs",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "jiuyeqiao",
@@ -73,7 +103,17 @@
     },
     "evidenceUrl": "https://job.jiuyeqiao.cn/",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "job.jiuyeqiao.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "jiuyeqiao",
+    "identityEvidence": {
+      "url": "https://job.jiuyeqiao.cn/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "ncss",
@@ -110,7 +150,17 @@
         "jobType": "unknown",
         "hasRequirements": true
       }
-    ]
+    ],
+    "allowedDomains": [
+      "www.ncss.cn"
+    ],
+    "jobFamilies": [],
+    "adapter": "ncss",
+    "identityEvidence": {
+      "url": "https://www.ncss.cn/student/jobs/index.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-05T05:05:43.642Z"
+    }
   },
   {
     "siteId": "yingjiesheng",
@@ -129,7 +179,17 @@
     },
     "evidenceUrl": "https://www.yingjiesheng.com/deadline/",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "www.yingjiesheng.com"
+    ],
+    "jobFamilies": [],
+    "adapter": "yingjiesheng",
+    "identityEvidence": {
+      "url": "https://www.yingjiesheng.com/deadline/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "searchapi",
@@ -148,7 +208,17 @@
     },
     "evidenceUrl": "https://api.tavily.com",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "api.tavily.com"
+    ],
+    "jobFamilies": [],
+    "adapter": "searchapi",
+    "identityEvidence": {
+      "url": "https://api.tavily.com",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "wechat",
@@ -167,7 +237,17 @@
     },
     "evidenceUrl": "https://mp.weixin.qq.com",
     "verifiedAt": null,
-    "status": "candidate"
+    "status": "candidate",
+    "allowedDomains": [
+      "mp.weixin.qq.com"
+    ],
+    "jobFamilies": [],
+    "adapter": "wechat",
+    "identityEvidence": {
+      "url": "https://mp.weixin.qq.com",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "weibo",
@@ -187,7 +267,17 @@
     "evidenceUrl": "https://weibo.com",
     "verifiedAt": null,
     "status": "candidate",
-    "accessStatus": "authorization_required"
+    "accessStatus": "authorization_required",
+    "allowedDomains": [
+      "weibo.com"
+    ],
+    "jobFamilies": [],
+    "adapter": "weibo",
+    "identityEvidence": {
+      "url": "https://weibo.com",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   },
   {
     "siteId": "douyin",
@@ -207,6 +297,16 @@
     "evidenceUrl": "https://www.douyin.com",
     "verifiedAt": null,
     "status": "candidate",
-    "accessStatus": "authorization_required"
+    "accessStatus": "authorization_required",
+    "allowedDomains": [
+      "www.douyin.com"
+    ],
+    "jobFamilies": [],
+    "adapter": "douyin",
+    "identityEvidence": {
+      "url": "https://www.douyin.com",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
   }
 ]

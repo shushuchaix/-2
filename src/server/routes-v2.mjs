@@ -9,8 +9,11 @@ import {
 } from "./validation.mjs";
 import { writeRunEventStream } from "./event-stream.mjs";
 import { handleTrashRequest } from "./trash-routes.mjs";
-import { handlePackageBusinessRequest } from "./package-business-routes.mjs";
-import {handleCollectionRequest} from './collection-routes.mjs';
+import {
+  handlePackageBusinessRequest,
+  businessScope,
+} from "./package-business-routes.mjs";
+import { handleCollectionRequest } from "./collection-routes.mjs";
 import { UUID_RE, packageError } from "../domain/packages.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { extractResumeText } from "../resume/extract-text.mjs";
@@ -31,7 +34,7 @@ export async function handleV2Request(req, res, context) {
     pathname = url.pathname;
   if (!pathname.startsWith("/api/v2/")) return false;
   if (await handleTrashRequest(req, res, context)) return true;
-  if (await handleCollectionRequest(req,res,context)) return true;
+  if (await handleCollectionRequest(req, res, context)) return true;
   if (await handlePackageBusinessRequest(req, res, context)) return true;
   const route = pathname.slice(7),
     method = req.method;
@@ -431,8 +434,14 @@ export async function handleV2Request(req, res, context) {
     return true;
   }
   if (route === "/sources" && method === "GET") {
+    const params = Object.fromEntries(url.searchParams);
     send(200, {
-      sources: await context.sourceService.listSources(),
+      sources:
+        params.packageId || params.targetRevisionId
+          ? await context.sourceService.listScopedSources({
+              scope: businessScope(params),
+            })
+          : await context.sourceService.listSources(),
       sites: await context.getCatalog(),
     });
     return true;
@@ -460,6 +469,27 @@ export async function handleV2Request(req, res, context) {
     const id = identifier(decode(match[1])),
       input = await body();
     if (input.siteId) identifier(input.siteId);
+    if (input.scope) {
+      const scope = businessScope(input);
+      send(
+        200,
+        match[2] === "probe"
+          ? await context.sourceService.probeScopedSource({
+              scope,
+              sourceId: id,
+              siteId: input.siteId,
+              ref: input.activityId
+                ? { activityId: identifier(input.activityId) }
+                : undefined,
+            })
+          : await context.sourceService.saveScopedConfig({
+              scope,
+              sourceId: id,
+              config: input.config || {},
+            }),
+      );
+      return true;
+    }
     send(
       200,
       match[2] === "probe"

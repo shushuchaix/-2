@@ -262,7 +262,11 @@ export async function createApplicationContext({
               catalog:
                 dependencies.catalog ||
                 loadSiteCatalog({ customSites: w.settings.customSites }),
-              health: w.sourceHealth,
+              health: {
+                ...w.sourceHealth,
+                ...w.packages[input.scope.packageId].collectionSettings
+                  ?.sourceVerification,
+              },
               sourceOverrides: {
                 ...w.settings.sourceOverrides,
                 ...w.packages[input.scope.packageId].collectionSettings
@@ -290,6 +294,11 @@ export async function createApplicationContext({
       repository,
       registry,
       requestFactory,
+      operationGate,
+      activityContext: collectionService
+        ? (ref, callback) =>
+            collectionService.withActivityContext(ref, callback)
+        : undefined,
     }),
     importService = createImportService({
       repository,

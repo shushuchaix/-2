@@ -315,7 +315,7 @@ export function normalizeBackupOwnership({
       ? structuredClone(target)
       : r.targetSnapshot || null;
     item.events = (r.events || []).map((e, i) =>
-      owned("runEvents", [id, e.seq ?? i], owner, e),
+      owned("runEvents", [id, e.seq ?? i], owner, { ...e, runId: newId }),
     );
     w.runs[newId] = item;
     runMap.set(id, item);
@@ -438,6 +438,7 @@ export function normalizeBackupOwnership({
     item.provenance = { ...item.provenance, legacyObservationId: id };
     w.observations[item.observationId] = item;
   }
+  const evaluationMap = new Map();
   for (const [id, e] of Object.entries(old.evaluations)) {
     const owner = evaluationOwner.get(id),
       jobId = jobMap.get(owner + ":" + e.jobId);
@@ -460,6 +461,18 @@ export function normalizeBackupOwnership({
       item.targetRevisionId = null;
     item.provenance = { ...item.provenance, legacyEvaluationId: id };
     w.evaluations[item.evaluationId] = item;
+    evaluationMap.set(id, item);
+  }
+  // Explicit lists also include cached evaluations whose original runId stays unchanged.
+  for (const [id, run] of runMap) {
+    run.evaluationIds = [
+      ...new Set(
+        (old.runs[id].evaluationIds || [])
+          .map((evaluationId) => evaluationMap.get(evaluationId))
+          .filter((e) => e?.ownerPackageId === run.ownerPackageId)
+          .map((e) => e.evaluationId),
+      ),
+    ];
   }
   for (const [id, a] of Object.entries(old.applications)) {
     const owner = applicationOwner.get(id),
@@ -513,7 +526,8 @@ export function normalizeBackupOwnership({
     const raw = snapshots[oldId];
     if (!raw) continue;
     const owner = run.ownerPackageId,
-      sid = identity("record", ["snapshot", oldId, owner]);
+      sid = identity("record", ["snapshot", oldId, owner]),
+      evaluationIds = new Set(run.evaluationIds);
     const snapshot = {
       recordId: sid,
       ownerPackageId: owner,
@@ -524,7 +538,9 @@ export function normalizeBackupOwnership({
         (o) => o.runId === run.runId,
       ),
       evaluations: Object.values(w.evaluations).filter(
-        (e) => e.runId === run.runId,
+        (e) =>
+          e.ownerPackageId === owner &&
+          (evaluationIds.has(e.evaluationId) || e.runId === run.runId),
       ),
       jobs: Object.values(w.jobs).filter((j) => j.ownerPackageId === owner),
     };

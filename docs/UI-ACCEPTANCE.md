@@ -2,6 +2,8 @@
 
 日期：2026-10-09。依据：已批准的 `docs/superpowers/specs/2026-10-09-ui-version-isolation-and-trash-design.md` 与 `docs/superpowers/plans/2026-10-09-ui-version-isolation-and-trash.md`，尤其 Task 13–19。
 
+同日后续启动迁移修复的新增回归、完整离线门槛及重新构建产物记录见 [启动迁移修复](MIGRATION-HOTFIX-2026-10-09.md)。下文保留界面发布时的截图与证据。
+
 本文件区分 React 行为测试、保留的旧模块测试、服务器资源检查和真实 Electron 验收。通过旧 `.test.mjs` 不等于新 React 页面已通过同一交互。jsdom 不证明 Chromium CSP、窗口几何、DPI 或实际加密桥接。
 
 ## 设计与组件来源

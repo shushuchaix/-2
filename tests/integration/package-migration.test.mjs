@@ -12,6 +12,7 @@ import { openPackageControl } from "../../src/infrastructure/storage/package-con
 import { normalizeBackupOwnership } from "../../src/infrastructure/storage/package-migration.mjs";
 import { bootstrapWorkspace } from "../../src/infrastructure/storage/bootstrap-workspace.mjs";
 import { failOnce } from "../helpers/package-fixture.mjs";
+import { createRunEventHub } from "../../src/application/run-events.mjs";
 
 export function legacyWorkspace() {
   const w = createEmptyWorkspace({ schemaVersion: 2 });
@@ -74,7 +75,17 @@ export function legacyWorkspace() {
       targetSnapshot: structuredClone(w.targets[id][0]),
       status: "completed",
       stage: "finished",
-      events: [{ seq: 1, type: "done", at: "2026-01-03T00:00:00.000Z" }],
+      events: [
+        {
+          schemaVersion: 2,
+          runId: "r-" + id,
+          seq: 1,
+          type: "done",
+          at: "2026-01-03T00:00:00.000Z",
+          payload: { status: "completed" },
+        },
+      ],
+      lastSeq: 1,
       snapshotRef: null,
     };
     w.observations["o-" + id] = {
@@ -105,7 +116,8 @@ export async function seedLegacy(
   );
   const adapter = failOnce(fs);
   if (failPhase) adapter.arm(failPhase);
-  const repo = await openWorkspaceRepository({allowLegacy:true,
+  const repo = await openWorkspaceRepository({
+    allowLegacy: true,
     dataDir: repository.dataDir,
     fsAdapter: adapter,
   });
@@ -116,6 +128,164 @@ export async function seedLegacy(
     adapter,
   };
 }
+test("production-shaped run events follow their migrated run and retain their payload", async (t) => {
+  const workspace = legacyWorkspace();
+  for (const run of Object.values(workspace.runs)) {
+    run.events = [
+      {
+        schemaVersion: 2,
+        runId: run.runId,
+        seq: 1,
+        type: "progress",
+        at: "2026-01-03T00:00:00.000Z",
+        payload: { stage: "collecting", counts: { accepted: 1 } },
+      },
+      {
+        schemaVersion: 2,
+        runId: run.runId,
+        seq: 2,
+        type: "done",
+        at: "2026-01-03T00:01:00.000Z",
+        payload: { status: "completed", counts: { accepted: 1 } },
+      },
+    ];
+    run.lastSeq = 2;
+  }
+  const fixture = await seedLegacy(t, { workspace });
+  await bootstrapWorkspace({ repository: fixture.repository });
+  const migrated = await fixture.repository.read();
+  assertWorkspace(migrated);
+  for (const run of Object.values(migrated.runs)) {
+    const original = workspace.runs[run.provenance.legacyRunId];
+    assert.notEqual(run.runId, original.runId);
+    assert.equal(run.events.length, original.events.length);
+    for (const [i, event] of run.events.entries()) {
+      assert.equal(event.runId, run.runId);
+      assert.equal(event.ownerPackageId, run.ownerPackageId);
+      for (const key of ["schemaVersion", "seq", "type", "at", "payload"])
+        assert.deepEqual(event[key], original.events[i][key]);
+    }
+  }
+  const control = await fixture.control.read();
+  await bootstrapWorkspace({ repository: fixture.repository });
+  assert.deepEqual(await fixture.repository.read(), migrated);
+  assert.deepEqual(await fixture.control.read(), control);
+});
+
+test("migration retains same-package cached evaluations in run history and immutable snapshots", async (t) => {
+  const workspace = legacyWorkspace();
+  workspace.runs["r-prior"] = {
+    ...structuredClone(workspace.runs["r-a"]),
+    runId: "r-prior",
+    events: [],
+  };
+  for (const [id, runId, targetRevisionId] of [
+    ["current", "r-a", "a@1"],
+    ["cached-null", null, "a@1"],
+    ["cached-prior", "r-prior", "a@1"],
+    ["other-package", "r-b", "b@1"],
+  ]) {
+    workspace.evaluations[id] = {
+      evaluationId: id,
+      jobId: "j",
+      runId,
+      targetRevisionId,
+      cacheKey: "synthetic-cache-" + id,
+      score: 60,
+    };
+  }
+  workspace.runs["r-a"].evaluationIds = [
+    "cached-null",
+    "current",
+    "cached-prior",
+    "other-package",
+    "missing",
+    "cached-null",
+  ];
+  const normalized = normalizeBackupOwnership({
+    workspace,
+    snapshots: { "r-a": { run: workspace.runs["r-a"] } },
+  });
+  const migrated = normalized.workspace;
+  const run = Object.values(migrated.runs).find(
+    (r) => r.provenance.legacyRunId === "r-a",
+  );
+  const evaluation = (legacyId) =>
+    Object.values(migrated.evaluations).find(
+      (e) => e.provenance.legacyEvaluationId === legacyId,
+    );
+  const expected = ["cached-null", "current", "cached-prior"].map(
+    (id) => evaluation(id).evaluationId,
+  );
+  assert.deepEqual(run.evaluationIds, expected);
+  assert.equal(evaluation("cached-null").runId, null);
+  assert.equal(
+    evaluation("cached-prior").runId,
+    Object.values(migrated.runs).find(
+      (r) => r.provenance.legacyRunId === "r-prior",
+    ).runId,
+  );
+  for (const legacyId of ["cached-null", "cached-prior"])
+    assert.equal(evaluation(legacyId).cacheKey, "synthetic-cache-" + legacyId);
+  const retained = (items) => items.map((e) => e.evaluationId).sort();
+  assert.deepEqual(
+    retained(normalized.snapshots[run.runId].evaluations),
+    [...expected].sort(),
+  );
+  const eventHub = createRunEventHub({
+    repository: {
+      read: async () => migrated,
+      clock: { now: () => Date.now() },
+    },
+  });
+  const snapshot = await eventHub.getSnapshot(run.runId, {
+    packageId: run.ownerPackageId,
+    targetRevisionId: run.targetSnapshot.revisionId,
+  });
+  assert.deepEqual(
+    retained(snapshot.payload.evaluations),
+    [...expected].sort(),
+  );
+  assert.equal(Object.keys(migrated.evaluations).length, 4);
+  const repeated = normalizeBackupOwnership({
+    workspace,
+    snapshots: { "r-a": { run: workspace.runs["r-a"] } },
+    control: normalized.control,
+  });
+  assert.deepEqual(repeated.workspace, migrated);
+  assert.deepEqual(repeated.snapshots, normalized.snapshots);
+  workspace.runs["r-a"].snapshotRef = {
+    path: "runs-v2/r-a.json",
+    hash: "legacy",
+  };
+  const fixture = await seedLegacy(t, { workspace });
+  await fs.mkdir(path.join(fixture.dataDir, "runs-v2"), { recursive: true });
+  await fs.writeFile(
+    path.join(fixture.dataDir, "runs-v2/r-a.json"),
+    JSON.stringify({ run: workspace.runs["r-a"] }),
+  );
+  await bootstrapWorkspace({ repository: fixture.repository });
+  const saved = await fixture.repository.read();
+  const savedRun = Object.values(saved.runs).find(
+    (r) => r.provenance.legacyRunId === "r-a",
+  );
+  const diskSnapshot = await fixture.repository.readRunSnapshot(savedRun.runId);
+  assert.deepEqual(
+    diskSnapshot.evaluations.map((e) => e.provenance.legacyEvaluationId).sort(),
+    ["cached-null", "cached-prior", "current"],
+  );
+  assert.deepEqual(
+    retained(diskSnapshot.evaluations),
+    [...savedRun.evaluationIds].sort(),
+  );
+  await bootstrapWorkspace({ repository: fixture.repository });
+  assert.deepEqual(await fixture.repository.read(), saved);
+  assert.deepEqual(
+    await fixture.repository.readRunSnapshot(savedRun.runId),
+    diskSnapshot,
+  );
+});
+
 test("ambiguous application remains once in an unassigned package and posting facts stay isolated", () => {
   const n = normalizeBackupOwnership({
     workspace: legacyWorkspace(),
@@ -300,7 +470,10 @@ test("failed main migration commit retains legacy and prepared identities for re
     raw,
   );
   const ids = (await f.control.read()).identityIndex;
-  const repo = await openWorkspaceRepository({allowLegacy:true, dataDir: f.dataDir });
+  const repo = await openWorkspaceRepository({
+    allowLegacy: true,
+    dataDir: f.dataDir,
+  });
   await bootstrapWorkspace({
     repository: repo,
     clock: { now: () => new Date("2026-10-10T00:00:00.000Z") },

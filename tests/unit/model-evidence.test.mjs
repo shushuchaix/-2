@@ -2,6 +2,120 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { validateModelResults } from "../../src/llm/validation.mjs";
 import { expandArticles } from "../../src/match/article.mjs";
+import { assessRecruitmentEvidence } from "../../src/domain/recruitment-evidence.mjs";
+
+const extract = (description, positions, other = {}) =>
+  expandArticles(
+    { chatJson: async () => ({ isRecruiting: true, positions, ...other }) },
+    {},
+    [
+      {
+        sourceId: "wechat",
+        siteId: "wechat",
+        sourceRecordId: "review",
+        title: "招聘",
+        url: "https://mp.weixin.qq.com/s/review",
+        description,
+        bodyStatus: "complete",
+      },
+    ],
+  );
+test("review: another position row cannot become verified requirements", async () => {
+  const text =
+    "发布日期：2026-10-09。账号所在地：北京。\n消防设计师：本科，必须持有注册消防工程师证书。\n安全助理：大专，经验不限。";
+  const r = await extract(
+    text,
+    [
+      {
+        title: "消防设计师",
+        city: "北京",
+        education: "大专",
+        requirementsExcerpt: "安全助理：大专，经验不限。",
+      },
+    ],
+    { deadline: "2026-10-09" },
+  );
+  assert.equal(r.jobs.length, 0);
+});
+test("review: metadata city and publish date are not work city or deadline", async () => {
+  const text =
+    "发布日期：2026-10-09。账号所在地：北京。\n消防设计师：本科，必须持有注册消防工程师证书。";
+  const r = await extract(
+    text,
+    [
+      {
+        title: "消防设计师",
+        city: "北京",
+        education: "本科",
+        requirementsExcerpt: "本科，必须持有注册消防工程师证书。",
+      },
+    ],
+    { deadline: "2026-10-09" },
+  );
+  assert.equal(r.jobs.length, 1);
+  assert.equal(r.jobs[0].city, "");
+  assert.equal(r.jobs[0].deadlineAt, null);
+  const good = await extract(
+    "报名截止：2026-10-20\n消防设计师：本科。工作地点：广州。",
+    [
+      {
+        title: "消防设计师",
+        city: "广州",
+        education: "本科",
+        requirementsExcerpt: "本科。工作地点：广州。",
+      },
+    ],
+    { deadline: "2026-10-20" },
+  );
+  assert.equal(good.jobs[0].city, "广州");
+  assert.equal(good.jobs[0].deadlineAt, "2026-10-20");
+});
+test("review: legacy announcement extraction requires fresh scoped evidence", () => {
+  const e = assessRecruitmentEvidence({
+    record: {
+      parserVersion: "article-literal-2",
+      derivedFrom: "article",
+      bodyStatus: "complete",
+      description: "unsafe legacy excerpt",
+      openingStatus: "open",
+      applicationStatus: "available",
+    },
+    now: Date.now(),
+  });
+  assert.equal(e.bodyVerified, false);
+});
+test("review: same title with different verified rows is preserved for conservative dedup", async () => {
+  const r = await extract(
+    "消防工程师：本科，消防工程专业。\n消防工程师：硕士，安全工程专业。",
+    [
+      {
+        title: "消防工程师",
+        education: "本科",
+        requirementsExcerpt: "消防工程师：本科，消防工程专业。",
+      },
+      {
+        title: "消防工程师",
+        education: "硕士",
+        requirementsExcerpt: "消防工程师：硕士，安全工程专业。",
+      },
+    ],
+  );
+  assert.equal(r.jobs.length, 2);
+  assert.notEqual(r.jobs[0].sourceRecordId, r.jobs[1].sourceRecordId);
+});
+test("review: another row deadline cannot become a common deadline", async () => {
+  const r = await extract(
+    "消防设计师：本科，消防工程专业。\n安全助理：大专。报名截止：2026-10-20。",
+    [
+      {
+        title: "消防设计师",
+        requirementsExcerpt: "消防设计师：本科，消防工程专业。",
+      },
+    ],
+    { deadline: "2026-10-20" },
+  );
+  assert.equal(r.jobs[0].deadlineAt, null);
+});
 test("announcement extraction no longer drops positions after eight", async () => {
   const titles = Array.from({ length: 12 }, (_, i) => "消防岗位" + i),
     description = titles.map((t) => t + "：本科要求。").join("\n");

@@ -67,11 +67,16 @@ const provider = createPagedProvider({
       "https://mp.weixin.qq.com/mp/profile_ext?" +
       new URLSearchParams({ action: "home", __biz: account });
     const response = await ctx.request(url, {
-        signal: ctx.signal,
-        maxRetries: 0,
-        maxBytes: 6291456,
-      }),
-      list = parseWechatList(response.text, url);
+      signal: ctx.signal,
+      maxRetries: 0,
+      maxBytes: 6291456,
+    });
+    if ([401, 403, 429].includes(response.status))
+      throw Object.assign(Error("公众号列表受限。"), {
+        code: response.status === 429 ? "rate_limited" : "login_required",
+        nextDueAt: response.nextDueAt,
+      });
+    const list = parseWechatList(response.text, url);
     return {
       records: list.articleUrls.map((u) => seedRecord(u, site)),
       hasMore: accountIndex + 1 < accounts.length,

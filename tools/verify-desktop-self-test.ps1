@@ -6,6 +6,8 @@ $resolvedExe = (Resolve-Path -LiteralPath $ExePath).Path
 $cachePath = Join-Path $workspacePath '.cache'
 New-Item -ItemType Directory -Path $cachePath -Force | Out-Null
 $previousDataDir = $env:RJR_DATA_DIR
+$savedEnvironment=@{}
+foreach($key in @('PATH','PYTHONHOME','PYTHONPATH','PLAYWRIGHT_BROWSERS_PATH','ELECTRON_RUN_AS_NODE')){$savedEnvironment[$key]=[Environment]::GetEnvironmentVariable($key,'Process');Remove-Item -LiteralPath ('Env:'+$key) -ErrorAction SilentlyContinue}
 try {
   foreach ($scale in $Scales) {
     if ($scale -notin @(1, 1.25, 1.5)) { throw 'Unsupported verification scale' }
@@ -30,9 +32,10 @@ try {
       throw ('Desktop self-test failed: ' + $reportPath)
     }
     if ([Math]::Abs($report.deviceScaleFactor - $scale) -gt 0.02) { throw ('Actual Chromium scale differs: ' + $report.deviceScaleFactor) }
+    if (!$report.bundled -or $report.bundled.automaticDownloads -ne 0 -or $report.bundled.developerToolsRequired) { throw 'Bundled runtime proof missing' }
     foreach ($shot in $report.screenshots) {
       if (!(Test-Path -LiteralPath (Join-Path $testPath $shot.file))) { throw ('Missing screenshot ' + $shot.file) }
     }
     Write-Output ('SELF_TEST_PASS=' + $report.passed + ' SCALE=' + $report.deviceScaleFactor + ' REPORT=' + $reportPath)
   }
-} finally { $env:RJR_DATA_DIR = $previousDataDir }
+} finally { $env:RJR_DATA_DIR = $previousDataDir;foreach($key in $savedEnvironment.Keys){[Environment]::SetEnvironmentVariable($key,$savedEnvironment[$key],'Process')} }

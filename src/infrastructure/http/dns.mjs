@@ -71,7 +71,9 @@ export function createDnsLookup({
       const responses = await Promise.all(
         ["A", "AAAA"].map(async (type) => {
           signal?.throwIfAborted();
-          await budget.claimRequest("dns");
+          const reservation = await budget.claimRequest("dns", {
+            bytesUpperBound: 65536,
+          });
           const url = new URL("https://cloudflare-dns.com/dns-query");
           url.searchParams.set("name", host);
           url.searchParams.set("type", type);
@@ -84,6 +86,11 @@ export function createDnsLookup({
             headers: { accept: "application/dns-json" },
             signal: combined,
             maxBytes: 65536,
+          });
+          await budget.settleRequest?.(reservation, {
+            bytes:
+              response.bytes?.byteLength ??
+              Buffer.byteLength(response.text || ""),
           });
           if (response.status !== 200) throw Error("Public DNS unavailable");
           const data = JSON.parse(response.text);

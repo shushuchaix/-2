@@ -12,6 +12,19 @@ const setup = (transport, options = {}) =>
     transport,
     ...options,
   });
+test("review: zero immediate retries preserves server cooldown", async () => {
+  const now = Date.parse("2026-10-09T00:00:00Z");
+  const request = setup(
+    async () => ({
+      status: 429,
+      headers: { "retry-after": "86400" },
+      text: "limited",
+    }),
+    { clock: { now: () => now } },
+  );
+  const r = await request(url, { maxRetries: 0 });
+  assert.equal(r.nextDueAt, "2026-10-10T00:00:00.000Z");
+});
 test("binary_is_not_roundtripped_through_text_and_cache_modes_are_distinct", async () => {
   let calls = 0;
   const request = setup(async (input) => {

@@ -12,6 +12,7 @@ import { extractZip } from "./lib/unzip.mjs";
 import * as asar from "@electron/asar";
 import { NtExecutable, NtExecutableResource, Data, Resource } from "resedit";
 import { buildUi } from "./build-ui.mjs";
+import { copyBundledResources } from "./lib/bundled-resources.mjs";
 import {
   prodClosure,
   validateUiAssets,
@@ -36,7 +37,7 @@ const electronVersion = JSON.parse(
   ),
 ).version;
 
-// 文本提取用不到 canvas 渲染，排除 36MB 的原生 skia 二进制（@napi-rs/canvas 是可选依赖）
+// 扫描 PDF 的 OCR 依赖原生 canvas；生产依赖保留并解包到真实路径。
 
 const OUT_DIR = path.join(DIST, `${APP_NAME}-win32-x64`);
 const EXE_NAME = `${APP_NAME}.exe`;
@@ -231,7 +232,17 @@ stage("打包应用代码为 app.asar");
 
   const asarPath = path.join(OUT_DIR, "resources", "app.asar");
   fs.mkdirSync(path.dirname(asarPath), { recursive: true });
-  await asar.createPackage(appStage, asarPath);
+  await asar.createPackageWithOptions(appStage, asarPath, {
+    unpackDir: "node_modules",
+  });
+  const resources = await copyBundledResources({
+    project: ROOT,
+    resourcesRoot: path.dirname(asarPath),
+    appRoot: appStage,
+  });
+  console.log(
+    `      独立运行时 ${resources.runtime} 文件；OCR 哈希清单 ${resources.ocr} 文件`,
+  );
   console.log(`      app.asar ${mb(fs.statSync(asarPath).size)}`);
 
   // Electron 自带的默认应用包必须移除，否则会干扰

@@ -314,6 +314,7 @@ export function assessRecruitmentEvidence({ record, now = Date.now() }) {
     text = String(r.description || ""),
     conflicts = [...(r.evidenceConflicts || [])];
   const bodyVerified =
+    !/^article-literal-[23]$/.test(r.parserVersion || "") &&
     !!text.trim() &&
     !r.bodyIncomplete &&
     !r.rowAmbiguous &&

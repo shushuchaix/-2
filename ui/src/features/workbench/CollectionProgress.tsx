@@ -28,6 +28,7 @@ export type CollectionActivity = {
     limits: Record<string, number>;
     metrics?: Record<string, number>;
     lastErrorCode?: string;
+    replanRequired?: boolean;
     units: Record<
       string,
       { status: string; siteId: string; committedPages: number }
@@ -80,7 +81,7 @@ export function CollectionProgress({
     ),
     pending = units.filter((x) => x.status !== "completed").length;
   const prefix = "/collections/" + encodeURIComponent(activity.runId);
-  async function action(kind: string) {
+  async function action(kind: string, replan = false) {
     if (!scope || op.busy) return;
     await op.run(
       async () => {
@@ -91,6 +92,7 @@ export function CollectionProgress({
             kind === "resume"
               ? {
                   requestId: crypto.randomUUID(),
+                  ...(replan ? { replan: true } : {}),
                   mode,
                   ...(mode === "ai" && userKey ? { userApiKey: userKey } : {}),
                 }
@@ -119,6 +121,11 @@ export function CollectionProgress({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        {p.replanRequired && (
+          <p role="status">
+            来源或查询已变化，请确认重新规划。沿用当前活动，累计用量和10元费用上限保留。
+          </p>
+        )}
         <p>
           已提交{" "}
           {p.metrics?.committedPages ??
@@ -234,9 +241,9 @@ export function CollectionProgress({
                 p.status,
               )
             }
-            onClick={() => void action("resume")}
+            onClick={() => void action("resume", p.replanRequired === true)}
           >
-            继续采集
+            {p.replanRequired ? "确认重新规划并继续" : "继续采集"}
           </Button>
           <Button
             variant="outline"

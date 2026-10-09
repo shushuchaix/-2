@@ -302,9 +302,7 @@ export function createRequestClient({
                   : retries
                     ? "retry"
                     : options.kind || "request",
-                options.kind === "attachment"
-                  ? { bytesUpperBound: byteLimit }
-                  : undefined,
+                { bytesUpperBound: byteLimit },
               );
               phase = "transport";
               const transportStarted = clock.now();
@@ -455,6 +453,21 @@ export function createRequestClient({
           });
           url = next;
           continue;
+        }
+        // Server cooldown applies even when this call forbids immediate retries.
+        if (response.status === 429 || response.status >= 500) {
+          const ra = response.headers["retry-after"];
+          const delay = ra
+            ? Number.isFinite(Number(ra))
+              ? Number(ra) * 1000
+              : Date.parse(ra) - clock.now()
+            : response.status === 429
+              ? 600000
+              : null;
+          if (delay !== null && Number.isFinite(delay))
+            response.nextDueAt = new Date(
+              Number(clock.now()) + Math.max(0, delay),
+            ).toISOString();
         }
         if (
           (response.status === 429 || response.status >= 500) &&

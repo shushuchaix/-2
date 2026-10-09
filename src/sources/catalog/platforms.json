@@ -17,9 +17,7 @@
     "evidenceUrl": "https://sou.zhaopin.com/",
     "verifiedAt": null,
     "status": "candidate",
-    "allowedDomains": [
-      "sou.zhaopin.com"
-    ],
+    "allowedDomains": ["sou.zhaopin.com"],
     "jobFamilies": [],
     "adapter": "zhaopin",
     "identityEvidence": {
@@ -46,9 +44,7 @@
     "evidenceUrl": "https://www.shixiseng.com/",
     "verifiedAt": null,
     "status": "candidate",
-    "allowedDomains": [
-      "www.shixiseng.com"
-    ],
+    "allowedDomains": ["www.shixiseng.com"],
     "jobFamilies": [],
     "adapter": "shixiseng",
     "identityEvidence": {
@@ -75,9 +71,7 @@
     "evidenceUrl": "https://www.nowcoder.com/jobs/school/jobs",
     "verifiedAt": null,
     "status": "candidate",
-    "allowedDomains": [
-      "www.nowcoder.com"
-    ],
+    "allowedDomains": ["www.nowcoder.com"],
     "jobFamilies": [],
     "adapter": "nowcoder",
     "identityEvidence": {
@@ -104,9 +98,7 @@
     "evidenceUrl": "https://job.jiuyeqiao.cn/",
     "verifiedAt": null,
     "status": "candidate",
-    "allowedDomains": [
-      "job.jiuyeqiao.cn"
-    ],
+    "allowedDomains": ["job.jiuyeqiao.cn"],
     "jobFamilies": [],
     "adapter": "jiuyeqiao",
     "identityEvidence": {
@@ -120,8 +112,8 @@
     "providerId": "ncss",
     "category": "national",
     "name": "国家大学生就业服务平台",
-    "institutionUrl": "https://www.ncss.cn/student/jobs/index.html",
-    "origin": "https://www.ncss.cn/student/jobs/index.html",
+    "institutionUrl": "https://main.ncss.cn/student/jobs/index.html",
+    "origin": "https://main.ncss.cn/student/jobs/index.html",
     "tenantId": null,
     "regions": [],
     "majorFamilies": [],
@@ -130,7 +122,7 @@
       "detail": true,
       "discovery": false
     },
-    "evidenceUrl": "https://www.ncss.cn/student/jobs/index.html",
+    "evidenceUrl": "https://main.ncss.cn/student/jobs/index.html",
     "verifiedAt": "2026-10-05T05:05:43.642Z",
     "status": "ready",
     "probeEvidence": [
@@ -151,15 +143,13 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "www.ncss.cn"
-    ],
+    "allowedDomains": ["main.ncss.cn", "www.ncss.cn"],
     "jobFamilies": [],
     "adapter": "ncss",
     "identityEvidence": {
-      "url": "https://www.ncss.cn/student/jobs/index.html",
+      "url": "https://main.ncss.cn/student/jobs/index.html",
       "kind": "official_entry",
-      "checkedAt": "2026-10-05T05:05:43.642Z"
+      "checkedAt": "2026-10-09T11:03:11.218Z"
     }
   },
   {
@@ -180,9 +170,7 @@
     "evidenceUrl": "https://www.yingjiesheng.com/deadline/",
     "verifiedAt": null,
     "status": "candidate",
-    "allowedDomains": [
-      "www.yingjiesheng.com"
-    ],
+    "allowedDomains": ["www.yingjiesheng.com"],
     "jobFamilies": [],
     "adapter": "yingjiesheng",
     "identityEvidence": {
@@ -209,9 +197,7 @@
     "evidenceUrl": "https://api.tavily.com",
     "verifiedAt": null,
     "status": "candidate",
-    "allowedDomains": [
-      "api.tavily.com"
-    ],
+    "allowedDomains": ["api.tavily.com"],
     "jobFamilies": [],
     "adapter": "searchapi",
     "identityEvidence": {
@@ -238,9 +224,7 @@
     "evidenceUrl": "https://mp.weixin.qq.com",
     "verifiedAt": null,
     "status": "candidate",
-    "allowedDomains": [
-      "mp.weixin.qq.com"
-    ],
+    "allowedDomains": ["mp.weixin.qq.com"],
     "jobFamilies": [],
     "adapter": "wechat",
     "identityEvidence": {
@@ -268,9 +252,7 @@
     "verifiedAt": null,
     "status": "candidate",
     "accessStatus": "authorization_required",
-    "allowedDomains": [
-      "weibo.com"
-    ],
+    "allowedDomains": ["weibo.com"],
     "jobFamilies": [],
     "adapter": "weibo",
     "identityEvidence": {
@@ -298,9 +280,7 @@
     "verifiedAt": null,
     "status": "candidate",
     "accessStatus": "authorization_required",
-    "allowedDomains": [
-      "www.douyin.com"
-    ],
+    "allowedDomains": ["www.douyin.com"],
     "jobFamilies": [],
     "adapter": "douyin",
     "identityEvidence": {

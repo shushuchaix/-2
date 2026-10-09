@@ -7,6 +7,12 @@ import { normalizeDate } from "../util/html.mjs";
 import { extractTechTerms } from "../util/skills.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { articleParts } from "../sources/content-queue.mjs";
+import {
+  scopedArticleExcerpt,
+  scopedLiteral,
+  sharedArticleHeader,
+} from "./article-evidence.mjs";
+import { createHash } from "node:crypto";
 
 const SYSTEM = `你是招聘信息抽取助手，负责从中文微信公众号文章中抽取校园招聘 / 实习岗位。
 
@@ -268,11 +274,17 @@ export async function expandArticles(
           !text.includes(p.requirementsExcerpt)
         )
           continue;
+        const scope = scopedArticleExcerpt(
+          text,
+          p,
+          article.attachmentRows || [],
+        );
+        if (!scope) continue;
         // Model output is untrusted. Keep a fact only when its literal value
         // occurs in the source; an instruction in the prompt is not validation.
         const literal = (value) => {
           const clean = typeof value === "string" ? sanitizeText(value) : "";
-          return clean && text.includes(clean) ? clean : "";
+          return clean && scope.text.includes(clean) ? clean : "";
         };
         const verified = {
           ...p,
@@ -287,22 +299,23 @@ export async function expandArticles(
               "salary",
               "headcount",
               "summary",
-            ].map((field) => [field, literal(p[field])]),
+            ].map((field) => [
+              field,
+              scopedLiteral(scope.text, literal(p[field]), field),
+            ]),
           ),
         };
         const verifiedArticle = Object.fromEntries(
           ["company", "batch", "deadline", "applyMethod"].map((field) => [
             field,
-            literal(res[field]),
+            field === "deadline"
+              ? scopedLiteral(scope.text, res[field], "deadline") ||
+                scopedLiteral(sharedArticleHeader(text), res[field], "deadline")
+              : literal(res[field]),
           ]),
         );
         const derived = positionToJob(article, verified, verifiedArticle);
-        const rows = (article.attachmentRows || []).filter(
-            (r) =>
-              r.text.includes(p.title) &&
-              r.text.includes(p.requirementsExcerpt),
-          ),
-          row = rows.length === 1 && !rows[0].ambiguous ? rows[0] : null;
+        const row = scope.row;
         jobs.push({
           ...derived,
           sourceId: article.sourceId,
@@ -317,13 +330,18 @@ export async function expandArticles(
                 (verified.company || verifiedArticle.company || "") +
                 " " +
                 (verified.city || ""),
-            ),
+            ) +
+            ":" +
+            createHash("sha256")
+              .update(p.requirementsExcerpt)
+              .digest("hex")
+              .slice(0, 24),
           kind: "job",
           bodyStatus: article.bodyStatus,
           publishedAt: article.publishedAt,
           deadlineAt: verifiedArticle.deadline || null,
           applyUrl: article.applyUrl || null,
-          parserVersion: "article-literal-2",
+          parserVersion: "article-scope-4",
           sourceRecordIdKind: "generated",
           urlKind: "notice_detail",
           description: p.requirementsExcerpt,
@@ -341,7 +359,7 @@ export async function expandArticles(
               status:
                 article.attachmentRows?.length && !row ? "unknown" : "verified",
               contentHash: article.bodyHash || null,
-              parserVersion: "article-literal-3",
+              parserVersion: "article-scope-4",
               confidence: row
                 ? Math.min(...row.cells.map((c) => c.confidence))
                 : (article.ocrConfidence ?? 100),
@@ -351,10 +369,8 @@ export async function expandArticles(
                     cells: row.cells.map((c) => c.location),
                   }
                 : {
-                    start: text.indexOf(p.requirementsExcerpt),
-                    end:
-                      text.indexOf(p.requirementsExcerpt) +
-                      p.requirementsExcerpt.length,
+                    start: scope.start,
+                    end: scope.start + p.requirementsExcerpt.length,
                   },
               appliesTo: { jobRowId: row?.jobRowId || null },
             },

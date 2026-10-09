@@ -1,6 +1,21 @@
 import { createPagedProvider, jsonResponse, baseRecord } from "./shared.mjs";
 import { elementText } from "../../util/html-elements.mjs";
 const id = "ncss";
+function entryOrigin(site) {
+  const url = new URL(site.origin || "https://www.ncss.cn");
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.port ||
+    !(url.hostname === "ncss.cn" || url.hostname.endsWith(".ncss.cn"))
+  )
+    throw Object.assign(
+      Error("NCSS entry must belong to its official domain"),
+      { code: "source_origin_invalid" },
+    );
+  return url.origin;
+}
 export default createPagedProvider({
   id,
   name: "国家大学生就业服务平台",
@@ -10,7 +25,8 @@ export default createPagedProvider({
     detail: true,
   },
   async listPage(site, query, page, ctx) {
-    const url = new URL("https://www.ncss.cn/student/jobs/jobslist/ajax/");
+    const origin = entryOrigin(site),
+      url = new URL("/student/jobs/jobslist/ajax/", origin);
     for (const k of [
       "jobType",
       "areaCode",
@@ -32,7 +48,7 @@ export default createPagedProvider({
     const response = await ctx.request(url.href, {
       headers: {
         "X-Requested-With": "XMLHttpRequest",
-        Referer: "https://www.ncss.cn/student/jobs/index.html",
+        Referer: origin + "/student/jobs/index.html",
       },
       signal: ctx.signal,
     });
@@ -78,7 +94,8 @@ export default createPagedProvider({
           scope: "national",
           title: r.jobName,
           url:
-            "https://www.ncss.cn/student/jobs/" +
+            origin +
+            "/student/jobs/" +
             encodeURIComponent(r.jobId) +
             "/detail.html",
           kind: String(r.recruitType) === "1" ? "recruitment_notice" : "job",

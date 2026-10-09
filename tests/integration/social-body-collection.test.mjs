@@ -11,6 +11,26 @@ import {
 import { createContentReadService } from "../../src/application/content-read-service.mjs";
 import wechatProvider from "../../src/sources/adapters/wechat-public.mjs";
 import weiboProvider from "../../src/sources/adapters/weibo-public.mjs";
+test("review: long-text endpoint returning truncated preview stays retryable", () => {
+  const post = {
+    id: "123",
+    isLongText: true,
+    text: "公司招聘消防工程师，详见全文……",
+  };
+  for (const full of [
+    post.text,
+    "公司招聘消防工程师，点击展开全文",
+    "公司招聘消防工程师……",
+  ]) {
+    const r = parseWeiboContent({
+      post,
+      longText: { longTextContent: full },
+      url: "https://m.weibo.cn/detail/123",
+    });
+    assert.equal(r.bodyStatus, "incomplete");
+    assert.equal(r.retryEligible, true);
+  }
+});
 test("known article needs no search credential and private provider config selects actual seeds", async () => {
   const site = { siteId: "wechat" },
     url = "https://mp.weixin.qq.com/s/seed";

@@ -41,6 +41,81 @@ async function files(root, dir = root) {
   }
   return out;
 }
+async function captureChromiumCredits(root, manifest) {
+  const revision = manifest.browsers.playwright[0].revision;
+  const executable = path.join(
+    root,
+    "browsers",
+    "chromium-" + revision,
+    "chrome-win64/chrome.exe",
+  );
+  await fs.mkdir(path.join(root, "licenses"), { recursive: true });
+  await run(path.join(root, "python/python.exe"), [
+    "-I",
+    "-B",
+    path.join(project, "python/build_chromium_credits.py"),
+    executable,
+    path.join(root, "licenses/chromium-credits.html"),
+  ]);
+}
+export async function finalizeCollectionRuntime({
+  root = path.join(project, ".cache/collection-runtime-dev"),
+  manifest,
+} = {}) {
+  root = path.resolve(root);
+  if (!root.startsWith(path.join(project, ".cache") + path.sep))
+    throw Error("Runtime destination must stay in project cache");
+  manifest ||= JSON.parse(
+    await fs.readFile(
+      path.join(project, "resources/collection-runtime/manifest.json"),
+      "utf8",
+    ),
+  );
+  const actual = structuredClone(manifest);
+  actual.browsers = {};
+  for (const module of ["playwright", "patchright"]) {
+    const data = JSON.parse(
+      await fs.readFile(
+        path.join(
+          root,
+          "python/Lib/site-packages",
+          module,
+          "driver/package/browsers.json",
+        ),
+        "utf8",
+      ),
+    );
+    actual.browsers[module] = data.browsers.filter(
+      (b) => b.name === "chromium",
+    );
+    if (
+      actual.browsers[module][0]?.revision !==
+        manifest.browsers[module][0].revision ||
+      actual.browsers[module][0]?.browserVersion !==
+        manifest.browsers[module][0].browserVersion
+    )
+      throw Error("Browser lock does not match actual driver");
+  }
+  await captureChromiumCredits(root, actual);
+  actual.files = (await files(root)).filter(
+    (f) => !f.path.startsWith("build-cache/") && f.path !== "manifest.json",
+  );
+  actual.licenses = actual.files
+    .filter((f) =>
+      /(?:license|copying|notice|credits)(?:\.|\/|$)/i.test(f.path),
+    )
+    .map((f) => f.path);
+  await fs.writeFile(
+    path.join(root, "manifest.json"),
+    JSON.stringify(actual, null, 2) + "\n",
+  );
+  return {
+    root,
+    files: actual.files.length,
+    browsers: actual.browsers,
+    licenses: actual.licenses.length,
+  };
+}
 export async function buildCollectionRuntime({
   destination = path.join(project, ".cache/collection-runtime-dev"),
   manifest,
@@ -158,46 +233,11 @@ export async function buildCollectionRuntime({
     path.join(project, "python/collection_worker.py"),
     path.join(root, "worker/collection_worker.py"),
   );
-  const actual = JSON.parse(JSON.stringify(manifest));
   await fs.copyFile(
     path.join(project, "resources/collection-runtime/THIRD-PARTY-NOTICES.md"),
     path.join(root, "THIRD-PARTY-NOTICES.md"),
   );
-  actual.browsers = {};
-  for (const module of ["playwright", "patchright"]) {
-    const data = JSON.parse(
-      await fs.readFile(
-        path.join(
-          pythonDir,
-          "Lib/site-packages",
-          module,
-          "driver/package/browsers.json",
-        ),
-        "utf8",
-      ),
-    );
-    actual.browsers[module] = data.browsers.filter(
-      (b) => b.name === "chromium",
-    );
-    if (
-      actual.browsers[module][0]?.revision !==
-        manifest.browsers[module][0].revision ||
-      actual.browsers[module][0]?.browserVersion !==
-        manifest.browsers[module][0].browserVersion
-    )
-      throw Error("Browser lock does not match actual driver");
-  }
-  actual.files = (await files(root)).filter(
-    (f) => !f.path.startsWith("build-cache/") && f.path !== "manifest.json",
-  );
-  actual.licenses = actual.files
-    .filter((f) => /(?:license|copying|notice)(?:\.|\/|$)/i.test(f.path))
-    .map((f) => f.path);
-  await fs.writeFile(
-    path.join(root, "manifest.json"),
-    JSON.stringify(actual, null, 2) + "\n",
-  );
-  return { root, files: actual.files.length, browsers: actual.browsers };
+  return finalizeCollectionRuntime({ root, manifest });
 }
 if (
   process.argv[1] &&
@@ -205,6 +245,8 @@ if (
 )
   console.log(
     JSON.stringify(
-      await buildCollectionRuntime({ lock: process.argv.includes("--lock") }),
+      await (process.argv.includes("--finalize")
+        ? finalizeCollectionRuntime()
+        : buildCollectionRuntime({ lock: process.argv.includes("--lock") })),
     ),
   );

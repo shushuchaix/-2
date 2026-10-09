@@ -139,7 +139,10 @@ export function parseWeiboContent({
       : d.querySelector(".weibo-text")?.textContent.trim() || "";
   const incomplete =
     (post?.isLongText && !rawFull) ||
-    (!post && /展开全文|全文\s*$|[.…]{2,}\s*$/.test(description));
+    /展开全文|全文\s*$|[.…]{2,}\s*$/.test(description) ||
+    (post?.isLongText &&
+      !!rawFull &&
+      description === plain(post.text || post.text_raw || ""));
   const bodyStatus = [401, 403, 429].includes(status)
     ? "restricted"
     : challenge.test(html)

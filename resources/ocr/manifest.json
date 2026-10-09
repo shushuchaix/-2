@@ -1,18 +1,203 @@
 {
-  "version": "tessdata-best-int-4.0.0",
+  "version": 1,
+  "languageVersion": "tessdata-best-int-4.0.0",
   "upstream": "https://github.com/naptha/tessdata",
   "files": [
     {
+      "root": "ocr",
+      "path": "eng.traineddata.gz",
       "name": "eng.traineddata.gz",
       "sourcePackage": "@tesseract.js-data/eng@1.0.0",
       "bytes": 2952873,
       "sha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91"
     },
     {
+      "root": "ocr",
+      "path": "chi_sim.traineddata.gz",
       "name": "chi_sim.traineddata.gz",
       "sourcePackage": "@tesseract.js-data/chi_sim@1.0.0",
       "bytes": 1718768,
       "sha256": "b8a23f10c7de500891eb458a8adc9cc58ab7f242f08b7d149f5e9aea4ad5db7c"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js/dist/tesseract.min.js.LICENSE.txt",
+      "bytes": 149,
+      "sha256": "cdf963ced7d25a0f98901a547647b4d6e2dbe0197fd78c87a059a87b0e542fe2"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js/dist/worker.min.js.LICENSE.txt",
+      "bytes": 466,
+      "sha256": "45f54171aeaa1d10c0c1a66f374b7bba1f02472b1487fbe892eec04f840002ac"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js/LICENSE.md",
+      "bytes": 11357,
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js/package.json",
+      "bytes": 2914,
+      "sha256": "fa342f37afd665595eca66ee867197c47c9ac35a7967123d1132c39a40b3dfbd"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js/src/worker-script/node/index.js",
+      "bytes": 771,
+      "sha256": "a973c23ce067bc752c0bf602297eac843098e531ac03f3ea34cdf694326a6d02"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/LICENSE",
+      "bytes": 11358,
+      "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/package.json",
+      "bytes": 1784,
+      "sha256": "554b867684677c81aa3ffab61f31e83618445fa09adee99e8fff3515cee6ca54"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-lstm.wasm",
+      "bytes": 2855361,
+      "sha256": "66b17df6e20c5329a17ffa9c202a47eaa3e32500b253d4c7f38e7f2bc01457c3"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js",
+      "bytes": 3896484,
+      "sha256": "eef5f8b2f8e20e150680b20adaec4a60babafee3adbe8a94583c81fee46e8680"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm",
+      "bytes": 2862266,
+      "sha256": "7985c92d4c64e7267d24cadffe1b2a1da6bf8aa55fdcaf953fe94fe122a24545"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js",
+      "bytes": 3905767,
+      "sha256": "861a536cf9ef8e63cb644d57bab39c388f37f7d6b6f60024b741c5f6b39a59b3"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-relaxedsimd.wasm",
+      "bytes": 3456075,
+      "sha256": "45f8c9b516df326b6ae6b493ed3a6289df5cbd10490e7b6ff8bf5b12ea42d1da"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-relaxedsimd.wasm.js",
+      "bytes": 4697227,
+      "sha256": "843074aa5bad1cc6421b74a86201768ced9f244795e4d81435435a61a40ce535"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm",
+      "bytes": 2857601,
+      "sha256": "34e8d50cac216427d86bf397d610fdd9f49492539bbcdfbfccc4eda20c810bea"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js",
+      "bytes": 3899472,
+      "sha256": "c58b46a4c796c0b8afccf77591d5b875b6896b45d402bbce8caa6f5362447b38"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-simd.wasm",
+      "bytes": 3451410,
+      "sha256": "7d237a13edfeb0fa2f104744fccde0a00e0c076c3e23b7a8fc7af75ec9af2c3e"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core-simd.wasm.js",
+      "bytes": 4690932,
+      "sha256": "6b61ef4e911b5cf57e656bbfe983d6e2b3711a02dd164154ddda064566e8e09d"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core.wasm",
+      "bytes": 3449168,
+      "sha256": "c7f5ace62ac0ad065e71e9c6725f1d7cdf82e7eda8fba532cbb9563964da7098"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/tesseract.js-core/tesseract-core.wasm.js",
+      "bytes": 4687944,
+      "sha256": "0bc6ce3e5fbbd0cd89706cf2fd70960e3372f4f01ee24265b26990808aaeb286"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/@napi-rs/canvas/LICENSE",
+      "bytes": 1075,
+      "sha256": "8802fecf9da4367bc23bcf20b21cc143785fc6c92b152f3fa7fbe6ce08d344d6"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/@napi-rs/canvas/package.json",
+      "bytes": 4845,
+      "sha256": "c466285520d5e8ded2d9c8cdff1cf8437964f28022283b5fdead42431d8ffe3b"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/@napi-rs/canvas-win32-x64-msvc/package.json",
+      "bytes": 811,
+      "sha256": "9f9bdc1c60158b5693aaa76481c807ad0a6664fe08255ceca3ec6f4e8ee3c296"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node",
+      "bytes": 27471360,
+      "sha256": "c067e5d5df2abd36789c4d371efc60ce0a29d204575f316345b57dcd2f4b74e7"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/pdfjs-dist/node_modules/@napi-rs/canvas/LICENSE",
+      "bytes": 1075,
+      "sha256": "8802fecf9da4367bc23bcf20b21cc143785fc6c92b152f3fa7fbe6ce08d344d6"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/pdfjs-dist/node_modules/@napi-rs/canvas/package.json",
+      "bytes": 4651,
+      "sha256": "8379e15beeaecdedc863f8ff0e2548935eed4fb7505b93a207600a212d7bc2c5"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/pdfjs-dist/node_modules/@napi-rs/canvas-win32-x64-msvc/package.json",
+      "bytes": 812,
+      "sha256": "59e9517011b1bc19b7a001e04d5523437f2d9e4167c08c1f1df8eaf971229185"
+    },
+    {
+      "root": "app",
+      "path": "node_modules/pdfjs-dist/node_modules/@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node",
+      "bytes": 27294720,
+      "sha256": "0f76fb0648fbff832856f6ce202059fc3fa38be7ad925300e96935906ea11132"
+    },
+    {
+      "root": "ocr",
+      "path": "LICENSE.apache-2.0.txt",
+      "bytes": 11357,
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+    },
+    {
+      "root": "ocr",
+      "path": "NOTICE.txt",
+      "bytes": 240,
+      "sha256": "4d8cda4a95e40a05966aaaa8b5082dfad981bd47b80b33e248a0a66e71b50361"
+    },
+    {
+      "root": "ocr",
+      "path": "LICENSE.mit-packaging.txt",
+      "bytes": 1078,
+      "sha256": "bc142accb4ceadbcd706f2901aeb6a7d30430f0c454b38a5620f485ea13c02aa"
     }
   ]
 }

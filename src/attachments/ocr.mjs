@@ -41,6 +41,12 @@ export function imageDimensions(bytes) {
 export function createLocalOcr({
   resourceDir = fileURLToPath(new URL("../../resources/ocr/", import.meta.url)),
   languages = "eng+chi_sim",
+  workerPath = fileURLToPath(
+    new URL(
+      "../../node_modules/tesseract.js/src/worker-script/node/index.js",
+      import.meta.url,
+    ),
+  ).replace(/app\.asar([\\/])/, "app.asar.unpacked$1"),
 } = {}) {
   let worker = null,
     queue = Promise.resolve();
@@ -64,12 +70,7 @@ export function createLocalOcr({
           if (!worker)
             worker = await createWorker(languages, 1, {
               langPath: resourceDir,
-              workerPath: fileURLToPath(
-                new URL(
-                  "../../node_modules/tesseract.js/src/worker-script/node/index.js",
-                  import.meta.url,
-                ),
-              ),
+              workerPath,
               corePath: fileURLToPath(
                 new URL(
                   "../../node_modules/tesseract.js-core/",

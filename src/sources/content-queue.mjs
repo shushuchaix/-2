@@ -53,6 +53,11 @@ export function queueContentDraft(progress, unitId, records, now) {
           record.retryAt ||
           record.nextDueAt ||
           new Date(now + 600000).toISOString(),
+        serverCooldownUntil:
+          record.retryAt ||
+          record.nextDueAt ||
+          previous?.serverCooldownUntil ||
+          null,
         status: ["challenge_required", "login_required", "restricted"].includes(
           record.bodyStatus,
         )
@@ -87,7 +92,7 @@ export function queueContentDraft(progress, unitId, records, now) {
       const partKey = contentHash([
         key,
         record.parserVersion,
-        "article-literal-2",
+        "article-scope-4",
         description,
       ]);
       if (progress.articleCache[partKey] || progress.pendingArticles[partKey])

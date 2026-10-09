@@ -27,6 +27,30 @@ const root = {
     usedBytes: 1024,
   },
 };
+test("review: source changes can replan the same activity with preserved cost", async (t) => {
+  const changed = {
+    ...root,
+    collectionProgress: { ...root.collectionProgress, replanRequired: true },
+  };
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) =>
+      p === "/collections"
+        ? { collections: [changed] }
+        : p === "/collections/activity-A"
+          ? changed
+          : p.endsWith("/resume")
+            ? new Promise(() => {})
+            : syntheticApi(p, o),
+  });
+  await f.screen.findByText(/活动累计费用上界 ¥3.20/);
+  await f.user.click(
+    f.screen.getByRole("button", { name: "确认重新规划并继续" }),
+  );
+  const call = f.apiCalls.find((c) => c.path.endsWith("/resume"));
+  assert.equal(call?.options.body?.replan, true);
+  assert.equal(call?.path, "/collections/activity-A/resume");
+});
 test("root progress retains cumulative costs; repeated resume sends one request", async (t) => {
   const f = await renderApp(t, {
     route: "#/workbench?packageId=A&targetRevisionId=t1%401",

@@ -22,6 +22,8 @@ import {
   session,
 } from "electron";
 import path from "node:path";
+import { installClosedPipeGuard } from "./process-output.mjs";
+installClosedPipeGuard();
 import { createCollectionSessions } from "./collection/sessions.mjs";
 import { createCollectionBrowser } from "./collection/browser.mjs";
 import { registerCollectionIpc } from "./collection/ipc.mjs";
@@ -373,6 +375,34 @@ async function runSelfTest() {
       rendererErrors: selfTestRendererErrors,
       externalIntents: selfTestExternalIntents,
     });
+    if (app.isPackaged) {
+      try {
+        const { runBundledResourcesSelfTest } = await import(
+          "./bundled-runtime-self-test.mjs"
+        );
+        const bundled = await runBundledResourcesSelfTest({
+          resourcesRoot: process.resourcesPath,
+          dataDir,
+          networkGuard: selfTestNetwork,
+        });
+        report.bundled = bundled;
+        report.results.push(...bundled.checks);
+        report.passed += bundled.checks.length;
+      } catch (error) {
+        console.error("Synthetic bundled self-test failure:", error);
+        report.results.push({
+          name: "成品运行时/OCR/会话自检",
+          ok: false,
+          details: { code: error.code || error.name },
+        });
+        report.failed++;
+        await recordDiagnostic(
+          diagnostics,
+          { operation: "desktop.failure", code: "bundled_self_test_failed" },
+          error,
+        );
+      }
+    }
     fs.writeFileSync(
       path.join(dataDir, "desktop-self-test.json"),
       JSON.stringify(report, null, 2),
@@ -488,6 +518,13 @@ async function boot() {
     dataDir,
     dependencies: {
       ...(selfTestEnvironment?.dependencies || {}),
+      ...(app.isPackaged
+        ? {
+            ocr: (await import("../src/attachments/ocr.mjs")).createLocalOcr({
+              resourceDir: path.join(process.resourcesPath, "ocr"),
+            }),
+          }
+        : {}),
       ...(!SELF_TEST
         ? {
             collectionRuntimeRoot: app.isPackaged

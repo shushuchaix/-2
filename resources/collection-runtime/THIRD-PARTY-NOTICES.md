@@ -10,6 +10,10 @@ Playwright and Patchright use Apache-2.0. Chromium includes BSD and other compon
 licenses in its distribution. BrowserForge and the bundled fingerprint data are
 retained with their original distribution metadata and license files.
 
+The Chromium build's full component notices are retained as
+`licenses/chromium-credits.html`, captured from the locked browser's internal
+`chrome://credits` page during preparation without loading external websites.
+
 The complete Python dependency versions and source archive hashes are recorded
 in `python/requirements.lock`. Each binary, model, CA bundle, driver and license
 file in the packaged runtime is recorded with its byte size and SHA-256 in the

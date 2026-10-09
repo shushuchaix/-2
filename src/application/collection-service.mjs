@@ -542,6 +542,10 @@ export function createCollectionService({
             unit.cursor = page.done ? null : structuredClone(page.nextCursor);
             unit.status = page.done ? "completed" : "pending";
             unit.lastErrorCode = null;
+            if (!page.done && unit.roundPages >= p.limits.maxPagesPerQuery) {
+              unit.status = "page_limited";
+              unit.lastErrorCode = "page_limit_reached";
+            }
             unit.lastSuccessAt = at();
             unit.lastAttemptAt = at();
             unit.refreshDelayMs = sourceRefreshDelay({
@@ -838,11 +842,10 @@ export function createCollectionService({
         root.collectionProgress.pendingBodies || {},
       ).slice(0, 10)) {
         signal.throwIfAborted();
-        if (
-          task.automatic &&
-          pending.nextDueAt &&
-          Date.parse(pending.nextDueAt) > Number(clock.now())
-        )
+        const eligibleAt = task.automatic
+          ? pending.nextDueAt
+          : pending.serverCooldownUntil;
+        if (eligibleAt && Date.parse(eligibleAt) > Number(clock.now()))
           continue;
         const unit = root.collectionProgress.units[pending.unitId],
           provider = registry.get(pending.record.sourceId);
@@ -862,7 +865,12 @@ export function createCollectionService({
             ].includes(e.code)
           )
             throw e;
-          record = { ...record, bodyStatus: "incomplete", retryEligible: true };
+          record = {
+            ...record,
+            bodyStatus: "incomplete",
+            retryEligible: true,
+            ...(e.nextDueAt ? { nextDueAt: e.nextDueAt } : {}),
+          };
         }
         await mutateCurrent(ref, token, lease, (w, r) => {
           const p = r.collectionProgress;
@@ -888,6 +896,8 @@ export function createCollectionService({
           (u) =>
             u.status !== "completed" &&
             u.status !== "waiting_for_auth" &&
+            (u.roundPages ?? u.committedPages) <
+              root.collectionProgress.limits.maxPagesPerQuery &&
             (!u.nextDueAt || Date.parse(u.nextDueAt) <= now),
         );
       const siteIds = [...new Set(eligible.map((u) => u.siteId))].slice(0, 10),
@@ -969,6 +979,7 @@ export function createCollectionService({
                     detailStatus: "unavailable",
                     bodyStatus: "incomplete",
                     retryEligible: true,
+                    ...(e.nextDueAt ? { nextDueAt: e.nextDueAt } : {}),
                   };
                   issues.push({ code: e.code || "detail_unavailable" });
                   if (e.code === "source_budget_exhausted") stopCode = e.code;

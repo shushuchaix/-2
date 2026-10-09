@@ -5,6 +5,87 @@ import { job } from "../helpers/fixtures.mjs";
 import { createPagedProvider } from "../../src/sources/adapters/shared.mjs";
 import { createApplicationContext } from "../../src/application/context.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
+test("review: page-limited first ten sites do not starve later batches", async (t) => {
+  const seen = [],
+    providers = Array.from({ length: 11 }, (_, i) =>
+      createPagedProvider({
+        id: "p" + i,
+        name: "synthetic",
+        capabilities: {},
+        listPage: async () => {
+          seen.push(i);
+          return { records: [], hasMore: true };
+        },
+      }),
+    );
+  const f = await collectionFixture(t, {
+      providers,
+      limits: { maxPagesPerQuery: 1, maxSites: 24 },
+    }),
+    first = await f.service.start({
+      scope: f.scope,
+      options: { mode: "rules" },
+    }),
+    ref = { scope: f.scope, activityId: first.activityId };
+  await f.service.wait(ref);
+  assert.equal(seen.length, 10);
+  await f.service.resume({ ref, requestId: "second-batch" });
+  await f.service.wait(ref);
+  assert.deepEqual(seen, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const root = await f.service.get(ref);
+  assert.equal(
+    root.collectionProgress.units["unit-0"].lastErrorCode,
+    "page_limit_reached",
+  );
+  await f.service.adjustLimits({
+    ref,
+    limits: { maxPagesPerQuery: 2 },
+    expectedRevision: root.collectionProgress.revision,
+  });
+  await f.service.resume({ ref, requestId: "more-depth" });
+  await f.service.wait(ref);
+  assert.equal(seen.length, 21);
+});
+test("review: explicit continue honors pending body server cooldown", async (t) => {
+  let calls = 0,
+    f;
+  const due = "2026-10-10T00:00:00.000Z";
+  const provider = createPagedProvider({
+    id: "synthetic",
+    name: "synthetic",
+    capabilities: {},
+    listPage: async () => ({
+      records: [
+        job({
+          description: null,
+          bodyStatus: "incomplete",
+          retryEligible: true,
+        }),
+      ],
+      hasMore: false,
+    }),
+    detail: async (r) => {
+      calls++;
+      return {
+        ...r,
+        bodyStatus: "incomplete",
+        retryEligible: true,
+        nextDueAt: due,
+      };
+    },
+  });
+  f = await collectionFixture(t, { providers: [provider] });
+  const first = await f.service.start({
+      scope: f.scope,
+      options: { mode: "rules" },
+    }),
+    ref = { scope: f.scope, activityId: first.activityId };
+  await f.service.wait(ref);
+  assert.equal(calls, 1);
+  await f.service.resume({ ref, requestId: "early-manual" });
+  await f.service.wait(ref);
+  assert.equal(calls, 1);
+});
 test("page_commit_is_atomic_replay_safe_and_empty_page_advances", async (t) => {
   const f = await collectionFixture(t),
     c = await f.openCommit();

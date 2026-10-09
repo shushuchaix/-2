@@ -1,4 +1,4 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createApplicationContext } from "../../src/application/context.mjs";
@@ -35,7 +35,8 @@ async function flow(
   const context = await createApplicationContext({
     cfg,
     dataDir,
-    dependencies: {legacySchema:true,
+    dependencies: {
+      legacySchema: true,
       diagnostics,
       registry: createSourceRegistry([provider]),
       catalog: [
@@ -44,7 +45,10 @@ async function flow(
           providerId: provider.id,
           category: "job_board",
           name: "合成",
-          origin: "https://example.com",
+          origin:
+            provider.id === "ncss"
+              ? "https://main.ncss.cn"
+              : "https://example.com",
           status: "ready",
         },
       ],
@@ -57,10 +61,12 @@ async function flow(
     },
   });
   const p = await context.workspaceService.saveProfile({ profile: profile() });
-  const tar = await context.workspaceService.saveTarget(namedTargetInput({
-    ...target({ sourceIds: [provider.id] }),
-    profileRevisionId: p.revisionId,
-  }));
+  const tar = await context.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target({ sourceIds: [provider.id] }),
+      profileRevisionId: p.revisionId,
+    }),
+  );
   return { context, diagnostics, targetRevisionId: tar.revisionId };
 }
 

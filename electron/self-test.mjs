@@ -76,7 +76,7 @@ export function prepareSelfTestEnvironment({
     capabilities: { category: "job_board", jobTypes: ["campus"], detail: true },
     configSchema: { enabled: "boolean" },
     async collect(ctx) {
-      if (controls.hold)
+      if (controls.hold && ctx.queries?.some((q) => q.keyword))
         await new Promise((resolve) =>
           ctx.signal.addEventListener("abort", resolve, { once: true }),
         );
@@ -187,6 +187,8 @@ export function prepareSelfTestEnvironment({
         name: "合成离线来源",
         origin: "https://jobs.example.invalid",
         status: "ready",
+        verifiedAt: new Date(now).toISOString(),
+        probeEvidence: [{ hasRequirements: true }],
       },
     ],
     requestFactory: () => async () => {
@@ -489,12 +491,27 @@ export async function runWorkspaceSelfTest({
       check(
         "当前版本采集已保存",
         countRecords(w, a.packageId, "jobs") === 1 &&
-          countRecords(w, a.packageId, "runs") === 1,
+          Object.values(w.runs).filter(
+            (r) =>
+              r.ownerPackageId === a.packageId &&
+              r.collectionRole !== "collection_root",
+          ).length === 1,
       );
       await navigate("岗位库");
       await click("查看岗位");
-      await wait(textHas("本版本招聘事实"));
+      await wait(textHas("本版本事实、评价与投递记录"));
       await wait(textHas("当前评价依据"));
+      check(
+        "真实岗位证据显示未知时效与未核验投递",
+        (await js(textHas("招聘时效待核验"))) &&
+          (await js(textHas("投递入口待核验"))),
+      );
+      await delay(200);
+      fs.writeFileSync(
+        path.join(dataDir, "job-evidence.png"),
+        (await window.webContents.capturePage()).toPNG(),
+      );
+      screenshots.push({ file: "job-evidence.png" });
       check(
         "真实规则评价显示资格核对与评分组成",
         (await js(textHas("资格核对"))) && (await js(textHas("评分组成"))),
@@ -526,6 +543,7 @@ export async function runWorkspaceSelfTest({
       );
     });
     await phase("取消任务与切换版本竞态隔离", async () => {
+      clock.advance(1000);
       controls.hold = true;
       const originalStart = context.runService.startRun;
       let releaseStart;
@@ -570,8 +588,46 @@ export async function runWorkspaceSelfTest({
           countRecords(await context.repository.read(), a.packageId, "runs") ===
             heldRunCount,
       );
-      await click("取消任务");
-      await wait(textHas("任务已取消"));
+      await wait(textHas("持续采集活动"));
+      const beforePause = Object.values(
+        (await context.repository.read()).runs,
+      ).find(
+        (r) =>
+          r.ownerPackageId === a.packageId &&
+          r.collectionProgress?.status === "collecting",
+      );
+      if (!beforePause) throw Error("self_test_active_collection_missing");
+      const activityRef = {
+          scope: { packageId: a.packageId, targetRevisionId: a.revisionId },
+          activityId: beforePause.runId,
+        },
+        beforeUsage = (await context.collectionService.get(activityRef))
+          .collectionUsage;
+      await click("暂停采集");
+      await wait(textHas("活动已暂停"));
+      check(
+        "真实活动暂停持久化",
+        (await context.repository.read()).runs[beforePause.runId]
+          .collectionProgress.status === "paused",
+      );
+      await click("继续采集");
+      await wait(textHas("已继续采集，沿用活动累计额度"));
+      const resumed = await context.collectionService.get(activityRef);
+      check(
+        "真实活动续采沿用根编号与累计额度",
+        resumed.collectionProgress.status === "collecting" &&
+          resumed.collectionUsage.costUpperBoundCny >=
+            beforeUsage.costUpperBoundCny &&
+          resumed.collectionProgress.limits.maxCostCny ===
+            beforePause.collectionProgress.limits.maxCostCny,
+      );
+      fs.writeFileSync(
+        path.join(dataDir, "collection-controls.png"),
+        (await window.webContents.capturePage()).toPNG(),
+      );
+      screenshots.push({ file: "collection-controls.png" });
+      await click("取消活动");
+      await wait(textHas("活动已取消"));
       controls.hold = false;
       await navigate("求职目标");
       await click("设为当前目标", { card: b.versionName });
@@ -691,9 +747,21 @@ export async function runWorkspaceSelfTest({
       );
     });
     await phase("来源检查、日志与生产安全桥接", async () => {
-      await navigate("招聘来源");
-      await click("检查来源");
-      await wait(textHas("来源检查已完成"));
+      clock.advance(1000);
+      controls.hold = true;
+      await navigate("工作台");
+      await click("更新岗位");
+      await wait(`Boolean(${locate("取消任务")})`);
+      try {
+        await navigate("招聘来源");
+        await click("检查来源");
+        await wait(textHas("来源检查已完成"));
+      } finally {
+        await navigate("工作台");
+        await click("取消活动");
+        await wait(textHas("活动已取消"));
+        controls.hold = false;
+      }
       await navigate("运行日志");
       check("日志页显示当前版本范围", await js(textHas(a.versionName)));
       await click("系统诊断");
@@ -711,14 +779,18 @@ export async function runWorkspaceSelfTest({
         JSON.stringify(keys) ===
           JSON.stringify(
             [
+              "clearCollectionSession",
               "copyDataLocation",
               "deleteKey",
               "getDataLocations",
+              "getCollectionCapabilities",
               "getKeyStatus",
               "isAvailable",
               "openDataLocation",
+              "openCollectionLogin",
               "reportDiagnostic",
               "saveKey",
+              "verifyCollectionSession",
             ].sort(),
           ),
       );

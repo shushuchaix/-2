@@ -10,6 +10,8 @@ export function installSelfTestNetworkGuard({
   allowedOrigin = null,
 } = {}) {
   let origin = null;
+  const fixtureOrigins = new Set(),
+    fixtureUrls = new Set();
   const restorers = [],
     blocked = [];
   const setAllowedOrigin = (value) => {
@@ -39,7 +41,9 @@ export function installSelfTestNetworkGuard({
         origin !== null &&
         !url.username &&
         !url.password &&
-        (url.origin === origin ||
+        (fixtureOrigins.has(url.origin) ||
+          fixtureUrls.has(url.href) ||
+          url.origin === origin ||
           (url.protocol === "ws:" && url.origin === "ws:" + origin.slice(5)))
       );
     } catch {
@@ -165,6 +169,26 @@ export function installSelfTestNetworkGuard({
   };
   if (session) attachSession(session);
   return {
+    allowSyntheticOrigin(value) {
+      const url = new URL(value);
+      if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port)
+        throw Error("invalid_fixture_origin");
+      fixtureOrigins.add(url.origin);
+      return () => fixtureOrigins.delete(url.origin);
+    },
+    allowSyntheticUrl(value) {
+      if (
+        ![
+          "https://weibo.com/login.php",
+          "https://m.weibo.cn/detail/123",
+          "http://mp.weixin.qq.com/s/fixture",
+          "http://mp.weixin.qq.com/assets/fixture.js",
+        ].includes(value)
+      )
+        throw Error("invalid_fixture_url");
+      fixtureUrls.add(value);
+      return () => fixtureUrls.delete(value);
+    },
     setAllowedOrigin,
     attachSession,
     allows,

@@ -157,6 +157,14 @@ const provider = createPagedProvider({
           new URLSearchParams({ id: record.sourceRecordId }),
         { signal: ctx.signal, maxRetries: 0, maxBytes: 6291456 },
       );
+      if (response.status === 429)
+        return {
+          ...record,
+          bodyStatus: "restricted",
+          retryEligible: true,
+          retryAt: response.nextDueAt,
+          detailStatus: "unavailable",
+        };
       if (response.status === 200)
         try {
           const payload = JSON.parse(response.text);

@@ -3,9 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as asar from "@electron/asar";
 import { parse } from "acorn";
+import { verifyBundledOcr } from "./lib/bundled-resources.mjs";
+import { verifyCollectionRuntime } from "../src/infrastructure/collection/runtime.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-export const EXCLUDE_MODULES = ["@napi-rs/canvas-win32-x64-msvc"];
+export const EXCLUDE_MODULES = [];
 export const PUBLIC_RUNTIME_FILES = [
   "login.html",
   "login.js",
@@ -187,6 +189,19 @@ export function verifyPackageArchive({
   ])
     if (!listed.has(file)) throw Error("Missing runtime file: " + file);
   const pkg = JSON.parse(read("package.json"));
+  if (pkg.dependencies?.["@napi-rs/canvas"])
+    for (const rel of [
+      "node_modules/@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node",
+      "node_modules/pdfjs-dist/node_modules/@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node",
+      "node_modules/tesseract.js/src/worker-script/node/index.js",
+    ]) {
+      if (
+        !listed.has(rel) ||
+        asar.statFile(archivePath, rel.split("/").join(path.sep)).unpacked !==
+          true
+      )
+        throw Error("Native/OCR file must be unpacked: " + rel);
+    }
   if (pkg.devDependencies || pkg.workspaces)
     throw Error("Development package metadata is forbidden");
   const closure = prodClosure({ root, dependencies: pkg.dependencies });
@@ -223,6 +238,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       archivePath: value("--archive"),
       root: value("--root"),
     });
+    const archive =
+        value("--archive") ||
+        path.join(ROOT, "dist/简历岗位雷达-win32-x64/resources/app.asar"),
+      resources = path.dirname(archive);
+    const ocr = await verifyBundledOcr({
+      appRoot: archive + ".unpacked",
+      resourceDir: path.join(resources, "ocr"),
+    });
+    const runtime = await verifyCollectionRuntime({
+      root: path.join(resources, "collection-runtime"),
+    });
+    if (!runtime.verified) throw Error("Bundled collection runtime invalid");
+    console.log(`Bundled runtime verified; OCR ${ocr.files} hashes verified.`);
     console.log(
       `Package verified: ${report.fileCount} files, ${report.ui.js.length} JS assets, ${report.ui.css.length} CSS assets, ${report.dependencies.length} production dependencies.`,
     );

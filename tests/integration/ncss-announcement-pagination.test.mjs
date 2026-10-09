@@ -3,6 +3,47 @@ import assert from "node:assert/strict";
 import ncss from "../../src/sources/adapters/ncss.mjs";
 import announcements from "../../src/sources/adapters/official-announcements.mjs";
 import { readProviderPage } from "../../src/sources/collection-page.mjs";
+
+test("ncss_uses_the_current_official_entry_host_and_rejects_foreign_tenants", async () => {
+  let called;
+  const input = {
+    unitId: "u-ncss",
+    site: {
+      siteId: "ncss",
+      origin: "https://main.ncss.cn/student/jobs/index.html",
+    },
+    query: { keyword: "消防", pageLimit: 1 },
+    request: async (url, options) => {
+      called = { url, options };
+      return {
+        status: 200,
+        text: JSON.stringify({
+          flag: true,
+          data: {
+            list: [
+              { jobId: "public-job", jobName: "消防工程师", recruitType: "0" },
+            ],
+            pagenation: { count: 1 },
+          },
+        }),
+      };
+    },
+  };
+  const result = await readProviderPage(ncss, input);
+  assert.equal(new URL(called.url).origin, "https://main.ncss.cn");
+  assert.equal(
+    called.options.headers.Referer,
+    "https://main.ncss.cn/student/jobs/index.html",
+  );
+  assert.equal(new URL(result.records[0].url).origin, "https://main.ncss.cn");
+  await assert.rejects(
+    readProviderPage(ncss, {
+      ...input,
+      site: { ...input.site, origin: "https://foreign.example.org" },
+    }),
+    { code: "source_origin_invalid" },
+  );
+});
 test("ncss_follows_real_pages_beyond_two_even_with_an_empty_middle_page", async () => {
   const visited = [],
     request = async (url) => {

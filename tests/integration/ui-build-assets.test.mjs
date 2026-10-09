@@ -89,7 +89,13 @@ async function packageFixture(t) {
   const verify = () =>
     spawnSync(
       process.execPath,
-      ["tools/verify-package.mjs", "--archive", archive, "--root", root],
+      [
+        "--input-type=module",
+        "-e",
+        "import {verifyPackageArchive} from './tools/verify-package.mjs'; verifyPackageArchive({archivePath:process.argv[1],root:process.argv[2]});",
+        archive,
+        root,
+      ],
       { cwd: ROOT, encoding: "utf8" },
     );
   return { root, stage, archive, write, pack, verify };

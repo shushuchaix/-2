@@ -9,6 +9,8 @@ import greenhouse from "./adapters/greenhouse.mjs";
 import { socialProviders } from "./adapters/social-discovery.mjs";
 import wechatPublic from "./adapters/wechat-public.mjs";
 import weiboPublic from "./adapters/weibo-public.mjs";
+import weiboOfficial from "./adapters/weibo-official.mjs";
+import wechatAuthorized from "./adapters/wechat-authorized.mjs";
 export function createSourceRegistry(providers) {
   const entries = new Map();
   for (const provider of providers) {
@@ -46,5 +48,7 @@ export function createDefaultSourceRegistry() {
     ...socialProviders.filter((p) => p.id !== "weibo"),
     wechatPublic,
     weiboPublic,
+    weiboOfficial,
+    wechatAuthorized,
   ]);
 }

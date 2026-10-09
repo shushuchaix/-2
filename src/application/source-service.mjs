@@ -9,6 +9,13 @@ import { assertScope, packageError } from "../domain/packages.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assessSourceProbe } from "../sources/source-quality.mjs";
 import { canonicalSocialUrl } from "../sources/social-content.mjs";
+import { randomUUID } from "node:crypto";
+import { assertCollectionWrite } from "../domain/collection.mjs";
+import {
+  probeReadService,
+  enableReadService,
+  createWeiboCapabilityRunner,
+} from "../infrastructure/collection/service-capabilities.mjs";
 const privateKeys = new Set([
   "accountIds",
   "articleUrls",
@@ -61,8 +68,111 @@ export function createSourceService({
   clock = repository.clock,
   operationGate = createWorkspaceOperationGate({ repository }),
   activityContext,
+  officialCredentials,
+  officialRunnerFactory,
 }) {
-  return {
+  const service = {
+    async probeOptionalReadService({
+      scope,
+      serviceId,
+      credentialRef,
+      accountId,
+      ref,
+    }) {
+      const w = await repository.read();
+      assertScope(w, scope, clock.now());
+      const provider = registry.get(serviceId);
+      if (!provider?.optionalService)
+        throw packageError("source_not_found", "未找到官方可选读取通道。", 404);
+      const run = async (ctx) => {
+        const runner =
+          officialRunnerFactory?.({ platform: provider.platform, ...ctx }) ||
+          (provider.platform === "weibo"
+            ? createWeiboCapabilityRunner({
+                request: ctx?.request,
+                credentialStore: officialCredentials,
+              })
+            : undefined);
+        const result = await probeReadService({
+            scope,
+            platform: provider.platform,
+            credentialRef,
+            accountId,
+            runner,
+          }),
+          proof = {
+            ...result,
+            proofId: randomUUID(),
+            checkedAt: new Date(clock.now()).toISOString(),
+          };
+        await repository.mutateWorkspace(
+          (d) => {
+            const owner = assertScope(d, scope, clock.now());
+            if (ctx?.collectionGuard)
+              assertCollectionWrite(d, ctx.collectionGuard);
+            owner.collectionSettings ||= {
+              sourceOverrides: {},
+              sessionRefs: {},
+              refreshEnabled: false,
+            };
+            owner.collectionSettings.serviceCapabilities ||= {};
+            owner.collectionSettings.serviceCapabilities[serviceId] = proof;
+          },
+          { operationLease: ctx?.operationLease },
+        );
+        return proof;
+      };
+      if (!credentialRef || (!officialCredentials && !officialRunnerFactory))
+        return run({});
+      if (!ref || !activityContext)
+        throw packageError(
+          "collection_activity_required",
+          "请在本版本采集活动中检查官方读取能力。",
+          409,
+        );
+      if (
+        ref.scope?.packageId !== scope.packageId ||
+        ref.scope.targetRevisionId !== scope.targetRevisionId
+      )
+        throw packageError(
+          "service_capability_scope",
+          "官方通道与当前版本不一致。",
+          409,
+        );
+      return activityContext(ref, run);
+    },
+    async enableOptionalReadService({
+      scope,
+      serviceId,
+      proofId,
+      paidServiceAcknowledged = false,
+    }) {
+      return (
+        await repository.mutateWorkspace(async (w) => {
+          const pkg = assertScope(w, scope, clock.now()),
+            proof = pkg.collectionSettings?.serviceCapabilities?.[serviceId];
+          if (
+            !proof ||
+            proof.proofId !== proofId ||
+            Number(clock.now()) - Date.parse(proof.checkedAt) > 1800000
+          )
+            throw packageError(
+              "service_capability_expired",
+              "请重新检查本版本的官方读取能力。",
+              409,
+            );
+          const result = await enableReadService({
+            scope,
+            serviceId,
+            confirmedCapability: proof,
+            paidServiceAcknowledged,
+          });
+          pkg.collectionSettings.serviceCapabilities[serviceId] = result;
+          pkg.collectionSettings.sourceOverrides[serviceId] = { enabled: true };
+          return result;
+        })
+      ).result;
+    },
     async listScopedSources({ scope }) {
       const w = await repository.read(),
         pkg = assertScope(w, scope, clock.now());
@@ -72,6 +182,7 @@ export function createSourceService({
         capabilities: p.capabilities,
         configSchema: p.configSchema,
         config: {
+          ...p.defaultConfig,
           ...(w.settings.sourceOverrides[p.id] || {}),
           ...(pkg.collectionSettings?.sourceOverrides[p.id] || {}),
         },
@@ -79,6 +190,9 @@ export function createSourceService({
           ...w.sourceHealth,
           ...pkg.collectionSettings?.sourceVerification,
         }).filter((h) => h.sourceId === p.id),
+        optionalService: p.optionalService === true,
+        serviceCapability:
+          pkg.collectionSettings?.serviceCapabilities?.[p.id] || null,
       }));
     },
     async saveScopedConfig({ scope, sourceId, config = {} }) {
@@ -94,6 +208,15 @@ export function createSourceService({
             refreshEnabled: false,
           };
           pkg.collectionSettings.sourceOverrides[sourceId] = saved;
+          if (
+            provider.optionalService &&
+            saved.enabled &&
+            pkg.collectionSettings?.serviceCapabilities?.[sourceId]?.enabled !==
+              true
+          )
+            throw inputError({
+              enabled: "请先检查本版本官方读取权限、额度与独立费用，再开通。",
+            });
           return saved;
         })
       ).result;
@@ -104,11 +227,19 @@ export function createSourceService({
         provider = registry.get(sourceId);
       if (!provider)
         throw packageError("source_not_found", "招聘来源不存在。", 404);
-      const site = (
-        catalog || loadSiteCatalog({ customSites: w.settings.customSites })
-      ).find(
-        (s) => s.providerId === sourceId && (!siteId || s.siteId === siteId),
-      );
+      if (provider.optionalService)
+        return service.probeOptionalReadService({
+          scope,
+          serviceId: sourceId,
+          ref,
+        });
+      const site =
+        // Optional official channels have account-specific probes, no catalog site.
+        (
+          catalog || loadSiteCatalog({ customSites: w.settings.customSites })
+        ).find(
+          (s) => s.providerId === sourceId && (!siteId || s.siteId === siteId),
+        );
       if (!site)
         throw packageError("site_not_found", "未找到该来源的站点。", 404);
       const config = {
@@ -265,7 +396,7 @@ export function createSourceService({
         name: p.name,
         capabilities: p.capabilities,
         configSchema: p.configSchema,
-        config: w.settings.sourceOverrides[p.id] || {},
+        config: { ...p.defaultConfig, ...w.settings.sourceOverrides[p.id] },
         health: Object.values(w.sourceHealth).filter(
           (h) => h.sourceId === p.id,
         ),
@@ -450,4 +581,5 @@ export function createSourceService({
       ).result;
     },
   };
+  return service;
 }

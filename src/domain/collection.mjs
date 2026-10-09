@@ -278,6 +278,10 @@ export function normalizeCollectionWorkspace(
       if (pkg.collectionSettings) {
         pkg.collectionSettings.sessionRefs = {};
         pkg.collectionSettings.refreshEnabled = false;
+        pkg.collectionSettings.serviceCapabilities = {};
+        for (const id of ["weibo-official", "wechat-authorized"])
+          if (pkg.collectionSettings.sourceOverrides?.[id])
+            pkg.collectionSettings.sourceOverrides[id].enabled = false;
       }
   return workspace;
 }

@@ -391,9 +391,12 @@ export async function createApplicationContext({
       requestFactory,
       operationGate,
       activityContext: collectionService
-        ? (ref, callback) =>
+        ? // OAuth capabilities use controlled references only, never browser cookies.
+          (ref, callback) =>
             collectionService.withActivityContext(ref, callback)
         : undefined,
+      officialCredentials: dependencies.officialCredentials,
+      officialRunnerFactory: dependencies.officialRunnerFactory,
     }),
     importService = createImportService({
       repository,

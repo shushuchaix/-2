@@ -89,7 +89,7 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
     applications: <ApplicationsPage api={api} />,
     profiles: <ProfilesPage api={api} />,
     targets: <TargetsPage api={api} />,
-    sources: <SourcesPage api={api} />,
+    sources: <SourcesPage api={api} desktop={desktop} />,
     logs: <LogsPage api={api} />,
     trash: <TrashPage api={api} />,
     settings: <SettingsPage api={api} desktop={desktop} />,

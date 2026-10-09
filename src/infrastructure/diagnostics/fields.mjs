@@ -23,6 +23,25 @@ function numbers(value, keys) {
   return Object.keys(result).length ? result : undefined;
 }
 const countKeys = [
+  "manualRequests",
+  "manualBytes",
+  "requestUpperBound",
+  "knownPhysicalRequests",
+  "unknownRequestUpperBound",
+  "physicalRequests",
+  "reservedRequests",
+  "observedRequests",
+  "bodyVerified",
+  "bodyMissing",
+  "attachmentsParsed",
+  "validNewUnique",
+  "duplicateCandidates",
+  "committedPages",
+  "newUnique",
+  "pendingBodies",
+  "pendingArticles",
+  "pendingOfficialLinks",
+  "usedBytes",
   "raw",
   "normalized",
   "notices",
@@ -55,6 +74,7 @@ const countKeys = [
   "issues",
 ];
 const enums = {
+  engine: ["http", "browser", "static", "dynamic", "enhanced"],
   stage: [
     "queued",
     "planning",
@@ -259,6 +279,11 @@ export function cleanMetadata(value) {
     result.errorNumber = value.errorNumber;
   for (const key of ["runId", "sourceId", "siteId", "jobId", "code"])
     if (token(value[key])) result[key] = value[key];
+  for (const key of ["activityId", "sliceRunId"])
+    if (/^(?:collection|slice|root|c)-[a-f0-9-]{36}$/.test(String(value[key])))
+      result[key] = value[key];
+  if (/^u-[a-f0-9]{24}$/.test(String(value.unitId)))
+    result.unitId = value.unitId;
   for (const [key, prefix] of [
     ["requestId", "q"],
     ["parentRequestId", "q"],

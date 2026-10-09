@@ -469,7 +469,7 @@ export async function handleV2Request(req, res, context) {
     const id = identifier(decode(match[1])),
       input = await body();
     if (input.siteId) identifier(input.siteId);
-    if (input.scope) {
+    if (input.scope || input.packageId || input.targetRevisionId) {
       const scope = businessScope(input);
       send(
         200,
@@ -479,7 +479,7 @@ export async function handleV2Request(req, res, context) {
               sourceId: id,
               siteId: input.siteId,
               ref: input.activityId
-                ? { activityId: identifier(input.activityId) }
+                ? { scope, activityId: identifier(input.activityId) }
                 : undefined,
             })
           : await context.sourceService.saveScopedConfig({
@@ -498,6 +498,22 @@ export async function handleV2Request(req, res, context) {
             sourceId: id,
             config: input.config || input,
           }),
+    );
+    return true;
+  }
+  if (
+    (match = route.match(/^\/sources\/([^/]+)\/service$/)) &&
+    method === "POST"
+  ) {
+    const input = await body();
+    send(
+      200,
+      await context.sourceService.enableOptionalReadService({
+        scope: businessScope(input),
+        serviceId: identifier(decode(match[1])),
+        proofId: identifier(input.proofId),
+        paidServiceAcknowledged: input.paidServiceAcknowledged === true,
+      }),
     );
     return true;
   }

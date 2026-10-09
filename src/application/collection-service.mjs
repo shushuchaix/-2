@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import {
   assessApplicationResponse,
   assessRecruitmentEvidence,
+  isVerifiedRecommendation,
 } from "../domain/recruitment-evidence.mjs";
+import {
+  selectVersionJobFact,
+  selectMatchingEvaluation,
+} from "../domain/job-facts.mjs";
 import { assertScope, packageError } from "../domain/packages.mjs";
 import {
   createCollectionRoot,
@@ -95,9 +100,18 @@ export function createCollectionService({
   async function planFor(scope, root, options = {}) {
     const w = await repository.read(),
       pkg = assertScope(w, scope, clock.now()),
-      target = Object.values(w.targets)
+      savedTarget = Object.values(w.targets)
         .flat()
         .find((t) => t.revisionId === scope.targetRevisionId);
+    const target = {
+      ...savedTarget,
+      coverageMode:
+        options.coverageMode ??
+        root?.targetSnapshot?.coverageMode ??
+        savedTarget.coverageMode ??
+        "standard",
+    };
+    collectionLimitsFor(target.coverageMode);
     if (
       pkg.enabled === false ||
       (w.versionMetadata?.[target.revisionId]?.enabled ?? target.enabled) ===
@@ -209,18 +223,56 @@ export function createCollectionService({
       });
     },
     async get(ref) {
-      return structuredClone(rootFor(await repository.read(), ref));
+      const w = await repository.read(),
+        root = structuredClone(rootFor(w, ref));
+      const valid = (root.collectionProgress.newJobIds ?? []).filter(
+        (jobId) => {
+          const fact = selectVersionJobFact(w, {
+            jobId,
+            targetRevisionId: ref.scope.targetRevisionId,
+          });
+          const evaln = selectMatchingEvaluation(w, {
+            jobId,
+            targetRevisionId: ref.scope.targetRevisionId,
+            profileRevisionId: root.targetSnapshot.profileRevisionId,
+            factContentHash: fact.factContentHash,
+          });
+          return isVerifiedRecommendation({
+            qualification: evaln?.qualification,
+            evidence: assessRecruitmentEvidence({
+              record: fact.record ?? {},
+              now: clock.now(),
+            }),
+          });
+        },
+      );
+      root.collectionProgress.metrics.validNewUnique = valid.length;
+      return { ...root, collectionUsage: await ledger.snapshot(ref) };
     },
-    async list({ scope }) {
+    async list({ scope, allTargets = false }) {
       const w = await repository.read();
-      assertScope(w, scope, clock.now());
-      return Object.values(w.runs)
+      if (!allTargets) assertScope(w, scope, clock.now());
+      const roots = Object.values(w.runs)
         .filter(
           (r) =>
-            r.ownerPackageId === scope.packageId &&
+            (allTargets
+              ? w.packages[r.ownerPackageId]?.state === "active" &&
+                w.packages[r.ownerPackageId]?.kind === "target"
+              : r.ownerPackageId === scope.packageId) &&
             r.collectionRole === "collection_root",
         )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return Promise.all(
+        roots.map((r) =>
+          service.get({
+            activityId: r.runId,
+            scope: {
+              packageId: r.ownerPackageId,
+              targetRevisionId: r.targetSnapshot.revisionId,
+            },
+          }),
+        ),
+      );
     },
     async resume({
       ref,
@@ -555,6 +607,9 @@ export function createCollectionService({
             p.metrics.committedPages = (p.metrics.committedPages || 0) + 1;
             p.metrics.newUnique =
               (p.metrics.newUnique || 0) + result.newForTarget.length;
+            p.newJobIds = [
+              ...new Set([...(p.newJobIds ?? []), ...result.newForTarget]),
+            ];
             p.revision++;
             p.updatedAt = at();
             return {
@@ -735,6 +790,18 @@ export function createCollectionService({
       };
       await emit(token.sliceRunId, "stage", { stage: "collecting" }, ref.scope);
       let root = await service.get(ref);
+      await recordDiagnostic(diagnostics, {
+        operation: "collection.plan",
+        runId: token.sliceRunId,
+        activityId: ref.activityId,
+        counts: {
+          plannedSites: new Set(
+            Object.values(root.collectionProgress.units).map((u) => u.siteId),
+          ).size,
+          queries: Object.keys(root.collectionProgress.units).length,
+        },
+        outcome: "success",
+      });
       const makeContext = async (unit) => {
         const w = await repository.read(),
           pkg = assertScope(w, ref.scope, clock.now());
@@ -920,6 +987,24 @@ export function createCollectionService({
               operationLease: lease,
             });
             token.expectedRevision = result.revision;
+            await recordDiagnostic(diagnostics, {
+              operation: "collection.page",
+              runId: token.sliceRunId,
+              activityId: ref.activityId,
+              unitId: unit.unitId,
+              page: result.committedPages,
+              counts: {
+                raw: page.raw ?? page.records.length,
+                accepted: result.jobIds.length,
+                newUnique: result.newForTarget.length,
+                bodyVerified: page.records.filter(
+                  (r) =>
+                    assessRecruitmentEvidence({ record: r, now: clock.now() })
+                      .bodyVerified,
+                ).length,
+              },
+              outcome: "success",
+            });
             advanced = true;
             const child = (await repository.read()).runs[token.sliceRunId];
             await emit(
@@ -1125,6 +1210,11 @@ export function createCollectionService({
             child.counts.newForTarget += result.newForTarget.length;
             child.counts.deduplicated = child.jobIds.length;
             p.articleCache[key] = { jobIds: result.jobIds, completedAt: at() };
+            p.newJobIds = [
+              ...new Set([...(p.newJobIds ?? []), ...result.newForTarget]),
+            ];
+            p.metrics.newUnique =
+              (p.metrics.newUnique ?? 0) + result.newForTarget.length;
             delete p.pendingArticles[key];
           });
         } catch (e) {
@@ -1263,6 +1353,73 @@ export function createCollectionService({
         w.packages[ref.scope.packageId]?.state === "active"
       ) {
         const usage = await ledger.snapshot(ref);
+        const summary = await service.get(ref);
+        const evaluated = (child.evaluationIds ?? [])
+          .map((id) => w.evaluations[id])
+          .filter(Boolean);
+        await recordDiagnostic(diagnostics, {
+          operation: "collection.qualification",
+          runId: token.sliceRunId,
+          counts: {
+            input: evaluated.length,
+            eligible: evaluated.filter(
+              (e) => e.qualification?.status === "pass",
+            ).length,
+            qualificationUnknown: evaluated.filter(
+              (e) => e.qualification?.status === "unknown",
+            ).length,
+            qualificationFailed: evaluated.filter(
+              (e) => e.qualification?.status === "fail",
+            ).length,
+            fallback: evaluated.filter((e) => e.fallbackReason).length,
+          },
+          outcome: "completed",
+        });
+        await recordDiagnostic(diagnostics, {
+          operation: "collection.dedup",
+          runId: token.sliceRunId,
+          counts: {
+            raw: child.counts.raw ?? 0,
+            deduplicated: child.jobIds?.length ?? 0,
+            validNewUnique: summary.collectionProgress.metrics.validNewUnique,
+          },
+          outcome: "completed",
+        });
+        await recordDiagnostic(diagnostics, {
+          operation: "collection.finish",
+          runId: token.sliceRunId,
+          activityId: ref.activityId,
+          outcome: "completed",
+          counts: {
+            ...summary.collectionProgress.metrics,
+            knownPhysicalRequests: usage.knownPhysicalRequests,
+            unknownRequestUpperBound: usage.unknownRequestUpperBound,
+            requestUpperBound: usage.usedRequests,
+            reservedRequests: usage.reservedRequests,
+            usedBytes: usage.usedBytes,
+            pendingBodies: Object.keys(
+              summary.collectionProgress.pendingBodies ?? {},
+            ).length,
+            pendingArticles: Object.keys(
+              summary.collectionProgress.pendingArticles ?? {},
+            ).length,
+            pendingOfficialLinks: Object.keys(
+              summary.collectionProgress.pendingOfficialLinks ?? {},
+            ).length,
+          },
+          usage: {
+            sources: {
+              requests: usage.usedRequests,
+              maxRequests: usage.maxRequests,
+            },
+            model: {
+              maxCostCny: usage.maxCostCny,
+              costUpperBoundCny: usage.costUpperBoundCny,
+              reservedCostCny: usage.reservedCostCny,
+              uncertainCostCny: usage.unresolvedCostCny,
+            },
+          },
+        });
         const repo = runtimeRepository(repository, ref.scope);
         const snapshot = {
           schemaVersion: 2,
@@ -1340,6 +1497,15 @@ export function createCollectionService({
   }
   async function enrichRecord(record, context) {
     const evidence = assessRecruitmentEvidence({ record, now: clock.now() });
+    await recordDiagnostic(diagnostics, {
+      operation: "collection.body",
+      runId: context.runId,
+      counts: {
+        bodyVerified: evidence.bodyVerified ? 1 : 0,
+        bodyMissing: evidence.bodyVerified ? 0 : 1,
+      },
+      outcome: evidence.bodyVerified ? "success" : "insufficient",
+    });
     if (
       record.kind === "job" &&
       record.applyUrl &&
@@ -1397,6 +1563,17 @@ export function createCollectionService({
     record = { ...record, officialLinks };
     if (!record.attachments?.length || !attachmentService) return record;
     const enriched = await attachmentService.enrich({ record, ...context });
+    await recordDiagnostic(diagnostics, {
+      operation: "collection.attachment",
+      runId: context.runId,
+      counts: {
+        input: record.attachments.length,
+        attachmentsParsed: (enriched.attachments ?? []).filter(
+          (a) => a.extraction?.status === "extracted",
+        ).length,
+      },
+      outcome: "completed",
+    });
     const extracts = [];
     for (const a of enriched.attachments || [])
       if (a.extraction?.status === "extracted") {

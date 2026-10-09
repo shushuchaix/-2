@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { recordDiagnostic } from "../../src/infrastructure/diagnostics/log.mjs";
 import {
   publicCollectionUrl,
   platformPolicy,
@@ -21,6 +22,7 @@ export function createCollectionBrowser({
   offlineAllows,
   assertScope,
   rememberSession,
+  diagnostics,
 } = {}) {
   const windows = new Map(),
     sessions = new Map(),
@@ -136,6 +138,7 @@ export function createCollectionBrowser({
       networkStatus = { status: 200 };
     const lifetime = new AbortController();
     window.webContents.setWebRTCIPHandlingPolicy?.("disable_non_proxied_udp");
+    let manualRequests = 0;
     let manualQueue = Promise.resolve(),
       lastManualAt = 0;
     const policy = createPagePolicy({
@@ -147,6 +150,7 @@ export function createCollectionBrowser({
       webContentsId: id,
       reserve: async (details) => {
         if (manual) {
+          manualRequests++;
           const next = manualQueue.then(async () => {
             await cancellableSleep(
               Math.max(0, lastManualAt + 300 - Date.now()),
@@ -238,6 +242,16 @@ export function createCollectionBrowser({
             await saveMaterial();
           } finally {
             detach();
+            if (manual)
+              await recordDiagnostic(diagnostics, {
+                operation: "collection.finish",
+                activityId: ref.activityId,
+                outcome: "completed",
+                counts: {
+                  manualRequests,
+                  manualBytes: client.snapshot().bytes,
+                },
+              });
             ses.webRequest.onHeadersReceived(null);
             ses.removeListener("will-download", denyDownload);
             if (!window.isDestroyed()) window.destroy();

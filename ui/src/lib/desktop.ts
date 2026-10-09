@@ -5,6 +5,9 @@ export function createDesktopAdapter(bridge?: DesktopBridge): DesktopAdapter {
   };
   return {
     available: !!bridge,
+    getCollectionCapabilities: () =>
+      bridge?.getCollectionCapabilities?.() ??
+      Promise.resolve({ available: false, canRemember: false }),
     isAvailable: () => bridge?.isAvailable() ?? Promise.resolve(false),
     getKeyStatus: (p) => bridge?.getKeyStatus(p) ?? unavailable(),
     saveKey: (p, k) => bridge?.saveKey(p, k) ?? unavailable(),

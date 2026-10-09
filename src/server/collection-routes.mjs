@@ -16,7 +16,11 @@ export async function handleCollectionRequest(req, res, context) {
   if (url.pathname === "/api/v2/collections") {
     if (req.method === "GET")
       send(200, {
-        collections: await service.list({ scope: businessScope(params) }),
+        collections: await service.list(
+          params.allTargets === "true"
+            ? { allTargets: true }
+            : { scope: businessScope(params) },
+        ),
       });
     else if (req.method === "POST") {
       const input = await context.http.readJson(req),
@@ -55,7 +59,10 @@ export async function handleCollectionRequest(req, res, context) {
         requestId: input.requestId,
         replan: input.replan === true,
         mode: input.mode || (input.useAI ? "ai" : undefined),
-        credentials: input.useAI ? userCredentials(input, context.cfg) : {},
+        credentials:
+          input.useAI || ["ai", "auto"].includes(input.mode)
+            ? userCredentials(input, context.cfg)
+            : {},
       }),
     );
   else if (req.method === "PUT" && match[2] === "limits")

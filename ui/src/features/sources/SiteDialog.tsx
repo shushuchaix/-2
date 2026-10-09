@@ -30,8 +30,13 @@ export type SourceSummary = {
   config?: Record<string, unknown>;
   capabilities?: Record<string, unknown>;
   health?: SourceHealth[];
+  service?: boolean;
+  optionalService?: boolean;
+  serviceCapability?: Record<string, unknown> | null;
 };
 export type SourceHealth = {
+  siteId?: string;
+  capabilities?: Record<string, unknown>;
   status?: string;
   checkedAt?: string;
   lastSuccessAt?: string;

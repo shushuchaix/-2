@@ -1155,7 +1155,7 @@ export function createRunService(options) {
       if (collectionService)
         return collectionService.start({
           scope: input.scope,
-          options: { mode: input.mode || "rules" },
+          options: { mode: input.mode || "rules",coverageMode:input.coverageMode },
           credentials: { ...input.credentials, sourceConfig: options.config },
         });
       const service = await instance(input.scope);

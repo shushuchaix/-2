@@ -187,7 +187,7 @@ export async function handleV1Request(req, res, context) {
       staleCount: Object.values(w.jobs).filter(
         (j) => j.lifecycle === "notRecentlySeen",
       ).length,
-      runs: Object.keys(w.runs).length,
+      runs: Object.values(w.runs).filter(r=>r.collectionRole!=='collection_root').length,
       updatedAt:
         Object.values(w.jobs)
           .map((j) => j.lastSeen)

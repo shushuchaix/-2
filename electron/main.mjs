@@ -522,6 +522,7 @@ async function boot() {
         offlineAllows: selfTestNetwork?.allows,
       }),
       sessionStore: collectionSessions,
+      diagnostics: applicationContext.diagnostics,
       offlineAllows: selfTestNetwork?.allows,
       assertScope: async (scope) =>
         assertScope(
@@ -549,6 +550,7 @@ async function boot() {
     registerCollectionIpc({
       ipcMain,
       browser: collectionBrowser,
+      sessionStore: collectionSessions,
       context: applicationContext,
       getWindow: () => mainWindow,
       getOrigin: () => appUrl,

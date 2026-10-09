@@ -260,6 +260,10 @@ function createLegacyJobService({ repository, clock = repository.clock }) {
           ),
         );
       const applicationStatus = filters.applicationStatus || filters.status;
+      if (filters.openingStatus && filters.openingStatus !== "all")
+        items = items.filter(
+          (i) => i.recruitmentEvidence.openingStatus === filters.openingStatus,
+        );
       if (applicationStatus && applicationStatus !== "all")
         items = items.filter((i) => i.application.status === applicationStatus);
       if (filters.duplicateStatus && filters.duplicateStatus !== "all")

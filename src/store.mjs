@@ -267,7 +267,7 @@ export async function summary(options={}) {
     staleCount: Object.values(index.jobs).filter(
       (r) => r.seenCount >= 5 && ["new", "seen"].includes(r.status),
     ).length,
-    runs: index.runs.length,
+    runs: index.runs.filter(r=>r.collectionRole!=='collection_root').length,
     updatedAt: index.updatedAt,
   };
 }

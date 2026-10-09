@@ -25,9 +25,21 @@ const catalog = () => ({
 
 test("source save failure preserves the changed switch and diagnostic link", async (t) => {
   const f = await renderApp(t, {
-    route: "#/sources",
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
     apiHandler: (path, options) => {
-      if (path === "/sources") return catalog();
+      if (
+        path === "/collections"
+          ? {
+              collections: [
+                {
+                  runId: "activity-A",
+                  collectionProgress: { status: "collecting" },
+                },
+              ],
+            }
+          : path === "/sources"
+      )
+        return catalog();
       if (options?.method === "PUT")
         throw Object.assign(new Error("来源设置未保存"), {
           diagnosticId: "d-00000000-0000-4000-8000-000000000001",
@@ -50,17 +62,26 @@ test("source save failure preserves the changed switch and diagnostic link", asy
 
 test("candidate probe keeps last success and explains empty content", async (t) => {
   const f = await renderApp(t, {
-    route: "#/sources",
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
     apiHandler: (path) =>
-      path === "/sources"
-        ? catalog()
-        : path.endsWith("/probe")
-          ? {
-              status: "empty",
-              checkedAt: "2026-10-09T00:00:00Z",
-              issues: [{ code: "empty", message: "未取得有效样本" }],
-            }
-          : undefined,
+      path === "/collections"
+        ? {
+            collections: [
+              {
+                runId: "activity-A",
+                collectionProgress: { status: "collecting" },
+              },
+            ],
+          }
+        : path === "/sources"
+          ? catalog()
+          : path.endsWith("/probe")
+            ? {
+                status: "empty",
+                checkedAt: "2026-10-09T00:00:00Z",
+                issues: [{ code: "empty", message: "未取得有效样本" }],
+              }
+            : undefined,
   });
   await f.user.click(
     await f.screen.findByRole("button", { name: "检查候选目录" }),
@@ -71,9 +92,21 @@ test("candidate probe keeps last success and explains empty content", async (t) 
 
 test("site validation stops private URL and preserves server-rejected draft", async (t) => {
   const f = await renderApp(t, {
-    route: "#/sources",
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
     apiHandler: (path, options) => {
-      if (path === "/sources") return catalog();
+      if (
+        path === "/collections"
+          ? {
+              collections: [
+                {
+                  runId: "activity-A",
+                  collectionProgress: { status: "collecting" },
+                },
+              ],
+            }
+          : path === "/sources"
+      )
+        return catalog();
       if (path === "/sources/sites")
         throw Object.assign(new Error("请修改标出的项目"), {
           fieldErrors: { siteId: "该站点编号已存在" },
@@ -114,20 +147,29 @@ test("site validation stops private URL and preserves server-rejected draft", as
 
 test("successful source probe updates provider availability count", async (t) => {
   const f = await renderApp(t, {
-    route: "#/sources",
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
     apiHandler: (path) =>
-      path === "/sources"
-        ? catalog()
-        : path.endsWith("/probe")
-          ? {
-              status: "ready",
-              checkedAt: "2026-10-09T00:00:00Z",
-              sampleCount: 1,
-            }
-          : undefined,
+      path === "/collections"
+        ? {
+            collections: [
+              {
+                runId: "activity-A",
+                collectionProgress: { status: "collecting" },
+              },
+            ],
+          }
+        : path === "/sources"
+          ? catalog()
+          : path.endsWith("/probe")
+            ? {
+                status: "ready",
+                checkedAt: "2026-10-09T00:00:00Z",
+                sampleCount: 1,
+              }
+            : undefined,
   });
   await f.user.click(
     await f.screen.findByRole("button", { name: "检查候选目录" }),
   );
-  assert.ok(await f.screen.findByText(/1 个目录站点 · 1 个可自动采集/));
+  assert.ok(await f.screen.findByText(/1 个目录站点 · 1 个本版本已验证站点/));
 });

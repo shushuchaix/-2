@@ -5,6 +5,10 @@ import { useVersionContext } from "../../app/VersionContext";
 import { buildHash } from "../../app/router";
 import { RunOptions } from "./RunOptions";
 import { RunSummary } from "./RunSummary";
+import {
+  CollectionProgress,
+  type CollectionActivity,
+} from "./CollectionProgress";
 import { getPendingStart, startRunOnce } from "./pending-start";
 import { Button } from "../../components/ui/button";
 import {
@@ -66,7 +70,51 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
   const op = useOperation(),
     cancel = useOperation();
   const connecting = useRef(false);
+  const [activity, setActivity] = useState<CollectionActivity | null>(null),
+    [activityError, setActivityError] = useState<unknown>(null),
+    [activityLoading, setActivityLoading] = useState(!!ctx.scope);
+  useEffect(() => {
+    setActivity(null);
+    setActivityError(null);
+    setActivityLoading(!!ctx.scope);
+    if (!ctx.scope || ctx.loading || ctx.error) return;
+    const scope = ctx.scope,
+      read = new AbortController();
+    let live = true,
+      busy = false;
+    const refresh = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const result = await api.request<{
+          collections?: CollectionActivity[];
+        }>("/collections", { scope, signal: read.signal });
+        if (live) {
+          setActivity(result.collections?.[0] ?? null);
+          setActivityError(null);
+        }
+      } catch (e) {
+        if (live && !read.signal.aborted) setActivityError(e);
+      } finally {
+        busy = false;
+        if (live) setActivityLoading(false);
+      }
+    };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 2000);
+    return () => {
+      live = false;
+      read.abort();
+      clearInterval(timer);
+    };
+  }, [api, ctx.generation, ctx.loading, ctx.error, run?.runId]);
   const target = ctx.targets.find((t) => t.packageId === ctx.scope?.packageId);
+  const [coverageMode, setCoverageMode] = useState("standard");
+  useEffect(
+    () =>
+      setCoverageMode(target?.coverageMode === "broad" ? "broad" : "standard"),
+    [ctx.generation, target?.coverageMode],
+  );
   const query = useQuery<{ items: JobItem[]; total: number }>(
     api,
     ctx.selection ? "/jobs?page=1&pageSize=5&recommendation=high" : null,
@@ -192,7 +240,13 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
       recoveryError ||
       getPendingStart(api, ctx.scope) ||
       (!!run && !terminal.has(String(run.status))) ||
-      op.busy
+      op.busy ||
+      activityLoading ||
+      activityError ||
+      (activity &&
+        !["completed", "cancelled"].includes(
+          activity.collectionProgress.status,
+        ))
     )
       return;
     const checked = validateInput("run", {
@@ -213,6 +267,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
     await op.run(async () => {
       const created = await startRunOnce(api, scope, {
         mode,
+        coverageMode,
         ...(mode === "ai" && userKey ? { userApiKey: userKey } : {}),
       });
       if (token !== generation.current) return;
@@ -255,6 +310,8 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
         </CardHeader>
         <CardContent>
           <RunOptions
+            coverageMode={coverageMode}
+            onCoverageMode={setCoverageMode}
             mode={mode}
             onMode={setMode}
             userKey={userKey}
@@ -287,13 +344,19 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
               recovering ||
               !!recoveryError ||
               running ||
-              op.busy
+              op.busy ||
+              activityLoading ||
+              !!activityError ||
+              (!!activity &&
+                !["completed", "cancelled"].includes(
+                  activity.collectionProgress.status,
+                ))
             }
             onClick={() => void start()}
           >
             更新岗位
           </Button>
-          {running && (
+          {running && !activity && (
             <Button
               variant="outline"
               disabled={cancel.busy}
@@ -317,6 +380,34 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
           )}
         </CardFooter>
       </Card>
+      <OperationFeedback error={activityError} />
+      {activity && ctx.scope && (
+        <CollectionProgress
+          key={ctx.scope.packageId + activity.runId}
+          activity={activity}
+          api={api}
+          scope={ctx.scope}
+          mode={mode}
+          userKey={userKey}
+          onKeyUsed={() => setUserKey("")}
+          onChanged={(next) => {
+            setActivity(next);
+            const id = next.collectionProgress.activeSliceRunId;
+            if (id && ctx.scope) {
+              setRun({ runId: id, status: "running" });
+              void connect(id, ctx.scope);
+            } else if (
+              ["cancelled", "paused"].includes(next.collectionProgress.status)
+            ) {
+              controller.current?.abort();
+              connecting.current = false;
+              setRun((previous) =>
+                previous ? { ...previous, status: "cancelled" } : null,
+              );
+            }
+          }}
+        />
+      )}
       {recovering && ctx.scope && (
         <p role="status">正在读取当前目标的运行任务…</p>
       )}

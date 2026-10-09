@@ -113,6 +113,10 @@ export interface ApiClient {
   ): Promise<void>;
 }
 export interface DesktopBridge {
+  getCollectionCapabilities?(): Promise<{
+    available: boolean;
+    canRemember: boolean;
+  }>;
   openCollectionLogin?(input: {
     scope: Scope;
     activityId?: string;

@@ -176,7 +176,7 @@ export async function handlePackageBusinessRequest(req, res, context) {
   }
   if (
     (match = route.match(
-      /^\/jobs\/([^/]+)(?:\/(application|evaluations|links))?$/,
+      /^\/jobs\/([^/]+)(?:\/(application|evaluations|links|verify))?$/,
     ))
   ) {
     const id = jobIdentifier(decodeURIComponent(match[1]));
@@ -191,6 +191,17 @@ export async function handlePackageBusinessRequest(req, res, context) {
           applicationPatch(input),
           businessScope(input),
         ),
+      );
+    } else if (match[2] === "verify" && method === "POST") {
+      const input = await body(),
+        selected = businessScope(input);
+      send(
+        200,
+        await context.jobVerificationService.verifyJob({
+          scope: selected,
+          jobId: id,
+          ref: { scope: selected, activityId: identifier(input.activityId) },
+        }),
       );
     } else if (match[2] === "evaluations" && method === "POST") {
       const input = await body();
@@ -245,6 +256,7 @@ export async function handlePackageBusinessRequest(req, res, context) {
         await runs.startRun({
           scope: businessScope(input),
           mode,
+          coverageMode: input.coverageMode,
           credentials: {
             diagnosticContext: { requestId: http.requestId },
             ...(mode === "rules" ? {} : userCredentials(input, context.cfg)),

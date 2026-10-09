@@ -16,6 +16,8 @@ import { FormFeedback } from "../../components/FormFeedback";
 import { OperationFeedback } from "../../components/OperationFeedback";
 import { ApplicationEditor } from "../applications/ApplicationEditor";
 import { EvaluationDetails } from "./EvaluationDetails";
+import { RecruitmentEvidence } from "./RecruitmentEvidence";
+import type { CollectionActivity } from "../workbench/CollectionProgress";
 import {
   factOf,
   qualificationOf,
@@ -42,6 +44,14 @@ export function JobDetailsSheet({
     scope,
   );
   const op = useOperation();
+  const activities = useQuery<{ collections?: CollectionActivity[] }>(
+    api,
+    "/collections",
+    scope,
+  );
+  const activeActivity = activities.data?.collections?.find(
+    (a) => a.collectionProgress.status === "collecting",
+  );
   const [editing, setEditing] = useState(false);
   const { targets } = useVersionContext();
   const target = targets.find((t) => t.packageId === scope.packageId);
@@ -111,9 +121,10 @@ export function JobDetailsSheet({
               )}
               <p className="text-sm text-muted-foreground">
                 {row.fact?.status === "verified"
-                  ? "本版本招聘事实已核实"
+                  ? "已保存本版本事实依据；招聘时效和条件以以下证据为准。"
                   : "本版本事实尚待核实，历史评价请结合当时依据查看。"}
               </p>
+              <RecruitmentEvidence row={row} />
               {row.evaluation && (
                 <section className="flex flex-col gap-3">
                   <h2 className="font-semibold">当前评价依据</h2>
@@ -121,6 +132,26 @@ export function JobDetailsSheet({
                 </section>
               )}
               <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  disabled={op.busy || !activeActivity}
+                  onClick={() =>
+                    void op.run(async () => {
+                      await api.request(
+                        "/jobs/" + encodeURIComponent(jobId) + "/verify",
+                        {
+                          method: "POST",
+                          scope,
+                          body: { activityId: activeActivity?.runId },
+                        },
+                      );
+                      query.refresh();
+                      onChanged?.();
+                    }, "岗位正文与投递入口核验已完成")
+                  }
+                >
+                  核验正文与投递入口
+                </Button>
                 <Button onClick={() => setEditing(true)}>记录投递</Button>
                 <Button
                   variant="outline"
@@ -151,6 +182,11 @@ export function JobDetailsSheet({
                   规则重新评价
                 </Button>
               </div>
+              {!activeActivity && (
+                <p className="text-sm text-muted-foreground">
+                  核验使用本版本正在运行的采集活动额度，请先在工作台继续采集。
+                </p>
+              )}
               <OperationFeedback
                 result={op.message}
                 busy={op.busy}

@@ -42,6 +42,13 @@ export async function recordDiagnostic(diagnostics, event, error) {
 export { safeApiRoute } from "../../../public/js/diagnostic-rules.js";
 
 const messages = {
+  "collection.plan": "采集活动计划已生成。",
+  "collection.page": "采集页面已提交。",
+  "collection.body": "招聘正文检查已结束。",
+  "collection.attachment": "招聘附件解析已结束。",
+  "collection.qualification": "招聘资格检查已结束。",
+  "collection.dedup": "招聘去重检查已结束。",
+  "collection.finish": "采集活动批次已结束。",
   "run.started": "招聘更新任务已启动。",
   "run.stage": "任务进入下一阶段。",
   "run.source": "来源采集已返回。",

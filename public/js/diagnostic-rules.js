@@ -6,6 +6,7 @@ const fixedV2 = new Set([
   "/profiles",
   "/targets",
   "/runs",
+  "/collections",
   "/jobs",
   "/jobs/evaluations",
   "/applications/unresolved",
@@ -29,19 +30,27 @@ const fixedV1 = new Set([
   "/api/tracking/jobs",
 ]);
 const patternsV2 = [
+  [
+    /^\/collections\/[^/]+\/(pause|resume|cancel|limits)$/,
+    (m) => "/collections/:id/" + m[1],
+  ],
+  [/^\/collections\/[^/]+$/, "/collections/:id"],
   [/^\/profiles\/[^/]+\/revisions\/[^/]+$/, "/profiles/:id/revisions/:id"],
   [/^\/profiles\/[^/]+\/revisions$/, "/profiles/:id/revisions"],
   [/^\/targets\/[^/]+$/, "/targets/:id"],
   [/^\/runs\/[^/]+\/(events|cancel)$/, (m) => "/runs/:id/" + m[1]],
   [/^\/runs\/[^/]+$/, "/runs/:id"],
   [
-    /^\/jobs\/[^/]+\/(evaluations|application|links)$/,
+    /^\/jobs\/[^/]+\/(evaluations|application|links|verify)$/,
     (m) => "/jobs/:id/" + m[1],
   ],
   [/^\/jobs\/[^/]+$/, "/jobs/:id"],
   [/^\/applications\/[^/]+$/, "/applications/:id"],
   [/^\/sources\/sites\/[^/]+$/, "/sources/sites/:id"],
-  [/^\/sources\/[^/]+\/(probe|settings)$/, (m) => "/sources/:id/" + m[1]],
+  [
+    /^\/sources\/[^/]+\/(probe|settings|service)$/,
+    (m) => "/sources/:id/" + m[1],
+  ],
 ];
 export function safeApiRoute(value) {
   if (

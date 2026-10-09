@@ -90,6 +90,7 @@ function usageOf(p) {
     pricedRequests = 0,
     uncertainRequests = 0,
     reservedRequests = 0;
+  let knownPhysicalRequests = 0;
   const byKind = {};
   for (const r of Object.values(p.ledger.reservations)) {
     const pending = r.status !== "settled";
@@ -97,6 +98,8 @@ function usageOf(p) {
       ? r.requestUpperBound || 0
       : (r.verifiedUsage?.requests ?? r.requestUpperBound ?? 0);
     usedRequests += requests;
+    if (!pending && r.kind !== "worker")
+      knownPhysicalRequests += r.verifiedUsage?.requests ?? 0;
     byKind[r.kind] = (byKind[r.kind] || 0) + requests;
     if (pending) reservedRequests += requests;
     if (r.kind === "detail_credit") usedDetails++;
@@ -124,6 +127,8 @@ function usageOf(p) {
   }
   return {
     usedRequests,
+    knownPhysicalRequests,
+    unknownRequestUpperBound: usedRequests - knownPhysicalRequests,
     usedDetails,
     usedAttachments,
     usedBytes,
@@ -405,13 +410,16 @@ export async function createActivityBudgets({
       });
     },
     async settleRequest(reservation, { bytes }) {
-      if (reservation?.bytesUpperBound)
+      if (reservation?.reservationId)
         return remember(
           await ledger.settle({
             ref,
             reservationId: reservation.reservationId,
             operationLease,
-            verifiedUsage: { requests: 1, bytes },
+            verifiedUsage: {
+              requests: 1,
+              bytes: reservation.bytesUpperBound ? bytes : 0,
+            },
           }),
         );
     },

@@ -19,6 +19,8 @@ export function RunOptions({
   onKey,
   budgetCny,
   keyError,
+  coverageMode = "standard",
+  onCoverageMode,
 }: {
   mode: "rules" | "ai";
   onMode: (v: "rules" | "ai") => void;
@@ -26,6 +28,8 @@ export function RunOptions({
   onKey: (key: string) => void;
   budgetCny: number | null;
   keyError?: string;
+  coverageMode?: string;
+  onCoverageMode?: (mode: string) => void;
 }) {
   return (
     <Collapsible>
@@ -34,6 +38,22 @@ export function RunOptions({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <FieldGroup className="py-4">
+          <Field>
+            <FieldLabel>采集覆盖范围</FieldLabel>
+            <ToggleGroup
+              value={[coverageMode]}
+              onValueChange={(v) => {
+                if (["standard", "broad"].includes(v[0]))
+                  onCoverageMode?.(v[0]);
+              }}
+            >
+              <ToggleGroupItem value="standard">标准覆盖</ToggleGroupItem>
+              <ToggleGroupItem value="broad">广覆盖</ToggleGroupItem>
+            </ToggleGroup>
+            <FieldDescription>
+              标准最多24站/400请求/每查询4页，广覆盖最多50站/1000请求/10页；实际受启用来源与证据准入限制。继续沿用原活动计划。
+            </FieldDescription>
+          </Field>
           <Field>
             <FieldLabel>评价方式</FieldLabel>
             <ToggleGroup
@@ -63,9 +83,9 @@ export function RunOptions({
                 description="仅用于本次任务；创建成功或离开页面后清除。"
               />
               <p>
-                每任务模型费用上限：
+                新活动模型费用上限：
                 {budgetCny === null ? "使用请求次数预算" : budgetCny + " 元"}
-                。在目标或设置页修改；0 元禁用模型调用。
+                。所有批次共享累计上限，最多10元；0 元禁用模型调用。
               </p>
             </>
           )}

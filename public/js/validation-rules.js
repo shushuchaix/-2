@@ -465,6 +465,13 @@ export function validateInput(kind, input, options = {}) {
         "fail",
         "unknown",
       ]);
+      choice("openingStatus", input.openingStatus, [
+        "all",
+        "open",
+        "closed",
+        "historical",
+        "unknown",
+      ]);
       choice("recommendation", input.recommendation, [
         "all",
         "unevaluated",

@@ -8,8 +8,16 @@ export function registerCollectionIpc({
   context,
   getWindow,
   getOrigin,
+  sessionStore,
 }) {
   const guarded = (fn) => guardDesktopSender({ getWindow, getOrigin }, fn);
+  ipcMain.handle(
+    "collection:capabilities",
+    guarded(() => ({
+      available: Boolean(browser),
+      canRemember: sessionStore?.available() === true,
+    })),
+  );
   ipcMain.handle(
     "collection:login",
     guarded(async (input) => {

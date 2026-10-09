@@ -104,6 +104,18 @@ export function JobFilters({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="grid gap-4 py-4 md:grid-cols-3">
+            <Choice
+              label="招聘时效"
+              value={filters.openingStatus ?? "all"}
+              onChange={(v) => onChange("openingStatus", v)}
+              items={[
+                { value: "all", label: "全部时效" },
+                { value: "open", label: "当前招聘" },
+                { value: "historical", label: "历史结果公告" },
+                { value: "closed", label: "已截止" },
+                { value: "unknown", label: "时效待核验" },
+              ]}
+            />
             <TextField
               name="job-cities"
               label="城市"

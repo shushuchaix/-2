@@ -39,6 +39,10 @@ import {
 } from "../../components/ui/empty";
 import { Skeleton } from "../../components/ui/skeleton";
 import {
+  CollectionProgress,
+  type CollectionActivity,
+} from "../workbench/CollectionProgress";
+import {
   DiagnosticDetails,
   safeDiagnostic,
   type DiagnosticEntry,
@@ -53,6 +57,9 @@ type RunSummary = {
   createdAt?: string;
   counts?: Record<string, number>;
   issues?: { code?: string; diagnosticId?: string }[];
+  collectionRole?: string;
+  collectionProgress?: CollectionActivity["collectionProgress"];
+  collectionUsage?: Record<string, number>;
 };
 type DiagnosticResponse = {
   entries: DiagnosticEntry[];
@@ -222,10 +229,21 @@ export function LogsPage({ api }: { api: ApiClient }) {
         setMaintenance(safeMaintenance);
       }
       return tab === "business"
-        ? api.request<{ runs: RunSummary[] }>("/runs", {
-            scope: readScope || undefined,
-            signal: controller.signal,
-          })
+        ? Promise.all([
+            api.request<{ runs: RunSummary[] }>("/runs", {
+              scope: readScope || undefined,
+              signal: controller.signal,
+            }),
+            api.request<{ collections?: RunSummary[] }>("/collections", {
+              scope: readScope || undefined,
+              signal: controller.signal,
+            }),
+          ]).then(([old, roots]) => ({
+            runs: [
+              ...(roots.collections ?? []),
+              ...(old.runs ?? []).filter((r) => !r.collectionRole),
+            ],
+          }))
         : api.request<DiagnosticResponse>("/diagnostics/logs" + query(true), {
             scope: safeMaintenance
               ? undefined
@@ -326,12 +344,21 @@ export function LogsPage({ api }: { api: ApiClient }) {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3">
+                    {run.collectionProgress && (
+                      <CollectionProgress
+                        readOnly
+                        api={api}
+                        activity={run as CollectionActivity}
+                      />
+                    )}
                     <Badge
                       variant={
                         run.status === "failed" ? "destructive" : "secondary"
                       }
                     >
-                      {status[run.status] || run.status}
+                      {run.collectionProgress
+                        ? "采集活动"
+                        : status[run.status] || run.status}
                     </Badge>
                     <p>阶段：{run.stage || "未记录"}</p>
                     <pre className="whitespace-pre-wrap break-all">

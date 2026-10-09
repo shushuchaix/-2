@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke("diagnostics:report", event),
     openCollectionLogin: (input) =>
       ipcRenderer.invoke("collection:login", input),
+    getCollectionCapabilities: () =>
+      ipcRenderer.invoke("collection:capabilities"),
     verifyCollectionSession: (input) =>
       ipcRenderer.invoke("collection:verify", input),
     clearCollectionSession: (input) =>

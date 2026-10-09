@@ -17,7 +17,7 @@ export function getPendingStart(api: ApiClient, scope: Scope) {
 export function startRunOnce(
   api: ApiClient,
   scope: Scope,
-  body: { mode: "rules" | "ai"; userApiKey?: string },
+  body: { mode: "rules" | "ai"; userApiKey?: string; coverageMode?: string },
 ) {
   let pending = pendingByClient.get(api);
   if (!pending) {

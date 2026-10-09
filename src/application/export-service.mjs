@@ -6,15 +6,32 @@ export function createExportService({ repository }) {
   return {
     async export({ format = "json", filters = {}, scope } = {}) {
       const snapshot = await repository.read();
-      if(snapshot.schemaVersion===3){
-        const selected=scope||filters;
-        if(selected.allTargets===true){
-          if(selected.packageId||selected.targetRevisionId||filters.packageId||filters.targetRevisionId)throw packageError('package_scope_mismatch','全部目标与具体版本范围不能同时导出。');
-          filters={...filters,allTargets:true};
-        }else{
-          if(filters.allTargets)throw packageError('package_scope_mismatch','导出范围与筛选条件不一致。');
-          assertScope(snapshot,selected,repository.clock.now());
-          filters={...filters,packageId:selected.packageId,targetRevisionId:selected.targetRevisionId};
+      if (snapshot.schemaVersion === 3) {
+        const selected = scope || filters;
+        if (selected.allTargets === true) {
+          if (
+            selected.packageId ||
+            selected.targetRevisionId ||
+            filters.packageId ||
+            filters.targetRevisionId
+          )
+            throw packageError(
+              "package_scope_mismatch",
+              "全部目标与具体版本范围不能同时导出。",
+            );
+          filters = { ...filters, allTargets: true };
+        } else {
+          if (filters.allTargets)
+            throw packageError(
+              "package_scope_mismatch",
+              "导出范围与筛选条件不一致。",
+            );
+          assertScope(snapshot, selected, repository.clock.now());
+          filters = {
+            ...filters,
+            packageId: selected.packageId,
+            targetRevisionId: selected.targetRevisionId,
+          };
         }
       }
       assertInput("export", { format: format === "markdown" ? "md" : format });
@@ -92,6 +109,9 @@ export function createExportService({ repository }) {
         "跟进日期",
         "简历版本",
         "待确认候选岗位",
+        "招聘时效",
+        "正文证据",
+        "投递入口证据",
       ];
       const values = rows.map((i) => [
         i.jobId,
@@ -118,6 +138,9 @@ export function createExportService({ repository }) {
         i.application.followUpAt,
         i.application.resumeRevisionId,
         i.candidateJobIds?.join(" / "),
+        i.recruitmentEvidence?.openingStatus ?? "unknown",
+        i.recruitmentEvidence?.bodyVerified ? "verified" : "unknown",
+        i.recruitmentEvidence?.applicationStatus ?? "unknown",
       ]);
       if (format === "csv")
         return {

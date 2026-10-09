@@ -9,6 +9,10 @@ import { sharedScheduler, cancellableSleep, abortError } from "./scheduler.mjs";
 import { createResponseCache } from "./cache.mjs";
 
 const elapsed = (clock, start) => Math.max(0, Math.round(clock.now() - start));
+const responseSize = (response) =>
+  response.bytes instanceof Uint8Array
+    ? response.bytes.byteLength
+    : Buffer.byteLength(response.text || "");
 const token = (value) =>
   typeof value === "string" && /^[A-Za-z0-9_.@-]{1,160}$/.test(value);
 function requestContext(defaults, overrides) {
@@ -189,6 +193,16 @@ export function createRequestClient({
     try {
       if (!Number.isSafeInteger(maxRetries) || maxRetries < 0 || maxRetries > 2)
         throw Error("Invalid retry limit");
+      const responseType = options.responseType ?? "text";
+      const byteLimit = options.maxBytes ?? maxBytes;
+      if (!["text", "bytes"].includes(responseType))
+        throw Error("Invalid response type");
+      if (
+        !Number.isSafeInteger(byteLimit) ||
+        byteLimit < 1 ||
+        byteLimit > 20 * 1024 * 1024
+      )
+        throw Error("Invalid response size limit");
       signal =
         options.signal && defaultSignal
           ? AbortSignal.any([options.signal, defaultSignal])
@@ -199,7 +213,13 @@ export function createRequestClient({
         if (["host", ":authority"].includes(key.toLowerCase()))
           throw Error("Host override forbidden");
       const cacheKey = options.cacheKey
-        ? JSON.stringify([url.href, options.method || "GET", options.cacheKey])
+        ? JSON.stringify([
+            url.href,
+            options.method || "GET",
+            responseType,
+            byteLimit,
+            options.cacheKey,
+          ])
         : null;
       const cached = cacheKey && cache.get(cacheKey);
       if (cached) {
@@ -207,7 +227,7 @@ export function createRequestClient({
           outcome: "cached",
           cacheHit: true,
           httpStatus: cached.status,
-          responseBytes: Buffer.byteLength(cached.text || ""),
+          responseBytes: responseSize(cached),
           ...parserMetadata(cached),
         };
         emit({
@@ -284,7 +304,8 @@ export function createRequestClient({
                     headers,
                     body,
                     signal: combined,
-                    maxBytes,
+                    maxBytes: byteLimit,
+                    responseType,
                   }),
                   combined,
                 );
@@ -293,8 +314,17 @@ export function createRequestClient({
                 transportMs += attemptTransportMs;
               }
               phase = "response";
-              if (Buffer.byteLength(result.text || "") > maxBytes)
-                throw Error("Response size limit exceeded");
+              if (responseSize(result) > byteLimit)
+                throw Object.assign(Error("Response size limit exceeded"), {
+                  code: "response_size_exceeded",
+                });
+              if (
+                responseType === "bytes" &&
+                !(result.bytes instanceof Uint8Array)
+              )
+                throw Object.assign(Error("Binary response missing"), {
+                  code: "response_bytes_missing",
+                });
               return {
                 ...result,
                 url: result.url || url.href,
@@ -321,8 +351,12 @@ export function createRequestClient({
             dnsMs: attemptDnsMs,
             transportMs: attemptTransportMs,
             durationMs: elapsed(clock, attemptStarted),
-            responseBytes: Buffer.byteLength(response.text || ""),
+            responseBytes: responseSize(response),
             ...parserMetadata(response),
+          });
+          scheduler.recordOutcome?.(url.origin, {
+            status: response.status,
+            durationMs: attemptTransportMs,
           });
         } catch (error) {
           if (!entered) {
@@ -348,6 +382,11 @@ export function createRequestClient({
             diagnosticFailure(error, metadata, requestId, phase),
           );
           if (signal?.aborted) throw abortError(signal);
+          if (phase === "transport")
+            scheduler.recordOutcome?.(url.origin, {
+              status: 503,
+              durationMs: attemptTransportMs,
+            });
           if (
             retries < maxRetries &&
             ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ECONNREFUSED"].includes(
@@ -411,7 +450,14 @@ export function createRequestClient({
               ? Number(ra) * 1000
               : Date.parse(ra) - clock.now()
             : 400 * 2 ** retries;
-          await retry(Math.max(0, Math.min(60000, delay || 400)), response);
+          const wait = Math.max(0, Number.isFinite(delay) ? delay : 400);
+          if (wait > 60000)
+            throw Object.assign(Error("Source retry deferred"), {
+              code: "source_retry_deferred",
+              retryAfterMs: wait,
+              nextDueAt: new Date(Number(clock.now()) + wait).toISOString(),
+            });
+          await retry(wait, response);
           continue;
         }
         if (cacheKey && response.status === 200) cache.set(cacheKey, response);
@@ -419,7 +465,7 @@ export function createRequestClient({
           outcome: response.status >= 400 ? "failed" : "success",
           cacheHit: false,
           httpStatus: response.status,
-          responseBytes: Buffer.byteLength(response.text || ""),
+          responseBytes: responseSize(response),
           ...parserMetadata(response),
         };
         return response;

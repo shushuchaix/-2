@@ -24,6 +24,7 @@ export function createScheduler({
   const queue = [],
     active = new Map(),
     lastStart = new Map();
+  const health = new Map();
   let total = 0,
     timer = null;
   function drain() {
@@ -41,7 +42,11 @@ export function createScheduler({
       }
       const wait =
         (lastStart.get(item.origin) ?? -Infinity) +
-        Math.max(minIntervalMs, item.minIntervalMs || 0) -
+        Math.max(
+          minIntervalMs,
+          item.minIntervalMs || 0,
+          health.get(item.origin)?.intervalMs || 0,
+        ) -
         clock.now();
       if ((active.get(item.origin) || 0) >= maxPerOrigin) {
         i++;
@@ -73,6 +78,20 @@ export function createScheduler({
       timer = setTimeout(drain, Math.max(1, next));
   }
   return {
+    recordOutcome(origin, { durationMs = 0, status = 200 } = {}) {
+      const previous = health.get(origin)?.intervalMs ?? minIntervalMs;
+      const failed = status >= 400;
+      const intervalMs = Math.min(
+        60000,
+        failed
+          ? Math.max(minIntervalMs, previous * 2, 1000)
+          : Math.max(minIntervalMs, previous * 0.9, durationMs),
+      );
+      health.set(origin, { intervalMs: Math.ceil(intervalMs) });
+    },
+    originState(origin) {
+      return { ...(health.get(origin) || { intervalMs: minIntervalMs }) };
+    },
     run(origin, fn, { signal, minIntervalMs: interval = 0 } = {}) {
       signal?.throwIfAborted();
       return new Promise((resolve, reject) => {

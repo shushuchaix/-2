@@ -9,6 +9,7 @@ export function socketTransport({
   body,
   signal,
   maxBytes,
+  responseType = "text",
 }) {
   return new Promise((resolve, reject) => {
     const address = addresses[0];
@@ -30,7 +31,11 @@ export function socketTransport({
         res.on("data", (chunk) => {
           size += chunk.length;
           if (size > maxBytes) {
-            request.destroy(Error("Response size limit exceeded"));
+            request.destroy(
+              Object.assign(Error("Response size limit exceeded"), {
+                code: "response_size_exceeded",
+              }),
+            );
             return;
           }
           chunks.push(chunk);
@@ -38,6 +43,21 @@ export function socketTransport({
         res.on("error", reject);
         res.on("end", () => {
           const content = Buffer.concat(chunks);
+          const responseHeaders = Object.fromEntries(
+            Object.entries(res.headers).map(([k, v]) => [
+              k,
+              Array.isArray(v) ? v.join(",") : String(v || ""),
+            ]),
+          );
+          if (responseType === "bytes") {
+            resolve({
+              status: res.statusCode,
+              headers: responseHeaders,
+              bytes: new Uint8Array(content),
+              url: url.href,
+            });
+            return;
+          }
           const charset =
             String(res.headers["content-type"] || "").match(
               /charset\s*=\s*([^;\s]+)/i,

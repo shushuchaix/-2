@@ -109,7 +109,7 @@ export class DeepSeek {
       physicalAttempt++;
       let claim;
       try {
-        claim = this.budget.claimRequest({
+        claim = await this.budget.claimRequest({
           baseUrl: this.baseUrl,
           model: this.model,
           maxOutputTokens: body.max_tokens,
@@ -252,7 +252,7 @@ export class DeepSeek {
         lastError = error;
         retry = true;
       } finally {
-        this.budget.settleRequest?.(claim, responseUsage);
+        await this.budget.settleRequest?.(claim, responseUsage);
         const code =
           outcome === "cancelled"
             ? "request_cancelled"

@@ -557,7 +557,7 @@ function createLegacyRunService({
           let detail;
           const detailStarted = clock.now();
           try {
-            budget.claimDetail(
+            await budget.claimDetail(
               record.sourceId +
                 "/" +
                 record.siteId +

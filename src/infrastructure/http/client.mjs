@@ -266,7 +266,7 @@ export function createRequestClient({
                 dnsMs += attemptDnsMs;
               }
               phase = "budget";
-              budget.claimRequest(
+              await budget.claimRequest(
                 redirects
                   ? "redirect"
                   : retries

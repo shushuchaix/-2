@@ -460,6 +460,10 @@ test("title-only zero-score evidence stays valid while missing evidence still fa
 test("parallel JSON callbacks receive their own physical response identifiers", async () => {
   const events = [],
     gates = {};
+  let markTransportsReady;
+  const transportsReady = new Promise((resolve) => {
+    markTransportsReady = resolve;
+  });
   const client = new DeepSeek(configuration, {
     diagnostics: (event) => events.push(event),
     transport: async (_url, options) => {
@@ -468,6 +472,7 @@ test("parallel JSON callbacks receive their own physical response identifiers", 
       ).content;
       await new Promise((resolve) => {
         gates[name] = resolve;
+        if (Object.keys(gates).length === 2) markTransportsReady();
       });
       return reply({ name });
     },
@@ -485,6 +490,7 @@ test("parallel JSON callbacks receive their own physical response identifiers", 
       seen.second = metadata;
     },
   });
+  await transportsReady;
   gates.second();
   assert.deepEqual(await second, { name: "second" });
   gates.first();

@@ -82,6 +82,40 @@ function trustworthyUsage(usage, maxOutputTokens) {
       return false;
   return true;
 }
+// Shared by the persistent activity adapter; integer micro-CNY accounting stays
+// identical to the original in-memory budget and verified pricing identity.
+export function quoteModelReservation({
+  modelConfig,
+  maxOutputTokens = 4000,
+} = {}) {
+  if (!isOfficialDeepSeekFlash(modelConfig)) throw pricingError();
+  if (
+    !Number.isSafeInteger(maxOutputTokens) ||
+    maxOutputTokens < 1 ||
+    maxOutputTokens > 4000
+  )
+    throw Error("Invalid model output allowance");
+  return {
+    costUpperBoundCny:
+      (CONTEXT_TOKENS * INPUT_MICRO_CNY + maxOutputTokens * OUTPUT_MICRO_CNY) /
+      MICRO_CNY,
+    maxOutputTokens,
+    pricingVersion: PRICING_VERSION,
+  };
+}
+export function quoteVerifiedModelUsage(
+  usage,
+  { maxOutputTokens = 4000 } = {},
+) {
+  return trustworthyUsage(usage, maxOutputTokens)
+    ? {
+        costCny:
+          (usage.prompt_tokens * INPUT_MICRO_CNY +
+            usage.completion_tokens * OUTPUT_MICRO_CNY) /
+          MICRO_CNY,
+      }
+    : null;
+}
 
 /**
  * A per-operation budget shared by every physical attempt and model stage.

@@ -2,6 +2,75 @@
 const own = (v, k) => Object.hasOwn(v, k);
 const blank = (v) => v == null || v === "";
 const plain = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+export const COLLECTION_LIMIT_CAPS = Object.freeze({
+  maxSites: 50,
+  maxRequests: 2000,
+  maxPagesPerQuery: 20,
+  maxDetails: 600,
+  maxQueryGroups: 12,
+  maxAttachments: 40,
+  maxAttachmentBytes: 20 * 1048576,
+  maxTotalAttachmentBytes: 200 * 1048576,
+  maxPageRequests: 60,
+  maxPageBytes: 20 * 1048576,
+  maxCostCny: 10,
+});
+export function validateCollectionLimits(value = {}) {
+  if (!plain(value)) throw inputError({ limits: "采集额度需为配置对象。" });
+  const errors = {},
+    result = {};
+  for (const [key, val] of Object.entries(value)) {
+    if (
+      !own(COLLECTION_LIMIT_CAPS, key) ||
+      typeof val !== "number" ||
+      !Number.isFinite(val) ||
+      val < 0 ||
+      val > COLLECTION_LIMIT_CAPS[key] ||
+      (key === "maxCostCny"
+        ? Math.abs(val * 100 - Math.round(val * 100)) > 1e-8
+        : !Number.isSafeInteger(val))
+    )
+      errors[key] = "采集额度超出允许范围或格式无效。";
+    else result[key] = val;
+  }
+  if (Object.keys(errors).length) throw inputError(errors);
+  return result;
+}
+export function collectionLimitsFor(mode = "standard", explicit = {}) {
+  if (!["standard", "broad"].includes(mode))
+    throw inputError({ coverageMode: "请选择标准或广覆盖模式。" });
+  const translated = { ...explicit };
+  if (own(translated, "maxKeywords")) {
+    translated.maxQueryGroups =
+      translated.maxQueryGroups ?? translated.maxKeywords;
+    delete translated.maxKeywords;
+  }
+  // Legacy model request caps remain separate from collection resources.
+  delete translated.maxModelRequests;
+  const overrides = validateCollectionLimits(translated);
+  const defaults = {
+    maxSites: 24,
+    maxRequests: 400,
+    maxPagesPerQuery: 4,
+    maxDetails: 100,
+    maxQueryGroups: 6,
+    maxAttachments: 40,
+    maxAttachmentBytes: 20 * 1048576,
+    maxTotalAttachmentBytes: 200 * 1048576,
+    maxPageRequests: 60,
+    maxPageBytes: 20 * 1048576,
+    maxCostCny: 10,
+  };
+  if (mode === "broad")
+    Object.assign(defaults, {
+      maxSites: 50,
+      maxRequests: 1000,
+      maxPagesPerQuery: 10,
+      maxDetails: 300,
+      maxQueryGroups: 12,
+    });
+  return { ...defaults, ...overrides };
+}
 const id = (v) =>
   typeof v === "string" &&
   /^[A-Za-z0-9_-]{1,160}$/.test(v) &&
@@ -168,9 +237,8 @@ export function validateInput(kind, input, options = {}) {
         Number.isFinite(options.maxCostCny));
     const caps = {
       maxModelRequests: moneyMode ? 1000 : 20,
-      maxRequests: 240,
-      maxDetails: 20,
-      maxSites: 24,
+      ...COLLECTION_LIMIT_CAPS,
+      maxKeywords: 12,
     };
     for (const [k, val] of Object.entries(v)) {
       if (k === "maxCostCny") {

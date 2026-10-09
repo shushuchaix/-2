@@ -71,7 +71,7 @@ export function createDnsLookup({
       const responses = await Promise.all(
         ["A", "AAAA"].map(async (type) => {
           signal?.throwIfAborted();
-          budget.claimRequest("dns");
+          await budget.claimRequest("dns");
           const url = new URL("https://cloudflare-dns.com/dns-query");
           url.searchParams.set("name", host);
           url.searchParams.set("type", type);

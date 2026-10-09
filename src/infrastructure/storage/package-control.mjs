@@ -240,7 +240,9 @@ export function applyDeletionLedger(workspace, control) {
       (id) => w.duplicateGroups[id],
     );
   for (const [id, e] of Object.entries(control.deletionLedger))
-    if (w.packages[id]) {
+      if (w.packages[id]) {
+        delete w.packages[id].collectionCache;
+        delete w.packages[id].collectionSettings;
       if (e.phase === "purged") delete w.packages[id];
       else
         Object.assign(w.packages[id], {

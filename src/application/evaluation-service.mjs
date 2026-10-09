@@ -42,6 +42,7 @@ function createLegacyEvaluationService({
       modelClient,
       diagnosticContext = {},
       operationLease: parentLease,
+      collectionGuard,
     }) {
       return operationGate.withOperation(
         "evaluate",
@@ -377,13 +378,14 @@ function createLegacyEvaluationService({
             );
             await repository.mutateWorkspace(
               (w) => {
+                signal?.throwIfAborted();
                 for (const e of completed) {
                   if (!resolveJobId(w, e.jobId, { allowMissing: true }))
                     throw Error("Job disappeared during evaluation");
                   w.evaluations[e.evaluationId] = e;
                 }
               },
-              { operationLease },
+              { operationLease, collectionGuard },
             );
             for (const e of completed) {
               evaluations.push(e);

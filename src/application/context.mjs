@@ -45,6 +45,10 @@ import { createPurgeService } from "./purge-service.mjs";
 import { createTrashScheduler } from "./trash-scheduler.mjs";
 import { createLegacyAssignmentService } from "./legacy-assignment-service.mjs";
 import { packageError, assertScope } from "../domain/packages.mjs";
+import { createCollectionService } from "./collection-service.mjs";
+import { createCollectionRefresh } from "./collection-refresh.mjs";
+import { createCollectionLedger } from "./collection-ledger.mjs";
+import { buildCollectionPlan } from "../sources/planning.mjs";
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
@@ -236,6 +240,50 @@ export async function createApplicationContext({
     config: cfg,
   });
   runServiceForTrash = runService;
+  const collectionService =
+    dependencies.legacySchema === true
+      ? null
+      : createCollectionService({
+          repository,
+          operationGate,
+          registry,
+          requestFactory,
+          ledger: createCollectionLedger({ repository }),
+          events: eventHub,
+          evaluationService,
+          modelFactory,
+          modelConfig: cfg.deepseek,
+          diagnostics,
+          runGate: gate,
+          planner: async (input) => {
+            const w = input.workspace;
+            return buildCollectionPlan({
+              ...input,
+              catalog:
+                dependencies.catalog ||
+                loadSiteCatalog({ customSites: w.settings.customSites }),
+              health: w.sourceHealth,
+              sourceOverrides: {
+                ...w.settings.sourceOverrides,
+                ...w.packages[input.scope.packageId].collectionSettings
+                  ?.sourceOverrides,
+              },
+            });
+          },
+        });
+  if (collectionService) {
+    await collectionService.recover();
+    runService.setCollectionService(collectionService);
+  }
+  const collectionRefresh = collectionService
+    ? createCollectionRefresh({
+        service: collectionService,
+        repository,
+        clock: repository.clock,
+        timers: dependencies.timers || globalThis,
+      })
+    : null;
+  collectionRefresh?.start();
   const sourceService = createSourceService({
       catalog: dependencies.catalog,
       diagnostics,
@@ -261,6 +309,7 @@ export async function createApplicationContext({
     assignmentService,
     trashScheduler,
     async close() {
+      await collectionRefresh?.stop();
       await trashScheduler.stop();
       await settingsQueue;
       const w = await repository.read();
@@ -280,6 +329,8 @@ export async function createApplicationContext({
     evaluationService,
     eventHub,
     runService,
+    collectionService,
+    collectionRefresh,
     sourceService,
     importService,
     exportService,

@@ -12,6 +12,24 @@ import {
   packageRecords,
 } from "../domain/package-ownership.mjs";
 import { assertOwned } from "../domain/packages.mjs";
+import { normalizeCollectionRun } from "../domain/collection.mjs";
+function pauseOwnedCollections(w, packageId) {
+  for (const [id, run] of Object.entries(w.runs))
+    if (
+      run.ownerPackageId === packageId &&
+      run.collectionRole === "collection_root"
+    ) {
+      const normalized = normalizeCollectionRun(run, { restored: true });
+      normalized.collectionProgress.refreshReady = false;
+      normalized.collectionProgress.manualPaused = true;
+      normalized.collectionProgress.resumeRequests = {};
+      w.runs[id] = normalized;
+    }
+  if (w.packages[packageId].collectionSettings) {
+    w.packages[packageId].collectionSettings.sessionRefs = {};
+    w.packages[packageId].collectionSettings.refreshEnabled = false;
+  }
+}
 
 const COUNT_KEYS = [
   "profiles",
@@ -194,6 +212,7 @@ export function createTrashService({
         c.archiveEpisodes[archiveId] = episode;
         await tx.commitControl(c);
         Object.assign(p, episode, { state: "trashed" });
+        pauseOwnedCollections(w, packageId);
         const m = metadata(w, p);
         if (m) {
           m.archivedAt = archivedAt;
@@ -222,6 +241,7 @@ export function createTrashService({
           archivedAt: null,
           purgeAt: null,
         });
+        pauseOwnedCollections(w, packageId);
         const m = metadata(w, p);
         if (m) {
           m.archivedAt = null;

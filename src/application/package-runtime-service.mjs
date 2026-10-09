@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {assertScope,assertOwned,packageError} from '../domain/packages.mjs';
 import {packageWorkspace,mergePackageWorkspace} from './package-job-service.mjs';
 import {contentHash} from '../infrastructure/storage/repository.mjs';
+import {assertCollectionWrite} from '../domain/collection.mjs';
 export const exactScope=s=>({packageId:s.packageId,targetRevisionId:s.targetRevisionId});
 export function runtimeRepository(repository,scope){
  const selected=exactScope(scope);
@@ -11,7 +12,7 @@ export function runtimeRepository(repository,scope){
  }
  return {...repository,
   async read(){return view(await repository.read());},
-  async mutateWorkspace(action,options){return repository.mutateWorkspace(async w=>{const v=view(w);const result=await action(v);mergePackageWorkspace(w,v,selected.packageId);w.sources=v.sources;return result;},options);},
+  async mutateWorkspace(action,options){return repository.mutateWorkspace(async w=>{const v=view(w);if(options?.collectionGuard)assertCollectionWrite(w,options.collectionGuard);const result=await action(v);mergePackageWorkspace(w,v,selected.packageId);w.sources=v.sources;return result;},options);},
   async writeRunSnapshot(id,snapshot,options){
    return repository.withMaintenanceTransaction(async tx=>{
     assertScope(tx.workspace,selected,repository.clock.now());

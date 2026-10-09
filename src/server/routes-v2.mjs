@@ -10,6 +10,7 @@ import {
 import { writeRunEventStream } from "./event-stream.mjs";
 import { handleTrashRequest } from "./trash-routes.mjs";
 import { handlePackageBusinessRequest } from "./package-business-routes.mjs";
+import {handleCollectionRequest} from './collection-routes.mjs';
 import { UUID_RE, packageError } from "../domain/packages.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { extractResumeText } from "../resume/extract-text.mjs";
@@ -30,6 +31,7 @@ export async function handleV2Request(req, res, context) {
     pathname = url.pathname;
   if (!pathname.startsWith("/api/v2/")) return false;
   if (await handleTrashRequest(req, res, context)) return true;
+  if (await handleCollectionRequest(req,res,context)) return true;
   if (await handlePackageBusinessRequest(req, res, context)) return true;
   const route = pathname.slice(7),
     method = req.method;

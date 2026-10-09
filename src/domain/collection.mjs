@@ -27,6 +27,23 @@ const invalid = () =>
   );
 const scopeError = () =>
   packageError("collection_scope", "collection_scope: 采集活动归属不一致。");
+export function assertCollectionWrite(workspace, { ref, token }) {
+  const root = workspace.runs?.[ref?.activityId],
+    p = root?.collectionProgress;
+  if (
+    !root ||
+    root.ownerPackageId !== ref?.scope?.packageId ||
+    root.targetSnapshot?.revisionId !== ref.scope.targetRevisionId ||
+    !token ||
+    p?.epoch !== token.epoch ||
+    p.activeSliceRunId !== token.sliceRunId ||
+    p.status !== "collecting"
+  )
+    throw packageError(
+      "collection_stale_epoch",
+      "活动已停止，不能写入迟到结果。",
+    );
+}
 
 /** @typedef {{packageId:string,targetRevisionId:string}} Scope */
 /** @typedef {{scope:Scope,activityId:string}} ActivityRef */

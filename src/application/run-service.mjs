@@ -1022,6 +1022,7 @@ function createLegacyRunService({
         .filter(
           (r) =>
             (filters.includeDeleted || !r.deletedAt) &&
+            r.collectionRole !== "collection_root" &&
             (!filters.status || r.status === filters.status) &&
             (!filters.targetId ||
               r.targetSnapshot?.targetId === filters.targetId),
@@ -1083,6 +1084,7 @@ function createLegacyRunService({
   return service;
 }
 export function createRunService(options) {
+  let collectionService;
   const legacy = createLegacyRunService(options),
     instances = new Map();
   const repository = options.repository,
@@ -1144,9 +1146,18 @@ export function createRunService(options) {
     return instances.get(selected.packageId);
   }
   const api = {
+    setCollectionService(value) {
+      collectionService = value;
+    },
     async startRun(input) {
       if ((await repository.read()).schemaVersion !== 3)
         return legacy.startRun(input);
+      if (collectionService)
+        return collectionService.start({
+          scope: input.scope,
+          options: { mode: input.mode || "rules" },
+          credentials: { ...input.credentials, sourceConfig: options.config },
+        });
       const service = await instance(input.scope);
       return service.startRun({
         ...input,
@@ -1167,6 +1178,7 @@ export function createRunService(options) {
         .filter(
           (r) =>
             w.packages[r.ownerPackageId]?.kind === "target" &&
+            r.collectionRole !== "collection_root" &&
             w.packages[r.ownerPackageId]?.state === "active" &&
             (!filters.status || r.status === filters.status) &&
             !r.deletedAt,
@@ -1184,14 +1196,61 @@ export function createRunService(options) {
     async cancelRun(id, scope) {
       if ((await repository.read()).schemaVersion !== 3)
         return legacy.cancelRun(id);
+      const run = (await repository.read()).runs[id];
+      if (run?.collectionRole === "collection_root") {
+        const w = await repository.read();
+        assertScope(w, scope, repository.clock.now());
+        assertOwned(w, run, scope.packageId);
+        throw packageError(
+          "collection_control_required",
+          "请使用采集活动的暂停或取消操作。",
+        );
+      }
+      if (collectionService && run?.collectionRole === "collection_slice") {
+        assertScope(await repository.read(), scope, repository.clock.now());
+        assertOwned(await repository.read(), run, scope.packageId);
+        await collectionService.cancel({
+          scope,
+          activityId: run.collectionActivityId,
+        });
+        return api.getRun(id, scope);
+      }
       return (await instance(scope, id)).cancelRun(id);
     },
     async waitForRun(id, scope) {
       if ((await repository.read()).schemaVersion !== 3)
         return legacy.waitForRun(id);
+      const run = (await repository.read()).runs[id];
+      if (collectionService && run?.collectionRole === "collection_slice") {
+        assertScope(await repository.read(), scope, repository.clock.now());
+        assertOwned(await repository.read(), run, scope.packageId);
+        await collectionService.wait({
+          scope,
+          activityId: run.collectionActivityId,
+        });
+        const current = (await repository.read()).runs[id];
+        if (current.snapshotRef)
+          return {
+            ...(await runtimeRepository(repository, scope).readRunSnapshot(id)),
+            run: current,
+          };
+        if (current.issues.some((i) => i.code === "snapshot_failed"))
+          throw packageError(
+            "snapshot_failed",
+            "运行快照未保存，请查看安全诊断日志。",
+            503,
+          );
+        return {
+          run: current,
+          jobs: [],
+          evaluations: [],
+          events: current.events,
+        };
+      }
       return (await instance(scope, id)).waitForRun(id);
     },
     async cancelPackageAndWait(packageId) {
+      await collectionService?.cancelPackageAndWait(packageId);
       const w = await repository.read(),
         pkg = requirePackage(w, packageId, { now: repository.clock.now() });
       if (pkg.kind !== "target") return;

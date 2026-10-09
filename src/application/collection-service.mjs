@@ -3,6 +3,7 @@ import {
   assessApplicationResponse,
   assessRecruitmentEvidence,
   isVerifiedRecommendation,
+  prepareRecruitmentRecord,
 } from "../domain/recruitment-evidence.mjs";
 import {
   selectVersionJobFact,
@@ -840,7 +841,14 @@ export function createCollectionService({
       // Retry detail independently of list checkpoints. Explicit resume also retries auth.
       for (const [key, pending] of Object.entries(
         root.collectionProgress.pendingBodies || {},
-      ).slice(0, 10)) {
+      )
+        .filter(([, pending]) => {
+          const eligibleAt = task.automatic
+            ? pending.nextDueAt
+            : pending.serverCooldownUntil;
+          return !eligibleAt || Date.parse(eligibleAt) <= Number(clock.now());
+        })
+        .slice(0, 10)) {
         signal.throwIfAborted();
         const eligibleAt = task.automatic
           ? pending.nextDueAt
@@ -851,7 +859,8 @@ export function createCollectionService({
           provider = registry.get(pending.record.sourceId);
         if (!unit || !provider) continue;
         const ctx = await makeContext(unit);
-        let record = pending.record;
+        let record = pending.record,
+          retryIssue = null;
         try {
           record = await provider.fetchDetail(record, ctx);
           record = await enrichRecord(record, ctx);
@@ -868,12 +877,18 @@ export function createCollectionService({
           record = {
             ...record,
             bodyStatus: "incomplete",
-            retryEligible: true,
+            retryEligible: e.retryable !== false,
             ...(e.nextDueAt ? { nextDueAt: e.nextDueAt } : {}),
+          };
+          retryIssue = {
+            code: idValid(e.code) ? e.code : "detail_unavailable",
+            sourceId: record.sourceId,
+            siteId: record.siteId,
           };
         }
         await mutateCurrent(ref, token, lease, (w, r) => {
           const p = r.collectionProgress;
+          if (retryIssue) w.runs[token.sliceRunId].issues.push(retryIssue);
           if (!record.retryEligible && record.bodyStatus === "complete") {
             const result = ingestRecordsDraft(w, {
               scope: ref.scope,
@@ -978,7 +993,7 @@ export function createCollectionService({
                     ...record,
                     detailStatus: "unavailable",
                     bodyStatus: "incomplete",
-                    retryEligible: true,
+                    retryEligible: e.retryable !== false,
                     ...(e.nextDueAt ? { nextDueAt: e.nextDueAt } : {}),
                   };
                   issues.push({ code: e.code || "detail_unavailable" });
@@ -1507,7 +1522,10 @@ export function createCollectionService({
     }
   }
   async function enrichRecord(record, context) {
-    const evidence = assessRecruitmentEvidence({ record, now: clock.now() });
+    const evidence = prepareRecruitmentRecord(
+      record,
+      clock.now(),
+    ).recruitmentEvidence;
     await recordDiagnostic(diagnostics, {
       operation: "collection.body",
       runId: context.runId,
@@ -1521,7 +1539,8 @@ export function createCollectionService({
       record.kind === "job" &&
       record.applyUrl &&
       evidence.bodyVerified &&
-      evidence.openingStatus === "open" &&
+      ["open", "unknown"].includes(evidence.openingStatus) &&
+      evidence.conflicts.length === 0 &&
       evidence.applicationStatus !== "available"
     ) {
       try {

@@ -41,8 +41,9 @@ export function queueContentDraft(progress, unitId, records, now) {
         };
     }
     if (
-      record.retryEligible ||
-      (record.bodyStatus && record.bodyStatus !== "complete")
+      record.retryEligible !== false &&
+      (record.retryEligible ||
+        (record.bodyStatus && record.bodyStatus !== "complete"))
     ) {
       const previous = progress.pendingBodies[key];
       progress.pendingBodies[key] = {

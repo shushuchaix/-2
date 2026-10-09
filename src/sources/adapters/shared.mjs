@@ -356,24 +356,56 @@ export function createPagedProvider({
       await ctx.budget?.claimDetail(
         record.sourceId + "/" + record.siteId + "/" + record.sourceRecordId,
       );
-      return detail
-        ? detail(record, {
-            ...ctx,
-            request:
-              ctx.request &&
-              ((url, options = {}) =>
-                ctx.request(url, {
-                  ...options,
-                  diagnosticContext: {
-                    ...options.diagnosticContext,
-                    runId: ctx.runId,
-                    sourceId: id,
-                    siteId: record.siteId,
-                    endpointKind: "detail",
-                  },
-                })),
-          })
-        : { ...record, detailStatus: "unavailable" };
+      if (!detail) return { ...record, detailStatus: "unavailable" };
+      // An old failed attempt must not survive a fresh detail response.
+      const freshRecord = { ...record };
+      for (const field of [
+        "bodyStatus",
+        "retryEligible",
+        "detailStatus",
+        "retryAt",
+        "nextDueAt",
+      ])
+        delete freshRecord[field];
+      const result = await detail(freshRecord, {
+        ...ctx,
+        request:
+          ctx.request &&
+          ((url, options = {}) =>
+            ctx.request(url, {
+              ...options,
+              diagnosticContext: {
+                ...options.diagnosticContext,
+                runId: ctx.runId,
+                sourceId: id,
+                siteId: record.siteId,
+                endpointKind: "detail",
+              },
+            })),
+      });
+      if (
+        result.detailStatus === "complete" &&
+        (!result.bodyStatus || result.bodyStatus === "complete") &&
+        (typeof result.description !== "string" ||
+          result.description.trim().length === 0)
+      )
+        throw Object.assign(
+          new Error("Detail response has insufficient body content"),
+          {
+            code: "detail_insufficient",
+            retryable: false,
+          },
+        );
+      if (
+        result.detailStatus === "complete" &&
+        typeof result.description === "string" &&
+        result.description.trim().length > 0 &&
+        (!result.bodyStatus || result.bodyStatus === "complete") &&
+        !result.bodyIncomplete &&
+        !result.rowAmbiguous
+      )
+        return { ...result, bodyStatus: "complete", retryEligible: false };
+      return result;
     },
     async probe(ctx) {
       const result = await provider.collect({

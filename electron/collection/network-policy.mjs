@@ -1,4 +1,8 @@
 import { validatePublicUrl } from "../../src/infrastructure/http/public-url.mjs";
+import {
+  BOSS_SEARCH_URL,
+  BOSS_DETAIL_URL,
+} from "../../src/sources/boss/protocol.mjs";
 const material =
   /^(?:.*token|api_?key|key|uin|pass_ticket|wx_header|auth(?:orization)?|cookie|ticket|signature|x-amz-signature|code|password|secret)$/i;
 export function publicCollectionUrl(value) {
@@ -16,6 +20,26 @@ const hostAllowed = (host, list) =>
       : host === v,
   );
 export function platformPolicy(platform) {
+  if (platform === "boss")
+    return {
+      platform,
+      entryUrl: "https://www.zhipin.com/web/geek/jobs",
+      hosts: ["www.zhipin.com", "zhipin.com"],
+      strictPath: true,
+      publicPath: (url) =>
+        url.hostname === "www.zhipin.com" &&
+        (/^\/web\/geek\/jobs\/?$|^\/job_detail\/[A-Za-z0-9_~.-]+\.html$|^\/(?:assets|static)\//.test(
+          url.pathname,
+        ) ||
+          [
+            new URL(BOSS_SEARCH_URL).pathname,
+            new URL(BOSS_DETAIL_URL).pathname,
+            "/favicon.ico",
+          ].includes(url.pathname)),
+      manualPath: (url) =>
+        url.hostname === "www.zhipin.com" &&
+        /^\/web\/user(?:\/|$)|^\/wapi\/zppassport\//.test(url.pathname),
+    };
   if (platform === "wechat")
     return {
       platform,
@@ -66,15 +90,21 @@ export function allowsRoute(
   { manual = false, resourceType = "mainFrame" } = {},
 ) {
   try {
-    const url = manual ? validatePublicUrl(value) : publicCollectionUrl(value);
+    const url =
+      manual || routePolicy.platform === "boss"
+        ? validatePublicUrl(value)
+        : publicCollectionUrl(value);
     return (
       url.protocol === "https:" &&
       (!url.port || url.port === "443") &&
       hostAllowed(url.hostname, routePolicy.hosts) &&
-      (!["mainFrame", "xhr"].includes(resourceType) ||
-        manual ||
-        !routePolicy.publicPath ||
-        routePolicy.publicPath(url))
+      (routePolicy.strictPath
+        ? routePolicy.publicPath(url) ||
+          (manual && routePolicy.manualPath?.(url))
+        : !["mainFrame", "xhr"].includes(resourceType) ||
+          manual ||
+          !routePolicy.publicPath ||
+          routePolicy.publicPath(url))
     );
   } catch {
     return false;
@@ -117,15 +147,47 @@ export function createPagePolicy({
     closed = false;
   return {
     async authorize(details) {
+      if (routePolicy.platform === "boss") {
+        let url;
+        try {
+          url = validatePublicUrl(details.url);
+        } catch {
+          return { cancel: true };
+        }
+        if (url.pathname.startsWith("/wapi/")) {
+          const op = routePolicy.bossOperation;
+          const expected = op && new URL(op.url);
+          const sameOperation =
+            expected &&
+            url.origin === expected.origin &&
+            url.pathname === expected.pathname &&
+            (details.method || "GET") === op.method &&
+            ((op.kind === "boss.search" &&
+              op.url === BOSS_SEARCH_URL &&
+              op.method === "POST") ||
+              (op.kind === "boss.detail" &&
+                op.url === BOSS_DETAIL_URL &&
+                op.method === "GET"));
+          if (!sameOperation && !(manual && routePolicy.manualPath?.(url)))
+            return { cancel: true };
+        }
+      }
       if (
         closed ||
         signal?.aborted ||
         (offlineAllows && !offlineAllows(details.url)) ||
         (webContentsId && details.webContentsId !== webContentsId) ||
         ["media", "webSocket", "object"].includes(details.resourceType) ||
-        !["GET", "HEAD", ...(manual ? ["POST"] : [])].includes(
-          details.method || "GET",
-        ) ||
+        ![
+          "GET",
+          "HEAD",
+          ...(manual ||
+          (routePolicy.platform === "boss" &&
+            routePolicy.bossOperation?.kind === "boss.search" &&
+            details.url.split("?")[0] === BOSS_SEARCH_URL)
+            ? ["POST"]
+            : []),
+        ].includes(details.method || "GET") ||
         !allowsRoute(details.url, routePolicy, {
           manual,
           resourceType: details.resourceType,

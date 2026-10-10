@@ -5,6 +5,55 @@ import {
   platformPolicy,
   classifyBrowserBody,
 } from "../../electron/collection/network-policy.mjs";
+test("Boss only permits the selected fixed API operation for every resource type", async () => {
+  const routePolicy = {
+    ...platformPolicy("boss"),
+    bossOperation: {
+      kind: "boss.search",
+      method: "POST",
+      url: "https://www.zhipin.com/wapi/zpgeek/search/joblist.json",
+    },
+  };
+  let claims = 0;
+  const p = createPagePolicy({
+    routePolicy,
+    reserve: async () => {
+      claims++;
+    },
+  });
+  assert.equal(
+    (
+      await p.authorize({
+        url: routePolicy.bossOperation.url,
+        method: "POST",
+        resourceType: "xhr",
+      })
+    ).cancel,
+    false,
+  );
+  for (const resourceType of ["xhr", "fetch", "image", "script"]) {
+    for (const url of [
+      "https://www.zhipin.com/wapi/zpgeek/friend/add.json",
+      "https://www.zhipin.com/wapi/zprelation/friend/label/addMark",
+      "https://www.zhipin.com/wapi/zpgeek/job/card.json",
+    ])
+      assert.equal(
+        (await p.authorize({ url, method: "GET", resourceType })).cancel,
+        true,
+      );
+  }
+  assert.equal(
+    (
+      await p.authorize({
+        url: routePolicy.bossOperation.url,
+        method: "GET",
+        resourceType: "xhr",
+      })
+    ).cancel,
+    true,
+  );
+  assert.equal(claims, 1);
+});
 test("all_automatic_assets_count_before_send_and_request61_is_blocked", async () => {
   let claims = 0;
   const p = createPagePolicy({

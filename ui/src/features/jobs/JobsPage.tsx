@@ -8,12 +8,15 @@ import { useIsMobile } from "../../hooks/use-mobile";
 import { JobFilters } from "./JobFilters";
 import { JobDetailsSheet } from "./JobDetailsSheet";
 import { JobImportDialog } from "./JobImportDialog";
+import { EvidenceSummary } from "./EvidenceSummary";
+import { evidenceView } from "./evidence-view";
 import { DedupDialog } from "../settings/DedupDialog";
 import {
   factOf,
   qualificationOf,
   recommendationOf,
   applicationLabels,
+  applicationUpdatedAt,
   type JobItem,
 } from "./job-view";
 import {
@@ -50,6 +53,7 @@ import {
   EmptyDescription,
 } from "../../components/ui/empty";
 import { FormFeedback } from "../../components/FormFeedback";
+import { formatDate } from "../../../../public/js/format.js";
 export function JobsPage({ api }: { api: ApiClient }) {
   const [importing, setImporting] = useState(false);
   const exporting = useOperation();
@@ -228,6 +232,7 @@ export function JobsPage({ api }: { api: ApiClient }) {
           <div className="flex flex-col gap-4">
             {items.map((row) => {
               const f = factOf(row);
+              const updatedAt = applicationUpdatedAt(row.application);
               return (
                 <Card key={row.jobId + row.ownerPackageId}>
                   <CardHeader>
@@ -238,16 +243,26 @@ export function JobsPage({ api }: { api: ApiClient }) {
                         " · " + (owner(row)?.versionName ?? "所属版本待核实")}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="flex flex-col gap-3">
                     <p>{f.cities?.join("、") ?? "城市待核实"}</p>
                     <p>
-                      {recommendationOf(row)} · {qualificationOf(row)} · 截止{" "}
-                      {f.deadline ?? "待核实"}
+                      {qualificationOf(row)} · 截止 {f.deadline ?? "待核实"}
+                    </p>
+                    <EvidenceSummary view={evidenceView(row)} compact />
+                    <p className="text-sm text-muted-foreground">
+                      服务评价：{recommendationOf(row)} · 辅助评分{" "}
+                      {row.evaluation?.score ?? "未提供"}
                     </p>
                     <Badge variant="secondary">
                       {applicationLabels[row.application?.status ?? "new"] ??
                         "未处理"}
                     </Badge>
+                    <p className="text-sm text-muted-foreground">
+                      {updatedAt
+                        ? "投递更新：" + formatDate(updatedAt)
+                        : "岗位采集时间：" +
+                          formatDate(f.retrievedAt ?? row.fact?.observedAt)}
+                    </p>
                   </CardContent>
                   <CardFooter>{action(row)}</CardFooter>
                 </Card>
@@ -261,9 +276,11 @@ export function JobsPage({ api }: { api: ApiClient }) {
                 {[
                   "岗位 / 单位",
                   "城市",
-                  "匹配 / 资格",
-                  "截止日期",
+                  "资格结论",
+                  "招聘证据",
                   "投递状态",
+                  "更新日期",
+                  "辅助评分",
                   "操作",
                 ].map((h) => (
                   <TableHead key={h}>{h}</TableHead>
@@ -273,6 +290,7 @@ export function JobsPage({ api }: { api: ApiClient }) {
             <TableBody>
               {items.map((row) => {
                 const f = factOf(row);
+                const updatedAt = applicationUpdatedAt(row.application);
                 return (
                   <TableRow key={row.jobId + row.ownerPackageId}>
                     <TableCell className="max-w-80 whitespace-normal">
@@ -287,17 +305,30 @@ export function JobsPage({ api }: { api: ApiClient }) {
                       )}
                     </TableCell>
                     <TableCell>{f.cities?.join("、") ?? "待核实"}</TableCell>
-                    <TableCell>
-                      <p>
-                        {row.evaluation?.score ?? "—"} 分 ·{" "}
-                        {recommendationOf(row)}
-                      </p>
-                      <p>{qualificationOf(row)}</p>
+                    <TableCell className="whitespace-normal">
+                      {qualificationOf(row)}
                     </TableCell>
-                    <TableCell>{f.deadline ?? "待核实"}</TableCell>
+                    <TableCell className="min-w-52 whitespace-normal">
+                      <EvidenceSummary view={evidenceView(row)} compact />
+                    </TableCell>
                     <TableCell>
                       {applicationLabels[row.application?.status ?? "new"] ??
                         "未处理"}
+                    </TableCell>
+                    <TableCell>
+                      {updatedAt
+                        ? "投递更新：" + formatDate(updatedAt)
+                        : "岗位采集时间：" +
+                          formatDate(f.retrievedAt ?? row.fact?.observedAt)}
+                    </TableCell>
+                    <TableCell className="whitespace-normal">
+                      <p>
+                        {row.evaluation?.score ?? "未提供"}
+                        {typeof row.evaluation?.score === "number" ? " 分" : ""}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        服务评价：{recommendationOf(row)}
+                      </p>
                     </TableCell>
                     <TableCell>{action(row)}</TableCell>
                   </TableRow>
@@ -350,6 +381,7 @@ export function JobsPage({ api }: { api: ApiClient }) {
       </div>
       {opened && ctx.scope && (
         <JobDetailsSheet
+          key={ctx.scope.packageId + ctx.scope.targetRevisionId + opened}
           api={api}
           jobId={opened}
           scope={ctx.scope}

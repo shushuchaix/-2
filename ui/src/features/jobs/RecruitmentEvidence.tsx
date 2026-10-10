@@ -1,6 +1,8 @@
 import type { JobItem } from "./job-view";
 import { factOf } from "./job-view";
 import { Badge } from "../../components/ui/badge";
+import { Alert, AlertTitle, AlertDescription } from "../../components/ui/alert";
+import { Separator } from "../../components/ui/separator";
 import { safeExternalUrl } from "../../../../public/js/format.js";
 export function RecruitmentEvidence({ row }: { row: JobItem }) {
   const f = factOf(row),
@@ -38,7 +40,7 @@ export function RecruitmentEvidence({ row }: { row: JobItem }) {
     Date.now() - checkedAt <= 72 * 3600000;
   return (
     <section className="flex flex-col gap-3 rounded-lg border p-4">
-      <h2 className="font-semibold">招聘证据与时效</h2>
+      <h2>招聘核验记录</h2>
       <div className="flex flex-wrap gap-2">
         <Badge variant="secondary">
           {e.bodyVerified ? "正文已核验" : "正文待补全"}
@@ -51,24 +53,32 @@ export function RecruitmentEvidence({ row }: { row: JobItem }) {
         </Badge>
       </div>
       {platform && (
-        <div className="rounded-md bg-muted p-3 text-sm">
-          <p>
-            平台观察：
-            {fresh &&
-            platform.opening?.status === "verified" &&
-            platform.opening.value === "recruiting"
-              ? "在招"
-              : "待复核"}
-            （平台状态单独展示，仍需核实岗位正文与投递入口）。
-          </p>
-          {platform.entry?.kind === "communication" && (
-            <p>平台沟通入口：不构成投递证据。</p>
-          )}
-        </div>
+        <Alert role="note">
+          <AlertTitle>平台观察</AlertTitle>
+          <AlertDescription>
+            <p>
+              {fresh &&
+              platform.opening?.status === "verified" &&
+              platform.opening.value === "recruiting"
+                ? "在招"
+                : "待复核"}
+              （平台状态单独展示，仍需核实岗位正文与投递入口）。
+            </p>
+            {platform.entry?.kind === "communication" && (
+              <p>平台沟通入口：不构成投递证据。</p>
+            )}
+          </AlertDescription>
+        </Alert>
       )}
       <p className="text-sm text-muted-foreground">
         核验时间：
-        {String(e.checkedAt ?? e.observedAt ?? f.retrievedAt ?? "暂无核验时间")}
+        {String(
+          e.applicationCheckedAt ??
+            e.checkedAt ??
+            e.observedAt ??
+            f.retrievedAt ??
+            "暂无核验时间",
+        )}
         ；长期招聘与入口证据需定期复查。
       </p>
       {Array.isArray(e.conflicts) && e.conflicts.length > 0 && (
@@ -93,7 +103,8 @@ export function RecruitmentEvidence({ row }: { row: JobItem }) {
         const url = safeExternalUrl(s.sourceUrl ?? s.url),
           loc = s.location as Record<string, unknown> | undefined;
         return (
-          <div key={i} className="border-t pt-3">
+          <div key={i} className="flex flex-col gap-3">
+            <Separator />
             <p className="whitespace-pre-wrap">
               {String(s.quote ?? s.sourceExcerpt ?? "原文片段缺失")}
             </p>

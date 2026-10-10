@@ -9,6 +9,22 @@ export type ApplicationRecord = {
   resumeRevisionId?: string;
   events?: Record<string, unknown>[];
 };
+export function applicationUpdatedAt(
+  application?: ApplicationRecord,
+): string | null {
+  let latest: string | null = null;
+  let latestTime = -Infinity;
+  for (const event of application?.events || []) {
+    if (event.type !== "application_updated" || typeof event.at !== "string")
+      continue;
+    const time = Date.parse(event.at);
+    if (Number.isFinite(time) && time > latestTime) {
+      latest = event.at;
+      latestTime = time;
+    }
+  }
+  return latest;
+}
 export type JobFact = {
   jobId?: string;
   title?: string;
@@ -47,6 +63,16 @@ export type JobItem = JobFact & {
   sources?: { sourceId?: string; name?: string; url?: string }[];
   observations?: Record<string, unknown>[];
   evaluations?: Record<string, unknown>[];
+  recruitmentEvidence?: {
+    bodyVerified?: boolean;
+    openingStatus?: string;
+    applicationStatus?: string;
+    checkedAt?: string;
+    applicationCheckedAt?: string | null;
+    observedAt?: string;
+    missing?: string[];
+    conflicts?: unknown[];
+  };
 };
 export const applicationLabels: Record<string, string> = {
   new: "未处理",

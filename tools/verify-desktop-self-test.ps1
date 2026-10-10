@@ -18,8 +18,20 @@ try {
     $null = $process.Handle
     Write-Output ('SELF_TEST_SCALE=' + $scale + ' PID=' + $process.Id + ' DIRECTORY=' + $testPath)
     $deadline = [DateTime]::UtcNow.AddSeconds(180)
-    while (!$process.WaitForExit(1000)) {
-      if ([DateTime]::UtcNow -gt $deadline) { throw ('Self-test did not finish; inspect synthetic process ' + $process.Id + ' and ' + $testPath) }
+    try {
+      while (!$process.WaitForExit(1000)) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw ('Self-test did not finish; inspect synthetic process ' + $process.Id + ' and ' + $testPath) }
+      }
+    } catch {
+      $taskWaitFailure = $_
+      # The original handle pins the synthetic root; /T cleans its test child tree.
+      try {
+        if (!$process.HasExited) {
+          & (Join-Path $env:SystemRoot 'System32/taskkill.exe') /PID $process.Id /T /F *> $null
+          $null = $process.WaitForExit(10000)
+        }
+      } catch { }
+      throw $taskWaitFailure
     }
     $process.WaitForExit()
     $testExitCode = $process.ExitCode

@@ -5,7 +5,7 @@ import { parseDocx, ATTACHMENT_ZIP_LIMITS } from "./docx.mjs";
 import { parseSpreadsheet } from "./spreadsheet.mjs";
 import { parsePdf } from "./pdf.mjs";
 import { imageDimensions } from "./ocr.mjs";
-const parserVersion = "recruitment-attachments-1";
+const parserVersion = "recruitment-attachments-2";
 const result = (status, format, extra = {}) => ({
   status,
   format,
@@ -280,7 +280,8 @@ export function createAttachmentService({
     async enrich({ record, ...context }) {
       const attachments = [];
       let attempts = 0,
-        budgetExhausted = false;
+        budgetExhausted = false,
+        outdatedPdf = false;
       const pending = (attachment, code) => ({
         ...attachment,
         textStatus: "pending",
@@ -288,12 +289,31 @@ export function createAttachmentService({
           ...(attachment.issues || []).filter((issue) => issue.code !== code),
           { code },
         ],
+        ...(attachment.extraction
+          ? {
+              extraction: result("pending", attachment.extraction.format, {
+                issues: [{ code }],
+              }),
+            }
+          : {}),
       });
-      for (const a of record.attachments || []) {
+      for (let a of record.attachments || []) {
         context.signal?.throwIfAborted();
+        const pdf =
+          a.extraction?.format === "pdf" ||
+          /\.pdf(?:$|[?#])/i.test(a.url || "");
+        if (
+          pdf &&
+          a.extraction &&
+          a.extraction.parserVersion !== parserVersion
+        ) {
+          outdatedPdf = true;
+          a = pending(a, "pdf_parser_outdated");
+        }
         if (
           a.textStatus === "extracted" &&
-          a.extraction?.status === "extracted"
+          a.extraction?.status === "extracted" &&
+          (!pdf || a.extraction.parserVersion === parserVersion)
         ) {
           attachments.push(a);
           continue;
@@ -314,6 +334,13 @@ export function createAttachmentService({
           const parsed = await service.extract({ ...context, attachment: a });
           attachments.push({
             ...a,
+            ...(parsed.status === "extracted" && a.issues
+              ? {
+                  issues: a.issues.filter(
+                    (issue) => issue.code !== "pdf_parser_outdated",
+                  ),
+                }
+              : {}),
             textStatus:
               parsed.status === "extracted" ? "extracted" : parsed.status,
             extraction: parsed,
@@ -331,15 +358,18 @@ export function createAttachmentService({
             attachments.push(pending(a, e.code));
             continue;
           }
-          attachments.push({
-            ...a,
-            textStatus: "pending",
-            issues: [{ code: e.code || "attachment_unavailable" }],
-          });
+          attachments.push(pending(a, e.code || "attachment_unavailable"));
         }
       }
       return {
         ...record,
+        ...(outdatedPdf
+          ? {
+              bodyStatus: "incomplete",
+              detailStatus: "pending",
+              attachmentBodyPending: true,
+            }
+          : {}),
         attachments,
         attachmentBudgetExhausted: budgetExhausted,
         attachmentIssues: budgetExhausted

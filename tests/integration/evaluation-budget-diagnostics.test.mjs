@@ -13,6 +13,7 @@ import { backfillTargetMembers } from "../../src/domain/job-facts.mjs";
 import { cleanMetadata } from "../../src/infrastructure/diagnostics/fields.mjs";
 import { PROMPT_VERSION } from "../../src/llm/prompts.mjs";
 import { RULE_VERSION } from "../../src/domain/ranking.mjs";
+import { CONDITIONS_PARSER_VERSION } from "../../src/domain/recruitment-evidence.mjs";
 import { job, profile, target } from "../helpers/fixtures.mjs";
 
 const configuration = {
@@ -263,7 +264,7 @@ test("282 results with 64 cached AI scores retain 148 AI and 134 rule fallbacks 
       targetRevisionId: "t1@1",
       promptVersion: PROMPT_VERSION,
       schemaVersion: "matching-results-1",
-      conditionsParserVersion: "conditions-2",
+      conditionsParserVersion: CONDITIONS_PARSER_VERSION,
       ruleVersion: RULE_VERSION,
       modelFingerprint: fingerprint,
     });
@@ -277,7 +278,7 @@ test("282 results with 64 cached AI scores retain 148 AI and 134 rule fallbacks 
       targetRevisionId: "t1@1",
       promptVersion: PROMPT_VERSION,
       schemaVersion: "matching-results-1",
-      conditionsParserVersion: "conditions-2",
+      conditionsParserVersion: CONDITIONS_PARSER_VERSION,
       ruleVersion: RULE_VERSION,
       modelFingerprint: fingerprint,
       status: "ai",

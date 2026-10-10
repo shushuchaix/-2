@@ -47,6 +47,8 @@ export function createEgressProxy({
   function close(client) {
     client.signal?.removeEventListener("abort", client.revoke);
     client.closed = true;
+    for (const cancel of client.handshakes.values()) cancel();
+    client.handshakes.clear();
     for (const socket of client.sockets) socket.destroy();
     clients.delete(client.username);
   }
@@ -77,8 +79,12 @@ export function createEgressProxy({
       throw Error("Egress DNS denied");
     return { ...result, client };
   }
-  function open(resolved) {
+  function open(resolved, signal) {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(Error("Egress connection closed"));
+        return;
+      }
       const selected = resolved.addresses[0],
         socket = connect({
           host: selected.address,
@@ -88,11 +94,20 @@ export function createEgressProxy({
           family: selected.family,
         });
       let connected = false;
+      const cancel = () => {
+        socket.destroy();
+        reject(Error("Egress connection closed"));
+      };
       resolved.client.sockets.add(socket);
       sockets.add(socket);
+      signal?.addEventListener("abort", cancel, { once: true });
       socket.setTimeout?.(45000, () => socket.destroy());
-      socket.once("error", reject);
+      socket.on("error", (error) => {
+        socket.destroy();
+        reject(error);
+      });
       socket.once("close", () => {
+        signal?.removeEventListener("abort", cancel);
         if (!connected) reject(Error("Egress connection closed"));
         sockets.delete(socket);
         resolved.client.sockets.delete(socket);
@@ -107,13 +122,14 @@ export function createEgressProxy({
           reject(Error("Egress connection mismatch"));
           return;
         }
-        if (resolved.client.closed) {
-          socket.destroy();
+        if (resolved.client.closed || signal?.aborted || socket.destroyed) {
+          cancel();
           return;
         }
         connected = true;
         resolve(socket);
       });
+      if (signal?.aborted) cancel();
     });
   }
   return {
@@ -125,6 +141,20 @@ export function createEgressProxy({
           stop: () => this.stop(),
         };
       server = http.createServer(async (req, res) => {
+        const controller = new AbortController();
+        let outgoing, incoming;
+        const closeRequest = () => {
+          if (controller.signal.aborted) return;
+          controller.abort();
+          outgoing?.destroy();
+          incoming?.destroy();
+          req.destroy();
+          res.destroy();
+        };
+        req.on("error", closeRequest);
+        req.once("aborted", closeRequest);
+        res.on("error", closeRequest);
+        res.once("close", closeRequest);
         const client = authenticate(req);
         if (!client) {
           res.writeHead(407, {
@@ -135,12 +165,17 @@ export function createEgressProxy({
         }
         try {
           const resolved = await pinned(client, req.url);
+          if (controller.signal.aborted || req.aborted || res.destroyed) return;
           if (
             resolved.url.protocol !== "http:" ||
             !["GET", "HEAD", "POST"].includes(req.method)
           )
             throw Error("Egress HTTP route denied");
-          const socket = await open(resolved);
+          const socket = await open(resolved, controller.signal);
+          if (controller.signal.aborted || req.aborted || res.destroyed) {
+            socket.destroy();
+            return;
+          }
           const headers = {
             ...req.headers,
             host: resolved.url.host,
@@ -161,7 +196,7 @@ export function createEgressProxy({
           );
           if (!consume(client, requestHeaderBytes))
             throw Error("Egress byte limit");
-          const outgoing = http.request(
+          outgoing = http.request(
             {
               hostname: resolved.url.hostname,
               port: 80,
@@ -172,6 +207,12 @@ export function createEgressProxy({
               createConnection: () => socket,
             },
             (response) => {
+              incoming = response;
+              response.on("error", closeRequest);
+              if (controller.signal.aborted) {
+                response.destroy();
+                return;
+              }
               if (
                 !consume(
                   client,
@@ -186,53 +227,71 @@ export function createEgressProxy({
                   ),
                 )
               ) {
-                response.destroy();
-                res.destroy();
+                closeRequest();
                 return;
               }
               res.writeHead(response.statusCode, response.headers);
               response.on("data", (b) => {
+                if (controller.signal.aborted) return;
                 if (consume(client, b.length)) res.write(b);
-                else res.destroy();
+                else closeRequest();
               });
-              response.on("end", () => res.end());
-              response.on("error", () => res.destroy());
+              response.on("end", () => {
+                if (!controller.signal.aborted) res.end();
+              });
             },
           );
-          outgoing.on("error", () => res.destroy());
+          outgoing.on("error", closeRequest);
           req.on("data", (b) => {
-            if (!consume(client, b.length)) outgoing.destroy();
+            if (!consume(client, b.length)) closeRequest();
           });
           req.pipe(outgoing);
         } catch {
+          if (controller.signal.aborted || res.destroyed) return;
           if (!res.headersSent) res.writeHead(502);
           res.end();
         }
       });
       server.on("connect", async (req, downstream, head) => {
-        const client = authenticate(req);
+        const controller = new AbortController();
+        let upstream, client;
+        downstream.once("close", () => {
+          controller.abort();
+          client?.sockets.delete(downstream);
+          client?.handshakes.delete(downstream);
+          upstream?.destroy();
+        });
+        req.on("error", () => downstream.destroy());
+        client = authenticate(req);
         if (!client) {
           downstream.end(
             'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="collection"\r\n\r\n',
           );
           return;
         }
+        client.sockets.add(downstream);
+        client.handshakes.set(downstream, () => {
+          controller.abort();
+          // Flush the existing failed-handshake response before closing its socket.
+          client.sockets.delete(downstream);
+          if (!downstream.destroyed && !downstream.writableEnded)
+            downstream.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+        });
         try {
           const match = /^([A-Za-z0-9.-]+):(80|443)$/.exec(req.url);
           if (!match || !connectPorts.includes(Number(match[2])))
             throw Error("Egress tunnel target denied");
           const resolved = await pinned(
-              client,
-              (match[2] === "443" ? "https://" : "http://") + match[1] + "/",
-            ),
-            upstream = await open(resolved);
-          client.sockets.add(downstream);
-          sockets.add(downstream);
-          downstream.once("close", () => {
-            client.sockets.delete(downstream);
-            sockets.delete(downstream);
+            client,
+            (match[2] === "443" ? "https://" : "http://") + match[1] + "/",
+          );
+          if (controller.signal.aborted || downstream.destroyed) return;
+          upstream = await open(resolved, controller.signal);
+          if (controller.signal.aborted || downstream.destroyed) {
             upstream.destroy();
-          });
+            return;
+          }
+          client.handshakes.delete(downstream);
           upstream.once("close", () => downstream.destroy());
           downstream.write("HTTP/1.1 200 Connection Established\r\n\r\n");
           if (head.length && consume(client, head.length)) upstream.write(head);
@@ -243,12 +302,14 @@ export function createEgressProxy({
             if (consume(client, b.length)) downstream.write(b);
           });
         } catch {
+          if (controller.signal.aborted || downstream.destroyed) return;
           downstream.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
         }
       });
       server.on("upgrade", (_, socket) => socket.destroy());
       server.on("connection", (socket) => {
         sockets.add(socket);
+        socket.on("error", () => socket.destroy());
         socket.once("close", () => sockets.delete(socket));
       });
       starting = new Promise((resolve, reject) => {
@@ -290,6 +351,7 @@ export function createEgressProxy({
           bytes: 0,
           grantedHosts: new Set(),
           sockets: new Set(),
+          handshakes: new Map(),
           closed: false,
           signal,
         };

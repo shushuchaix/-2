@@ -112,3 +112,23 @@ Task 17: complete (commits 40ea08d..92907dd, tests: .cache/node20-runtime/node-v
 Task 18: complete (commits 40ea08d..daa1061, tests: .cache/node20-runtime/node-v20.20.2-win-x64/node.exe tools/verify-package.mjs → Package verified: 9979 files, 3 JS assets, 1 CSS assets, 33 production dependencies.)
 Task 19: complete (commits 40ea08d..daa1061, tests: powershell.exe -NoProfile -File tools/verify-desktop-self-test.ps1 → SELF_TEST_PASS=57 SCALE=1.5 REPORT=.cache\rjr-self-test-exe-a5b3b0861a814780be1e42ffd82099c5\desktop-self-test.json)
 ```
+
+## 2026-10-10 来源效能补充与实测修复
+
+- 使用现有持久活动、版本事实、预算账本、操作租约和取消令牌。新增内部prepare只准备暂停根，不发请求或开启自动刷新；相同准备请求的模式、计划或额度变化明确拒绝。
+- 从collection-service提取record-enrichment，并以内部受控上下文复用。诊断不另建请求或模型额度；投递先核验、附件保留行证据，前后检查生命周期。新增major-evidence仅统一大学和91job明确专业字段映射，不引入另一套采集框架。
+- 来源测试先零请求识别缺模板、登录与外部费用阻断，再按provider轮询、用本地自有画像选择详情。未补正文进入原队列；超时归因复用诊断白名单，取消后拒绝写入。
+- 大学全文与明确入口保留；页头专业支持分行并记录原文位置。91job无新入口时保留旧入口，多个候选仍未知。专业编码、大类、相关专业及未知sourceExpiry继续保守处理。
+- 条件解析升级conditions-3；旧评价保留历史但不复用为当前。显式失败状态以及可识别的旧大学截断正文不能被完整标记覆盖。原213条实测事实已在外网守卫下本地重评，来源/附件/模型和费用增量均0。
+- 独立审阅三项问题均以真实RED后修复并由同一审阅者复核：旧拆岗内部截断、准备请求额度不一致、专业标签分行遗漏。该审阅只覆盖本补充代码，未认领新版UI或真实平台通过。
+- 首批98站矩阵保留历史成绩；180累计请求已耗尽，追加请求授权仍待答。Boss需要本版本专用首次登录，缺模板和未实测平台不标已接通。现代UI设计已通过，实施计划待审阅；新UI尚未实施。
+- 旧GitHub CI请求间隔失败按生产问题处理：异步预约时间早于回调真正进入，繁忙事件循环可使同域回调连续启动。纯注入时钟先取得真实RED，再增加每域待进入预约，起始时间只在信号检查后的回调入口记录；即时取消不消耗间隔。原计时断言保留，HTTP关联25/25通过，独立审查无阻塞问题。生产变更后重新进行完整门禁、构建和三DPR验收。
+- 实际EXE的动态worker自测揭露代理连接重置未被局部处理。将上游及下游错误绑定到请求，DNS和拨号阶段也可取消，CONNECT在准备阶段即登记归属；失败握手保留502契约。同一客户端的后续请求继续可用。新增5项真正行为RED，代理10/10及worker/protocol关联15/15通过；最终EXE仍需新包验证。
+- 桌面自测等待超时后，使用本轮Start-Process保留的句柄和PID清理该合成进程树，再重抛原错误；不按应用名称结束进程。清理仅为best-effort，脚本解析和独立范围审查通过。
+- 设置保存采用现有串行队列：私有config先暂写，workspace提交后才发布内存配置；普通workspace异常时补偿旧config，原不存在则删除新文件。补偿失败返回固定409/settings_rollback_failed并阻止本会话后续保存，日志仅白名单元数据。6项真实RED后通过，设置/预算/诊断关联21/21。此改进不保证断电时两个文件的原子事务或跨进程并发，补偿失败须处理存储并恢复配置后重新启动。
+- 来源探针返回同样需要隐私边界：global/scoped两处均将issues投影为已知错误代码、当前来源/站点、retryable布尔及规范日志编号，不返回上游message或任意扩展字段。真实合成canary验证响应、workspace和诊断均不含原文；此次缺陷是临时响应，不能据此推断历史持久日志发生泄漏。
+- 三个旧来源仅将原生岗位字段或明确正文容器当作完整证据。实习僧需要岗位UUID及description字段同时匹配，就业桥用真实DOM结束边界，智联需要原生jobDetail。整页兜底仍可留作诊断但不算完整正文；这三源及大学拆岗升级legacy-adapter-3，旧三源parser1/2须重新核验，人工核验正例保持。
+- 招聘PDF同时检查原生文字和实际绘制图像，图像区域通过既有本地OCR、坐标归一及原生回声去重取得证据；没有可信图像文字保持pending。附件解析升级recruitment-attachments-2；旧PDF缓存不自动复活，预算或刷新失败时撤销旧完整标记，新提取成功后由既有补全路径恢复。图片含logo或复杂裁剪可能保守待核验；可信文字不能保证逐单元格准确率。
+- 刷新、更新和爬取时间不替代发布日期。明确datePublished才能保留旧发布日期字段；平台refreshTime、refresh、updateTime、dateLastCrawled按原字段保留extra，缺少发布证据时留空。不全局将旧publishTime映射为publishedAt，也不以新鲜日期替代截止、当前在招及投递证据。
+- 实际EXE截图复核发现续采仍显示旧批次取消结论。暂停会结束旧slice，界面收到done(cancelled)；成功resume的新activeSlice必须清除独立outcome，再订阅新批次事件。修复仅该状态重置，不改变布局；新4项用户可见回归先取得3通过/1真实失败，再4/4通过，失败续采及新批次completed/partial结果保留，独立只读复核通过。成品自检新增对应负断言，旧84/84三DPR为修复前历史基线。
+- 最后产品完整离线983/983业务、84/84UI，18套件通过/0失败/7明确跳过；类型、PowerShell解析及差异检查通过。新增EXE断言首轮误用exec造成DPR1实际exit1，改为同作用域js后6/6隔离及独立复核通过，再次重建133.2秒退出0。最终包10434文件/52依赖/207精确源码哈希/OCR32；实际DPR1/1.25/1.5各85/85、原生进程均exit0，外发及自动下载0、CSP/渲染器错误为空。主代理实际截图确认旧取消文字消失。现代UI与全来源线上仍按各自待办独立验收。

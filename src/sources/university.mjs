@@ -28,6 +28,8 @@ import {
   truncate,
 } from "../util/text.mjs";
 import { DATA_ROOT } from "../config.mjs";
+import { extractApplicationLinks } from "./adapters/shared.mjs";
+import { withMajorEvidence } from "./major-evidence.mjs";
 
 export const meta = {
   id: "university",
@@ -602,7 +604,7 @@ function extractCompany(text) {
  * 解析职位详情页。
  * 页面首行是「薪资 | 城市 | 类型 | 学历」，之后是职能类别/招聘人数/需求专业/职位详情。
  */
-export function parseJobDetail(html) {
+export function parseJobDetail(html, baseUrl) {
   const title = extractDetailTitle(html);
 
   const text = htmlToText(html);
@@ -628,20 +630,37 @@ export function parseJobDetail(html) {
   };
   const headcount = pick("招聘人数");
   const experience = pick("工作经验");
-  const major = pick("需求专业");
+  const majorMatch = text.match(/需求专业\s*[:：][ \t\n]{0,32}([^\n|｜]+)/);
+  const majorValue = majorMatch?.[1].trim() || "";
+  const nextMetadataLabel =
+    /^(?:职位详情|职位描述|岗位职责|任职要求|招聘人数|需求人数|工作经验|职能类别|学历要求|薪资待遇|工作地点|单位名称|单位性质|发布时间|需求专业)(?:[:：\s]|$)/;
+  const major = nextMetadataLabel.test(majorValue) ? "" : majorValue;
+  const majorStart = majorMatch
+    ? majorMatch.index +
+      majorMatch[0].length -
+      majorMatch[1].length +
+      majorMatch[1].indexOf(major)
+    : null;
+  const majorLocation = major
+    ? {
+        textScope: "page_text",
+        start: majorStart,
+        end: majorStart + major.length,
+        label: "需求专业",
+      }
+    : null;
   const category = pick("职能类别");
   const company = extractCompany(text);
 
   // 职位详情段落
   let description = "";
   const descIdx = text.indexOf("职位详情");
-  if (descIdx >= 0)
-    description = truncate(text.slice(descIdx + 4).trim(), 3000);
+  if (descIdx >= 0) description = text.slice(descIdx + 4).trim();
   if (!description) {
     const main = html.match(
-      /<div[^>]*class="[^"]*(?:detail|content|desc)[^"]*"[^>]*>([\s\S]{200,8000}?)<\/div>/i,
+      /<div[^>]*class="[^"]*(?:detail|content|desc)[^"]*"[^>]*>([\s\S]{200,}?)<\/div>/i,
     );
-    if (main) description = truncate(htmlToText(main[1]), 3000);
+    if (main) description = htmlToText(main[1]);
   }
 
   const publishTime = normalizeDate(
@@ -658,14 +677,21 @@ export function parseJobDetail(html) {
     headcount,
     experience,
     major,
+    majorLocation,
     category,
     description,
     publishTime,
+    ...(baseUrl
+      ? extractApplicationLinks(html, {
+          baseUrl,
+          record: { sourceId: meta.id },
+        })
+      : {}),
   };
 }
 
 /** 解析公告详情页（标题通常就是「XX公司2027届校园招聘」） */
-export function parseNoticeDetail(html) {
+export function parseNoticeDetail(html, baseUrl) {
   const title = extractDetailTitle(html);
   const text = htmlToText(html);
   const expire = normalizeDate(
@@ -736,12 +762,17 @@ export function parseNoticeDetail(html) {
     company,
     expire,
     publishTime,
-    description: truncate(text, 4000),
-    commonDescription: truncate(
-      htmlToText(html.replace(/<table[\s\S]*?<\/table>/gi, "")),
-      4000,
+    description: text,
+    commonDescription: htmlToText(
+      html.replace(/<table[\s\S]*?<\/table>/gi, ""),
     ),
     positions,
+    ...(baseUrl
+      ? extractApplicationLinks(html, {
+          baseUrl,
+          record: { sourceId: meta.id },
+        })
+      : {}),
   };
 }
 
@@ -759,7 +790,7 @@ function toJob(base, hostInfo, detail, kind) {
   )
     title = dt;
   if (!title) return null;
-  return {
+  const record = {
     id: `university:${normKey(hostInfo.name)}:${normKey(title)}|${normKey(detail.city)}`,
     sourceRecordId:
       kind === "招聘公告-职位表"
@@ -771,7 +802,9 @@ function toJob(base, hostInfo, detail, kind) {
         ? "announcement"
         : "job_detail",
     detailStatus: detail.description ? "complete" : "incomplete",
+    parserVersion: "legacy-adapter-3",
     source: meta.id,
+    siteId: base.siteId,
     sourceName: `${meta.name}·${hostInfo.name}`,
     sources: [meta.id],
     title,
@@ -793,6 +826,14 @@ function toJob(base, hostInfo, detail, kind) {
     url: base.url,
     summary: truncate(detail.description || "", 240),
     description: detail.description || "",
+    applyUrl: detail.sourceEvidence?.some((e) => e.field === "applyUrl")
+      ? detail.applyUrl
+      : detail.applyUrl || base.applyUrl || null,
+    conditions: base.conditions || [],
+    sourceEvidence: [
+      ...(base.sourceEvidence || []),
+      ...(detail.sourceEvidence || []),
+    ],
     extra: {
       university: hostInfo.name,
       kind,
@@ -805,6 +846,12 @@ function toJob(base, hostInfo, detail, kind) {
     },
     isCampus: true,
   };
+  return detail.majorLocation
+    ? withMajorEvidence(record, detail.major, {
+        sourceField: "需求专业",
+        location: detail.majorLocation,
+      })
+    : record;
 }
 
 /* ------------------------------ 采集 ------------------------------ */
@@ -927,7 +974,9 @@ export async function collect({
         referer: `${item.hostInfo.host}/search/list`,
       });
       const isNotice = /\/campus\/view\/id\//.test(item.url);
-      const detail = isNotice ? parseNoticeDetail(html) : parseJobDetail(html);
+      const detail = isNotice
+        ? parseNoticeDetail(html, item.url)
+        : parseJobDetail(html, item.url);
       stats.detailed++;
 
       const job = toJob(
@@ -959,6 +1008,8 @@ export async function collect({
               description: `${detail.title}\n${detail.commonDescription}\n${p.description}`,
               publishTime: detail.publishTime,
               expire: detail.expire,
+              applyUrl: detail.applyUrl,
+              sourceEvidence: detail.sourceEvidence,
             },
             "招聘公告-职位表",
           );
@@ -987,6 +1038,8 @@ export async function fetchDetail(record) {
     referer: `${hostInfo.host}/search/list`,
   });
   const notice = /\/campus\/view\/id\//.test(record.url);
-  const detail = notice ? parseNoticeDetail(html) : parseJobDetail(html);
+  const detail = notice
+    ? parseNoticeDetail(html, record.url)
+    : parseJobDetail(html, record.url);
   return toJob(record, hostInfo, detail, notice ? "招聘公告" : "职位信息");
 }

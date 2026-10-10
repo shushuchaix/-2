@@ -129,7 +129,7 @@ const knownCertificates = [
   "英语六级",
   "英语四级",
 ];
-export const CONDITIONS_PARSER_VERSION = "conditions-2";
+export const CONDITIONS_PARSER_VERSION = "conditions-3";
 export function extractRecruitmentConditions(record) {
   const text = String(record.description || ""),
     conditions = [],
@@ -280,7 +280,7 @@ export function extractRecruitmentConditions(record) {
     });
   }
   const majors = text.match(
-    /(?:专业要求|要求专业|专业[：:]|限(?:定)?专业[：:]?)\s*([^。；\n，]{2,100})/,
+    /(?:专业要求|要求专业|专业[：:]|限(?:定)?专业[：:]?)\s*[：:]?\s*([^。；\n，]{2,100})/,
   );
   if (majors) {
     const values = majors[1]
@@ -472,12 +472,42 @@ export function assessRecruitmentEvidence({ record, now = Date.now() }) {
   const r = record || {},
     text = String(r.description || ""),
     conflicts = [...(r.evidenceConflicts || [])];
+  // These persisted adapter versions discarded the body tail before recording complete.
+  const legacyUniversityTruncation =
+    r.sourceId === "university" &&
+    r.parserVersion === "legacy-adapter-2" &&
+    (([3001, 4001].includes(text.length) && text.endsWith("…")) ||
+      // Split table jobs embedded the truncated common text before their position text.
+      r.extra?.kind === "招聘公告-职位表");
+  const legacyUnscopedBody =
+    ["zhaopin", "shixiseng", "jiuyeqiao"].includes(r.sourceId) &&
+    /^legacy-adapter-[12]$/.test(r.parserVersion || "");
+  // The old PDF parser could mark a text header complete while skipping a scanned table.
+  const legacyPdfCoverage =
+    Array.isArray(r.attachments) &&
+    r.attachments.some(
+      (a) =>
+        a.extraction?.format === "pdf" &&
+        a.extraction.parserVersion === "recruitment-attachments-1",
+    );
   const bodyVerified =
     !/^article-literal-[23]$/.test(r.parserVersion || "") &&
+    !legacyUniversityTruncation &&
+    !legacyUnscopedBody &&
+    !legacyPdfCoverage &&
     !!text.trim() &&
     !r.bodyIncomplete &&
     !r.rowAmbiguous &&
-    !["discovery_only", "pending", "restricted"].includes(r.detailStatus) &&
+    (!r.bodyStatus || r.bodyStatus === "complete") &&
+    ![
+      "discovery_only",
+      "pending",
+      "restricted",
+      "incomplete",
+      "unavailable",
+      "login_required",
+      "challenge_required",
+    ].includes(r.detailStatus) &&
     (r.detailStatus === "complete" ||
       r.bodyStatus === "complete" ||
       r.sourceEvidence?.some(

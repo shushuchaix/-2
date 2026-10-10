@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import * as asar from "@electron/asar";
 import { parse } from "acorn";
 import { verifyBundledOcr } from "./lib/bundled-resources.mjs";
@@ -149,6 +150,26 @@ function archiveFiles(header, prefix = "", result = []) {
   return result;
 }
 
+function productionSourceFiles(root) {
+  const files = [];
+  function walk(rel) {
+    for (const entry of fs.readdirSync(path.join(root, rel), {
+      withFileTypes: true,
+    })) {
+      const file = rel + "/" + entry.name;
+      if (entry.isSymbolicLink())
+        throw Error("Symlink runtime source is forbidden: " + file);
+      if (entry.isDirectory()) walk(file);
+      else if (entry.isFile()) files.push(file);
+    }
+  }
+  for (const rel of ["electron", "src"]) walk(rel);
+  return [
+    ...files,
+    ...PUBLIC_RUNTIME_FILES.map((rel) => "public/" + rel),
+  ].sort();
+}
+
 export function verifyPackageArchive({
   archivePath = path.join(
     ROOT,
@@ -188,6 +209,25 @@ export function verifyPackageArchive({
     "package.json",
   ])
     if (!listed.has(file)) throw Error("Missing runtime file: " + file);
+  const matchedSources = [];
+  for (const file of productionSourceFiles(root)) {
+    if (!listed.has(file)) throw Error("Missing runtime file: " + file);
+    const sourceBytes = fs.readFileSync(path.join(root, file));
+    const packagedBytes = asar.extractFile(
+      archivePath,
+      file.split("/").join(path.sep),
+    );
+    const sha256 = createHash("sha256").update(sourceBytes).digest("hex");
+    if (sha256 !== createHash("sha256").update(packagedBytes).digest("hex"))
+      throw Error("Source/package mismatch: " + file);
+    if (
+      /\b[A-Za-z]:[\\/](?:Users|用户)[\\/]|(?:\/home|\/Users)\/[^\s"'`]+\/(?:\.agent-reach|\.codex|\.agents)\//i.test(
+        packagedBytes.toString("utf8"),
+      )
+    )
+      throw Error("User-specific runtime path is forbidden: " + file);
+    matchedSources.push({ file, sha256 });
+  }
   const pkg = JSON.parse(read("package.json"));
   if (pkg.dependencies?.["@napi-rs/canvas"])
     for (const rel of [
@@ -225,6 +265,7 @@ export function verifyPackageArchive({
     bytes: buffer.length,
     ui,
     dependencies: closure,
+    matchedSources,
   };
 }
 
@@ -252,7 +293,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (!runtime.verified) throw Error("Bundled collection runtime invalid");
     console.log(`Bundled runtime verified; OCR ${ocr.files} hashes verified.`);
     console.log(
-      `Package verified: ${report.fileCount} files, ${report.ui.js.length} JS assets, ${report.ui.css.length} CSS assets, ${report.dependencies.length} production dependencies.`,
+      `Package verified: ${report.fileCount} files, ${report.ui.js.length} JS assets, ${report.ui.css.length} CSS assets, ${report.dependencies.length} production dependencies, ${report.matchedSources.length} exact source hashes.`,
     );
   } catch (error) {
     console.error(error.message);

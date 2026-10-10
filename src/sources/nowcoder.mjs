@@ -210,7 +210,7 @@ export function normalizeNowcoderJob(j) {
       ...(j.graduationYear ? [`${j.graduationYear}`] : []),
       ...(deliverEnd ? [`投递截止 ${deliverEnd}`] : []),
     ],
-    publishTime: msToDate(j.refreshTime),
+    publishTime: "",
     // 详情页正确路径是 /jobs/detail/{id}（/jobs/school/detail/ 会落到 SPA 空壳页）
     url: `https://www.nowcoder.com/jobs/detail/${j.id}`,
     summary: truncate(
@@ -219,6 +219,7 @@ export function normalizeNowcoderJob(j) {
     ),
     description,
     extra: {
+      refreshTime: j.refreshTime,
       // 结构化届别字段 —— 过滤时优先级最高
       graduationYear: sanitizeText(j.graduationYear),
       positionType: sanitizeText(j.extraInfo?.positionType_var),
@@ -279,11 +280,12 @@ export function normalizeScheduleItem(s) {
     jobType: "校招",
     skills: [],
     tags: [batch, end ? `网申截止 ${end}` : ""].filter(Boolean),
-    publishTime: msToDate(s.updateTime),
+    publishTime: "",
     url: `https://www.nowcoder.com/company/${s.companyId}/jobs`,
     summary: `${batch || "校招"}：网申 ${begin || "已开放"} ~ ${end || "待定"}，城市 ${cities.join("/") || "不限"}`,
     description: "",
     extra: {
+      updateTime: s.updateTime,
       batch,
       wangshenBegin: begin,
       wangshenEnd: end,

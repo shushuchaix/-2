@@ -47,7 +47,7 @@ export function prepareSelfTestEnvironment({
       now += ms;
     },
   };
-  const controls = { hold: false, failCleanup: false };
+  const controls = { hold: false, failCleanup: false, failCleanupRunIds: new Set() };
   const record = {
     sourceId: "synthetic-desktop",
     siteId: "synthetic-desktop-1",
@@ -168,7 +168,11 @@ export function prepareSelfTestEnvironment({
     fsAdapter: {
       ...fsAsync,
       async unlink(filename) {
-        if (controls.failCleanup && /[\\/]runs-v2[\\/]/.test(filename))
+        if (
+          controls.failCleanup &&
+          /[\\/]runs-v2[\\/]/.test(filename) &&
+          controls.failCleanupRunIds.has(path.basename(filename, ".json"))
+        )
           throw Object.assign(Error("synthetic_cleanup_failure"), {
             code: "EIO",
           });
@@ -394,7 +398,7 @@ export async function runWorkspaceSelfTest({
     Object.values(workspace[key] || {})
       .flat()
       .filter((r) => r.ownerPackageId === pkg).length;
-  let a, b, profile;
+  let a, b, profile, bossContracts;
   try {
     await wait("Boolean(document.querySelector('nav'))");
     await phase("九页真实导航与严格 CSP", async () => {
@@ -612,6 +616,13 @@ export async function runWorkspaceSelfTest({
       );
       await click("继续采集");
       await wait(textHas("已继续采集，沿用活动累计额度"));
+      const priorCancellationCleared =
+        "!Array.from(document.querySelectorAll('p[role=status]')).some(p=>p.textContent.trim()==='任务已取消')";
+      await wait(priorCancellationCleared);
+      check(
+        "真实活动续采不显示上一轮取消结论",
+        await js(priorCancellationCleared),
+      );
       const resumed = await context.collectionService.get(activityRef);
       check(
         "真实活动续采沿用根编号与累计额度",
@@ -784,10 +795,12 @@ export async function runWorkspaceSelfTest({
               "deleteKey",
               "getDataLocations",
               "getCollectionCapabilities",
+              "getCollectionSessionStatus",
               "getKeyStatus",
               "isAvailable",
               "openDataLocation",
               "openCollectionLogin",
+              "probeBossSession",
               "reportDiagnostic",
               "saveKey",
               "verifyCollectionSession",
@@ -900,6 +913,16 @@ export async function runWorkspaceSelfTest({
           ),
       );
     });
+    await phase("Boss 固定协议、版本隔离与风险取消排空", async () => {
+      const { runBossSelfTest } = await import("./self-test-boss.mjs");
+      const validation = await runBossSelfTest({
+        context,
+        targets: [a, b],
+        dataDir,
+      });
+      results.push(...validation.results);
+      bossContracts = validation.summary;
+    });
     await phase("归档隐藏整个版本、整包恢复保持子集", async () => {
       const before = await context.repository.read(),
         counts = Object.fromEntries(
@@ -923,6 +946,11 @@ export async function runWorkspaceSelfTest({
     await phase("清空回收站部分失败与安全续清理", async () => {
       await archive(a.versionName);
       await archive(b.versionName);
+      controls.failCleanupRunIds = new Set(
+        Object.values((await context.repository.read()).runs)
+          .filter((run) => run.ownerPackageId === a.packageId)
+          .map((run) => run.runId),
+      );
       controls.failCleanup = true;
       await navigate("回收站");
       await click("清空整个回收站");
@@ -1019,6 +1047,7 @@ export async function runWorkspaceSelfTest({
     failed: results.filter((r) => !r.ok).length,
     results,
     screenshots,
+    bossContracts,
     network: networkGuard.report(),
     deviceScaleFactor: await js("devicePixelRatio"),
     rendererErrors,

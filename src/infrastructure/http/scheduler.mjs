@@ -23,7 +23,8 @@ export function createScheduler({
 } = {}) {
   const queue = [],
     active = new Map(),
-    lastStart = new Map();
+    lastStart = new Map(),
+    pendingStarts = new Set();
   const health = new Map();
   let total = 0,
     timer = null;
@@ -38,6 +39,11 @@ export function createScheduler({
       if (item.signal?.aborted) {
         queue.splice(i, 1);
         item.reject(abortError(item.signal));
+        continue;
+      }
+      // Admission is asynchronous: reserve one callback per origin until it enters.
+      if (pendingStarts.has(item.origin)) {
+        i++;
         continue;
       }
       const wait =
@@ -61,11 +67,17 @@ export function createScheduler({
       item.signal?.removeEventListener("abort", item.abort);
       active.set(item.origin, (active.get(item.origin) || 0) + 1);
       total++;
-      lastStart.set(item.origin, clock.now());
+      pendingStarts.add(item.origin);
       Promise.resolve()
         .then(() => {
-          item.signal?.throwIfAborted();
-          return item.fn();
+          try {
+            item.signal?.throwIfAborted();
+            lastStart.set(item.origin, clock.now());
+            return item.fn();
+          } finally {
+            pendingStarts.delete(item.origin);
+            drain();
+          }
         })
         .then(item.resolve, item.reject)
         .finally(() => {

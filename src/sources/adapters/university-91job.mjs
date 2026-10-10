@@ -1,24 +1,43 @@
-import { createPagedProvider, jsonResponse, baseRecord } from "./shared.mjs";
+import {
+  createPagedProvider,
+  jsonResponse,
+  baseRecord,
+  extractApplicationLinks,
+} from "./shared.mjs";
 import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
+import { withMajorEvidence } from "../major-evidence.mjs";
 const id = "university-91job";
-const description = (value) => {
+const descriptionHtml = (value) => {
   if (!value) return null;
   let data = value;
   if (typeof value === "string") {
     try {
       data = JSON.parse(value);
     } catch {
-      return htmlToText(value);
+      return value;
     }
   }
-  return htmlToText(
-    typeof data === "object"
-      ? Object.values(data)
-          .filter((v) => typeof v === "string")
-          .join("\n")
-      : String(data),
-  );
+  if (data === null) return null;
+  return typeof data === "object"
+    ? Object.values(data)
+        .filter((v) => typeof v === "string")
+        .join("\n")
+    : String(data);
+};
+const description = (value) => htmlToText(descriptionHtml(value) || "");
+const withApplicationLinks = (record, rawBody) => {
+  const links = extractApplicationLinks(descriptionHtml(rawBody), {
+    baseUrl: record.url,
+    record,
+  });
+  return {
+    ...record,
+    applyUrl: links.sourceEvidence.length
+      ? links.applyUrl
+      : record.applyUrl || null,
+    sourceEvidence: [...(record.sourceEvidence || []), ...links.sourceEvidence],
+  };
 };
 function parseNotice(r, site, previous = {}) {
   const noticeId = String(r.zpggid);
@@ -26,7 +45,7 @@ function parseNotice(r, site, previous = {}) {
     .split(",")
     .map((city) => city.trim())
     .filter(Boolean);
-  return baseRecord({
+  const record = baseRecord({
     ...previous,
     id: "notice:" + noticeId,
     sourceRecordIdKind: "authority",
@@ -51,10 +70,11 @@ function parseNotice(r, site, previous = {}) {
       { field: "kind", sourceField: "getZpggPageList" },
     ],
   });
+  return withApplicationLinks(record, r.zpggxq);
 }
 function parse(r, site, previous = {}) {
   const city = String(r.gzdd || "").trim();
-  return baseRecord({
+  const record = baseRecord({
     ...previous,
     id: r.zpgwid,
     sourceRecordIdKind: "authority",
@@ -94,6 +114,10 @@ function parse(r, site, previous = {}) {
       ...(previous.evidence || []),
       { field: "description", sourceField: "zwms" },
     ],
+  });
+  return withMajorEvidence(withApplicationLinks(record, r.zwms), r.xqzy, {
+    sourceField: "xqzy",
+    location: { jsonPath: "result.xqzy" },
   });
 }
 const provider = createPagedProvider({
@@ -210,6 +234,14 @@ const provider = createPagedProvider({
         r.sourceRecordId
     )
       throw Error("parse_error: 91job detail identity");
+    if (!description(notice ? d.result.zpggxq : d.result.zwms).trim())
+      throw Object.assign(
+        Error("Detail response has insufficient body content"),
+        {
+          code: "detail_insufficient",
+          retryable: false,
+        },
+      );
     return {
       ...r,
       ...(notice ? parseNotice(d.result, site, r) : parse(d.result, site, r)),

@@ -9,7 +9,6 @@ import { sourceFetch as fetch } from "./request-context.mjs";
 import {
   evalInlinePayload,
   htmlToText,
-  parseRelativeDate,
   decodeEntities,
   stripPrivateUse,
 } from "../util/html.mjs";
@@ -185,13 +184,14 @@ export function normalizeIntern(item) {
     jobType: item.type === "intern" ? "实习" : sanitizeText(item.type),
     skills,
     tags: [...new Set(tags.map(sanitizeText).filter(Boolean))],
-    publishTime: parseRelativeDate(item.refresh || ""),
+    publishTime: "",
     url: uuid ? `https://www.shixiseng.com/intern/${uuid}` : "",
     summary: hope.length
       ? hope.map(sanitizeText).filter(Boolean).join("；")
       : "",
     description: "",
     extra: {
+      refresh: item.refresh,
       uuid,
       industry: sanitizeText(item.industry),
       companyScale: stripIconFont(item.scale),
@@ -484,6 +484,12 @@ export async function fetchDetail(job, { timeoutMs = 20000 } = {}) {
     if (candidates.length) plainTitle = candidates[0];
 
     const nuxt = evalInlinePayload(html, "__NUXT__");
+    const positionId = String(
+      job.sourceRecordId ||
+        job.extra?.uuid ||
+        new URL(job.url).pathname.match(/\/intern\/([^/]+)/)?.[1] ||
+        "",
+    );
     let desc = "";
     if (nuxt) {
       const stack = [nuxt];
@@ -494,6 +500,9 @@ export async function fetchDetail(job, { timeoutMs = 20000 } = {}) {
         seen.add(cur);
         for (const [k, v] of Object.entries(cur)) {
           if (
+            positionId &&
+            String(cur.uuid || "") === positionId &&
+            k === "description" &&
             typeof v === "string" &&
             v.length > 120 &&
             /职责|要求|岗位|工作内容|任职/.test(v)
@@ -505,8 +514,15 @@ export async function fetchDetail(job, { timeoutMs = 20000 } = {}) {
         }
       }
     }
+    const bodyStatus = desc ? "complete" : "incomplete";
     if (!desc) desc = htmlToText(html).slice(0, 2500);
-    return { description: desc, plainTitle };
+    return {
+      description: desc,
+      plainTitle,
+      bodyStatus,
+      detailStatus: bodyStatus,
+      retryEligible: false,
+    };
   } catch (e) {
     return { description: "", error: e.message };
   }

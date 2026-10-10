@@ -263,6 +263,8 @@ export async function fetchDetail(job, { timeoutMs = 25000 } = {}) {
   const html = await res.text();
   const state = extractAssignedJson(html, "__INITIAL_STATE__");
   let description = state ? extractDetailFromState(state) : null;
+  // Only the native jobDetail payload identifies the complete position body.
+  const bodyStatus = description ? "complete" : "incomplete";
   if (!description) description = extractDetailFromText(html);
   if (!description) description = truncate(htmlToText(html), 2000);
 
@@ -275,5 +277,11 @@ export async function fetchDetail(job, { timeoutMs = 25000 } = {}) {
     const ind = company.industryName || "";
     companyInfo = [cname, size, ind].filter(Boolean).join(" · ");
   }
-  return { description, companyInfo };
+  return {
+    description,
+    companyInfo,
+    bodyStatus,
+    detailStatus: bodyStatus,
+    retryEligible: false,
+  };
 }

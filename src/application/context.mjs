@@ -352,25 +352,27 @@ export async function createApplicationContext({
           modelConfig: cfg.deepseek,
           diagnostics,
           runGate: gate,
-          planner: async (input) => {
-            const w = input.workspace;
-            return buildCollectionPlan({
-              ...input,
-              catalog:
-                dependencies.catalog ||
-                loadSiteCatalog({ customSites: w.settings.customSites }),
-              health: {
-                ...w.sourceHealth,
-                ...w.packages[input.scope.packageId].collectionSettings
-                  ?.sourceVerification,
-              },
-              sourceOverrides: {
-                ...w.settings.sourceOverrides,
-                ...w.packages[input.scope.packageId].collectionSettings
-                  ?.sourceOverrides,
-              },
-            });
-          },
+          planner:
+            dependencies.collectionPlanner ||
+            (async (input) => {
+              const w = input.workspace;
+              return buildCollectionPlan({
+                ...input,
+                catalog:
+                  dependencies.catalog ||
+                  loadSiteCatalog({ customSites: w.settings.customSites }),
+                health: {
+                  ...w.sourceHealth,
+                  ...w.packages[input.scope.packageId].collectionSettings
+                    ?.sourceVerification,
+                },
+                sourceOverrides: {
+                  ...w.settings.sourceOverrides,
+                  ...w.packages[input.scope.packageId].collectionSettings
+                    ?.sourceOverrides,
+                },
+              });
+            }),
         });
   if (collectionService) {
     await collectionService.recover();
@@ -412,6 +414,7 @@ export async function createApplicationContext({
     }),
     exportService = createExportService({ repository });
   let settingsQueue = Promise.resolve();
+  let settingsRollbackFailure;
   const shutdown = createResourceShutdown({
     resources: () => [
       {
@@ -547,6 +550,7 @@ export async function createApplicationContext({
     async saveSettings(input) {
       const result = settingsQueue.then(() =>
         trace("application.settings", async () => {
+          if (settingsRollbackFailure) throw settingsRollbackFailure;
           const current = await repository.read(),
             effectiveModel = { ...cfg.deepseek, ...input?.model },
             effectiveBudgets = {
@@ -619,36 +623,78 @@ export async function createApplicationContext({
                 throw Error("Invalid model setting");
               changes[key] = model[key];
             }
+          const configFs = dependencies.fsAdapter || fs;
+          const filename = path.join(repository.dataDir, "config.json");
+          let previousConfig,
+            configExisted = false,
+            configWritten = false;
           if (Object.keys(changes).length) {
-            const filename = path.join(repository.dataDir, "config.json");
             let file = {};
             try {
-              file = JSON.parse(await fs.readFile(filename, "utf8"));
+              file = JSON.parse(await configFs.readFile(filename, "utf8"));
+              configExisted = true;
             } catch (error) {
               if (error.code !== "ENOENT") throw error;
             }
+            previousConfig = structuredClone(file);
             file.deepseek = { ...(file.deepseek || {}), ...changes };
-            await writeAtomicJson(filename, file);
-            Object.assign(cfg.deepseek, changes);
+            await writeAtomicJson(filename, file, { fsAdapter: configFs });
+            configWritten = true;
           }
-          await repository.mutateWorkspace((w) => {
-            if (input.budgets) {
-              w.settings.budgets = { ...w.settings.budgets, ...input.budgets };
-              if (input.budgets.maxCostCny === null) {
-                delete w.settings.budgets.maxCostCny;
-                if (!Object.hasOwn(input.budgets, "maxModelRequests"))
-                  w.settings.budgets.maxModelRequests = Math.min(
-                    20,
-                    w.settings.budgets.maxModelRequests ?? 20,
-                  );
+          // Compensate normal write failures; separate files are not crash-atomic.
+          try {
+            await repository.mutateWorkspace((w) => {
+              if (input.budgets) {
+                w.settings.budgets = {
+                  ...w.settings.budgets,
+                  ...input.budgets,
+                };
+                if (input.budgets.maxCostCny === null) {
+                  delete w.settings.budgets.maxCostCny;
+                  if (!Object.hasOwn(input.budgets, "maxModelRequests"))
+                    w.settings.budgets.maxModelRequests = Math.min(
+                      20,
+                      w.settings.budgets.maxModelRequests ?? 20,
+                    );
+                }
+              }
+              if (input.model)
+                w.settings.model = {
+                  ...w.settings.model,
+                  ...redactBusiness(model),
+                };
+            });
+          } catch (error) {
+            if (configWritten) {
+              try {
+                if (configExisted)
+                  await writeAtomicJson(filename, previousConfig, {
+                    fsAdapter: configFs,
+                  });
+                else
+                  await configFs.unlink(filename).catch((failure) => {
+                    if (failure.code !== "ENOENT") throw failure;
+                  });
+              } catch (rollbackError) {
+                await recordDiagnostic(
+                  diagnostics,
+                  {
+                    operation: "application.settings",
+                    phase: "rollback",
+                    outcome: "failed",
+                  },
+                  rollbackError,
+                );
+                settingsRollbackFailure = packageError(
+                  "settings_rollback_failed",
+                  "设置保存失败，原配置未能恢复。当前会话已停止保存设置，请检查存储问题并恢复原配置后重新启动软件。",
+                );
+                throw settingsRollbackFailure;
               }
             }
-            if (input.model)
-              w.settings.model = {
-                ...w.settings.model,
-                ...redactBusiness(model),
-              };
-          });
+            throw error;
+          }
+          Object.assign(cfg.deepseek, changes);
           return context.getSettings();
         }),
       );

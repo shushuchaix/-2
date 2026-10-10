@@ -24,6 +24,59 @@ const privateKeys = new Set([
   "queries",
   "keywords",
 ]);
+const probeIssueCodes = new Set([
+  "parse_error",
+  "unavailable",
+  "captcha",
+  "http_forbidden",
+  "restricted",
+  "budget_exhausted",
+  "source_budget_exhausted",
+  "rate_limited",
+  "request_timeout",
+  "http_timeout",
+  "network_error",
+  "invalid_record",
+  "detail_unavailable",
+  "detail_insufficient",
+  "body_unverified",
+  "list_unverified",
+  "source_restricted",
+  "pagination_not_supported",
+  "account_history_limited",
+  "login_required",
+  "challenge_required",
+  "session_unavailable",
+  "boss_account_risk",
+  "boss_environment_risk",
+  "boss_risk_blocked",
+  "boss_auth_expired",
+  "boss_login_required",
+  "service_disabled",
+  "not_configured",
+]);
+function safeProbeResult(result, sourceId, siteId) {
+  if (!Array.isArray(result.issues)) return result;
+  return {
+    ...result,
+    issues: result.issues.map((issue) => ({
+      code: probeIssueCodes.has(issue?.code)
+        ? issue.code
+        : "source_probe_failed",
+      sourceId,
+      siteId,
+      ...(typeof issue?.retryable === "boolean"
+        ? { retryable: issue.retryable }
+        : {}),
+      ...(typeof issue?.diagnosticId === "string" &&
+      /^d-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+        issue.diagnosticId,
+      )
+        ? { diagnosticId: issue.diagnosticId }
+        : {}),
+    })),
+  };
+}
 function validateConfig(provider, config) {
   assertInput("sourceConfig", config);
   for (const [key, value] of Object.entries(config)) {
@@ -396,7 +449,7 @@ export function createSourceService({
           },
           { operationLease },
         );
-        return result;
+        return safeProbeResult(result, sourceId, site.siteId);
       };
       if (ref) {
         if (!activityContext)
@@ -532,7 +585,7 @@ export function createSourceService({
           custom.verifiedAt = health.lastSuccessAt || custom.verifiedAt || null;
         }
       });
-      return result;
+      return safeProbeResult(result, sourceId, site?.siteId || sourceId);
     },
     async saveSourceConfig(input) {
       if (

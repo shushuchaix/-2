@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
-  assessApplicationResponse,
   assessRecruitmentEvidence,
   isVerifiedRecommendation,
-  prepareRecruitmentRecord,
-  prepareApplicationCheck,
 } from "../domain/recruitment-evidence.mjs";
 import {
   selectVersionJobFact,
@@ -37,6 +34,7 @@ import { expandArticles } from "../match/article.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { projectCollectionQuality } from "../domain/collection-quality.mjs";
+import { createRecordEnrichment } from "./record-enrichment.mjs";
 const terminal = new Set(["completed", "cancelled"]);
 const bossRiskCodes = new Set([
   "boss_account_risk",
@@ -72,6 +70,12 @@ export function createCollectionService({
 }) {
   const active = new Map();
   const at = () => new Date(clock.now()).toISOString();
+  const enrichRecord = createRecordEnrichment({
+    clock,
+    diagnostics,
+    officialSites,
+    getAttachmentService: () => attachmentService,
+  });
   function rootFor(w, ref) {
     assertScope(w, ref?.scope, clock.now());
     const root = w.runs[ref.activityId];
@@ -182,6 +186,24 @@ export function createCollectionService({
   async function emit(id, type, payload, scope) {
     await events?.publish?.(id, type, payload, scope);
   }
+  function bindRecordEnrichment(context) {
+    const owned = { ...context, runId: context.token.sliceRunId };
+    const assertCurrent = async () => {
+      owned.signal.throwIfAborted();
+      const workspace = await repository.read();
+      const root = rootFor(workspace, owned.ref);
+      checkLease(workspace, owned.ref.scope, owned.operationLease);
+      checkToken(root, owned.token, false);
+      owned.signal.throwIfAborted();
+    };
+    context.enrichRecord = async (record) => {
+      await assertCurrent();
+      const completed = await enrichRecord(record, owned);
+      await assertCurrent();
+      return completed;
+    };
+    return context;
+  }
   async function mutateCurrent(ref, token, lease, action) {
     return (
       await repository.mutateWorkspace(
@@ -196,9 +218,11 @@ export function createCollectionService({
     ).result;
   }
   const service = {
-    async start({ scope, options = {}, credentials = {} }) {
+    async prepare({ scope, options = {} }) {
       if (!["rules", "ai", "auto"].includes(options.mode || "rules"))
         throw packageError("validation_failed", "评价模式无效。", 400);
+      if (options.requestId !== undefined && !idValid(options.requestId))
+        throw packageError("validation_failed", "请求标识无效。", 400);
       const plan = await planFor(scope, null, options),
         lease = await operationGate.acquire("collect", { scope });
       const activityId = "collection-" + randomUUID(),
@@ -210,10 +234,35 @@ export function createCollectionService({
           activityId,
         };
       try {
-        await repository.mutateWorkspace(
+        const saved = await repository.mutateWorkspace(
           (w) => {
             assertScope(w, scope, clock.now());
             checkLease(w, scope, lease);
+            if (options.requestId) {
+              const existing = Object.values(w.runs).find(
+                (r) =>
+                  r.collectionRole === "collection_root" &&
+                  r.ownerPackageId === scope.packageId &&
+                  r.targetSnapshot?.revisionId === scope.targetRevisionId &&
+                  r.collectionProgress.preparationRequestId ===
+                    options.requestId,
+              );
+              if (existing) {
+                if (
+                  existing.collectionMode !== (options.mode || "rules") ||
+                  existing.collectionProgress.planHash !==
+                    plan.hashes.planHash ||
+                  contentHash(existing.collectionProgress.limits) !==
+                    contentHash(plan.limits)
+                )
+                  throw packageError(
+                    "collection_prepare_replayed",
+                    "同一准备请求的参数已改变。",
+                    409,
+                  );
+                return existing.runId;
+              }
+            }
             const root = createCollectionRoot({
               runId: activityId,
               scope,
@@ -226,16 +275,25 @@ export function createCollectionService({
             root.collectionMode = options.mode || "rules";
             root.collectionProgress.uncovered =
               plan.uncovered || plan.skipped || [];
-            root.collectionProgress.refreshReady = true;
+            root.collectionProgress.refreshReady = false;
+            root.collectionProgress.manualPaused = true;
+            if (options.requestId)
+              root.collectionProgress.preparationRequestId = options.requestId;
             w.runs[activityId] = root;
+            return activityId;
           },
           { operationLease: lease },
         );
+        ref.activityId = saved.result;
       } finally {
         await lease.release();
       }
+      return { activityId: ref.activityId, scope: ref.scope };
+    },
+    async start({ scope, options = {}, credentials = {} }) {
+      const prepared = await service.prepare({ scope, options });
       return service.resume({
-        ref,
+        ref: { scope: prepared.scope, activityId: prepared.activityId },
         requestId: options.requestId || randomUUID(),
         credentials,
       });
@@ -849,7 +907,7 @@ export function createCollectionService({
             signal,
             diagnosticContext: { runId: task.token.sliceRunId },
           });
-          task.apiContext = {
+          task.apiContext = bindRecordEnrichment({
             budget: budgets.sources,
             modelBudget: budgets.model,
             request,
@@ -859,7 +917,7 @@ export function createCollectionService({
             ref,
             token: task.token,
             readService,
-          };
+          });
           const result = await callback(task.apiContext);
           signal.throwIfAborted();
           return result;
@@ -968,7 +1026,7 @@ export function createCollectionService({
         signal,
         diagnosticContext: { runId: token.sliceRunId },
       });
-      task.apiContext = {
+      task.apiContext = bindRecordEnrichment({
         budget: budgets.sources,
         modelBudget: budgets.model,
         request,
@@ -978,7 +1036,7 @@ export function createCollectionService({
         ref,
         token,
         readService,
-      };
+      });
       await emit(token.sliceRunId, "stage", { stage: "collecting" }, ref.scope);
       let root = await service.get(ref);
       await recordDiagnostic(diagnostics, {
@@ -1189,7 +1247,13 @@ export function createCollectionService({
                 !record.description ||
                 record.description.trim().length < 30 ||
                 record.retryEligible ||
-                (record.bodyStatus && record.bodyStatus !== "complete")
+                (record.bodyStatus && record.bodyStatus !== "complete") ||
+                ((provider.capabilities?.body ||
+                  provider.capabilities?.detail) &&
+                  !assessRecruitmentEvidence({
+                    record,
+                    now: clock.now(),
+                  }).bodyVerified)
               ) {
                 try {
                   record = await provider.fetchDetail(record, context);
@@ -1830,174 +1894,6 @@ export function createCollectionService({
         });
       });
     }
-  }
-  async function enrichRecord(record, context) {
-    const applicationCheck = prepareApplicationCheck(record, clock.now()),
-      evidence = applicationCheck.evidence;
-    await recordDiagnostic(diagnostics, {
-      operation: "collection.body",
-      runId: context.runId,
-      counts: {
-        bodyVerified: evidence.bodyVerified ? 1 : 0,
-        bodyMissing: evidence.bodyVerified ? 0 : 1,
-      },
-      outcome: evidence.bodyVerified ? "success" : "insufficient",
-    });
-    if (
-      record.kind === "job" &&
-      applicationCheck.shouldRequest &&
-      evidence.applicationStatus !== "available"
-    ) {
-      try {
-        record = {
-          ...record,
-          applicationVerification: assessApplicationResponse(
-            await context.request(record.applyUrl, {
-              signal: context.signal,
-              maxBytes: 1048576,
-              maxRetries: 0,
-              diagnosticContext: {
-                sourceId: record.sourceId,
-                endpointKind: "application",
-              },
-            }),
-            at(),
-          ),
-        };
-      } catch (error) {
-        context.signal?.throwIfAborted();
-        if (
-          ["source_budget_exhausted", "collection_stale_epoch"].includes(
-            error.code,
-          )
-        )
-          throw error;
-        record = {
-          ...record,
-          applicationVerification: {
-            status: "unknown",
-            checkedAt: at(),
-            formVerified: false,
-          },
-        };
-      }
-    }
-    const officialLinks = [];
-    for (const link of record.externalLinks || [])
-      try {
-        const u = new URL(link.url),
-          site = officialSites.find(
-            (s) =>
-              s.providerId === "official-announcements" &&
-              s.template?.bodyRule &&
-              s.origin === u.origin,
-          );
-        if (site && u.pathname !== "/")
-          officialLinks.push({ url: u.href, site });
-      } catch {}
-    record = { ...record, officialLinks };
-    if (!record.attachments?.length || !attachmentService) return record;
-    const enriched = await attachmentService.enrich({ record, ...context });
-    await recordDiagnostic(diagnostics, {
-      operation: "collection.attachment",
-      runId: context.runId,
-      counts: {
-        input: record.attachments.length,
-        attachmentsParsed: (enriched.attachments ?? []).filter(
-          (a) => a.extraction?.status === "extracted",
-        ).length,
-      },
-      outcome: enriched.attachments.some((a) => a.textStatus === "pending")
-        ? "partial"
-        : "completed",
-    });
-    const extracts = [];
-    for (const a of enriched.attachments || [])
-      if (a.extraction?.status === "extracted") {
-        const blocks = [
-          ...(a.extraction.blocks || []),
-          ...(a.extraction.tables || []).flatMap((t) => t.cells || []),
-        ].filter((b) => b.confidence >= 85 && !b.ambiguousMerge);
-        if (blocks.length)
-          extracts.push({
-            url: a.url,
-            text: blocks.map((b) => b.text).join("\n"),
-            blocks,
-          });
-      }
-    if (!extracts.length) return enriched;
-    const description = [enriched.description, ...extracts.map((a) => a.text)]
-      .filter(Boolean)
-      .join("\n");
-    const attachmentBodyComplete =
-      enriched.attachmentBodyPending &&
-      description.trim().length >= 30 &&
-      enriched.attachments.every((a) => {
-        if (a.extraction?.status !== "extracted") return false;
-        const blocks = [
-          ...(a.extraction.blocks || []),
-          ...(a.extraction.tables || []).flatMap((t) => t.cells || []),
-        ];
-        return (
-          blocks.length > 0 &&
-          blocks.every((b) => b.confidence >= 85 && !b.ambiguousMerge)
-        );
-      });
-    return {
-      ...enriched,
-      description,
-      ...(attachmentBodyComplete
-        ? {
-            bodyStatus: "complete",
-            detailStatus: "complete",
-            attachmentBodyPending: false,
-            retryEligible: false,
-          }
-        : {}),
-      attachmentRows: extracts.flatMap((a) => {
-        const groups = new Map();
-        for (const b of a.blocks) {
-          const rowNumber = b.row || b.location?.row;
-          if (!rowNumber) continue;
-          const key =
-            a.url +
-            "|" +
-            JSON.stringify({
-              sheet: b.location?.sheet,
-              table: b.location?.table,
-              page: b.location?.page,
-            }) +
-            "|" +
-            rowNumber;
-          const row = groups.get(key) || {
-            jobRowId: key,
-            sourceUrl: a.url,
-            cells: [],
-            ambiguous: false,
-          };
-          row.cells.push(b);
-          row.ambiguous ||= b.ambiguousMerge === true;
-          groups.set(key, row);
-        }
-        return [...groups.values()].map((r) => ({
-          ...r,
-          text: r.cells.map((b) => b.text).join("\n"),
-        }));
-      }),
-      evidence: [
-        ...(enriched.evidence || []),
-        ...extracts.flatMap((a) =>
-          a.blocks.map((b) => ({
-            field: "description",
-            excerpt: b.text,
-            url: a.url,
-            kind: "attachment",
-            location: b.location,
-            confidence: b.confidence,
-          })),
-        ),
-      ],
-    };
   }
   return service;
 }

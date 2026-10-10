@@ -16,6 +16,30 @@ const runtime = [
   "electron/directories.mjs",
   "electron/self-test.mjs",
   "electron/self-test-network.mjs",
+  "electron/self-test-boss.mjs",
+  "electron/collection/boss-page.mjs",
+  "electron/collection/browser.mjs",
+  "electron/collection/sessions.mjs",
+  "electron/collection/network-policy.mjs",
+  "electron/collection/ipc.mjs",
+  "src/sources/boss/protocol.mjs",
+  "src/sources/boss/records.mjs",
+  "src/sources/boss/cities.mjs",
+  "src/sources/adapters/boss.mjs",
+  "src/sources/adapters/shared.mjs",
+  "src/sources/registry.mjs",
+  "src/sources/planning.mjs",
+  "src/sources/catalog.mjs",
+  "src/sources/catalog/platforms.json",
+  "src/application/content-read-service.mjs",
+  "src/application/collection-service.mjs",
+  "src/application/collection-ledger.mjs",
+  "src/application/collection-refresh.mjs",
+  "src/application/source-service.mjs",
+  "src/application/workspace-operations.mjs",
+  "src/application/package-runtime-service.mjs",
+  "src/domain/collection.mjs",
+  "src/llm/prompt-registry.mjs",
   "src/server.mjs",
   "src/config.mjs",
   "src/application/context.mjs",
@@ -46,11 +70,14 @@ async function packageFixture(t) {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, body);
   };
-  for (const file of runtime)
-    await write(
-      file,
-      file.endsWith(".json") ? "{}" : "/* synthetic runtime presence */",
-    );
+  for (const file of runtime) {
+    const body = file.endsWith(".json")
+      ? "{}"
+      : "/* synthetic runtime presence */";
+    await write(file, body);
+    await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await fs.writeFile(path.join(root, file), body);
+  }
   const pkg = {
     name: "synthetic-build-fixture",
     main: "electron/main.mjs",
@@ -259,4 +286,52 @@ test("package verifier excludes private directories, credentials, tests and old 
     assert.match(result.stdout + result.stderr, /forbidden|excluded/i);
     await fs.unlink(path.join(f.stage, forbidden));
   }
+});
+
+test("package verifier rejects absent Boss protocol", async (t) => {
+  const f = await packageFixture(t);
+  const protocol = "src/sources/boss/protocol.mjs";
+  await fs.unlink(path.join(f.stage, protocol));
+  await f.pack();
+  let result = f.verify();
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stdout + result.stderr,
+    /Missing runtime file.*boss\/protocol/,
+  );
+});
+
+test("package verifier rejects stale production services", async (t) => {
+  const f = await packageFixture(t);
+  for (const file of [
+    "electron/collection/sessions.mjs",
+    "src/application/collection-service.mjs",
+    "src/llm/prompt-registry.mjs",
+  ]) {
+    await f.write(file, "/* stale assembled module */");
+    await f.pack();
+    const result = f.verify();
+    assert.notEqual(result.status, 0, file);
+    assert.ok(
+      (result.stdout + result.stderr).includes(
+        "Source/package mismatch: " + file,
+      ),
+    );
+    await f.write(file, "/* synthetic runtime presence */");
+  }
+});
+
+test("package verifier rejects first-party absolute user SDK paths even when source bytes match", async (t) => {
+  const f = await packageFixture(t),
+    file = "src/sources/adapters/boss.mjs";
+  const body = "const sdk = 'C:/Users/synthetic/.agent-reach/sdk.js';";
+  await f.write(file, body);
+  await fs.writeFile(path.join(f.root, file), body);
+  await f.pack();
+  const result = f.verify();
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stdout + result.stderr,
+    /User-specific runtime path.*boss/,
+  );
 });

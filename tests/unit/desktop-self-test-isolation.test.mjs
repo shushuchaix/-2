@@ -7,11 +7,47 @@ import https from "node:https";
 import net from "node:net";
 import tls from "node:tls";
 import { once } from "node:events";
+import { spawnSync } from "node:child_process";
 import { allowLocalOrigin } from "../helpers/network-guard.mjs";
 import { createTempDir } from "../helpers/fixtures.mjs";
 import { prepareSelfTestEnvironment } from "../../electron/self-test.mjs";
 import { installSelfTestNetworkGuard } from "../../electron/self-test-network.mjs";
 import { awaitDesktopContext } from "../../electron/startup.mjs";
+
+test("self-test environment import does not freeze configuration before desktop startup", async (t) => {
+  const tempRoot = await createTempDir(t);
+  const environmentModule = new URL(
+    "../../electron/self-test.mjs",
+    import.meta.url,
+  ).href;
+  const configModule = new URL("../../src/config.mjs", import.meta.url).href;
+  const script = `
+    import assert from 'node:assert/strict';
+    const { prepareSelfTestEnvironment } = await import(${JSON.stringify(environmentModule)});
+    const isolated = prepareSelfTestEnvironment({tempRoot: process.argv[1]});
+    try {
+      process.env.RJR_DESKTOP = '1';
+      process.env.RJR_DATA_DIR = isolated.dataDir;
+      const { DATA_ROOT, IS_DESKTOP } = await import(${JSON.stringify(configModule)});
+      assert.equal(IS_DESKTOP, true);
+      assert.equal(DATA_ROOT, isolated.dataDir);
+    } finally { isolated.cleanup(); }
+  `;
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", script, tempRoot],
+    {
+      encoding: "utf8",
+      timeout: 15000,
+      env: {
+        ...process.env,
+        RJR_DESKTOP: "0",
+        RJR_DATA_DIR: path.join(tempRoot, "before-startup"),
+      },
+    },
+  );
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+});
 
 test("normal desktop keeps maintenance HTTP surface reachable while self-test propagates startup failure", async () => {
   const error = Object.assign(
@@ -47,6 +83,28 @@ test("self-test establishes an independent synthetic directory before config and
   const before = env.clock.now();
   env.clock.advance(72 * 3600 * 1000);
   assert.equal(env.clock.now() - before, 72 * 3600 * 1000);
+});
+test("self-test cleanup failure targets one version even when both have run snapshots", async (t) => {
+  const tempRoot = await createTempDir(t),
+    env = prepareSelfTestEnvironment({ tempRoot });
+  t.after(() => env.cleanup());
+  const runs = path.join(env.dataDir, "runs-v2");
+  fs.mkdirSync(runs);
+  const failed = path.join(runs, "synthetic-a.json"),
+    successful = path.join(runs, "synthetic-b.json");
+  fs.writeFileSync(failed, "synthetic snapshot A");
+  fs.writeFileSync(successful, "synthetic snapshot B");
+  env.controls.failCleanup = true;
+  env.controls.failCleanupRunIds = new Set(["synthetic-a"]);
+  await assert.rejects(() => env.dependencies.fsAdapter.unlink(failed), {
+    code: "EIO",
+  });
+  await env.dependencies.fsAdapter.unlink(successful);
+  assert.equal(fs.existsSync(failed), true);
+  assert.equal(fs.existsSync(successful), false);
+  env.controls.failCleanup = false;
+  await env.dependencies.fsAdapter.unlink(failed);
+  assert.equal(fs.existsSync(failed), false);
 });
 test("self-test rejects explicit daily data and symlink destinations without touching a sentinel", async (t) => {
   const tempRoot = await createTempDir(t),

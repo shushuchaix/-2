@@ -69,7 +69,9 @@ const PROVIDERS = {
         url: r.url || "",
         snippet: r.summary || r.snippet || "",
         score: null,
-        date: r.datePublished || r.dateLastCrawled || "",
+        date: r.datePublished || "",
+        datePublished: r.datePublished,
+        dateLastCrawled: r.dateLastCrawled,
       }));
     },
   },
@@ -163,7 +165,17 @@ export function normalizeWebResult(r, provider) {
     url: r.url,
     summary: truncate(snippet, 500),
     description: "",
-    extra: { engine: provider, site: siteLabel(r.url), engineScore: r.score },
+    extra: {
+      engine: provider,
+      site: siteLabel(r.url),
+      engineScore: r.score,
+      ...(provider === "bocha"
+        ? {
+            datePublished: r.datePublished,
+            dateLastCrawled: r.dateLastCrawled,
+          }
+        : {}),
+    },
     isWebLead: true,
   };
 }

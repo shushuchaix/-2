@@ -36,6 +36,27 @@ function deadlineOf(j) {
   return j?.extra?.deadline || j?.extra?.expire || "";
 }
 
+function publicationDateOf(j) {
+  const source = j.sourceId || j.source;
+  if (["nowcoder", "shixiseng"].includes(source)) return "";
+  if (["searchapi", "web"].includes(source) && j.extra?.engine === "bocha") {
+    const raw = j.extra?.datePublished;
+    const match =
+      typeof raw === "string" &&
+      raw
+        .trim()
+        .match(/^(\d{4})[-/年.](\d{1,2})[-/月.](\d{1,2})(?:日)?(?:$|[T\s])/);
+    if (!match) return "";
+    const date = `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+    const timestamp = Date.parse(`${date}T00:00:00Z`);
+    return Number.isFinite(timestamp) &&
+      new Date(timestamp).toISOString().slice(0, 10) === date
+      ? date
+      : "";
+  }
+  return j.publishTime || "";
+}
+
 function row(j, i) {
   return [
     i + 1,
@@ -61,7 +82,7 @@ function row(j, i) {
     j.extra?.batch || "",
     deadlineOf(j),
     j.extra?.applyMethod || "",
-    j.publishTime || "",
+    publicationDateOf(j),
     j.url || "",
     j.titleObfuscated && !j.titleRepaired ? "是" : "",
   ];
@@ -121,8 +142,9 @@ export function toMarkdown(result) {
     if (j.extra?.deadline || j.extra?.expire)
       out.push(`- 截止时间：${deadlineOf(j)}`);
     if (j.extra?.applyMethod) out.push(`- 投递方式：${j.extra.applyMethod}`);
+    const publicationDate = publicationDateOf(j);
     out.push(
-      `- 来源：${j.sourceName || j.source}${j.publishTime ? "｜发布：" + j.publishTime : ""}`,
+      `- 来源：${j.sourceName || j.source}${publicationDate ? "｜发布：" + publicationDate : ""}`,
     );
     if (j.extra?.articleTitle) out.push(`- 公告标题：${j.extra.articleTitle}`);
     out.push(`- 链接：${j.url || "-"}`);

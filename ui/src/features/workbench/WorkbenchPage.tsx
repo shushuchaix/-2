@@ -394,6 +394,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
             setActivity(next);
             const id = next.collectionProgress.activeSliceRunId;
             if (id && ctx.scope) {
+              setOutcome("");
               setRun({ runId: id, status: "running" });
               void connect(id, ctx.scope);
             } else if (

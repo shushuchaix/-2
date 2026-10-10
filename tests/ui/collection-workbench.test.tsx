@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderApp, syntheticApi } from "../helpers/react-fixture";
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, waitFor } from "@testing-library/react";
 import { RecruitmentEvidence } from "../../ui/src/features/jobs/RecruitmentEvidence";
 const root = {
   runId: "activity-A",
@@ -29,6 +29,122 @@ const root = {
     usedBytes: 1024,
   },
 };
+async function pausedSliceFixture(
+  t: Parameters<typeof renderApp>[0],
+  {
+    resumeError = false,
+    terminalStatus,
+  }: { resumeError?: boolean; terminalStatus?: "completed" | "partial" } = {},
+) {
+  let activity = {
+    ...root,
+    collectionProgress: {
+      ...root.collectionProgress,
+      status: "collecting",
+      activeSliceRunId: "slice-before-pause" as string | null,
+    },
+  };
+  let finishOld: (events: unknown) => void = () => {};
+  const oldEvents = new Promise((resolve) => (finishOld = resolve));
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: async (p, o) => {
+      if (p === "/collections") return { collections: [activity] };
+      if (p === "/collections/activity-A") return activity;
+      if (p === "/runs")
+        return {
+          runs: [
+            {
+              runId: "slice-before-pause",
+              status: "running",
+              stage: "collecting",
+            },
+          ],
+        };
+      if (p === "/runs/slice-before-pause/events") return oldEvents;
+      if (p === "/collections/activity-A/pause") {
+        // The backend closes the old slice before returning the paused root.
+        finishOld([{ type: "done", payload: { status: "cancelled" } }]);
+        await new Promise((resolve) => setImmediate(resolve));
+        activity = {
+          ...activity,
+          collectionProgress: {
+            ...activity.collectionProgress,
+            status: "paused",
+            activeSliceRunId: null,
+          },
+        };
+        return {};
+      }
+      if (p === "/collections/activity-A/resume") {
+        if (resumeError) throw Error("合成续采失败");
+        activity = {
+          ...activity,
+          collectionProgress: {
+            ...activity.collectionProgress,
+            status: "collecting",
+            activeSliceRunId: "slice-after-resume",
+          },
+        };
+        return { runId: "slice-after-resume", status: "queued" };
+      }
+      if (p === "/runs/slice-after-resume/events")
+        return [
+          {
+            type: "stage",
+            payload: { status: "running", stage: "collecting" },
+          },
+          ...(terminalStatus
+            ? [{ type: "done", payload: { status: terminalStatus } }]
+            : []),
+        ];
+      return syntheticApi(p, o);
+    },
+  });
+  await f.screen.findByText("持续采集活动");
+  await waitFor(() =>
+    assert.ok(
+      f.apiCalls.some((c) => c.path === "/runs/slice-before-pause/events"),
+    ),
+  );
+  await f.user.click(f.screen.getByRole("button", { name: "暂停采集" }));
+  await f.screen.findAllByText("活动已暂停");
+  await f.screen.findByText("任务已取消");
+  return f;
+}
+test("resuming a paused activity clears the previous slice cancellation outcome", async (t) => {
+  const f = await pausedSliceFixture(t);
+  await f.user.click(f.screen.getByRole("button", { name: "继续采集" }));
+  await f.screen.findAllByText("已继续采集，沿用活动累计额度");
+  await f.screen.findByText(/任务状态：正在更新/);
+  await f.screen.findByText(/阶段：采集岗位/);
+  assert.equal(
+    f.screen.queryByText("任务已取消") === null,
+    true,
+    "the active slice must not show the previous cancellation outcome",
+  );
+});
+test("a failed resume preserves the previous slice cancellation outcome", async (t) => {
+  const f = await pausedSliceFixture(t, { resumeError: true });
+  await f.user.click(f.screen.getByRole("button", { name: "继续采集" }));
+  await f.screen.findAllByText(/合成续采失败/);
+  assert.ok(f.screen.getByText("任务已取消"));
+  assert.equal(
+    f.apiCalls.some((c) => c.path === "/runs/slice-after-resume/events"),
+    false,
+  );
+});
+for (const status of ["completed", "partial"] as const)
+  test(`a resumed slice still shows its ${status} terminal outcome`, async (t) => {
+    const f = await pausedSliceFixture(t, { terminalStatus: status });
+    await f.user.click(f.screen.getByRole("button", { name: "继续采集" }));
+    await f.screen.findByText(
+      status === "completed"
+        ? "岗位更新完成"
+        : "岗位更新部分完成，请查看覆盖与回退提示",
+    );
+    assert.equal(f.screen.queryByText("任务已取消"), null);
+  });
 test("quality reports measured numerator/denominator and keeps unknown requests separate", async (t) => {
   const measured = {
     ...root,

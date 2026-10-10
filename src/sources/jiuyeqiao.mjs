@@ -1,4 +1,5 @@
 import { sourceFetch as fetch } from "./request-context.mjs";
+import { parseHTML } from "linkedom";
 // 就业桥（全域智慧就业资讯服务平台）岗位源
 //
 // 为什么这个源价值最高：它是一套**按学校开子域**的商用平台，
@@ -149,11 +150,15 @@ export function parseDetail(html) {
   );
 
   // 详情主体：class="detail" 容器（页面里唯一）
-  const detailBlock = (html.match(
-    /<div[^>]*class="detail\s*"[^>]*>([\s\S]*?)$/i,
-  ) || [, ""])[1];
-  let body = detailBlock ? htmlToText(decodeEntities(detailBlock)) : "";
-  if (!body || body.length < 100) {
+  const { document } = parseHTML(html),
+    detailBlock = document.querySelector("div.detail");
+  for (const node of detailBlock?.querySelectorAll(
+    "script,style,noscript,nav,footer,header,aside",
+  ) || [])
+    node.remove();
+  let body = detailBlock ? htmlToText(detailBlock.innerHTML) : "";
+  const bodyStatus = body ? "complete" : "incomplete";
+  if (!body) {
     // 兜底：整页文本里从「职位描述/岗位职责」往后截
     const all = htmlToText(decodeEntities(html));
     const i = all.search(/职位描述|岗位职责|任职要求|职位详情|工作内容/);
@@ -200,7 +205,10 @@ export function parseDetail(html) {
     city,
     education,
     publishTime,
-    description: truncate(body, 3000),
+    description: body,
+    bodyStatus,
+    detailStatus: bodyStatus,
+    retryEligible: false,
     summary: truncate(metaDesc, 240),
   };
 }
@@ -215,7 +223,9 @@ function toJob(item, detail) {
     id: `${meta.id}:${siteId || `${normKey(title)}|${normKey(company)}|${normKey(item.city)}`}`,
     sourceRecordId: siteId || item.href,
     urlKind: "job_detail",
-    detailStatus: detail.description ? "complete" : "incomplete",
+    detailStatus: detail.detailStatus || "incomplete",
+    bodyStatus: detail.bodyStatus || "incomplete",
+    retryEligible: false,
     source: meta.id,
     sourceName: meta.name,
     sources: [meta.id],

@@ -18,6 +18,7 @@ const modules = {
   chenyun,
   jiuyeqiao,
 };
+const explicitBodySources = new Set(["zhaopin", "shixiseng", "jiuyeqiao"]);
 export function sourceIssue(error, sourceId, siteId) {
   const message = String(error.message || error).slice(0, 300);
   const code = /captcha|验证码|验证/.test(message)
@@ -148,7 +149,10 @@ export function createLegacyProvider(id, { collector } = {}) {
                   ? "job_detail"
                   : "unknown",
               kind: id === "wechat" ? "recruitment_notice" : r.kind,
-              parserVersion: "legacy-adapter-2",
+              parserVersion:
+                id === "university" || explicitBodySources.has(id)
+                  ? "legacy-adapter-3"
+                  : "legacy-adapter-2",
             }),
           );
           records.push(...batch);
@@ -220,14 +224,63 @@ export function createLegacyProvider(id, { collector } = {}) {
         id + "/" + record.siteId + "/" + (record.sourceRecordId || record.url),
       );
       ctx.signal?.throwIfAborted();
-      return withSourceContext(ctx, async () =>
-        normalizeRecord({
-          ...record,
-          ...(await module.fetchDetail(record)),
+      const freshRecord = { ...record };
+      for (const field of [
+        "bodyStatus",
+        "retryEligible",
+        "detailStatus",
+        "retryAt",
+        "nextDueAt",
+      ])
+        delete freshRecord[field];
+      return withSourceContext(ctx, async () => {
+        const detail = await module.fetchDetail(freshRecord);
+        const result = {
+          ...freshRecord,
+          ...detail,
           sourceId: id,
           siteId: record.siteId,
-        }),
-      );
+          ...(explicitBodySources.has(id)
+            ? { parserVersion: "legacy-adapter-3" }
+            : {}),
+        };
+        ctx.signal?.throwIfAborted();
+        if (
+          typeof result.description !== "string" ||
+          !result.description.trim()
+        )
+          throw Object.assign(
+            Error("Detail response has insufficient body content"),
+            {
+              code: "detail_insufficient",
+              retryable: false,
+            },
+          );
+        if (
+          explicitBodySources.has(id) &&
+          (detail?.bodyStatus !== "complete" ||
+            detail?.detailStatus !== "complete")
+        )
+          return normalizeRecord({
+            ...result,
+            bodyStatus: detail?.bodyStatus || "incomplete",
+            detailStatus: detail?.detailStatus || "incomplete",
+            retryEligible: false,
+          });
+        if (
+          (!result.detailStatus || result.detailStatus === "complete") &&
+          (!result.bodyStatus || result.bodyStatus === "complete") &&
+          !result.bodyIncomplete &&
+          !result.rowAmbiguous
+        )
+          return normalizeRecord({
+            ...result,
+            detailStatus: "complete",
+            bodyStatus: "complete",
+            retryEligible: false,
+          });
+        return normalizeRecord(result);
+      });
     },
     async probe(ctx) {
       const result = await provider.collect({

@@ -20,6 +20,11 @@ import {
 import { VersionActions } from "../../components/VersionActions";
 import { FormFeedback } from "../../components/FormFeedback";
 import { ImportProfileDialog } from "./ImportProfileDialog";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
 
 export function ProfilesPage({ api }: { api: ApiClient }) {
   const versions = useVersionContext();
@@ -55,10 +60,18 @@ export function ProfilesPage({ api }: { api: ApiClient }) {
             <Card key={p.packageId}>
               <CardHeader>
                 <CardTitle>{p.versionName}</CardTitle>
-                <CardDescription>简历版本 · {p.revisionId}</CardDescription>
+                <CardDescription>
+                  {p.parserVersion ? "已提取并保存" : "已保存资料"} ·{" "}
+                  {updatedLabel(p)}
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <Badge variant="secondary">独立简历</Badge>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary">独立简历</Badge>
+                  <Badge variant={p.enabled ? "secondary" : "outline"}>
+                    {p.enabled ? "已启用" : "已停用"}
+                  </Badge>
+                </div>
                 <p>
                   {String(
                     p.profile.education || p.profile.degree || "学历未知",
@@ -68,6 +81,21 @@ export function ProfilesPage({ api }: { api: ApiClient }) {
                 <p className="text-muted-foreground">
                   删除资料库简历时，已保存目标中的独立副本保持可用。
                 </p>
+                <Collapsible>
+                  <CollapsibleTrigger render={<Button variant="outline" />}>
+                    技术信息
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 pt-3">
+                      <dt>简历版本编号</dt>
+                      <dd className="break-all font-mono">{p.revisionId}</dd>
+                      <dt>资料包编号</dt>
+                      <dd className="break-all font-mono">{p.packageId}</dd>
+                      <dt>提取器版本</dt>
+                      <dd>{p.parserVersion || "未提供"}</dd>
+                    </dl>
+                  </CollapsibleContent>
+                </Collapsible>
               </CardContent>
               <CardFooter className="flex flex-wrap gap-2">
                 <Button
@@ -103,6 +131,7 @@ export function ProfilesPage({ api }: { api: ApiClient }) {
       )}
       {importing && (
         <ImportProfileDialog
+          key={source?.revisionId || "new-profile"}
           api={api}
           source={source}
           onClose={() => setImporting(false)}
@@ -115,4 +144,15 @@ export function ProfilesPage({ api }: { api: ApiClient }) {
       )}
     </section>
   );
+}
+function updatedLabel(profile: ProfileVersion) {
+  const metadata = profile as ProfileVersion & {
+    updatedAt?: string;
+    createdAt?: string;
+  };
+  const value = metadata.updatedAt || metadata.createdAt;
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? "更新于 " + date.toLocaleString("zh-CN")
+    : "更新时间未提供";
 }

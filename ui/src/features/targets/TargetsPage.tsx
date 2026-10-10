@@ -58,7 +58,11 @@ export function TargetsPage({ api }: { api: ApiClient }) {
               <CardHeader>
                 <CardTitle>{target.versionName}</CardTitle>
                 <CardDescription>
-                  目标版本 · {target.revisionId}
+                  {target.cityMode === "selected"
+                    ? target.cities?.join("、") || "地区待确认"
+                    : target.cityMode === "from_profile"
+                      ? "使用自有简历期望城市"
+                      : "不限城市"}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
@@ -73,7 +77,10 @@ export function TargetsPage({ api }: { api: ApiClient }) {
                 <p>{target.roles?.join("、") || "求职方向待确认"}</p>
                 <p className="text-muted-foreground">
                   {target.profileSnapshot
-                    ? "已保存独立简历副本"
+                    ? "自有简历：" +
+                      String(
+                        target.profileSnapshot.profile.name || "已保存独立副本",
+                      )
                     : "简历副本待补充"}{" "}
                   · 不继承其他目标的投递事实
                 </p>

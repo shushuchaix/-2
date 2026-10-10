@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { act, waitFor } from "@testing-library/react";
 import { renderApp } from "../helpers/react-fixture";
 
 const profile = {
@@ -49,6 +50,7 @@ function apiFixture(
 ) {
   return async (path: string, options: any = {}) => {
     if (path === "/profiles") return { profiles: [profile] };
+    if (path === "/collections") return { collections: [] };
     if (path === "/targets") {
       if (options.method !== "POST") return { targets };
       const saved = await save(options.body);
@@ -97,6 +99,63 @@ test("target wizard saves preferences and budget and selects the returned exact 
   assert.equal(call.options.body.versionName, "消防机场合成目标");
   assert.ok(call.options.body.submissionId);
   assert.match(f.screen.getByRole("banner").textContent!, /消防机场合成目标/);
+});
+
+test("target cards use direction and city summaries and reserve identifiers for technical details", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/targets",
+    apiHandler: apiFixture(undefined, [{ ...existing, cityMode: "selected", cities: ["合成城市"] }]),
+  });
+  await f.screen.findByText(existing.versionName);
+  assert.equal(f.screen.queryAllByText("目标版本 · t-existing@1").length, 0);
+  assert.ok(f.screen.getByText("合成城市"));
+  await f.user.click(f.screen.getByRole("button", { name: "查看 " + existing.versionName }));
+  assert.equal(f.screen.queryAllByText(existing.revisionId).length, 0);
+  await f.user.click(f.screen.getByRole("button", { name: "技术信息" }));
+  assert.ok(f.screen.getByText(existing.revisionId));
+  assert.ok(f.screen.getByText(existing.profileSnapshot.text));
+});
+
+test("a late target name error cannot overwrite the edited draft or produce a duplicate submission", async (t) => {
+  let rejectSave!: (error: Error) => void;
+  const f = await renderApp(t, {
+    route: "#/targets",
+    apiHandler: apiFixture(() => new Promise((_resolve, reject) => { rejectSave = reject; })),
+  });
+  await openSummary(f);
+  const name = f.screen.getByLabelText("版本名称");
+  await f.user.type(name, "旧合成目标");
+  await f.user.click(f.screen.getByRole("button", { name: "保存目标" }));
+  await f.user.clear(name);
+  await f.user.type(name, "新合成目标");
+  await act(async () => rejectSave(Object.assign(new Error("旧目标名称占用。"), {
+    fieldErrors: { versionName: "旧名称已经占用。" },
+  })));
+  await waitFor(() => assert.equal(name.getAttribute("aria-invalid"), "false"));
+  assert.equal(f.screen.queryAllByText("旧名称已经占用。").length, 0);
+  assert.equal(f.screen.queryAllByRole("alert").length, 0);
+  assert.equal(f.apiCalls.filter((c) => c.path === "/targets" && c.options.method === "POST").length, 1);
+});
+
+test("a server target preference error summary returns to the preference step and focuses its field", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/targets",
+    apiHandler: apiFixture(() => {
+      throw Object.assign(new Error("求职方向需要校正。"), {
+        fieldErrors: { roles: "请核对求职方向后保存。" },
+      });
+    }),
+  });
+  await openSummary(f);
+  await f.user.type(f.screen.getByLabelText("版本名称"), "合成方向校正目标");
+  await f.user.click(f.screen.getByRole("button", { name: "保存目标" }));
+  await f.user.click(await f.screen.findByRole("button", { name: "请核对求职方向后保存。" }));
+  const roles = await f.screen.findByLabelText("求职方向");
+  await waitFor(() => assert.ok(document.activeElement === roles));
+  await f.user.clear(roles);
+  await f.user.type(roles, "校正方向");
+  assert.equal(roles.getAttribute("aria-invalid"), "false");
+  assert.equal(f.screen.queryAllByRole("alert").length, 0);
 });
 
 test("duplicate target name keeps creation draft and a retry cannot create a second submission", async (t) => {

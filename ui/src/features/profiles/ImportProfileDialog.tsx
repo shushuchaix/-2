@@ -4,6 +4,7 @@ import { validateInput } from "../../../../public/js/validation-rules.js";
 import { useOperation } from "../../lib/hooks";
 import { TextField } from "../../components/TextField";
 import { FormFeedback } from "../../components/FormFeedback";
+import { OperationFeedback } from "../../components/OperationFeedback";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -13,6 +14,8 @@ import {
   FieldLabel,
   FieldDescription,
   FieldError,
+  FieldSet,
+  FieldLegend,
 } from "../../components/ui/field";
 import {
   Select,
@@ -90,14 +93,68 @@ export function ImportProfileDialog({
   );
   const [versionName, setVersionName] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [editedFields, setEditedFields] = useState<string[]>([]);
   const operation = useOperation();
   const controller = useRef(new AbortController());
   const submission = useRef({ id: crypto.randomUUID(), hash: "" });
+  const submittedDraft = useRef<Record<string, unknown>>({});
+  const pendingFocus = useRef<string | null>(null);
   useEffect(() => () => controller.current.abort(), []);
-  const serverErrors = (operation.error as ApiError | null)?.fieldErrors || {};
+  useEffect(() => {
+    if (pendingFocus.current) {
+      document.getElementById(pendingFocus.current)?.focus();
+      pendingFocus.current = null;
+    }
+  }, [step]);
+  const draft = {
+    file,
+    resumeText,
+    versionName,
+    text: facts.text,
+    "profile.name": facts.name,
+    "profile.education": facts.education,
+    "profile.major": facts.major,
+    "profile.graduationYear": facts.year,
+    "profile.cities": facts.cities,
+    "profile.certificates": facts.certificates,
+    "profile.skills": facts.skills,
+    "profile.projects": facts.projects,
+  } as Record<string, unknown>;
+  const apiError = operation.error as ApiError | null;
+  const serverErrors = Object.fromEntries(
+    Object.entries(apiError?.fieldErrors || {}).filter(
+      ([name]) =>
+        !editedFields.includes(name) &&
+        submittedDraft.current[name] === draft[name],
+    ),
+  );
+  const visibleError =
+    apiError?.fieldErrors && !Object.keys(serverErrors).length
+      ? null
+      : operation.error;
   const allErrors = { ...errors, ...serverErrors };
-  const update = (key: string, value: string) =>
+  function clearField(name: string) {
+    setErrors((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+    setEditedFields((current) =>
+      current.includes(name) ? current : [...current, name],
+    );
+  }
+  const update = (key: string, value: string) => {
+    clearField(
+      key === "text"
+        ? key
+        : "profile." + (key === "year" ? "graduationYear" : key),
+    );
     setFacts((f) => ({ ...f, [key]: value }));
+  };
+  function bindSubmission() {
+    submittedDraft.current = { ...draft };
+    setEditedFields([]);
+  }
   function input() {
     const p = preview?.profile || {};
     return {
@@ -130,6 +187,7 @@ export function ImportProfileDialog({
     };
   }
   async function extract() {
+    if (operation.busy) return;
     operation.clear();
     const validation = validateInput("preview", { file, resumeText }) as Record<
       string,
@@ -137,6 +195,7 @@ export function ImportProfileDialog({
     >;
     setErrors(validation);
     if (Object.keys(validation).length) return;
+    bindSubmission();
     await operation.run(async () => {
       const body = file
         ? { filename: file.name, base64: await readFile(file) }
@@ -163,6 +222,7 @@ export function ImportProfileDialog({
     if (!Object.keys(validation).length) setStep(2);
   }
   async function save() {
+    if (operation.busy) return;
     operation.clear();
     const body = input();
     const validation = validateInput("profile", body) as Record<string, string>;
@@ -175,6 +235,7 @@ export function ImportProfileDialog({
     if (submission.current.hash && submission.current.hash !== hash)
       submission.current.id = crypto.randomUUID();
     submission.current.hash = hash;
+    bindSubmission();
     await operation.run(async () => {
       const saved = await api.request<ProfileVersion>(
         source
@@ -234,20 +295,41 @@ export function ImportProfileDialog({
           </DialogDescription>
         </DialogHeader>
         <FormFeedback
+          includeServerErrors={false}
           errors={allErrors}
-          error={operation.error}
-          onFocusField={(name) => document.getElementById(name)?.focus()}
+          error={visibleError}
+          onFocusField={(name) => {
+            const fieldStep =
+              name === "versionName"
+                ? 2
+                : name === "file" || name === "resumeText"
+                  ? 0
+                  : 1;
+            if (fieldStep === step) document.getElementById(name)?.focus();
+            else {
+              pendingFocus.current = name;
+              setStep(fieldStep);
+            }
+          }}
+        />
+        <OperationFeedback
+          busy={operation.busy}
+          busyLabel={step === 0 ? "正在提取简历…" : "正在保存简历…"}
         />
         <FieldGroup>
           {step === 0 && (
-            <>
+            <FieldSet>
+              <FieldLegend>导入资料</FieldLegend>
               <Field data-invalid={Boolean(allErrors.file)}>
                 <FieldLabel htmlFor="file">简历文件</FieldLabel>
                 <Input
                   id="file"
                   type="file"
                   accept=".txt,.md,.docx,.pdf"
-                  onChange={(e) => setFile(e.target.files?.[0])}
+                  onChange={(e) => {
+                    clearField("file");
+                    setFile(e.target.files?.[0]);
+                  }}
                   aria-invalid={Boolean(allErrors.file)}
                   aria-describedby={allErrors.file ? "file-error" : "file-help"}
                 />
@@ -259,6 +341,7 @@ export function ImportProfileDialog({
                   <Button
                     variant="outline"
                     onClick={() => {
+                      clearField("file");
                       setFile(undefined);
                       const node = document.getElementById(
                         "file",
@@ -279,10 +362,13 @@ export function ImportProfileDialog({
                 "resumeText",
                 "粘贴简历正文",
                 resumeText,
-                setResumeText,
+                (value) => {
+                  clearField("resumeText");
+                  setResumeText(value);
+                },
                 "没有选择文件时必填 30–60,000 字符。",
               )}
-            </>
+            </FieldSet>
           )}
           {step === 1 && (
             <>
@@ -294,106 +380,120 @@ export function ImportProfileDialog({
                   </AlertDescription>
                 </Alert>
               ) : null}
-              {textArea("text", "校正后的简历正文", facts.text, (v) =>
-                update("text", v),
-              )}
-              <TextField
-                name="profile.name"
-                label="姓名 / 简历名称"
-                value={facts.name}
-                onChange={(v) => update("name", v)}
-                error={allErrors["profile.name"]}
-              />
-              <Field data-invalid={Boolean(allErrors["profile.education"])}>
-                <FieldLabel htmlFor="profile.education">学历</FieldLabel>
-                <Select
-                  value={facts.education}
-                  onValueChange={(v) => update("education", String(v))}
-                >
-                  <SelectTrigger
-                    id="profile.education"
-                    aria-invalid={Boolean(allErrors["profile.education"])}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      {[
-                        "未知",
-                        "高中",
-                        "中专",
-                        "大专",
-                        "本科",
-                        "硕士",
-                        "博士",
-                      ].map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                {allErrors["profile.education"] && (
-                  <FieldError role="note">
-                    {allErrors["profile.education"]}
-                  </FieldError>
-                )}
-              </Field>
-              <TextField
-                name="profile.major"
-                label="专业"
-                value={facts.major}
-                onChange={(v) => update("major", v)}
-                error={allErrors["profile.major"]}
-              />
-              <TextField
-                name="profile.graduationYear"
-                label="毕业年份"
-                value={facts.year}
-                onChange={(v) => update("year", v)}
-                error={allErrors["profile.graduationYear"]}
-                description="未知可留空；1900–2100 之间的四位年份。"
-              />
-              <TextField
-                name="profile.cities"
-                label="期望城市"
-                value={facts.cities}
-                onChange={(v) => update("cities", v)}
-                error={allErrors["profile.cities"]}
-                description="逗号或顿号分隔。"
-              />
-              <TextField
-                name="profile.certificates"
-                label="可确认的证书"
-                value={facts.certificates}
-                onChange={(v) => update("certificates", v)}
-                error={allErrors["profile.certificates"]}
-                description="留空表示未知，不推断未填写的证书。"
-              />
-              {textArea(
-                "profile.skills",
-                "技能与熟练度",
-                facts.skills,
-                (v) => update("skills", v),
-                "例如：合成技能：熟悉，逗号或顿号分隔。",
-              )}
-              {textArea(
-                "profile.projects",
-                "项目摘要",
-                facts.projects,
-                (v) => update("projects", v),
-                "每行一项。",
-              )}
+              <FieldSet>
+                <FieldLegend>校正基本资料</FieldLegend>
+                <FieldGroup>
+                  {textArea("text", "校正后的简历正文", facts.text, (v) =>
+                    update("text", v),
+                  )}
+                  <TextField
+                    name="profile.name"
+                    label="姓名 / 简历名称"
+                    value={facts.name}
+                    onChange={(v) => update("name", v)}
+                    error={allErrors["profile.name"]}
+                  />
+                  <Field data-invalid={Boolean(allErrors["profile.education"])}>
+                    <FieldLabel htmlFor="profile.education">学历</FieldLabel>
+                    <Select
+                      value={facts.education}
+                      onValueChange={(v) => update("education", String(v))}
+                    >
+                      <SelectTrigger
+                        id="profile.education"
+                        aria-invalid={Boolean(allErrors["profile.education"])}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          {[
+                            "未知",
+                            "高中",
+                            "中专",
+                            "大专",
+                            "本科",
+                            "硕士",
+                            "博士",
+                          ].map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {v}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    {allErrors["profile.education"] && (
+                      <FieldError role="note">
+                        {allErrors["profile.education"]}
+                      </FieldError>
+                    )}
+                  </Field>
+                  <TextField
+                    name="profile.major"
+                    label="专业"
+                    value={facts.major}
+                    onChange={(v) => update("major", v)}
+                    error={allErrors["profile.major"]}
+                  />
+                  <TextField
+                    name="profile.graduationYear"
+                    label="毕业年份"
+                    value={facts.year}
+                    onChange={(v) => update("year", v)}
+                    error={allErrors["profile.graduationYear"]}
+                    description="未知可留空；1900–2100 之间的四位年份。"
+                  />
+                  <TextField
+                    name="profile.cities"
+                    label="期望城市"
+                    value={facts.cities}
+                    onChange={(v) => update("cities", v)}
+                    error={allErrors["profile.cities"]}
+                    description="逗号或顿号分隔。"
+                  />
+                  <TextField
+                    name="profile.certificates"
+                    label="可确认的证书"
+                    value={facts.certificates}
+                    onChange={(v) => update("certificates", v)}
+                    error={allErrors["profile.certificates"]}
+                    description="留空表示未知，不推断未填写的证书。"
+                  />
+                </FieldGroup>
+              </FieldSet>
+              <FieldSet>
+                <FieldLegend>技能与经历</FieldLegend>
+                <FieldGroup>
+                  {textArea(
+                    "profile.skills",
+                    "技能与熟练度",
+                    facts.skills,
+                    (v) => update("skills", v),
+                    "例如：合成技能：熟悉，逗号或顿号分隔。",
+                  )}
+                  {textArea(
+                    "profile.projects",
+                    "项目摘要",
+                    facts.projects,
+                    (v) => update("projects", v),
+                    "每行一项。",
+                  )}
+                </FieldGroup>
+              </FieldSet>
             </>
           )}
           {step === 2 && (
-            <>
+            <FieldSet>
+              <FieldLegend>命名并保存</FieldLegend>
               <TextField
                 name="versionName"
                 label="版本名称"
                 value={versionName}
-                onChange={setVersionName}
+                onChange={(value) => {
+                  clearField("versionName");
+                  setVersionName(value);
+                }}
                 error={allErrors.versionName}
                 description="可空则自动命名；自定义名称最多 60 字符。同种版本含回收站不可重名。"
               />
@@ -401,7 +501,7 @@ export function ImportProfileDialog({
                 确认：{facts.education} · {facts.major || "专业未知"}
                 。个人校正将优先保存。
               </p>
-            </>
+            </FieldSet>
           )}
         </FieldGroup>
         <DialogFooter>
@@ -428,7 +528,9 @@ export function ImportProfileDialog({
             }
           >
             {operation.busy
-              ? "处理中…"
+              ? step === 0
+                ? "正在提取简历…"
+                : "正在保存简历…"
               : step === 0
                 ? "提取并预览"
                 : step === 1

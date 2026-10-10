@@ -7,17 +7,28 @@ export function FormFeedback({
   errors,
   error,
   onFocusField,
+  includeServerErrors = true,
 }: {
   errors?: Record<string, string>;
   error?: unknown;
   onFocusField?: (name: string) => void;
+  includeServerErrors?: boolean;
 }) {
   const e = error as ApiError | undefined;
-  const fields = { ...e?.fieldErrors, ...errors };
+  const fields = { ...(includeServerErrors ? e?.fieldErrors : {}), ...errors };
   const summary = useRef<HTMLDivElement>(null);
+  const previous = useRef<{
+    error: unknown;
+    fields: Record<string, string>;
+  } | null>(null);
   const errorKey = JSON.stringify(fields);
   useEffect(() => {
-    if (error || Object.keys(fields).length) summary.current?.focus();
+    const changed = Object.entries(fields).some(
+      ([name, message]) => previous.current?.fields[name] !== message,
+    );
+    if ((error && error !== previous.current?.error) || changed)
+      summary.current?.focus();
+    previous.current = { error, fields };
   }, [error, errorKey]);
   if (!error && !Object.keys(fields ?? {}).length) return null;
   return (
@@ -26,7 +37,7 @@ export function FormFeedback({
         {e?.message ?? "填写检查未通过，请修改标出的项目。"}
       </AlertTitle>
       <AlertDescription>
-        {fields && (
+        {Object.keys(fields).length > 0 && (
           <ul>
             {Object.entries(fields).map(([name, message]) => (
               <li key={name}>

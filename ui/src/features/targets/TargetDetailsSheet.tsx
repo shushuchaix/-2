@@ -10,6 +10,11 @@ import {
 import { Button } from "../../components/ui/button";
 import { Alert, AlertTitle, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
 
 export function TargetDetailsSheet({
   target,
@@ -37,7 +42,7 @@ export function TargetDetailsSheet({
           <Badge variant={target.enabled ? "secondary" : "outline"}>
             {target.enabled ? "已启用" : "已停用"}
           </Badge>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
             <dt>求职方向</dt>
             <dd>{target.roles?.join("、") || "未知"}</dd>
             <dt>城市</dt>
@@ -48,12 +53,11 @@ export function TargetDetailsSheet({
                   ? "使用自有简历期望城市"
                   : "不限"}
             </dd>
-            <dt>版本</dt>
-            <dd>{target.revisionId}</dd>
           </dl>
           <h2>自有简历副本</h2>
           {profile ? (
             <>
+              <p>{String(profile.name || "已保存独立简历副本")}</p>
               <p>
                 {String(profile.education || profile.degree || "学历未知")} ·{" "}
                 {String(profile.major || "专业未知")}
@@ -70,6 +74,23 @@ export function TargetDetailsSheet({
               </AlertDescription>
             </Alert>
           )}
+          <Collapsible>
+            <CollapsibleTrigger render={<Button variant="outline" />}>
+              技术信息
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 pt-3">
+                <dt>目标版本编号</dt>
+                <dd className="break-all font-mono">{target.revisionId}</dd>
+                <dt>资料包编号</dt>
+                <dd className="break-all font-mono">{target.packageId}</dd>
+                <dt>副本来源版本</dt>
+                <dd className="break-all font-mono">
+                  {target.profileRevisionId || "未提供"}
+                </dd>
+              </dl>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
         <SheetFooter>
           <Button variant="outline" onClick={onClose}>

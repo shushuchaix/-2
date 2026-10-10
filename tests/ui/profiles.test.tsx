@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import userEvent from "@testing-library/user-event";
+import { act, waitFor } from "@testing-library/react";
 import { renderApp } from "../helpers/react-fixture";
 
 const text =
@@ -67,6 +68,108 @@ test("corrected profile facts and original parser metadata are saved as a named 
   assert.equal(saved.text, text);
   assert.equal(saved.versionName, "合成简历版本");
   assert.ok(saved.submissionId);
+});
+
+test("profile cards show readable state and reveal revision identifiers only in technical information", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/profiles",
+    apiHandler: async (path) => {
+      if (path === "/profiles")
+        return {
+          profiles: [
+            {
+              profileId: "p-readable",
+              revisionId: "p-readable@3",
+              packageId: "profile-readable",
+              versionName: "合成校正简历",
+              enabled: false,
+              text,
+              profile: preview.profile,
+              parserVersion: "preview-2",
+              createdAt: "2026-10-09T08:00:00.000Z",
+            },
+          ],
+        };
+      if (path === "/targets") return { targets: [] };
+      return undefined;
+    },
+  });
+  await f.screen.findByText("合成校正简历");
+  assert.equal(f.screen.queryAllByText(/简历版本 · p-readable@3/).length, 0);
+  assert.equal(f.screen.queryAllByText("p-readable@3").length, 0);
+  assert.ok(f.screen.getByText("已停用"));
+  await f.user.click(f.screen.getByRole("button", { name: "技术信息" }));
+  assert.ok(f.screen.getByText("p-readable@3"));
+});
+
+test("a late profile name error cannot invalidate an edited name and saving still uses the submitted version", async (t) => {
+  let rejectSave!: (error: Error) => void;
+  let attempts = 0;
+  const f = await renderApp(t, {
+    route: "#/profiles",
+    apiHandler: apiFixture((body) => {
+      if (++attempts === 1)
+        return new Promise((_resolve, reject) => {
+          rejectSave = reject;
+        });
+      return {
+        ...body,
+        profileId: "p-late",
+        revisionId: "p-late@1",
+        packageId: "profile-late",
+        enabled: true,
+      };
+    }),
+  });
+  await openCorrection(f);
+  await f.user.click(f.screen.getByRole("button", { name: "下一步" }));
+  const name = f.screen.getByLabelText("版本名称");
+  await f.user.type(name, "旧合成名称");
+  await f.user.click(f.screen.getByRole("button", { name: "保存简历" }));
+  await f.user.clear(name);
+  await f.user.type(name, "新合成名称");
+  await act(async () =>
+    rejectSave(
+      Object.assign(new Error("旧名称已存在。"), {
+        fieldErrors: { versionName: "旧名称占用，请修改。" },
+      }),
+    ),
+  );
+  await waitFor(() => assert.equal(name.getAttribute("aria-invalid"), "false"));
+  assert.equal(f.screen.queryAllByText("旧名称占用，请修改。").length, 0);
+  assert.equal(f.screen.queryAllByRole("alert").length, 0);
+  assert.equal(
+    f.apiCalls.filter(
+      (c) => c.path === "/profiles" && c.options.method === "POST",
+    ).length,
+    1,
+  );
+  await f.user.click(f.screen.getByRole("button", { name: "保存简历" }));
+  await f.screen.findByText("简历已保存：新合成名称");
+});
+
+test("a server fact error summary returns to the correction step and focuses the affected field", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/profiles",
+    apiHandler: apiFixture(() => {
+      throw Object.assign(new Error("专业需要校正。"), {
+        fieldErrors: { "profile.major": "请核对专业后保存。" },
+      });
+    }),
+  });
+  await openCorrection(f);
+  await f.user.click(f.screen.getByRole("button", { name: "下一步" }));
+  await f.user.type(f.screen.getByLabelText("版本名称"), "合成校正版本");
+  await f.user.click(f.screen.getByRole("button", { name: "保存简历" }));
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "请核对专业后保存。" }),
+  );
+  const major = await f.screen.findByLabelText("专业");
+  await waitFor(() => assert.ok(document.activeElement === major));
+  await f.user.clear(major);
+  await f.user.type(major, "校正专业");
+  assert.equal(major.getAttribute("aria-invalid"), "false");
+  assert.equal(f.screen.queryAllByRole("alert").length, 0);
 });
 
 test("duplicate profile name preserves draft and unchanged retry uses the same submission identity", async (t) => {

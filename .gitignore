@@ -16,7 +16,7 @@ dist
 .tmp
 # 测试运行时用的隔离数据目录（tools/run-all-tests.mjs 会设 RJR_DATA_DIR 到这里）
 .tmp-test-data
-build/icon.ico
+# Windows application icon is a source asset required by fresh checkouts.
 build/icon.png
 
 # 编辑器与系统
@@ -28,3 +28,13 @@ Thumbs.db
 # 日志
 *.log
 npm-debug.log*
+
+# Implementation ledger and task output
+.superpowers/
+
+# Generated frontend output and local management state.
+/public/app/
+/control/
+/cache/
+/logs/
+credentials.v2.json

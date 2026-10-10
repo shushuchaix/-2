@@ -120,7 +120,7 @@ export function extractZip(zipPath, destDir, onProgress = null) {
   for (const entry of entries) {
     // 防目录穿越
     const target = path.resolve(destDir, entry.name);
-    if (!target.startsWith(path.resolve(destDir))) {
+    if (!target.startsWith(path.resolve(destDir)+path.sep)) {
       throw new Error(`ZIP 条目路径越界：${entry.name}`);
     }
     if (entry.isDir) {

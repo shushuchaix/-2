@@ -1,0 +1,1546 @@
+{
+  "checkedAt": "2026-10-05T05:05:44.752Z",
+  "summary": {
+    "newProviders": 6,
+    "categories": 4,
+    "readySites": 30,
+    "candidateSites": 27
+  },
+  "results": [
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-cczu",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:21.361Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000752137",
+          "title": "公考培训讲师",
+          "url": "https://cczu.91job.org.cn/sub-station/jobDetails?xxdm=10292&zpgwid=1000000000752137",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000752225",
+          "title": "楼宇服务工程师",
+          "url": "https://cczu.91job.org.cn/sub-station/jobDetails?xxdm=10292&zpgwid=1000000000752225",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-cpu",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:12.833Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000755171",
+          "title": "生产工艺员（储备）",
+          "url": "https://cpu.91job.org.cn/sub-station/jobDetails?xxdm=10316&zpgwid=1000000000755171",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000755172",
+          "title": "食品研发专员",
+          "url": "https://cpu.91job.org.cn/sub-station/jobDetails?xxdm=10316&zpgwid=1000000000755172",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-hhu",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:01.320Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000756221",
+          "title": "行政专员岗位",
+          "url": "https://hhu.91job.org.cn/sub-station/jobDetails?xxdm=10294&zpgwid=1000000000756221",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000756220",
+          "title": "土木工程师岗位",
+          "url": "https://hhu.91job.org.cn/sub-station/jobDetails?xxdm=10294&zpgwid=1000000000756220",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-jiangnan",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:22.506Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000746434",
+          "title": "产品工程师",
+          "url": "https://jiangnan.91job.org.cn/sub-station/jobDetails?xxdm=10295&zpgwid=1000000000746434",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000746435",
+          "title": "FAE现场应用工程师",
+          "url": "https://jiangnan.91job.org.cn/sub-station/jobDetails?xxdm=10295&zpgwid=1000000000746435",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-nau",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:17.782Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000756156",
+          "title": "正合基业2027届校园大使招募",
+          "url": "https://nau.91job.org.cn/sub-station/jobDetails?xxdm=11287&zpgwid=1000000000756156",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000756127",
+          "title": "会计",
+          "url": "https://nau.91job.org.cn/sub-station/jobDetails?xxdm=11287&zpgwid=1000000000756127",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njau",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:04.747Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000756184",
+          "title": "管培生",
+          "url": "https://njau.91job.org.cn/sub-station/jobDetails?xxdm=10307&zpgwid=1000000000756184",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000756156",
+          "title": "正合基业2027届校园大使招募",
+          "url": "https://njau.91job.org.cn/sub-station/jobDetails?xxdm=10307&zpgwid=1000000000756156",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njfu",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:12.886Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000753704",
+          "title": "国家开发银行青海分行2027年校园招聘-信贷管理类、信息科技类",
+          "url": "https://njfu.91job.org.cn/sub-station/jobDetails?xxdm=10298&zpgwid=1000000000753704",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000753674",
+          "title": "水土保持岗",
+          "url": "https://njfu.91job.org.cn/sub-station/jobDetails?xxdm=10298&zpgwid=1000000000753674",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njmu",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:14.124Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000753282",
+          "title": "SR方案经理(家禽)",
+          "url": "https://njmu.91job.org.cn/sub-station/jobDetails?xxdm=10312&zpgwid=1000000000753282",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000753277",
+          "title": "高级产品研发工程师（家禽方向）博士",
+          "url": "https://njmu.91job.org.cn/sub-station/jobDetails?xxdm=10312&zpgwid=1000000000753277",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njnu",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:05.535Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000753384",
+          "title": "2027达能管培生招聘",
+          "url": "https://njnu.91job.org.cn/sub-station/jobDetails?xxdm=10319&zpgwid=1000000000753384",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000753381",
+          "title": "初高中教师",
+          "url": "https://njnu.91job.org.cn/sub-station/jobDetails?xxdm=10319&zpgwid=1000000000753381",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njtech",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:10.821Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000756179",
+          "title": "技术支持工程师",
+          "url": "https://njtech.91job.org.cn/sub-station/jobDetails?xxdm=10291&zpgwid=1000000000756179",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000756178",
+          "title": "研发工程师",
+          "url": "https://njtech.91job.org.cn/sub-station/jobDetails?xxdm=10291&zpgwid=1000000000756178",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njucm",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:17.500Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000673440",
+          "title": "扬州大学附属医院高层次人才",
+          "url": "https://njucm.91job.org.cn/sub-station/jobDetails?xxdm=10315&zpgwid=1000000000673440",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000751214",
+          "title": "妇产科",
+          "url": "https://njucm.91job.org.cn/sub-station/jobDetails?xxdm=10315&zpgwid=1000000000751214",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njue",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:16.488Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000751809",
+          "title": "生产管理管培生",
+          "url": "https://njue.91job.org.cn/sub-station/jobDetails?xxdm=10327&zpgwid=1000000000751809",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000751936",
+          "title": "广州华立学院2026-2027学年专任教师招聘启事",
+          "url": "https://njue.91job.org.cn/sub-station/jobDetails?xxdm=10327&zpgwid=1000000000751936",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njupt",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:08.240Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000753567",
+          "title": "结构工程师",
+          "url": "https://njupt.91job.org.cn/sub-station/jobDetails?xxdm=10293&zpgwid=1000000000753567",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000753564",
+          "title": "射频工程师",
+          "url": "https://njupt.91job.org.cn/sub-station/jobDetails?xxdm=10293&zpgwid=1000000000753564",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-njust",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:04.726Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000756149",
+          "title": "人力资源管培生",
+          "url": "https://njust.91job.org.cn/sub-station/jobDetails?xxdm=10288&zpgwid=1000000000756149",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000756148",
+          "title": "采购工程师",
+          "url": "https://njust.91job.org.cn/sub-station/jobDetails?xxdm=10288&zpgwid=1000000000756148",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-nuaa",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:01.640Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000756158",
+          "title": "雷达总体工程师",
+          "url": "https://nuaa.91job.org.cn/sub-station/jobDetails?xxdm=10287&zpgwid=1000000000756158",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000756156",
+          "title": "正合基业2027届校园大使招募",
+          "url": "https://nuaa.91job.org.cn/sub-station/jobDetails?xxdm=10287&zpgwid=1000000000756156",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-nuist",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:09.399Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000753408",
+          "title": "中国农业银行河南省分行2027年度校园招聘",
+          "url": "https://nuist.91job.org.cn/sub-station/jobDetails?xxdm=10300&zpgwid=1000000000753408",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000753415",
+          "title": "安全工程师",
+          "url": "https://nuist.91job.org.cn/sub-station/jobDetails?xxdm=10300&zpgwid=1000000000753415",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-seu",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:02.236Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000753133",
+          "title": "制造工艺工程师",
+          "url": "https://seu.91job.org.cn/sub-station/jobDetails?xxdm=10286&zpgwid=1000000000753133",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000753169",
+          "title": "采购工程师",
+          "url": "https://seu.91job.org.cn/sub-station/jobDetails?xxdm=10286&zpgwid=1000000000753169",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-suda",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:20.399Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000753384",
+          "title": "2027达能管培生招聘",
+          "url": "https://suda.91job.org.cn/sub-station/jobDetails?xxdm=10285&zpgwid=1000000000753384",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000749981",
+          "title": "工艺工程师",
+          "url": "https://suda.91job.org.cn/sub-station/jobDetails?xxdm=10285&zpgwid=1000000000749981",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-ujs",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:25.620Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000756163",
+          "title": "机电工程师",
+          "url": "https://ujs.91job.org.cn/sub-station/jobDetails?xxdm=10299&zpgwid=1000000000756163",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000756162",
+          "title": "商务员/预算员",
+          "url": "https://ujs.91job.org.cn/sub-station/jobDetails?xxdm=10299&zpgwid=1000000000756162",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "university-91job",
+      "siteId": "91job-yzu",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "1000000000753556",
+          "title": "内控专员",
+          "url": "https://yzu.91job.org.cn/sub-station/jobDetails?xxdm=11117&zpgwid=1000000000753556",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "1000000000753567",
+          "title": "结构工程师",
+          "url": "https://yzu.91job.org.cn/sub-station/jobDetails?xxdm=11117&zpgwid=1000000000753567",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "university"
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "alibaba",
+      "category": "employer",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "boc",
+      "category": "employer",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "smartrecruiters",
+      "siteId": "bosch",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:29.949Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "744000153329829",
+          "title": "Regional Sales_MA",
+          "url": "https://jobs.smartrecruiters.com/BoschGroup/744000153329829-regional-sales-ma?oga=true",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "744000153329729",
+          "title": "Regional Sales_MA",
+          "url": "https://jobs.smartrecruiters.com/BoschGroup/744000153329729-regional-sales-ma?oga=true",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "employer"
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "bytedance",
+      "category": "employer",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "greenhouse",
+      "siteId": "canonical",
+      "status": "ready",
+      "sampleCount": 310,
+      "checkedAt": "2026-10-05T05:05:30.081Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "5569916",
+          "title": "Accountant",
+          "url": "https://job-boards.greenhouse.io/canonical/jobs/5569916",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "7971310",
+          "title": "Accounts Payable Clerk",
+          "url": "https://job-boards.greenhouse.io/canonical/jobs/7971310",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "employer"
+    },
+    {
+      "sourceId": "chenyun",
+      "siteId": "chenyun-cafuc",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "douyin",
+      "siteId": "douyin",
+      "category": "social_discovery",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:40.650Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "huawei",
+      "category": "employer",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "jiuyeqiao",
+      "siteId": "jiuyeqiao",
+      "category": "job_board",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:36.768Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "meituan",
+      "category": "employer",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "ncss",
+      "siteId": "ncss",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:43.642Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "SLaDB8f5H72xoPf8Xxek6Q",
+          "title": "中国银行股份有限公司2027年全球校园招聘公告",
+          "url": "https://www.ncss.cn/student/jobs/SLaDB8f5H72xoPf8Xxek6Q/detail.html",
+          "kind": "recruitment_notice",
+          "jobType": "campus",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "4HEEGonbAKUNtGACviFDsy",
+          "title": "炼油化工装置仪表管理储备岗",
+          "url": "https://www.ncss.cn/student/jobs/4HEEGonbAKUNtGACviFDsy/detail.html",
+          "kind": "job",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "national"
+    },
+    {
+      "sourceId": "nowcoder",
+      "siteId": "nowcoder",
+      "category": "job_board",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:36.768Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "official-nju",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:22.506Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "pep",
+      "category": "employer",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "public-gibh",
+      "status": "ready",
+      "sampleCount": 15,
+      "checkedAt": "2026-10-05T05:05:36.768Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "https://gibh.cas.cn/rczp/202609/t20260915_8283173.html",
+          "title": "CLAF工程办公室招聘宣传科普文书岗",
+          "url": "https://gibh.cas.cn/rczp/202609/t20260915_8283173.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "https://gibh.cas.cn/rczp/202601/t20260128_8119834.html",
+          "title": "信息化与数据中心岗位招聘启事（中心主任岗）",
+          "url": "https://gibh.cas.cn/rczp/202601/t20260128_8119834.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "public"
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "public-ict",
+      "status": "ready",
+      "sampleCount": 5,
+      "checkedAt": "2026-10-05T05:05:31.561Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "https://www.ict.ac.cn/rczp/202510/t20251015_7989499.html",
+          "title": "中国科学院计算技术研究所2026年度招聘",
+          "url": "https://www.ict.ac.cn/rczp/202510/t20251015_7989499.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "https://www.ict.ac.cn/rczp/202508/t20250826_7915535.html",
+          "title": "中国科学院计算技术研究所公开招聘启事",
+          "url": "https://www.ict.ac.cn/rczp/202508/t20250826_7915535.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "public"
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "public-iop",
+      "status": "ready",
+      "sampleCount": 8,
+      "checkedAt": "2026-10-05T05:05:34.414Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "https://www.iop.cas.cn/zszp/zp/202301/t20230118_6601431.html",
+          "title": "中国科学院物理研究所海内外杰出人才招聘通知（长期有效）",
+          "url": "https://www.iop.cas.cn/zszp/zp/202301/t20230118_6601431.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "https://www.iop.cas.cn/zszp/zp/202608/t20260817_8261008.html",
+          "title": "中国科学院物理研究所2027年度管理岗位招聘启事",
+          "url": "https://www.iop.cas.cn/zszp/zp/202608/t20260817_8261008.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "public"
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "public-ipe",
+      "status": "ready",
+      "sampleCount": 14,
+      "checkedAt": "2026-10-05T05:05:40.650Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "https://ipe.cas.cn/rcdw/rczp/202511/t20251118_8013644.html",
+          "title": "中国科学院过程工程所2026年招聘启事",
+          "url": "https://ipe.cas.cn/rcdw/rczp/202511/t20251118_8013644.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "https://ipe.cas.cn/rcdw/rczp/202105/t20210519_6029515.html",
+          "title": "中国科学院过程工程研究所海内外高层次人才招聘启事",
+          "url": "https://ipe.cas.cn/rcdw/rczp/202105/t20210519_6029515.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "public"
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "public-iscas",
+      "status": "ready",
+      "sampleCount": 18,
+      "checkedAt": "2026-10-05T05:05:34.784Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260717_8251365.html",
+          "title": "中国科学院软件研究所2026年度校园招聘启事",
+          "url": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260717_8251365.html",
+          "kind": "recruitment_notice",
+          "jobType": "campus",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260729_8256777.html",
+          "title": "中国科学院软件研究所基础软件与系统重点实验室主任招聘启事",
+          "url": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260729_8256777.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "public"
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "public-las",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:40.039Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "https://las.cas.cn/edu/rczp/202607/t20260701_8236359.html",
+          "title": "中国科学院文献情报中心项目聘用工作人员招聘启事",
+          "url": "https://las.cas.cn/edu/rczp/202607/t20260701_8236359.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "https://las.cas.cn/edu/rczp/202607/t20260701_8236356.html",
+          "title": "中国科学院文献情报中心劳务派遣工作人员招聘启事",
+          "url": "https://las.cas.cn/edu/rczp/202607/t20260701_8236356.html",
+          "kind": "recruitment_notice",
+          "jobType": "unknown",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "public"
+    },
+    {
+      "sourceId": "searchapi",
+      "siteId": "searchapi",
+      "category": "search",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:40.650Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "shixiseng",
+      "siteId": "shixiseng",
+      "category": "job_board",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:36.768Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "siemens",
+      "category": "employer",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "tencent",
+      "siteId": "tencent",
+      "status": "ready",
+      "sampleCount": 20,
+      "checkedAt": "2026-10-05T05:05:26.517Z",
+      "issues": [],
+      "evidence": [
+        {
+          "sourceRecordId": "2074756585305059328",
+          "title": "智能体套件-高级产品经理-CodeBuddy/WorkBuddy",
+          "url": "https://careers.tencent.com/jobdesc.html?postId=2074756585305059328",
+          "kind": "job",
+          "jobType": "social",
+          "hasRequirements": true
+        },
+        {
+          "sourceRecordId": "2009274781974810624",
+          "title": "《王者万象棋》角色原画",
+          "url": "https://careers.tencent.com/jobdesc.html?postId=2009274781974810624",
+          "kind": "job",
+          "jobType": "social",
+          "hasRequirements": true
+        }
+      ],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "employer"
+    },
+    {
+      "sourceId": "university",
+      "siteId": "university-career.zjnu.edu.cn",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "university",
+      "siteId": "university-job.neuq.edu.cn",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "university",
+      "siteId": "university-job.sdufe.edu.cn",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "university",
+      "siteId": "university-job.xidian.edu.cn",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "university",
+      "siteId": "university-job.zjxu.edu.cn",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "university",
+      "siteId": "university-job.zzu.edu.cn",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "university",
+      "siteId": "university-jy.xmu.edu.cn",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "university",
+      "siteId": "university-myjob.dlmu.edu.cn",
+      "category": "university",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:04:57.829Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "wechat",
+      "siteId": "wechat",
+      "category": "social_discovery",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:40.650Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "weibo",
+      "siteId": "weibo",
+      "category": "social_discovery",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:40.650Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "official-announcements",
+      "siteId": "xiaomi",
+      "category": "employer",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:25.700Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    },
+    {
+      "sourceId": "yingjiesheng",
+      "siteId": "yingjiesheng",
+      "status": "unavailable",
+      "sampleCount": 85,
+      "checkedAt": "2026-10-05T05:05:44.741Z",
+      "issues": [
+        {
+          "code": "parse_error",
+          "sourceId": "yingjiesheng",
+          "siteId": "yingjiesheng",
+          "message": "Public campus detail unavailable",
+          "retryable": false
+        },
+        {
+          "code": "parse_error",
+          "sourceId": "yingjiesheng",
+          "siteId": "yingjiesheng",
+          "message": "Public campus detail unavailable",
+          "retryable": false
+        }
+      ],
+      "evidence": [],
+      "budget": {
+        "requests": 5,
+        "details": 2,
+        "maxRequests": 6,
+        "maxDetails": 2,
+        "byKind": {
+          "dns": 2,
+          "request": 3
+        }
+      },
+      "category": "campus_aggregator"
+    },
+    {
+      "sourceId": "zhaopin",
+      "siteId": "zhaopin",
+      "category": "job_board",
+      "status": "unavailable",
+      "checkedAt": "2026-10-05T05:05:36.768Z",
+      "sampleCount": 0,
+      "evidence": [],
+      "issues": [
+        {
+          "code": "candidate_not_verified",
+          "message": "Directory candidate; no verified public collection contract in this probe."
+        }
+      ]
+    }
+  ]
+}

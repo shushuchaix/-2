@@ -1,0 +1,315 @@
+import * as zhaopin from "../zhaopin.mjs";
+import * as shixiseng from "../shixiseng.mjs";
+import * as searchapi from "../searchapi.mjs";
+import * as wechat from "../wechat.mjs";
+import * as nowcoder from "../nowcoder.mjs";
+import * as university from "../university.mjs";
+import * as chenyun from "../chenyun.mjs";
+import * as jiuyeqiao from "../jiuyeqiao.mjs";
+import { normalizeRecord } from "../../domain/record.mjs";
+import { withSourceContext } from "../request-context.mjs";
+const modules = {
+  zhaopin,
+  shixiseng,
+  searchapi,
+  wechat,
+  nowcoder,
+  university,
+  chenyun,
+  jiuyeqiao,
+};
+const explicitBodySources = new Set(["zhaopin", "shixiseng", "jiuyeqiao"]);
+export function sourceIssue(error, sourceId, siteId) {
+  const message = String(error.message || error).slice(0, 300);
+  const code = /captcha|验证码|验证/.test(message)
+    ? "captcha"
+    : /401|403/.test(message)
+      ? "http_forbidden"
+      : /budget_exhausted/.test(message)
+        ? "budget_exhausted"
+        : /parse|内嵌|结构|json/i.test(message)
+          ? "parse_error"
+          : "unavailable";
+  return { code, sourceId, siteId, message, retryable: code === "unavailable" };
+}
+export function createLegacyProvider(id, { collector } = {}) {
+  const module = modules[id];
+  if (!module) throw Error("Unknown legacy source");
+  const capabilities = {
+    resumablePages: false,
+    body: typeof module.fetchDetail === "function",
+    attachments: false,
+    category:
+      id === "wechat"
+        ? "social_discovery"
+        : id === "searchapi"
+          ? "search"
+          : id === "university" || id === "chenyun"
+            ? "university"
+            : "job_board",
+    jobTypes:
+      id === "shixiseng"
+        ? ["internship"]
+        : ["campus", "internship", "social", "unknown"],
+    detail: typeof module.fetchDetail === "function",
+    discovery: id === "wechat" || id === "searchapi",
+  };
+  const provider = {
+    id,
+    name: module.meta.name,
+    capabilities,
+    configSchema: { enabled: "boolean" },
+    async collect(ctx) {
+      const records = [],
+        issues = [],
+        coverage = [];
+      let raw = 0;
+      const keywords = [
+        ...new Set((ctx.queries || []).map((q) => q.keyword).filter(Boolean)),
+      ];
+      const sites = ctx.sites?.length
+        ? ctx.sites
+        : [{ siteId: id, origin: module.meta.homepage }];
+      for (const site of sites) {
+        ctx.signal?.throwIfAborted();
+        const startedAt = new Date(
+          ctx.clock?.now?.() || Date.now(),
+        ).toISOString();
+        let result;
+        try {
+          result = await withSourceContext(
+            { ...ctx, cfg: ctx.config },
+            async () => {
+              if (collector) return collector(ctx, site);
+              const options = {
+                keywords,
+                keyword: keywords[0] || "招聘",
+                profile: ctx.profileRevision?.profile || {},
+                targetYear: ctx.targetSnapshot?.graduationYear || "",
+                cities: ctx.targetSnapshot?.cities || [],
+                city: ctx.queries?.[0]?.city || "全国",
+                maxPages: Math.min(20, ctx.queries?.[0]?.pageLimit || 1),
+                maxHosts: 1,
+                maxDetail: 0,
+                maxPerKeyword: 12,
+                delayMs: 0,
+                signal: ctx.signal,
+                log: ctx.logger || (() => {}),
+                includeSchedule: false,
+                hosts: site.origin
+                  ? [{ host: site.origin, name: site.name || site.siteId }]
+                  : undefined,
+              };
+              if (["zhaopin", "shixiseng"].includes(id))
+                return module.search(options);
+              if (id === "searchapi") {
+                if (!ctx.config?.__activeSearchProvider)
+                  return { jobs: [], errors: [], skipped: "missing_key" };
+                return module.searchAll(keywords, {
+                  ...options,
+                  provider: ctx.config.__activeSearchProvider,
+                  apiKey:
+                    ctx.config.__searchKeys[ctx.config.__activeSearchProvider],
+                });
+              }
+              if (id === "wechat")
+                return module.collectWechat({ ...options, cfg: ctx.config });
+              return module.collect(options);
+            },
+          );
+          ctx.signal?.throwIfAborted();
+          raw +=
+            result.stats?.nowcoderRaw ??
+            result.stats?.raw ??
+            (result.jobs || []).length;
+          for (const message of result.errors || []) {
+            const entry = await ctx.reportError?.(
+              message instanceof Error ? message : Error(String(message)),
+              { sourceId: id, siteId: site.siteId },
+            );
+            issues.push({
+              ...sourceIssue(message, id, site.siteId),
+              ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
+            });
+          }
+          const batch = (result.jobs || []).map((r) =>
+            normalizeRecord({
+              ...r,
+              sourceId: id,
+              siteId: site.siteId,
+              identityScope: site.siteId,
+              sourceRecordIdKind:
+                ["zhaopin", "shixiseng", "nowcoder"].includes(id) &&
+                r.sourceRecordId
+                  ? "authority"
+                  : "hint",
+              urlKind:
+                ["zhaopin", "shixiseng", "nowcoder"].includes(id) &&
+                r.sourceRecordId
+                  ? "job_detail"
+                  : "unknown",
+              kind: id === "wechat" ? "recruitment_notice" : r.kind,
+              parserVersion:
+                id === "university" || explicitBodySources.has(id)
+                  ? "legacy-adapter-3"
+                  : "legacy-adapter-2",
+            }),
+          );
+          records.push(...batch);
+          if (batch.length) await ctx.onBatch?.(batch);
+          coverage.push({
+            sourceId: id,
+            siteId: site.siteId,
+            queries: keywords,
+            cities: ctx.targetSnapshot?.cities || [],
+            pages: ctx.queries?.[0]?.pageLimit || 1,
+            truncated: !result.skipped,
+            status: result.skipped
+              ? "skipped"
+              : (result.errors || []).length
+                ? "failed"
+                : "complete",
+            reason: result.skipped || null,
+            startedAt,
+            finishedAt: new Date(
+              ctx.clock?.now?.() || Date.now(),
+            ).toISOString(),
+          });
+        } catch (e) {
+          if (
+            ctx.signal?.aborted ||
+            e.runFatal ||
+            e.code === "workspace_write_failed"
+          )
+            throw e;
+          const entry = await ctx.reportError?.(e, {
+            sourceId: id,
+            siteId: site.siteId,
+          });
+          issues.push({
+            ...sourceIssue(e, id, site.siteId),
+            ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
+          });
+          coverage.push({
+            sourceId: id,
+            siteId: site.siteId,
+            queries: keywords,
+            cities: [],
+            pages: 0,
+            truncated: true,
+            status: "failed",
+            startedAt,
+            finishedAt: new Date().toISOString(),
+            reason: issues.at(-1).code,
+          });
+        }
+      }
+      return {
+        records,
+        issues,
+        coverage,
+        stats: {
+          raw,
+          parsed: records.length,
+          accepted: records.length,
+          rejected: Math.max(0, raw - records.length),
+        },
+      };
+    },
+    async fetchDetail(record, ctx) {
+      if (!module.fetchDetail)
+        return { ...record, detailStatus: "unavailable" };
+      ctx.signal?.throwIfAborted();
+      await ctx.budget?.claimDetail(
+        id + "/" + record.siteId + "/" + (record.sourceRecordId || record.url),
+      );
+      ctx.signal?.throwIfAborted();
+      const freshRecord = { ...record };
+      for (const field of [
+        "bodyStatus",
+        "retryEligible",
+        "detailStatus",
+        "retryAt",
+        "nextDueAt",
+      ])
+        delete freshRecord[field];
+      return withSourceContext(ctx, async () => {
+        const detail = await module.fetchDetail(freshRecord);
+        const result = {
+          ...freshRecord,
+          ...detail,
+          sourceId: id,
+          siteId: record.siteId,
+          ...(explicitBodySources.has(id)
+            ? { parserVersion: "legacy-adapter-3" }
+            : {}),
+        };
+        ctx.signal?.throwIfAborted();
+        if (
+          typeof result.description !== "string" ||
+          !result.description.trim()
+        )
+          throw Object.assign(
+            Error("Detail response has insufficient body content"),
+            {
+              code: "detail_insufficient",
+              retryable: false,
+            },
+          );
+        if (
+          explicitBodySources.has(id) &&
+          (detail?.bodyStatus !== "complete" ||
+            detail?.detailStatus !== "complete")
+        )
+          return normalizeRecord({
+            ...result,
+            bodyStatus: detail?.bodyStatus || "incomplete",
+            detailStatus: detail?.detailStatus || "incomplete",
+            retryEligible: false,
+          });
+        if (
+          (!result.detailStatus || result.detailStatus === "complete") &&
+          (!result.bodyStatus || result.bodyStatus === "complete") &&
+          !result.bodyIncomplete &&
+          !result.rowAmbiguous
+        )
+          return normalizeRecord({
+            ...result,
+            detailStatus: "complete",
+            bodyStatus: "complete",
+            retryEligible: false,
+          });
+        return normalizeRecord(result);
+      });
+    },
+    async probe(ctx) {
+      const result = await provider.collect({
+        ...ctx,
+        onBatch: undefined,
+        queries: (ctx.queries || [{ keyword: "招聘" }]).slice(0, 1),
+      });
+      return {
+        sourceId: id,
+        siteId: ctx.sites?.[0]?.siteId || id,
+        status: result.issues.length
+          ? "unavailable"
+          : result.records.length
+            ? "ready"
+            : "empty",
+        sampleCount: result.records.length,
+        checkedAt: new Date().toISOString(),
+        issues: result.issues,
+        evidence: result.records.slice(0, 2).map((r) => ({
+          url: r.url,
+          title: r.title,
+          sourceRecordId: r.sourceRecordId,
+          hasRequirements: !!r.description,
+        })),
+      };
+    },
+  };
+  return provider;
+}
+export const legacyProviders = Object.keys(modules).map((id) =>
+  createLegacyProvider(id),
+);

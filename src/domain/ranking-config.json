@@ -1,0 +1,13 @@
+{
+  "ruleVersion": "rules-2.1.0-conditions",
+  "weights": {
+    "role": 22,
+    "skills": 45,
+    "city": 15,
+    "major": 8,
+    "eligibility": 10
+  },
+  "thresholds": { "high": 75, "consider": 50 },
+  "provenance": "v1 commit 3547885 weights role22/skills45/city15/meta18; meta split into major8/eligibility10; v1 certificate/proficiency extras folded into evidence rather than overriding hard gates",
+  "minimumJdCharacters": 30
+}

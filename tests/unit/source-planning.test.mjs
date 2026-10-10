@@ -1,0 +1,76 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildCollectionPlan } from "../../src/sources/planning.mjs";
+import { loadSiteCatalog } from "../../src/sources/catalog.mjs";
+test("broad planning is bounded, diverse and excludes candidates and backoff", () => {
+  const catalog = Array.from({ length: 40 }, (_, i) => ({
+    siteId: "s" + i,
+    providerId: "p" + (i % 4),
+    category: ["university", "employer", "public", "job_board"][i % 4],
+    name: "站点" + i,
+    regions: ["北京"],
+    status: "ready",
+  }));
+  catalog.push({
+    siteId: "candidate",
+    providerId: "p0",
+    category: "public",
+    status: "candidate",
+  });
+  const p = buildCollectionPlan({
+    targetSnapshot: {
+      roles: ["Java", "软件", "开发", "测试", "数据", "后端", "前端"],
+      cityMode: "selected",
+      cities: ["北京"],
+      coverageMode: "broad",
+      sourceIds: [],
+      siteIds: [],
+    },
+    profileRevision: { profile: {} },
+    catalog,
+    health: { "p0/s0": { backoffUntil: "2099-01-01" } },
+  });
+  assert.equal(p.sites.length, 24);
+  assert.equal(p.budgets.maxRequests, 240);
+  assert.equal(new Set(p.sites.map((s) => s.category)).size, 4);
+  assert.ok(p.queries.every((q) => q.pageLimit <= 2));
+  assert.ok(!p.sites.some((s) => s.siteId === "candidate"));
+  assert.ok(p.skipped.some((s) => s.reason === "backoff"));
+});
+test("legacy city modes, disabled providers and explicit overflow are explained", () => {
+  const catalog = [
+    {
+      siteId: "a",
+      providerId: "searchapi",
+      category: "search",
+      status: "ready",
+    },
+    {
+      siteId: "b",
+      providerId: "university",
+      category: "university",
+      status: "ready",
+    },
+  ];
+  const p = buildCollectionPlan({
+    targetSnapshot: {
+      roles: ["岗位"],
+      cityMode: "any",
+      cities: [],
+      coverageMode: "standard",
+      sourceIds: ["searchApi"],
+      siteIds: ["a", "b"],
+      budgets: { maxRequests: 2 },
+    },
+    profileRevision: { profile: { cities: ["成都"] } },
+    catalog,
+    health: {},
+    sourceOverrides: { searchapi: { enabled: false } },
+  });
+  assert.equal(p.sites.length, 0);
+  assert.ok(p.skipped.some((s) => s.reason === "disabled"));
+  assert.equal(p.budgets.maxRequests, 2);
+  assert.ok(
+    loadSiteCatalog().every((s) => s.evidenceUrl && s.providerId && s.status),
+  );
+});

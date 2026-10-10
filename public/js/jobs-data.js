@@ -1,0 +1,30 @@
+export async function readAllJobs(api, filters = {}, options = {}) {
+  const params = new URLSearchParams(
+    Object.entries({ ...filters, page: 1, pageSize: 200 }).filter(([, v]) => v),
+  );
+  const first = await api.request("/jobs?" + params, options),
+    items = [...first.items];
+  const pages = Math.ceil(first.total / 200);
+  for (let page = 2; page <= pages; page++) {
+    options.signal?.throwIfAborted();
+    params.set("page", page);
+    const next = await api.request("/jobs?" + params, options);
+    items.push(...next.items);
+  }
+  return {
+    ...first,
+    items: [...new Map(items.map((item) => [item.jobId, item])).values()],
+  };
+}
+export function replaceResolvedJob(items, requestedId, resolvedId) {
+  const updated = items.map((i) =>
+    i.jobId === requestedId
+      ? {
+          ...i,
+          jobId: resolvedId,
+          job: i.job ? { ...i.job, jobId: resolvedId } : i.job,
+        }
+      : i,
+  );
+  return [...new Map(updated.map((i) => [i.jobId, i])).values()];
+}

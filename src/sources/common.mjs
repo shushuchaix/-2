@@ -8,10 +8,10 @@
 
 /** 去掉校区 / 括号备注 / 空白，便于校名比对 */
 export function normSchool(s) {
-  return String(s || '')
-    .replace(/[（(][^）)]*[）)]/g, '')
-    .replace(/\s+/g, '')
-    .replace(/(新校区|老校区|校区|分校|本部)$/g, '')
+  return String(s || "")
+    .replace(/[（(][^）)]*[）)]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/(新校区|老校区|校区|分校|本部)$/g, "")
     .trim();
 }
 
@@ -26,25 +26,14 @@ export function normSchool(s) {
 export function isOwnSchool(entry, profile = {}) {
   const school = normSchool(profile.school);
   if (!school || !entry) return false;
-  const names = [entry.name, ...(entry.aliases || [])].map(normSchool).filter(Boolean);
+  const names = [entry.name, ...(entry.aliases || [])]
+    .map(normSchool)
+    .filter(Boolean);
   return names.some((n) => n === school);
 }
 
 /** 生成带重试的抓取（各源通用）：网络抖动不该让整轮检索失败 */
-export async function fetchWithRetry(url, opts = {}, { retries = 2, backoffMs = 800 } = {}) {
-  let lastErr;
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const res = await fetch(url, opts);
-      if (res.status >= 500 && i < retries) {
-        lastErr = new Error(`HTTP ${res.status}`);
-      } else {
-        return res;
-      }
-    } catch (e) {
-      lastErr = e;
-    }
-    if (i < retries) await new Promise((r) => setTimeout(r, backoffMs * (i + 1)));
-  }
-  throw lastErr || new Error('请求失败');
+export async function fetchWithRetry(url, opts = {}) {
+  const { sourceFetch } = await import("./request-context.mjs");
+  return sourceFetch(url, opts);
 }

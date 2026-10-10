@@ -1,0 +1,75 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createStore } from "../../public/js/state.js";
+import { decodeNdjson, createApiClient } from "../../public/js/api.js";
+test("repeated events and stale target or request results do not overwrite state", () => {
+  const s = createStore();
+  s.dispatch({ type: "target", id: "t1" });
+  s.dispatch({ type: "run-start", runId: "r1" });
+  const e = {
+    type: "batch",
+    runId: "r1",
+    seq: 1,
+    payload: { counts: { newForTarget: 3 } },
+  };
+  s.dispatch({ type: "run-event", event: e });
+  s.dispatch({ type: "run-event", event: e });
+  assert.equal(s.getState().run.lastSeq, 1);
+  assert.equal(s.getState().run.counts.newForTarget, 3);
+  s.dispatch({ type: "target", id: "t2" });
+  s.dispatch({
+    type: "jobs",
+    targetId: "t1",
+    requestId: 1,
+    data: { items: ["old"] },
+  });
+  assert.deepEqual(s.getState().jobs.items, []);
+  s.dispatch({ type: "jobs-request", requestId: 4 });
+  s.dispatch({
+    type: "jobs",
+    targetId: "t2",
+    requestId: 3,
+    data: { items: ["late"] },
+  });
+  assert.deepEqual(s.getState().jobs.items, []);
+});
+test("NDJSON handles split UTF8 and reports invalid data", async () => {
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({ payload: { title: "安全工程师" } }) + "\n",
+  );
+  async function* chunks() {
+    for (const b of bytes) yield new Uint8Array([b]);
+  }
+  const found = [];
+  for await (const e of decodeNdjson(chunks())) found.push(e);
+  assert.equal(found[0].payload.title, "安全工程师");
+  await assert.rejects(async () => {
+    for await (const e of decodeNdjson(
+      (async function* () {
+        yield new TextEncoder().encode("bad\n");
+      })(),
+    )) {
+    }
+  }, /事件/);
+});
+test("API reports server errors authentication and cancellation", async () => {
+  let auth = 0;
+  const api = createApiClient({
+    onAuthRequired: () => auth++,
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ error: "请登录" }), { status: 401 }),
+  });
+  await assert.rejects(api.request("/jobs"), /请登录/);
+  assert.equal(auth, 1);
+  const controller = new AbortController();
+  controller.abort();
+  const aborted = createApiClient({
+    fetchImpl: async (u, o) => {
+      o.signal.throwIfAborted();
+    },
+  });
+  await assert.rejects(
+    aborted.request("/jobs", { signal: controller.signal }),
+    { name: "AbortError" },
+  );
+});

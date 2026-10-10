@@ -1,0 +1,319 @@
+[
+  {
+    "siteId": "boss",
+    "providerId": "boss",
+    "category": "job_board",
+    "name": "Boss直聘",
+    "institutionUrl": "https://www.zhipin.com/",
+    "origin": "https://www.zhipin.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": "unverified",
+      "detail": "unverified",
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.zhipin.com/web/geek/jobs",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["www.zhipin.com", "zhipin.com"],
+    "jobFamilies": [],
+    "adapter": "boss",
+    "identityEvidence": {
+      "url": "https://www.zhipin.com/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "zhaopin",
+    "providerId": "zhaopin",
+    "category": "job_board",
+    "name": "智联招聘",
+    "institutionUrl": "https://sou.zhaopin.com/",
+    "origin": "https://sou.zhaopin.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://sou.zhaopin.com/",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["sou.zhaopin.com"],
+    "jobFamilies": [],
+    "adapter": "zhaopin",
+    "identityEvidence": {
+      "url": "https://sou.zhaopin.com/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "shixiseng",
+    "providerId": "shixiseng",
+    "category": "job_board",
+    "name": "实习僧",
+    "institutionUrl": "https://www.shixiseng.com/",
+    "origin": "https://www.shixiseng.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.shixiseng.com/",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["www.shixiseng.com"],
+    "jobFamilies": [],
+    "adapter": "shixiseng",
+    "identityEvidence": {
+      "url": "https://www.shixiseng.com/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "nowcoder",
+    "providerId": "nowcoder",
+    "category": "job_board",
+    "name": "牛客校招",
+    "institutionUrl": "https://www.nowcoder.com/jobs/school/jobs",
+    "origin": "https://www.nowcoder.com/jobs/school/jobs",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.nowcoder.com/jobs/school/jobs",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["www.nowcoder.com"],
+    "jobFamilies": [],
+    "adapter": "nowcoder",
+    "identityEvidence": {
+      "url": "https://www.nowcoder.com/jobs/school/jobs",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "jiuyeqiao",
+    "providerId": "jiuyeqiao",
+    "category": "job_board",
+    "name": "就业桥",
+    "institutionUrl": "https://job.jiuyeqiao.cn/",
+    "origin": "https://job.jiuyeqiao.cn/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://job.jiuyeqiao.cn/",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["job.jiuyeqiao.cn"],
+    "jobFamilies": [],
+    "adapter": "jiuyeqiao",
+    "identityEvidence": {
+      "url": "https://job.jiuyeqiao.cn/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "ncss",
+    "providerId": "ncss",
+    "category": "national",
+    "name": "国家大学生就业服务平台",
+    "institutionUrl": "https://main.ncss.cn/student/jobs/index.html",
+    "origin": "https://main.ncss.cn/student/jobs/index.html",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://main.ncss.cn/student/jobs/index.html",
+    "verifiedAt": "2026-10-05T05:05:43.642Z",
+    "status": "ready",
+    "probeEvidence": [
+      {
+        "sourceRecordId": "SLaDB8f5H72xoPf8Xxek6Q",
+        "title": "中国银行股份有限公司2027年全球校园招聘公告",
+        "url": "https://www.ncss.cn/student/jobs/SLaDB8f5H72xoPf8Xxek6Q/detail.html",
+        "kind": "recruitment_notice",
+        "jobType": "campus",
+        "hasRequirements": true
+      },
+      {
+        "sourceRecordId": "4HEEGonbAKUNtGACviFDsy",
+        "title": "炼油化工装置仪表管理储备岗",
+        "url": "https://www.ncss.cn/student/jobs/4HEEGonbAKUNtGACviFDsy/detail.html",
+        "kind": "job",
+        "jobType": "unknown",
+        "hasRequirements": true
+      }
+    ],
+    "allowedDomains": ["main.ncss.cn", "www.ncss.cn"],
+    "jobFamilies": [],
+    "adapter": "ncss",
+    "identityEvidence": {
+      "url": "https://main.ncss.cn/student/jobs/index.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-09T11:03:11.218Z"
+    }
+  },
+  {
+    "siteId": "yingjiesheng",
+    "providerId": "yingjiesheng",
+    "category": "campus_aggregator",
+    "name": "应届生截止日期榜",
+    "institutionUrl": "https://www.yingjiesheng.com/deadline/",
+    "origin": "https://www.yingjiesheng.com/deadline/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": true,
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.yingjiesheng.com/deadline/",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["www.yingjiesheng.com"],
+    "jobFamilies": [],
+    "adapter": "yingjiesheng",
+    "identityEvidence": {
+      "url": "https://www.yingjiesheng.com/deadline/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "searchapi",
+    "providerId": "searchapi",
+    "category": "search",
+    "name": "全网搜索",
+    "institutionUrl": "https://api.tavily.com",
+    "origin": "https://api.tavily.com",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": false,
+      "discovery": true
+    },
+    "evidenceUrl": "https://api.tavily.com",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["api.tavily.com"],
+    "jobFamilies": [],
+    "adapter": "searchapi",
+    "identityEvidence": {
+      "url": "https://api.tavily.com",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "wechat",
+    "providerId": "wechat",
+    "category": "social_discovery",
+    "name": "微信公众号线索",
+    "institutionUrl": "https://mp.weixin.qq.com",
+    "origin": "https://mp.weixin.qq.com",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": false,
+      "discovery": true
+    },
+    "evidenceUrl": "https://mp.weixin.qq.com",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["mp.weixin.qq.com"],
+    "jobFamilies": [],
+    "adapter": "wechat",
+    "identityEvidence": {
+      "url": "https://mp.weixin.qq.com",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "weibo",
+    "providerId": "weibo",
+    "category": "social_discovery",
+    "name": "微博招聘线索",
+    "institutionUrl": "https://weibo.com",
+    "origin": "https://weibo.com",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": false,
+      "discovery": true
+    },
+    "evidenceUrl": "https://weibo.com",
+    "verifiedAt": null,
+    "status": "candidate",
+    "accessStatus": "authorization_required",
+    "allowedDomains": ["weibo.com"],
+    "jobFamilies": [],
+    "adapter": "weibo",
+    "identityEvidence": {
+      "url": "https://weibo.com",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
+    "siteId": "douyin",
+    "providerId": "douyin",
+    "category": "social_discovery",
+    "name": "抖音招聘线索",
+    "institutionUrl": "https://www.douyin.com",
+    "origin": "https://www.douyin.com",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": true,
+      "detail": false,
+      "discovery": true
+    },
+    "evidenceUrl": "https://www.douyin.com",
+    "verifiedAt": null,
+    "status": "candidate",
+    "accessStatus": "authorization_required",
+    "allowedDomains": ["www.douyin.com"],
+    "jobFamilies": [],
+    "adapter": "douyin",
+    "identityEvidence": {
+      "url": "https://www.douyin.com",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  }
+]

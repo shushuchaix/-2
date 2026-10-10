@@ -97,9 +97,9 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
   return (
     <SidebarProvider>
       <Sidebar>
-        <SidebarHeader>
+        <SidebarHeader className="workspace-brand">
           <p className="text-lg font-semibold">简历岗位雷达</p>
-          <p className="text-sm text-muted-foreground">个人求职工作台</p>
+          <p className="workspace-brand-description">个人求职工作台</p>
         </SidebarHeader>
         <SidebarContent>
           <nav aria-label="主要导航">
@@ -114,6 +114,9 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
                           isActive={route.page === page}
                           render={
                             <a
+                              aria-current={
+                                route.page === page ? "page" : undefined
+                              }
                               href={buildHash({
                                 page: page as Page,
                                 selection: version.selection,
@@ -128,7 +131,7 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
                           {page === "trash" && version.trashCount !== null && (
                             <span
                               aria-hidden="true"
-                              className="ml-auto rounded-md bg-muted px-2 text-sm"
+                              className="workspace-nav-count ml-auto"
                             >
                               {version.trashCount}
                             </span>
@@ -144,27 +147,36 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
         </SidebarContent>
       </Sidebar>
       <SidebarInset className="min-w-0">
-        <header className="flex min-w-0 flex-wrap items-center gap-4 border-b bg-card p-4">
+        <header className="workspace-header flex min-w-0 flex-wrap items-center gap-4">
+          <div className="workspace-decoration" aria-hidden="true" />
           <SidebarTrigger aria-label="切换导航" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-muted-foreground">
+          <div className="workspace-version min-w-0 flex-1">
+            <p className="workspace-eyebrow">
+              {version.allTargets ? "全部目标 · 只读汇总" : "当前目标版本"}
+            </p>
+            <p className="workspace-version-name">
+              {current?.versionName ??
+                (version.allTargets ? "全部目标" : "准备好下一步求职")}
+            </p>
+            <p className="workspace-version-description">
               {current
-                ? current.versionName +
-                  " / " +
+                ? "简历副本 · " +
                   String(
                     current.profileSnapshot?.profile?.name ?? "独立简历副本",
                   )
-                : "准备好下一步求职"}
+                : version.allTargets
+                  ? "选择一个目标版本后，可更新岗位与投递进度。"
+                  : "选择目标版本，开始检索适合的岗位。"}
             </p>
           </div>
           <TargetPicker />
         </header>
-        <main
+        <section
           id="main-content"
           className="page-content flex min-w-0 flex-col gap-6 p-6"
         >
           {["workbench", "jobs", "applications"].includes(route.page) && (
-            <h1 className="text-2xl font-semibold">{title}</h1>
+            <h1>{title}</h1>
           )}
           <FormFeedback error={version.error} />
           {["workbench", "jobs", "applications"].includes(route.page) && (
@@ -183,7 +195,7 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
           >
             {content}
           </div>
-        </main>
+        </section>
       </SidebarInset>
     </SidebarProvider>
   );

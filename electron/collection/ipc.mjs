@@ -12,6 +12,15 @@ export function registerCollectionIpc({
 }) {
   const guarded = (fn) => guardDesktopSender({ getWindow, getOrigin }, fn);
   ipcMain.handle(
+    "collection:status",
+    guarded((input) =>
+      sessionStore.getStatus({
+        scope: businessScope(input),
+        sessionRef: identifier(input.sessionRef),
+      }),
+    ),
+  );
+  ipcMain.handle(
     "collection:capabilities",
     guarded(() => ({
       available: Boolean(browser),

@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke("collection:login", input),
     getCollectionCapabilities: () =>
       ipcRenderer.invoke("collection:capabilities"),
+    getCollectionSessionStatus: (input) =>
+      ipcRenderer.invoke("collection:status", input),
     verifyCollectionSession: (input) =>
       ipcRenderer.invoke("collection:verify", input),
     clearCollectionSession: (input) =>

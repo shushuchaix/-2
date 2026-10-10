@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseBossResponse } from "../../src/sources/boss/protocol.mjs";
 import {
   bossPageScript,
   bossAbortScript,
@@ -37,6 +38,19 @@ export function createCollectionBrowser({
     prepares = new Map();
   let reads = 0,
     stopping = false;
+  const riskRecovery = Symbol("owned-risk-recovery");
+  async function assertBossRisk(input) {
+    if (input[riskRecovery]) return;
+    const status = await sessionStore.getStatus({
+      scope: input.ref.scope,
+      sessionRef: input.sessionRef,
+    });
+    if (status.riskBlocked)
+      throw failure(
+        "boss_risk_blocked",
+        "当前版本Boss会话受限，请处理后明确解除并重新核验。",
+      );
+  }
   async function sessionFor(entry) {
     let stored = sessions.get(entry.sessionRef);
     if (!stored) {
@@ -52,9 +66,15 @@ export function createCollectionBrowser({
         const host = cookie.domain?.replace(/^\./, "");
         if (
           host &&
-          allowsRoute("https://" + host + "/", platformPolicy(entry.platform), {
-            manual: true,
-          })
+          (entry.platform === "boss"
+            ? ["www.zhipin.com", "zhipin.com"].includes(host)
+            : allowsRoute(
+                "https://" + host + "/",
+                platformPolicy(entry.platform),
+                {
+                  manual: true,
+                },
+              ))
         ) {
           const { hostOnly, session, ...saved } = cookie;
           await ses.cookies.set({
@@ -289,11 +309,37 @@ export function createCollectionBrowser({
           "collection_session_scope",
           "请先打开当前版本的独立登录窗口。",
         );
+      await assertBossRisk(input);
       return service.read({
         ...input,
         operation,
         url: platformPolicy("boss").entryUrl,
         routePolicy: { ...platformPolicy("boss"), bossOperation: operation },
+      });
+    },
+    async recoverBossSession(input) {
+      const entry = await sessionStore.get({
+        scope: input.ref.scope,
+        sessionRef: input.sessionRef,
+      });
+      if (entry.platform !== "boss")
+        throw failure("collection_session_scope", "采集会话与来源不匹配。");
+      const result = await service.readBoss({ ...input, [riskRecovery]: true });
+      const verification = parseBossResponse({
+        kind: input.operation.kind,
+        status: result.status,
+        payload: result.payload,
+        checkedAt: result.checkedAt,
+      });
+      if (verification.status !== "success")
+        throw failure(
+          verification.code || "boss_risk_recovery_required",
+          "会话核验未通过，风险阻塞保留。",
+        );
+      return sessionStore.clearRisk({
+        scope: input.ref.scope,
+        sessionRef: input.sessionRef,
+        verification: { ...verification, sessionRef: input.sessionRef },
       });
     },
     async read({
@@ -305,6 +351,7 @@ export function createCollectionBrowser({
       signal,
       sessionRef,
       operation,
+      [riskRecovery]: recovering,
     }) {
       publicCollectionUrl(url);
       await assertScope?.(ref.scope);
@@ -321,6 +368,12 @@ export function createCollectionBrowser({
       if (sessionRef) busySessions.add(sessionRef);
       let item, byteReservation;
       try {
+        if (operation) {
+          validateBossOperation(operation);
+          if (routePolicy.platform !== "boss" || !sessionRef)
+            throw failure("collection_session_scope", "采集会话与来源不匹配。");
+          await assertBossRisk({ ref, sessionRef, [riskRecovery]: recovering });
+        }
         byteReservation = await ledger.reserve({
           ref,
           token,
@@ -403,16 +456,38 @@ export function createCollectionBrowser({
           signal?.throwIfAborted();
           if (item.lifetime.signal.aborted)
             throw failure("collection_cancelled", "采集已取消。");
-          if (operation)
+          if (operation) {
+            const result = decodeBossPageResult(document),
+              checkedAt = new Date().toISOString();
+            const parsed = parseBossResponse({
+              kind: operation.kind,
+              status: result.status,
+              payload: result.payload,
+              checkedAt,
+            });
+            if (parsed.status === "risk_blocked")
+              await sessionStore.setRisk({
+                scope: ref.scope,
+                sessionRef,
+                code: parsed.code,
+                checkedAt,
+              });
+            else if (["success", "login_required"].includes(parsed.status))
+              await sessionStore.setState({
+                scope: ref.scope,
+                sessionRef,
+                state: parsed.status === "success" ? "verified" : "expired",
+              });
             return {
-              ...decodeBossPageResult(document),
-              checkedAt: new Date().toISOString(),
+              ...result,
+              checkedAt,
               channel: "authorized_browser",
               usage: {
                 ...item.policy.snapshot(),
                 wireBytes: item.client.snapshot().bytes,
               },
             };
+          }
           const html = typeof document === "string" ? document : document.html;
           if (typeof html !== "string" || Buffer.byteLength(html) > 8388608)
             throw failure(

@@ -11,10 +11,12 @@ export function createCollectionSessions({
   dataDir,
   safeStorage,
   fsAdapter = fs,
+  clock = { now: Date.now },
 }) {
   const dir = path.join(dataDir, "collection-sessions"),
     filename = path.join(dir, "sessions.json"),
     intentFile = path.join(dir, "cleanup.json"),
+    riskFile = path.join(dir, "risk-stops.json"),
     memory = new Map(),
     revoked = new Set();
   const available = () =>
@@ -31,6 +33,21 @@ export function createCollectionSessions({
         Object.keys(value.entries).length > 500
       )
         throw Error("Session store invalid");
+      return value;
+    } catch (e) {
+      if (e.code === "ENOENT") return { version: 1, entries: {} };
+      throw e;
+    }
+  }
+  async function loadRisks() {
+    try {
+      const value = JSON.parse(await fsAdapter.readFile(riskFile, "utf8"));
+      if (
+        value.version !== 1 ||
+        !value.entries ||
+        Object.keys(value.entries).length > 500
+      )
+        throw Error("Risk store invalid");
       return value;
     } catch (e) {
       if (e.code === "ENOENT") return { version: 1, entries: {} };
@@ -88,6 +105,10 @@ export function createCollectionSessions({
         for (const [id, e] of Object.entries(data.entries))
           if (matches(e, intent)) delete data.entries[id];
         await writeAtomicJson(filename, data, { fsAdapter });
+        const risks = await loadRisks();
+        for (const [id, e] of Object.entries(risks.entries))
+          if (matches(e, intent)) delete risks.entries[id];
+        await writeAtomicJson(riskFile, risks, { fsAdapter });
         pending.entries = pending.entries.filter(
           (e) =>
             !(
@@ -106,7 +127,7 @@ export function createCollectionSessions({
     available,
     async create({ scope, platform, accountRef, remember = false }) {
       if (
-        !["wechat", "weibo"].includes(platform) ||
+        !["wechat", "weibo", "boss"].includes(platform) ||
         !scope?.packageId ||
         !scope?.targetRevisionId ||
         typeof accountRef !== "string" ||
@@ -139,14 +160,21 @@ export function createCollectionSessions({
         throw fail();
       let entry = memory.get(sessionRef);
       if (!entry) {
-        const stored = owned((await load()).entries[sessionRef], scope);
+        const stored = owned(
+          (await load()).entries[sessionRef] ||
+            (await loadRisks()).entries[sessionRef],
+          scope,
+        );
         entry = {
           ...stored,
           partition: "collection-" + randomUUID(),
-          remember: true,
+          remember: Boolean(stored.encrypted),
         };
+        delete entry.encrypted;
         memory.set(sessionRef, entry);
       }
+      const risk = (await loadRisks()).entries[sessionRef]?.risk;
+      entry.risk = risk || null;
       return { ...owned(entry, scope) };
     },
     async saveMaterial({ scope, sessionRef, cookies = [] }) {
@@ -201,6 +229,77 @@ export function createCollectionSessions({
         throw Error("Invalid session state");
       const entry = owned(memory.get(sessionRef), scope);
       entry.state = state;
+    },
+    async getStatus({ scope, sessionRef }) {
+      const entry = await service.get({ scope, sessionRef });
+      return {
+        state: entry.state,
+        riskBlocked: Boolean(entry.risk),
+        ...(entry.risk
+          ? { code: entry.risk.code, checkedAt: entry.risk.checkedAt }
+          : {}),
+      };
+    },
+    async setRisk({ scope, sessionRef, code, checkedAt }) {
+      const entry = await service.get({ scope, sessionRef });
+      if (
+        entry.platform !== "boss" ||
+        !["boss_account_risk", "boss_environment_risk"].includes(code) ||
+        !Number.isFinite(Date.parse(checkedAt))
+      )
+        throw Object.assign(Error("风险状态无效。"), {
+          code: "boss_risk_invalid",
+        });
+      await withWorkspaceLock(dir, async () => {
+        owned(memory.get(sessionRef), scope);
+        if ((await intents()).entries.some((i) => matches(entry, i)))
+          throw fail();
+        const risks = await loadRisks();
+        risks.entries[sessionRef] = {
+          sessionRef,
+          packageId: entry.packageId,
+          targetRevisionId: entry.targetRevisionId,
+          platform: "boss",
+          state: entry.state,
+          risk: { code, checkedAt },
+        };
+        await writeAtomicJson(riskFile, risks, { fsAdapter });
+        memory.get(sessionRef).risk = { code, checkedAt };
+      });
+      return service.getStatus({ scope, sessionRef });
+    },
+    async clearRisk({ scope, sessionRef, verification }) {
+      const entry = await service.get({ scope, sessionRef }),
+        time = Date.parse(verification?.checkedAt),
+        now = clock.now();
+      if (
+        entry.platform !== "boss" ||
+        verification?.status !== "success" ||
+        verification?.sessionRef !== sessionRef ||
+        !Number.isFinite(time) ||
+        time > now + 5000 ||
+        now - time > 300000 ||
+        (entry.risk && time < Date.parse(entry.risk.checkedAt))
+      )
+        throw Object.assign(Error("请明确解除风险并重新核验当前会话。"), {
+          code: "boss_risk_recovery_required",
+          retryable: false,
+        });
+      await withWorkspaceLock(dir, async () => {
+        owned(memory.get(sessionRef), scope);
+        if ((await intents()).entries.some((i) => matches(entry, i)))
+          throw fail();
+        const risks = await loadRisks();
+        const current = risks.entries[sessionRef];
+        if (current?.risk && time < Date.parse(current.risk.checkedAt))
+          throw Object.assign(Error("风险发生后需要新的核验。"), {
+            code: "boss_risk_recovery_required",
+          });
+        delete risks.entries[sessionRef];
+        await writeAtomicJson(riskFile, risks, { fsAdapter });
+        memory.get(sessionRef).risk = null;
+      });
+      return service.getStatus({ scope, sessionRef });
     },
     async cleanupPackage(packageId) {
       return cleanup({ packageId });

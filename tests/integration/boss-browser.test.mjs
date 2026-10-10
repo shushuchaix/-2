@@ -221,6 +221,9 @@ function harness({ execute, deny = false } = {}) {
       },
       async saveMaterial() {},
       async setState() {},
+      async getStatus() {
+        return { state: "unverified", riskBlocked: false };
+      },
     },
     assertScope: async () => {},
   });

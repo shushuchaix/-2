@@ -42,3 +42,47 @@ test("collection IPC accepts only workbench root main frame and passes no creden
   assert.equal(calls[0].remember, false);
   assert.equal(calls[0].cookie, undefined);
 });
+
+test("session status IPC exposes only scoped metadata and rejects a foreign sender", async () => {
+  const handlers = new Map(),
+    mainFrame = { url: "http://127.0.0.1:31000/" },
+    sender = { mainFrame };
+  const scope = {
+    packageId: "00000000-0000-4000-8000-000000000001",
+    targetRevisionId: "target-one@1",
+  };
+  let calls = 0;
+  registerCollectionIpc({
+    ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
+    getWindow: () => ({ webContents: sender }),
+    getOrigin: () => mainFrame.url,
+    sessionStore: {
+      getStatus: async (input) => {
+        calls++;
+        assert.deepEqual(input, { scope, sessionRef: "session-one" });
+        return {
+          state: "unverified",
+          riskBlocked: true,
+          code: "boss_environment_risk",
+        };
+      },
+    },
+    context: {},
+    browser: {},
+  });
+  assert.equal(typeof handlers.get("collection:status"), "function");
+  await assert.rejects(
+    handlers.get("collection:status")(
+      { sender: {}, senderFrame: mainFrame },
+      { scope, sessionRef: "session-one" },
+    ),
+  );
+  assert.deepEqual(
+    await handlers.get("collection:status")(
+      { sender, senderFrame: mainFrame },
+      { scope, sessionRef: "session-one" },
+    ),
+    { state: "unverified", riskBlocked: true, code: "boss_environment_risk" },
+  );
+  assert.equal(calls, 1);
+});

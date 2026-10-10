@@ -21,5 +21,7 @@ export function createDesktopAdapter(bridge?: DesktopBridge): DesktopAdapter {
       bridge?.verifyCollectionSession?.(input) ?? unavailable(),
     clearCollectionSession: (input) =>
       bridge?.clearCollectionSession?.(input) ?? unavailable(),
+    getCollectionSessionStatus: (input) =>
+      bridge?.getCollectionSessionStatus?.(input) ?? unavailable(),
   };
 }

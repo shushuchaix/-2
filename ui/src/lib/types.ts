@@ -120,7 +120,7 @@ export interface DesktopBridge {
   openCollectionLogin?(input: {
     scope: Scope;
     activityId?: string;
-    platform: "wechat" | "weibo";
+    platform: "wechat" | "weibo" | "boss";
     accountRef: string;
     remember?: boolean;
     testUrl?: string;
@@ -135,6 +135,15 @@ export interface DesktopBridge {
     scope: Scope;
     sessionRef: string;
   }): Promise<{ status: string }>;
+  getCollectionSessionStatus?(input: {
+    scope: Scope;
+    sessionRef: string;
+  }): Promise<{
+    state: string;
+    riskBlocked: boolean;
+    code?: string;
+    checkedAt?: string;
+  }>;
   isAvailable(): Promise<unknown>;
   getKeyStatus(provider: string): Promise<unknown>;
   saveKey(provider: string, key: string): Promise<unknown>;

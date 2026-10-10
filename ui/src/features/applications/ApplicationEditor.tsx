@@ -119,6 +119,7 @@ export function ApplicationEditor({
               <Select
                 items={items}
                 value={status}
+                disabled={op.busy}
                 onValueChange={(v) => setStatus(String(v))}
               >
                 <SelectTrigger aria-label="投递状态">
@@ -145,7 +146,7 @@ export function ApplicationEditor({
                 id="application-resumeRevisionId"
                 checked={resumeRecorded}
                 onCheckedChange={setResumeRecorded}
-                disabled={!copyId}
+                disabled={!copyId || op.busy}
               />
               <FieldLabel htmlFor="application-resumeRevisionId">
                 记录使用本目标自有简历副本
@@ -160,6 +161,7 @@ export function ApplicationEditor({
               label="投递日期"
               type="date"
               value={appliedAt}
+              disabled={op.busy}
               onChange={setAppliedAt}
               error={errors.appliedAt ?? op.error?.fieldErrors?.appliedAt}
             />
@@ -168,6 +170,7 @@ export function ApplicationEditor({
               label="跟进日期"
               type="date"
               value={followUpAt}
+              disabled={op.busy}
               onChange={setFollowUpAt}
               error={errors.followUpAt ?? op.error?.fieldErrors?.followUpAt}
             />
@@ -176,6 +179,7 @@ export function ApplicationEditor({
               label="投递备注"
               multiline
               value={note}
+              disabled={op.busy}
               onChange={setNote}
               maxLength={20000}
               error={errors.note ?? op.error?.fieldErrors?.note}
@@ -208,11 +212,15 @@ export function ApplicationEditor({
               关闭
             </Button>
             <Button type="submit" disabled={op.busy}>
-              保存投递记录
+              {op.busy ? "正在保存投递记录…" : "保存投递记录"}
             </Button>
           </SheetFooter>
         </form>
-        <OperationFeedback result={op.message} busy={op.busy} />
+        <OperationFeedback
+          result={op.message}
+          busy={op.busy}
+          busyLabel="正在保存投递记录…"
+        />
       </SheetContent>
     </Sheet>
   );

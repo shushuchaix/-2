@@ -5,8 +5,52 @@ import {
   SheetTitle,
   SheetDescription,
 } from "../../components/ui/sheet";
+import { RecordCounts } from "../../components/RecordCounts";
+import { Button } from "../../components/ui/button";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
 
 export type DiagnosticEntry = Record<string, unknown>;
+const operationLabels: Record<string, string> = {
+  network: "网络请求",
+  source: "来源采集",
+  collection: "采集活动",
+  model: "模型调用",
+  storage: "数据保存",
+  http: "操作请求",
+  application: "工作区操作",
+  desktop: "桌面界面",
+  parser: "内容解析",
+  parse: "内容解析",
+  import: "数据导入",
+  run: "检索任务",
+  workspace: "工作区操作",
+};
+export const diagnosticOperationLabel = (value: unknown) =>
+  typeof value === "string"
+    ? operationLabels[value.split(".")[0]] || "其他诊断事件"
+    : "诊断事件";
+export const diagnosticLevelLabel = (value: unknown) =>
+  (
+    ({ error: "错误", warn: "提醒", info: "信息", debug: "调试" }) as Record<
+      string,
+      string
+    >
+  )[String(value)] || "级别未提供";
+export const diagnosticResultLabel = (value: unknown) =>
+  (
+    ({
+      ETIMEDOUT: "请求超时",
+      ESOCKETTIMEDOUT: "请求超时",
+      ECONNREFUSED: "连接被拒绝",
+      ECONNRESET: "连接中断",
+      ENOTFOUND: "域名无法解析",
+      EAI_AGAIN: "域名解析暂不可用",
+    }) as Record<string, string>
+  )[String(value)] || (value ? "需要查看技术详情" : "过程记录");
 const numberKeys = new Set([
   "httpStatus",
   "retryCount",
@@ -350,6 +394,7 @@ export function DiagnosticDetails({
   entry: DiagnosticEntry | null;
   onClose(): void;
 }) {
+  const safe = entry ? safeDiagnostic(entry) : null;
   return (
     <Sheet
       open={Boolean(entry)}
@@ -364,10 +409,44 @@ export function DiagnosticDetails({
             仅显示请求过程、计数、运行环境和匿名编号，不包含私人正文或路径。
           </SheetDescription>
         </SheetHeader>
-        {entry && (
-          <pre className="whitespace-pre-wrap break-all p-4">
-            {JSON.stringify(safeDiagnostic(entry), null, 2)}
-          </pre>
+        {safe && (
+          <div className="flex flex-col gap-4 p-4">
+            <section aria-label="诊断事件摘要" className="flex flex-col gap-3">
+              <dl className="grid grid-cols-2 gap-3">
+                {[
+                  ["操作", diagnosticOperationLabel(safe.operation)],
+                  ["级别", diagnosticLevelLabel(safe.level)],
+                  ["时间", safe.at],
+                  ["结果", diagnosticResultLabel(safe.code)],
+                  ["耗时（毫秒）", safe.durationMs],
+                ].map(([label, value]) => (
+                  <div key={String(label)}>
+                    <dt className="text-sm text-muted-foreground">
+                      {String(label)}
+                    </dt>
+                    <dd>{value === undefined ? "未提供" : String(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+              {object(safe.counts) && (
+                <RecordCounts
+                  counts={safe.counts}
+                  kind="run"
+                  label="诊断计数"
+                />
+              )}
+            </section>
+            <Collapsible>
+              <CollapsibleTrigger render={<Button variant="outline" />}>
+                技术详情
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <pre className="whitespace-pre-wrap break-all py-3">
+                  {JSON.stringify(safe, null, 2)}
+                </pre>
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
         )}
       </SheetContent>
     </Sheet>

@@ -1,7 +1,51 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { act, waitFor } from "@testing-library/react";
+import { act, waitFor, within } from "@testing-library/react";
 import { renderApp } from "../helpers/react-fixture";
+
+test("run history explains its result and counts before safe technical details", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/logs?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path) =>
+      path === "/runs"
+        ? {
+            runs: [
+              {
+                runId: "synthetic-run-counts",
+                status: "partial",
+                stage: "collecting",
+                createdAt: "2026-10-10T02:00:00Z",
+                counts: {
+                  raw: 3,
+                  newForTarget: 2,
+                  eligible: 0,
+                  secret: "PRIVATE_DIAGNOSTIC_SENTINEL",
+                },
+                resumeText: "PRIVATE_DIAGNOSTIC_SENTINEL",
+              },
+            ],
+          }
+        : undefined,
+  });
+  const summary = await f.screen.findByRole("region", { name: "运行结果摘要" });
+  assert.ok(within(summary).getByText("采集 3 / 保存 2"));
+  assert.ok(within(summary).getByText(/阶段：采集岗位/));
+  assert.ok(within(summary).getByText("部分完成"));
+  assert.match(summary.textContent ?? "", /2026-10-10/);
+  assert.equal(f.screen.queryByText(/"raw":\s*3/), null);
+  assert.equal(f.screen.queryByText("synthetic-run-counts"), null);
+  assert.doesNotMatch(
+    document.body.textContent ?? "",
+    /PRIVATE_DIAGNOSTIC_SENTINEL/,
+  );
+  await f.user.click(within(summary).getByRole("button", { name: "技术详情" }));
+  assert.ok(f.screen.getByText("synthetic-run-counts"));
+  assert.ok(f.screen.getByText(/"raw":\s*3/));
+  assert.doesNotMatch(
+    document.body.textContent ?? "",
+    /PRIVATE_DIAGNOSTIC_SENTINEL/,
+  );
+});
 
 test("business history uses exact owner scope and clears old response when selection changes", async (t) => {
   let release!: (data: unknown) => void;
@@ -37,12 +81,16 @@ test("business history uses exact owner scope and clears old response when selec
   });
   await f.selectTarget({ packageId: "A", targetRevisionId: "t1@1" });
   await f.selectTarget({ packageId: "B", targetRevisionId: "t2@1" });
+  await f.user.click(await f.screen.findByRole("button", { name: "技术详情" }));
   assert.ok(await f.screen.findByText("run-b"));
-  release({
-    runs: [{ runId: "private-run-a", ownerPackageId: "A", status: "failed" }],
+  await act(async () => {
+    release({
+      runs: [{ runId: "private-run-a", ownerPackageId: "A", status: "failed" }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(f.screen.queryByText("private-run-a"), null);
+  assert.ok(f.screen.getByText("run-b"));
   const diagnosticLink = f.screen.getByRole("link", { name: "查看更新日志" });
   const linkedScope = new URLSearchParams(
     diagnosticLink.getAttribute("href")?.split("?")[1],
@@ -133,6 +181,7 @@ test("same-page history diagnostic link synchronizes tab filters export and brow
       "true",
     ),
   );
+  await f.user.click(await f.screen.findByRole("button", { name: "技术详情" }));
   await f.screen.findByText("run-diagnostic");
   window.history.forward();
   await waitFor(() =>
@@ -179,6 +228,7 @@ test("switching to business history updates the hash so the same diagnostic link
   assert.equal(hash.get("tab"), "business");
   assert.equal(hash.get("packageId"), "A");
   assert.equal(hash.get("targetRevisionId"), "t1@1");
+  await f.user.click(await f.screen.findByRole("button", { name: "技术详情" }));
   await f.screen.findByText("same-diagnostic-run");
   await f.user.click(f.screen.getByRole("tab", { name: "系统诊断" }));
   assert.equal(
@@ -326,9 +376,25 @@ test("system diagnostics render safe context and never arbitrary private fields"
         : undefined,
   });
   await f.user.click(f.screen.getByRole("tab", { name: "系统诊断" }));
-  await f.user.click(await f.screen.findByRole("button", { name: /查看诊断/ }));
+  const details = await f.screen.findByRole("button", { name: /查看诊断/ });
+  assert.doesNotMatch(
+    document.body.textContent ?? "",
+    /d-00000000-0000-4000-8000-000000000002|ETIMEDOUT/,
+  );
+  assert.doesNotMatch(details.getAttribute("aria-label") ?? "", /d-00000000/);
+  assert.ok(f.screen.getByText("请求超时"));
+  await f.user.click(details);
+  const summary = f.screen.getByRole("region", { name: "诊断事件摘要" });
+  assert.ok(within(summary).getByText("网络请求"));
+  assert.ok(within(summary).getByText("错误"));
+  assert.ok(within(summary).getByText("请求超时"));
+  assert.doesNotMatch(summary.textContent ?? "", /d-00000000|ETIMEDOUT/);
+  assert.equal(f.screen.queryByText(/costUpperBoundCny/), null);
+  assert.doesNotMatch(document.body.textContent ?? "", /PRIVATE_/);
+  await f.user.click(f.screen.getByRole("button", { name: "技术详情" }));
   const text = document.body.textContent || "";
   assert.match(text, /ETIMEDOUT/);
+  assert.match(text, /d-00000000-0000-4000-8000-000000000002/);
   assert.match(text, /9/);
   assert.match(text, /costUpperBoundCny/);
   assert.match(text, /2\.3/);
@@ -393,6 +459,7 @@ test("filtered diagnostic export keeps filters omits list limit and blocks dupli
           : undefined,
   });
   const button = await f.screen.findByRole("button", { name: "导出日志" });
+  await f.screen.findByText(/错误 未统计，提醒 未统计/);
   await f.user.click(button);
   await f.user.click(button);
   const calls = f.apiCalls.filter((c) =>

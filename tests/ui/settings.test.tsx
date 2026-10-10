@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderApp } from "../helpers/react-fixture";
+import { within } from "@testing-library/react";
+import { renderApp, syntheticApi } from "../helpers/react-fixture";
 
 const settings = {
   model: {
@@ -10,6 +11,135 @@ const settings = {
   },
   budgets: { maxCostCny: 10, maxModelRequests: 1000 },
 };
+
+test("legacy assignment explains the actual record and whitelisted move counts", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/settings",
+    apiHandler: (path) => {
+      if (path === "/settings") return settings;
+      if (path === "/legacy-records")
+        return {
+          records: [{ recordId: "legacy-summary", title: "合成历史投递" }],
+        };
+      if (path === "/legacy-records/legacy-summary")
+        return {
+          root: {
+            recordId: "legacy-summary",
+            applicationId: "old-app",
+            jobId: "old-job",
+            status: "applied",
+            note: "合成历史备注",
+            updatedAt: "2026-10-09T01:00:00Z",
+          },
+          records: [
+            {
+              collection: "applications",
+              record: { recordId: "legacy-summary", applicationId: "old-app" },
+            },
+            {
+              collection: "jobs",
+              record: {
+                canonical: { title: "合成旧岗位", company: "合成旧单位" },
+              },
+            },
+          ],
+          counts: { applications: 1, jobs: 1, events: 0 },
+          privatePayload: "PRIVATE_LEGACY_SENTINEL",
+        };
+      if (path === "/legacy-records/assignment-preview")
+        return {
+          workspaceRevision: 1,
+          planHash: "summary-plan",
+          recordIds: ["legacy-summary"],
+          counts: {
+            applications: 1,
+            jobs: 1,
+            events: 0,
+            unknown: "PRIVATE_LEGACY_SENTINEL",
+          },
+        };
+    },
+  });
+  await f.user.click(f.screen.getByRole("tab", { name: "版本维护" }));
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "分配合成历史投递" }),
+  );
+  const record = await f.screen.findByRole("region", {
+    name: "旧记录内容摘要",
+  });
+  assert.ok(within(record).getByText("合成旧岗位"));
+  assert.ok(within(record).getByText("合成旧单位"));
+  assert.ok(within(record).getByText("投递记录", { selector: "p" }));
+  assert.doesNotMatch(
+    document.body.textContent ?? "",
+    /PRIVATE_LEGACY_SENTINEL|"root"/,
+  );
+  await f.user.click(f.screen.getByRole("button", { name: "预览归属移动" }));
+  const counts = await f.screen.findByRole("region", {
+    name: "归属移动内容计数",
+  });
+  assert.equal(
+    within(counts).getByText("投递记录").nextElementSibling?.textContent,
+    "1",
+  );
+  assert.equal(
+    within(counts).getByText("变更事件").nextElementSibling?.textContent,
+    "0",
+  );
+  assert.equal(
+    within(counts).getByText("文件").nextElementSibling?.textContent,
+    "未统计",
+  );
+  assert.doesNotMatch(
+    document.body.textContent ?? "",
+    /PRIVATE_LEGACY_SENTINEL/,
+  );
+});
+
+test("dedup preview explains keep and remove counts without using technical IDs as titles", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/settings",
+    apiHandler: (path) =>
+      path === "/jobs/duplicates/preview"
+        ? {
+            workspaceRevision: 1,
+            planHash: "readable-plan",
+            groups: [
+              {
+                groupId: "readable",
+                packageId: "A",
+                versionName: "合成目标A",
+                keepJobId: "technical-kept",
+                removeJobIds: ["technical-removed"],
+                reasons: ["authority_id"],
+              },
+            ],
+          }
+        : path === "/settings"
+          ? settings
+          : undefined,
+  });
+  await f.user.click(f.screen.getByRole("tab", { name: "版本维护" }));
+  await f.user.click(
+    f.screen.getByRole("button", { name: "预览所有版本去重" }),
+  );
+  const group = await f.screen.findByRole("region", {
+    name: "合成目标A去重摘要",
+  });
+  assert.ok(within(group).getByText("岗位标题未提供"));
+  assert.ok(within(group).getByText("保留 1 条；归并删除 1 条。"));
+  assert.ok(within(group).getByText(/可信来源岗位编号相同/));
+  assert.equal(f.screen.queryByText("technical-kept"), null);
+  await f.user.click(within(group).getByRole("button", { name: "技术详情" }));
+  assert.ok(within(group).getByText("technical-kept"));
+  assert.equal(
+    f.apiCalls.some(
+      (c) =>
+        c.path.startsWith("/jobs/") && !c.path.startsWith("/jobs/duplicates"),
+    ),
+    false,
+  );
+});
 
 test("settings retains official model and yuan budget and rejects invalid amount", async (t) => {
   const f = await renderApp(t, {
@@ -214,6 +344,54 @@ test("dedup completion renders the backend totals and per-package counts", async
   );
   await f.screen.findByText("合成目标A：清理 1，保护 0");
 });
+
+test("dedup completion distinguishes explicit zero from unreported totals", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/settings",
+    apiHandler: (path) =>
+      path === "/jobs/duplicates/preview"
+        ? {
+            workspaceRevision: 1,
+            planHash: "zero-counts",
+            groups: [
+              {
+                groupId: "zero-group",
+                packageId: "A",
+                versionName: "合成目标A",
+                keepJobId: "kept-zero",
+                removeJobIds: ["duplicate-zero"],
+              },
+            ],
+          }
+        : path === "/jobs/duplicates/apply"
+          ? {
+              totals: { removedEntities: 0, affectedVersions: 0 },
+              packages: [
+                {
+                  packageId: "A",
+                  versionName: "合成目标A",
+                  counts: { removedEntities: 0 },
+                },
+              ],
+            }
+          : path === "/settings"
+            ? settings
+            : undefined,
+  });
+  await f.user.click(f.screen.getByRole("tab", { name: "版本维护" }));
+  await f.user.click(
+    f.screen.getByRole("button", { name: "预览所有版本去重" }),
+  );
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "确认清理所选重复岗位" }),
+  );
+  assert.ok(
+    await f.screen.findByText(
+      "已清理重复实体 0 条，版本内归并 未统计 条，涉及 0 个版本。",
+    ),
+  );
+  assert.ok(f.screen.getByText("合成目标A：清理 0，保护 未统计"));
+});
 test("all-version dedup keeps protected conflicts and requires fresh preview after 409", async (t) => {
   const f = await renderApp(t, {
     route: "#/settings",
@@ -264,6 +442,11 @@ test("all-version dedup keeps protected conflicts and requires fresh preview aft
       protectedGroup.getAttribute("aria-disabled") === "true",
     true,
   );
+  assert.ok(
+    within(protectedGroup.closest("section")!).getByText(
+      "保留 2 条；自动删除 0 条。",
+    ),
+  );
   await f.user.click(
     f.screen.getByRole("button", { name: "确认清理所选重复岗位" }),
   );
@@ -307,6 +490,7 @@ test("failed workspace restore preserves selected scope while successful restore
   });
   await f.screen.findByText("OLD_JOB_STATE_SENTINEL");
   await f.user.click(f.screen.getByRole("link", { name: "运行日志" }));
+  await f.user.click(await f.screen.findByRole("button", { name: "技术详情" }));
   await f.screen.findByText("OLD_RUN_STATE_SENTINEL");
   await f.user.click(f.screen.getByRole("link", { name: "设置" }));
   await f.user.click(f.screen.getByRole("tab", { name: "数据与备份" }));
@@ -333,6 +517,7 @@ test("failed workspace restore preserves selected scope while successful restore
     },
   );
   await f.user.click(f.screen.getByRole("link", { name: "运行日志" }));
+  await f.user.click(await f.screen.findByRole("button", { name: "技术详情" }));
   await f.screen.findByText("OLD_RUN_STATE_SENTINEL");
   assert.deepEqual(f.apiCalls.filter((c) => c.path === "/runs").at(-1)?.scope, {
     packageId: "A",

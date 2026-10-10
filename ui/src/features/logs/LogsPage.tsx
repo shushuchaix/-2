@@ -38,6 +38,13 @@ import {
   EmptyDescription,
 } from "../../components/ui/empty";
 import { Skeleton } from "../../components/ui/skeleton";
+import { RecordCounts } from "../../components/RecordCounts";
+import { deriveActivityView } from "../workbench/activity-view";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
 import {
   CollectionProgress,
   type CollectionActivity,
@@ -45,6 +52,9 @@ import {
 import {
   DiagnosticDetails,
   safeDiagnostic,
+  diagnosticOperationLabel,
+  diagnosticLevelLabel,
+  diagnosticResultLabel,
   type DiagnosticEntry,
 } from "./DiagnosticDetails";
 
@@ -81,6 +91,15 @@ const status: Record<string, string> = {
   interrupted: "已中断",
   running: "进行中",
   queued: "等待中",
+};
+const stageLabels: Record<string, string> = {
+  queued: "等待检索",
+  planning: "规划检索",
+  collecting: "采集岗位",
+  details: "补全岗位正文",
+  expanding: "展开招聘线索",
+  evaluating: "评价岗位",
+  finished: "检索结束",
 };
 
 function logRoute(hash: string) {
@@ -331,63 +350,111 @@ export function LogsPage({ api }: { api: ApiClient }) {
               <Skeleton className="h-40 w-full" />
             ) : runs.length ? (
               runs.map((run) => (
-                <Card key={run.runId}>
-                  <CardHeader>
-                    <CardTitle>{run.runId}</CardTitle>
-                    <CardDescription>
-                      {run.createdAt || ""}
-                      {context.allTargets &&
-                        " · 归属：" +
-                          (run.targetRevisionId ||
-                            run.ownerPackageId ||
-                            "需确认")}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    {run.collectionProgress && (
-                      <CollectionProgress
-                        readOnly
-                        api={api}
-                        activity={run as CollectionActivity}
+                <section key={run.runId} aria-label="运行结果摘要">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>
+                        {run.collectionProgress ? "采集活动" : "检索任务"}
+                      </CardTitle>
+                      <CardDescription>
+                        {run.createdAt &&
+                        Number.isFinite(Date.parse(run.createdAt))
+                          ? new Date(run.createdAt).toLocaleString("sv-SE", {
+                              hour12: false,
+                            })
+                          : "时间未提供"}
+                        {context.allTargets &&
+                          " · 归属：" +
+                            (context.targets.find(
+                              (target) =>
+                                target.packageId === run.ownerPackageId ||
+                                target.revisionId === run.targetRevisionId,
+                            )?.versionName || "所属目标待确认")}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3">
+                      {run.collectionProgress && (
+                        <CollectionProgress
+                          readOnly
+                          api={api}
+                          activity={run as CollectionActivity}
+                        />
+                      )}
+                      <Badge
+                        variant={
+                          run.status === "failed" ? "destructive" : "secondary"
+                        }
+                      >
+                        {run.collectionProgress ? deriveActivityView(run as CollectionActivity, null).label : status[run.status] || "状态未提供"}
+                      </Badge>
+                      <p>阶段：{run.collectionProgress ? "子批次阶段见技术详情" : stageLabels[run.stage ?? ""] || "未记录"}</p>
+                      <RecordCounts
+                        counts={run.counts || {}}
+                        kind="run"
+                        label="运行计数"
                       />
-                    )}
-                    <Badge
-                      variant={
-                        run.status === "failed" ? "destructive" : "secondary"
-                      }
-                    >
-                      {run.collectionProgress
-                        ? "采集活动"
-                        : status[run.status] || run.status}
-                    </Badge>
-                    <p>阶段：{run.stage || "未记录"}</p>
-                    <pre className="whitespace-pre-wrap break-all">
-                      {JSON.stringify(run.counts || {}, null, 2)}
-                    </pre>
-                  </CardContent>
-                  <CardFooter>
-                    {run.issues?.map((issue, i) => (
-                      <p key={i}>
-                        {issue.code}
-                        {issue.diagnosticId && (
-                          <a
-                            className="ml-2 underline"
-                            href={buildHash({
-                              page: "logs",
-                              selection: context.selection,
-                              filters: {
-                                tab: "system",
-                                diagnosticId: issue.diagnosticId,
+                      <Collapsible>
+                        <CollapsibleTrigger
+                          render={<Button variant="outline" />}
+                        >
+                          技术详情
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="flex flex-col gap-2 pt-3">
+                          <p>
+                            运行编号：
+                            <span>
+                              {String(
+                                safeDiagnostic({ runId: run.runId }).runId ||
+                                  "未提供",
+                              )}
+                            </span>
+                          </p>
+                          <pre className="whitespace-pre-wrap break-all">
+                            {JSON.stringify(
+                              {
+                                ...safeDiagnostic({
+                                  runId: run.runId,
+                                  stage: run.stage,
+                                  outcome: run.status,
+                                  at: run.createdAt,
+                                  counts: run.counts,
+                                  usage: run.collectionUsage,
+                                }),
+                                issues: run.issues?.map((issue) =>
+                                  safeDiagnostic(issue),
+                                ),
                               },
-                            })}
-                          >
-                            查看更新日志
-                          </a>
-                        )}
-                      </p>
-                    ))}
-                  </CardFooter>
-                </Card>
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </CardContent>
+                    <CardFooter>
+                      {run.issues?.map((issue, i) => (
+                        <p key={i}>
+                          {diagnosticResultLabel(issue.code)}
+                          {issue.diagnosticId && (
+                            <a
+                              className="ml-2 underline"
+                              href={buildHash({
+                                page: "logs",
+                                selection: context.selection,
+                                filters: {
+                                  tab: "system",
+                                  diagnosticId: issue.diagnosticId,
+                                },
+                              })}
+                            >
+                              查看更新日志
+                            </a>
+                          )}
+                        </p>
+                      ))}
+                    </CardFooter>
+                  </Card>
+                </section>
               ))
             ) : (
               <Empty>
@@ -511,7 +578,8 @@ export function LogsPage({ api }: { api: ApiClient }) {
             {data.summary && (
               <p>
                 显示 {data.summary.returned} / {data.summary.total} 条；错误{" "}
-                {data.summary.errors || 0}，提醒 {data.summary.warnings || 0}。
+                {data.summary.errors ?? "未统计"}，提醒{" "}
+                {data.summary.warnings ?? "未统计"}。
                 {data.summary.truncated &&
                   "仅显示最近记录，导出可获取全部保留日志。"}
                 {data.summary.damagedLines
@@ -528,24 +596,26 @@ export function LogsPage({ api }: { api: ApiClient }) {
                   <Card key={String(safe.diagnosticId || i)}>
                     <CardHeader>
                       <CardTitle>
-                        {String(safe.operation || "诊断事件")}
+                        {diagnosticOperationLabel(safe.operation)}
                       </CardTitle>
                       <CardDescription>
-                        {String(safe.at || "")} · {String(safe.level || "info")}
+                        {String(safe.at || "时间未提供")} ·{" "}
+                        {diagnosticLevelLabel(safe.level)}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <p>{String(safe.code || "过程记录")}</p>
-                      {safe.diagnosticId ? (
-                        <p>错误编号：{String(safe.diagnosticId)}</p>
-                      ) : null}
+                      <p>{diagnosticResultLabel(safe.code)}</p>
                     </CardContent>
                     <CardFooter>
                       <Button
                         variant="outline"
                         onClick={() => setSelected(entry)}
                         aria-label={
-                          "查看诊断 " + String(safe.diagnosticId || i + 1)
+                          "查看诊断 " +
+                          diagnosticOperationLabel(safe.operation) +
+                          " · 第 " +
+                          (i + 1) +
+                          " 条"
                         }
                       >
                         查看详情

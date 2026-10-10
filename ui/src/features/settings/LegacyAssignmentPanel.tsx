@@ -3,6 +3,14 @@ import type { ApiClient, Scope } from "../../lib/types";
 import { useVersionContext } from "../../app/VersionContext";
 import { useOperation } from "../../lib/hooks";
 import { OperationFeedback } from "../../components/OperationFeedback";
+import { RecordCounts } from "../../components/RecordCounts";
+import { safeDiagnostic } from "../logs/DiagnosticDetails";
+import { applicationLabels } from "../jobs/job-view";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
 import { Button } from "../../components/ui/button";
 import {
   Card,
@@ -41,6 +49,7 @@ type LegacyRecord = {
   kind?: string;
   title?: string;
   ownerPackageId?: string;
+  counts?: Record<string, number>;
 };
 type AssignmentPreview = {
   workspaceRevision: number;
@@ -48,6 +57,130 @@ type AssignmentPreview = {
   recordIds: string[];
   counts: Record<string, number>;
 };
+const object = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+const text = (value: unknown, fallback: string) =>
+  typeof value === "string" && value.trim() ? value : fallback;
+const kindLabels: Record<string, string> = {
+  application: "投递记录",
+  applications: "投递记录",
+  job: "岗位记录",
+  jobs: "岗位记录",
+  run: "检索任务",
+  runs: "检索任务",
+};
+
+function LegacySummary({
+  detail,
+  record,
+}: {
+  detail: unknown;
+  record: LegacyRecord;
+}) {
+  const closure = object(detail),
+    root = object(closure.root ?? closure);
+  const records = Array.isArray(closure.records)
+    ? closure.records.map(object)
+    : [];
+  const owner = records.find(
+    (item) => object(item.record).recordId === record.recordId,
+  );
+  const kind =
+    record.kind ||
+    text(owner?.collection, "") ||
+    (root.applicationId
+      ? "applications"
+      : root.runId
+        ? "runs"
+        : root.jobId
+          ? "jobs"
+          : "");
+  const job =
+    kind === "jobs" || kind === "job"
+      ? root
+      : object(records.find((item) => item.collection === "jobs")?.record);
+  const canonical = object(job.canonical);
+  const date = root.updatedAt ?? root.createdAt ?? root.at;
+  const counts = object(closure.counts ?? record.counts);
+  return (
+    <section aria-label="旧记录内容摘要" className="flex flex-col gap-3">
+      <p>{kindLabels[kind] || "旧业务记录"}</p>
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {[
+          ["岗位", canonical.title ?? job.title],
+          [
+            "企业",
+            canonical.company ??
+              canonical.organization ??
+              job.company ??
+              job.organization,
+          ],
+          ["来源", root.sourceName ?? job.sourceName],
+          [
+            "记录时间",
+            typeof date === "string" && Number.isFinite(Date.parse(date))
+              ? new Date(date).toLocaleString("sv-SE", { hour12: false })
+              : undefined,
+          ],
+        ].map(([label, value]) => (
+          <div key={String(label)}>
+            <dt className="text-sm text-muted-foreground">{String(label)}</dt>
+            <dd>
+              {text(value, label === "岗位" ? "岗位标题未提供" : "未提供")}
+            </dd>
+          </div>
+        ))}
+        {(kind === "applications" || kind === "application") && (
+          <>
+            <div>
+              <dt className="text-sm text-muted-foreground">投递状态</dt>
+              <dd>{applicationLabels[String(root.status)] || "状态未提供"}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">投递备注</dt>
+              <dd className="whitespace-pre-wrap">
+                {text(root.note, "暂无备注")}
+              </dd>
+            </div>
+          </>
+        )}
+        {(kind === "runs" || kind === "run") && (
+          <div>
+            <dt className="text-sm text-muted-foreground">运行结果</dt>
+            <dd>
+              {(
+                {
+                  completed: "已完成",
+                  partial: "部分完成",
+                  failed: "失败",
+                  cancelled: "已取消",
+                } as Record<string, string>
+              )[String(root.status)] || "状态未提供"}
+            </dd>
+          </div>
+        )}
+      </dl>
+      <RecordCounts counts={counts} label="旧记录关联内容计数" />
+      <Collapsible>
+        <CollapsibleTrigger render={<Button variant="outline" />}>
+          技术详情
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3">
+          <p>记录编号：{record.recordId}</p>
+          <pre className="whitespace-pre-wrap break-all">
+            {JSON.stringify(
+              safeDiagnostic({ counts, jobId: root.jobId, runId: root.runId }),
+              null,
+              2,
+            )}
+          </pre>
+        </CollapsibleContent>
+      </Collapsible>
+    </section>
+  );
+}
 
 export function LegacyAssignmentPanel({
   api,
@@ -166,7 +299,7 @@ export function LegacyAssignmentPanel({
       <CardHeader>
         <CardTitle>待归属旧数据</CardTitle>
         <CardDescription>
-          历史投递不能猜测归属。检查整份记录后选择唯一目标移动，评价与事件随之移动。
+          历史投递不能猜测归属。检查记录和关联内容摘要后选择唯一目标移动，评价与事件随之移动。
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -178,15 +311,15 @@ export function LegacyAssignmentPanel({
               className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
             >
               <div>
-                <p>{record.title || record.recordId}</p>
+                <p>{record.title || "旧记录名称未提供"}</p>
                 <p className="text-muted-foreground">
-                  {record.kind || "旧业务记录"}
+                  {kindLabels[record.kind || ""] || "旧业务记录及关联内容"}
                 </p>
               </div>
               <Button
                 variant="outline"
                 onClick={() => open(record)}
-                aria-label={"分配" + (record.title || record.recordId)}
+                aria-label={"分配" + (record.title || "旧记录名称未提供")}
               >
                 查看并分配
               </Button>
@@ -225,9 +358,9 @@ export function LegacyAssignmentPanel({
             </DialogDescription>
           </DialogHeader>
           <OperationFeedback error={op.error || loadError} busy={op.busy} />
-          <pre className="max-h-52 overflow-y-auto whitespace-pre-wrap break-all">
-            {JSON.stringify(detail || selected, null, 2)}
-          </pre>
+          {selected && Boolean(detail) && !loadError && (
+            <LegacySummary detail={detail} record={selected} />
+          )}
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="assignmentDestination">
@@ -273,9 +406,10 @@ export function LegacyAssignmentPanel({
                   )?.versionName
                 }
               </p>
-              <pre className="whitespace-pre-wrap">
-                {JSON.stringify(preview.plan.counts, null, 2)}
-              </pre>
+              <RecordCounts
+                counts={preview.plan.counts}
+                label="归属移动内容计数"
+              />
             </div>
           )}
           <DialogFooter>

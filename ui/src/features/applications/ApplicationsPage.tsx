@@ -3,7 +3,12 @@ import type { ApiClient } from "../../lib/types";
 import { useQuery } from "../../lib/hooks";
 import { useVersionContext } from "../../app/VersionContext";
 import { ApplicationEditor } from "./ApplicationEditor";
-import { factOf, applicationLabels, type JobItem } from "../jobs/job-view";
+import {
+  factOf,
+  applicationLabels,
+  applicationUpdatedAt,
+  type JobItem,
+} from "../jobs/job-view";
 import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 import {
   Select,
@@ -86,6 +91,10 @@ export function ApplicationsPage({ api }: { api: ApiClient }) {
         {row.application?.followUpAt && (
           <p>跟进：{row.application.followUpAt.slice(0, 10)}</p>
         )}
+        <p className="text-sm text-muted-foreground">
+          投递更新：
+          {applicationUpdatedAt(row.application)?.slice(0, 10) ?? "时间未提供"}
+        </p>
       </CardContent>
       <CardFooter>
         {ctx.scope ? (
@@ -125,7 +134,9 @@ export function ApplicationsPage({ api }: { api: ApiClient }) {
         <ToggleGroupItem value="list">列表</ToggleGroupItem>
       </ToggleGroup>
       <p className="text-muted-foreground">
-        看板按当前页分组，共 {query.data?.total ?? 0} 条投递记录。
+        {query.data
+          ? `全部投递记录 ${query.data.total} 条；当前页 ${rows.length} 条。`
+          : "正在读取投递记录。"}
       </p>
       <FormFeedback error={query.error} />
       {!query.loading && !rows.length && (
@@ -141,10 +152,14 @@ export function ApplicationsPage({ api }: { api: ApiClient }) {
       {view === "board" ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {statuses.map((status) => (
-            <section key={status} className="flex min-w-0 flex-col gap-4">
-              <h2 className="font-semibold">
-                {applicationLabels[status]} ·{" "}
-                {rows.filter((r) => r.application?.status === status).length}
+            <section
+              key={status}
+              aria-labelledby={"application-column-" + status}
+              className="flex min-w-0 flex-col gap-4"
+            >
+              <h2 id={"application-column-" + status} className="font-semibold">
+                {applicationLabels[status]} · 当前页{" "}
+                {rows.filter((r) => r.application?.status === status).length} 条
               </h2>
               {rows
                 .filter((r) => r.application?.status === status)

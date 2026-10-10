@@ -7,6 +7,11 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Badge } from "../../components/ui/badge";
 import { Field, FieldLabel } from "../../components/ui/field";
 import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -70,6 +75,10 @@ const reasonLabels: Record<string, string> = {
   multiple_manual_applications: "存在独立人工投递，禁止自动覆盖",
   insufficient_identity_evidence: "身份依据不足",
 };
+const displayedCount = (value: unknown) =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : "未统计";
 
 export function DedupDialog({
   api,
@@ -160,15 +169,16 @@ export function DedupDialog({
             result={op.message}
           />
           {preview?.groups.map((group) => (
-            <div
+            <section
               key={group.groupId}
+              aria-label={(group.versionName || "版本名称未提供") + "去重摘要"}
               className="flex flex-col gap-3 rounded-lg border p-4"
             >
               <Field orientation="horizontal">
                 <Checkbox
                   id={"dedup-" + group.groupId}
                   aria-label={
-                    (group.versionName || group.packageId) +
+                    (group.versionName || "版本名称未提供") +
                     " " +
                     (group.protected ? "保护组" : "重复组")
                   }
@@ -183,18 +193,22 @@ export function DedupDialog({
                   }
                 />
                 <FieldLabel htmlFor={"dedup-" + group.groupId}>
-                  {group.versionName || group.packageId}
+                  {group.versionName || "版本名称未提供"}
                 </FieldLabel>
                 <Badge variant="secondary">
                   {group.protected ? "人工记录受保护" : "可归并"}
                 </Badge>
               </Field>
-              <p>保留：{group.keepJobId}</p>
-              <p>归并删除：{group.removeJobIds.join("、")}</p>
+              <p>岗位标题未提供</p>
+              <p>
+                {group.protected
+                  ? `保留 ${1 + group.removeJobIds.length} 条；自动删除 0 条。`
+                  : `保留 1 条；归并删除 ${group.removeJobIds.length} 条。`}
+              </p>
               <p>
                 依据：
                 {(group.reasons || group.reasonCodes || [])
-                  .map((reason) => reasonLabels[reason] || reason)
+                  .map((reason) => reasonLabels[reason] || "依据需人工核对")
                   .join("；")}
               </p>
               {group.protected && (
@@ -204,7 +218,21 @@ export function DedupDialog({
                     "人工记录存在冲突，需先核对。"}
                 </p>
               )}
-            </div>
+              <Collapsible>
+                <CollapsibleTrigger render={<Button variant="outline" />}>
+                  技术详情
+                </CollapsibleTrigger>
+                <CollapsibleContent className="flex flex-col gap-2 pt-3">
+                  <p>
+                    版本编号：<span>{group.packageId}</span>
+                  </p>
+                  <p>
+                    保留岗位编号：<span>{group.keepJobId}</span>
+                  </p>
+                  <p>归并删除岗位编号：{group.removeJobIds.join("、")}</p>
+                </CollapsibleContent>
+              </Collapsible>
+            </section>
           ))}
           {preview && !preview.groups.length && (
             <p>没有可确认清理的重复岗位。</p>
@@ -218,16 +246,17 @@ export function DedupDialog({
           {result && (
             <div role="status">
               <p>
-                已清理重复实体 {result.counts?.removedEntities || 0}{" "}
-                条，版本内归并 {result.counts?.collapsedVersionEntries || 0}{" "}
-                条，涉及{" "}
-                {result.counts?.affectedVersions || result.results?.length || 0}{" "}
+                已清理重复实体 {displayedCount(result.counts?.removedEntities)}{" "}
+                条，版本内归并{" "}
+                {displayedCount(result.counts?.collapsedVersionEntries)}{" "}
+                条，涉及 {displayedCount(result.counts?.affectedVersions)}{" "}
                 个版本。
               </p>
               {result.results?.map((item) => (
                 <p key={item.packageId}>
-                  {item.versionName || item.packageId}：清理 {item.removed || 0}
-                  ，保护 {item.protected || 0}
+                  {item.versionName || "版本名称未提供"}：清理{" "}
+                  {displayedCount(item.removed)}
+                  ，保护 {displayedCount(item.protected)}
                   {item.code && "；" + item.code}
                 </p>
               ))}

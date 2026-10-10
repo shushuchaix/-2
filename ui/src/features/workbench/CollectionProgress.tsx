@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ApiClient, Scope } from "../../lib/types";
+import type { ApiClient, Scope, CollectionQuality } from "../../lib/types";
 import { useOperation } from "../../lib/hooks";
 import { Button } from "../../components/ui/button";
 import {
@@ -21,6 +21,7 @@ export type CollectionActivity = {
   ownerPackageId?: string;
   targetSnapshot?: { revisionId: string };
   collectionUsage?: Record<string, number>;
+  quality?: CollectionQuality;
   collectionProgress: {
     status: string;
     revision: number;
@@ -168,6 +169,45 @@ export function CollectionProgress({
           有效新增且不重复 {p.metrics?.validNewUnique ?? 0}{" "}
           条（正文、当前招聘、资格、投递入口全部通过）。
         </p>
+        {activity.quality && (
+          <section
+            aria-label="本活动岗位质量"
+            className="grid gap-2 rounded-lg border p-3 text-sm"
+          >
+            <p>
+              正文已核验 {activity.quality.bodyVerified} /{" "}
+              {activity.quality.uniqueRecords} · 当前招聘{" "}
+              {activity.quality.open} / {activity.quality.uniqueRecords} ·
+              投递入口已核验 {activity.quality.applicationAvailable} /{" "}
+              {activity.quality.uniqueRecords}
+            </p>
+            <p>
+              资格通过 {activity.quality.qualificationPass} /{" "}
+              {activity.quality.uniqueRecords} · 待核实{" "}
+              {activity.quality.qualificationUnknown} /{" "}
+              {activity.quality.uniqueRecords} · 不符合{" "}
+              {activity.quality.qualificationFail} /{" "}
+              {activity.quality.uniqueRecords}
+            </p>
+            <p>
+              历史或已截止 {activity.quality.historicalOrExpired} /{" "}
+              {activity.quality.uniqueRecords} · 疑似重复{" "}
+              {activity.quality.suspectedDuplicates} /{" "}
+              {activity.quality.uniqueRecords}
+            </p>
+            <p>
+              有效新增 {activity.quality.validNewUnique} / 已核实请求{" "}
+              {activity.quality.knownRequests} · 每100次已核实请求{" "}
+              {activity.quality.validPer100KnownRequests === null
+                ? "未测量"
+                : activity.quality.validPer100KnownRequests.toFixed(2)}{" "}
+              · 未知请求上界 {activity.quality.unknownRequestUpperBound}
+            </p>
+            <p className="text-muted-foreground">
+              分类可重叠，不能相加当作阶段转化率。召回率与误合并率：未测量。未知请求未进入已核实分母。
+            </p>
+          </section>
+        )}
         {p.lastErrorCode && (
           <p role="status">
             停止原因：{p.lastErrorCode}；请在运行日志查看此活动。

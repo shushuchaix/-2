@@ -14,6 +14,7 @@ export function RecruitmentEvidence({ row }: { row: JobItem }) {
   const opening: Record<string, string> = {
       open: "当前招聘",
       closed: "已截止",
+      expired: "已过期",
       historical: "历史结果公告",
       unknown: "招聘时效待核验",
     },
@@ -21,8 +22,20 @@ export function RecruitmentEvidence({ row }: { row: JobItem }) {
       available: "投递入口已核验",
       login_required: "投递入口需登录",
       unavailable: "投递入口不可用",
+      invalid: "入口失效",
       unknown: "投递入口待核验",
     };
+  const platform = f.platformEvidence as
+    | {
+        opening?: { status?: string; value?: string; checkedAt?: string };
+        entry?: { kind?: string; status?: string; checkedAt?: string };
+      }
+    | undefined;
+  const checkedAt = Date.parse(platform?.opening?.checkedAt || "");
+  const fresh =
+    Number.isFinite(checkedAt) &&
+    checkedAt <= Date.now() &&
+    Date.now() - checkedAt <= 72 * 3600000;
   return (
     <section className="flex flex-col gap-3 rounded-lg border p-4">
       <h2 className="font-semibold">招聘证据与时效</h2>
@@ -37,6 +50,22 @@ export function RecruitmentEvidence({ row }: { row: JobItem }) {
           {apply[String(e.applicationStatus)] ?? apply.unknown}
         </Badge>
       </div>
+      {platform && (
+        <div className="rounded-md bg-muted p-3 text-sm">
+          <p>
+            平台观察：
+            {fresh &&
+            platform.opening?.status === "verified" &&
+            platform.opening.value === "recruiting"
+              ? "在招"
+              : "待复核"}
+            （平台状态单独展示，仍需核实岗位正文与投递入口）。
+          </p>
+          {platform.entry?.kind === "communication" && (
+            <p>平台沟通入口：不构成投递证据。</p>
+          )}
+        </div>
+      )}
       <p className="text-sm text-muted-foreground">
         核验时间：
         {String(e.checkedAt ?? e.observedAt ?? f.retrievedAt ?? "暂无核验时间")}

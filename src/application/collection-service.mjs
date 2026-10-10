@@ -31,6 +31,7 @@ import { contentKey, queueContentDraft } from "../sources/content-queue.mjs";
 import { expandArticles } from "../match/article.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
+import { projectCollectionQuality } from "../domain/collection-quality.mjs";
 const terminal = new Set(["completed", "cancelled"]);
 const bossRiskCodes = new Set([
   "boss_account_risk",
@@ -237,29 +238,11 @@ export function createCollectionService({
     async get(ref) {
       const w = await repository.read(),
         root = structuredClone(rootFor(w, ref));
-      const valid = (root.collectionProgress.newJobIds ?? []).filter(
-        (jobId) => {
-          const fact = selectVersionJobFact(w, {
-            jobId,
-            targetRevisionId: ref.scope.targetRevisionId,
-          });
-          const evaln = selectMatchingEvaluation(w, {
-            jobId,
-            targetRevisionId: ref.scope.targetRevisionId,
-            profileRevisionId: root.targetSnapshot.profileRevisionId,
-            factContentHash: fact.factContentHash,
-          });
-          return isVerifiedRecommendation({
-            qualification: evaln?.qualification,
-            evidence: assessRecruitmentEvidence({
-              record: fact.record ?? {},
-              now: clock.now(),
-            }),
-          });
-        },
-      );
-      root.collectionProgress.metrics.validNewUnique = valid.length;
-      return { ...root, collectionUsage: await ledger.snapshot(ref) };
+      root.collectionUsage = await ledger.snapshot(ref);
+      root.quality = projectCollectionQuality(w, { root, now: clock.now() });
+      root.collectionProgress.metrics.validNewUnique =
+        root.quality.validNewUnique;
+      return root;
     },
     async list({ scope, allTargets = false }) {
       const w = await repository.read();

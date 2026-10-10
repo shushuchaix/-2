@@ -1,6 +1,21 @@
 export type PackageKind = "profile" | "target" | "legacy_unassigned";
 export type PackageState = "active" | "trashed" | "purge_pending" | "purged";
 export type Scope = { packageId: string; targetRevisionId: string };
+export type CollectionQuality = {
+  uniqueRecords: number;
+  bodyVerified: number;
+  open: number;
+  applicationAvailable: number;
+  qualificationPass: number;
+  qualificationUnknown: number;
+  qualificationFail: number;
+  historicalOrExpired: number;
+  suspectedDuplicates: number;
+  validNewUnique: number;
+  knownRequests: number;
+  unknownRequestUpperBound: number;
+  validPer100KnownRequests: number | null;
+};
 export type ReadScope = Scope | { allTargets: true };
 export type Counts = {
   profiles: number;

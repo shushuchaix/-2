@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderApp, syntheticApi } from "../helpers/react-fixture";
+import { render, cleanup } from "@testing-library/react";
+import { RecruitmentEvidence } from "../../ui/src/features/jobs/RecruitmentEvidence";
 const root = {
   runId: "activity-A",
   collectionRole: "collection_root",
@@ -27,6 +29,88 @@ const root = {
     usedBytes: 1024,
   },
 };
+test("quality reports measured numerator/denominator and keeps unknown requests separate", async (t) => {
+  const measured = {
+    ...root,
+    quality: {
+      uniqueRecords: 8,
+      bodyVerified: 6,
+      open: 3,
+      applicationAvailable: 2,
+      qualificationPass: 4,
+      qualificationUnknown: 3,
+      qualificationFail: 1,
+      historicalOrExpired: 2,
+      suspectedDuplicates: 1,
+      validNewUnique: 1,
+      knownRequests: 10,
+      unknownRequestUpperBound: 2,
+      validPer100KnownRequests: 10,
+    },
+  };
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) =>
+      p === "/collections" ? { collections: [measured] } : syntheticApi(p, o),
+  });
+  await f.screen.findByText(/正文已核验 6 \/ 8/);
+  assert.ok(f.screen.getByText(/有效新增 1 \/ 已核实请求 10/));
+  assert.ok(f.screen.getByText(/未知请求上界 2/));
+  assert.ok(f.screen.getByText(/召回率与误合并率：未测量/));
+});
+test("job evidence labels expired and invalid and separates stale platform observations", (t) => {
+  t.after(cleanup);
+  const view = render(
+    <RecruitmentEvidence
+      row={{
+        jobId: "synthetic",
+        recruitmentEvidence: {
+          bodyVerified: true,
+          openingStatus: "expired",
+          applicationStatus: "invalid",
+        },
+        platformEvidence: {
+          opening: {
+            status: "verified",
+            value: "recruiting",
+            checkedAt: "2026-10-01T00:00:00Z",
+          },
+          entry: { kind: "communication", status: "verified" },
+        },
+      }}
+    />,
+  );
+  assert.ok(view.getByText("已过期"));
+  assert.ok(view.getByText("入口失效"));
+  assert.ok(view.getByText(/平台观察：待复核/));
+  assert.ok(view.getByText(/沟通入口.*不构成投递证据/));
+});
+test("communication-only job keeps application unverified even with a current platform status", (t) => {
+  t.after(cleanup);
+  const view = render(
+    <RecruitmentEvidence
+      row={{
+        jobId: "synthetic",
+        recruitmentEvidence: {
+          bodyVerified: true,
+          openingStatus: "unknown",
+          applicationStatus: "unknown",
+        },
+        platformEvidence: {
+          opening: {
+            status: "verified",
+            value: "recruiting",
+            checkedAt: new Date().toISOString(),
+          },
+          entry: { kind: "communication", status: "verified" },
+        },
+      }}
+    />,
+  );
+  assert.ok(view.getByText("投递入口待核验"));
+  assert.ok(view.getByText(/平台观察：在招/));
+  assert.ok(view.getByText(/沟通入口.*不构成投递证据/));
+});
 test("review: source changes can replan the same activity with preserved cost", async (t) => {
   const changed = {
     ...root,

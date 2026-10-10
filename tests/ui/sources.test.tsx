@@ -36,6 +36,23 @@ const catalog = () => ({
   ],
 });
 
+test("shared probe history is not attributed to the selected target version", async (t) => {
+  const data = catalog();
+  data.sites[0].health = {
+    status: "ready",
+    lastSuccessAt: "2026-10-05T00:00:00Z",
+  };
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path, opts) =>
+      path === "/sources" ? data : syntheticApi(path, opts),
+  });
+  const region = await f.screen.findByRole("region", {
+    name: "合成学校来源摘要",
+  });
+  assert.equal(within(region).queryByText(/个本版本探针/), null);
+  assert.ok(f.screen.getByText(/探针包含共享历史与本版本检查/));
+});
 test("source save failure preserves the changed switch and diagnostic link", async (t) => {
   const f = await renderApp(t, {
     route: "#/sources?packageId=A&targetRevisionId=t1%401",

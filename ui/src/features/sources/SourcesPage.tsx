@@ -205,7 +205,7 @@ export function SourcesPage({
         <div>
           <h1>招聘来源</h1>
           <p className="text-muted-foreground">
-            来源目录共享；启用配置和登录按当前版本保存。探针记录与当前岗位在招状态分别核验。
+            来源目录共享；启用配置和登录按当前版本保存。探针包含共享历史与本版本检查；当前岗位在招状态需要独立核验。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -341,7 +341,7 @@ export function SourcesPage({
                   <CardTitle>{source.name}</CardTitle>
                   <CardDescription>
                     {owned.length} 个目录站点 · {ready}{" "}
-                    个本版本探针取得有效样本站点
+                    个探针取得有效样本站点
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">

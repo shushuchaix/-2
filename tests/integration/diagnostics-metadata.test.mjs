@@ -333,6 +333,63 @@ test("stalled file writes fall back to bounded memory that can still be exported
   }
 });
 
+test("late diagnostic IO recovers all writes once in order across restart", async (t) => {
+  for (const phase of ["mkdir", "appendFile"]) {
+    const dataDir = await createTempDir(t);
+    let calls = 0,
+      tick = Date.UTC(2026, 9, 10);
+    const adapter = {
+      ...fs,
+      [phase]: async (...args) => {
+        if (++calls === 210)
+          await new Promise((resolve) => setTimeout(resolve, 650));
+        return fs[phase](...args);
+      },
+    };
+    const log = createDiagnosticsLog({
+      dataDir,
+      clock: { now: () => tick++ },
+      fsAdapter: adapter,
+    });
+    const ids = [];
+    for (let i = 0; i < 241; i++)
+      ids.push(
+        (await log.record({ operation: "run.stage", runId: "r-late" }))
+          .diagnosticId,
+      );
+    await log.list();
+    const reopened = createDiagnosticsLog({ dataDir });
+    const entries = (await reopened.exportText())
+      .split("\n")
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      entries.map((entry) => entry.diagnosticId),
+      ids,
+      phase,
+    );
+    assert.equal(new Set(entries.map((entry) => entry.diagnosticId)).size, 241);
+    assert.equal(calls, 241);
+    assert.equal((await log.list()).storage.mode, "file");
+  }
+});
+
+test("permanently stalled diagnostics retain a bounded writer and report pending loss", async (t) => {
+  const log = createDiagnosticsLog({
+    dataDir: await createTempDir(t),
+    maxMemoryEntries: 3,
+    fsAdapter: { ...fs, mkdir: () => new Promise(() => {}) },
+  });
+  await Promise.all(
+    Array.from({ length: 260 }, () => log.record({ operation: "run.stage" })),
+  );
+  const result = await log.list();
+  assert.equal(result.storage.pendingWrites, 256);
+  assert.equal(result.storage.droppedWrites, 4);
+  assert.equal(result.entries.length, 3);
+  assert.equal(result.storage.mode, "memory");
+});
+
 test("fatal logging never raises a secondary exception from error accessors", async (t) => {
   const log = createDiagnosticsLog({ dataDir: await createTempDir(t) });
   const error = Object.defineProperty(Error("synthetic"), "stack", {

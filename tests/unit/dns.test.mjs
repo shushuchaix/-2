@@ -40,3 +40,62 @@ test("Fake-IP resolution uses public DoH without trusting private answers", asyn
   });
   await assert.rejects(bad("private.example.com"), /public|address/i);
 });
+
+test("per-call cancellation stops fallback after system lookup and credit reservation", async () => {
+  for (const phase of ["lookup", "budget"]) {
+    const controller = new AbortController();
+    let transportCalls = 0;
+    const lookup = createDnsLookup({
+      mode: phase === "budget" ? "doh" : "auto",
+      lookup: async () => {
+        controller.abort();
+        return [{ address: "198.18.0.2", family: 4 }];
+      },
+      budget: {
+        claimRequest: async () => {
+          if (phase === "budget") controller.abort();
+        },
+      },
+      transport: async () => {
+        transportCalls++;
+        return {
+          status: 200,
+          text: JSON.stringify({
+            Status: 0,
+            Answer: [{ type: 1, data: "93.184.216.34" }],
+          }),
+        };
+      },
+    });
+    await assert.rejects(
+      lookup("jobs.example.com", { signal: controller.signal }),
+      { name: "AbortError" },
+    );
+    assert.equal(transportCalls, 0, phase);
+  }
+});
+
+test("per-call cancellation reaches in-flight DoH transports", async () => {
+  const controller = new AbortController();
+  const signals = [];
+  const lookup = createDnsLookup({
+    mode: "doh",
+    transport: async ({ signal }) => {
+      signals.push(signal);
+      if (signals.length === 2) controller.abort();
+      return {
+        status: 200,
+        text: JSON.stringify({
+          Status: 0,
+          Answer: [{ type: 1, data: "93.184.216.34" }],
+        }),
+      };
+    },
+  });
+  await assert.rejects(
+    lookup("jobs.example.com", { signal: controller.signal }),
+    { name: "AbortError" },
+  );
+  assert.equal(signals.length, 2);
+  assert.ok(signals.every((signal) => signal.aborted));
+});

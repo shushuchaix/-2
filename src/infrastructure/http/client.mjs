@@ -256,12 +256,12 @@ export function createRequestClient({
           attemptTransportMs = 0,
           entered = false,
           response;
+        const attemptScheduler =
+          scheduler === sharedScheduler && isSocialOrigin(url.href)
+            ? sharedSocialScheduler
+            : scheduler;
         try {
-          response = await (
-            scheduler === sharedScheduler && isSocialOrigin(url.href)
-              ? sharedSocialScheduler
-              : scheduler
-          ).run(
+          response = await attemptScheduler.run(
             url.origin,
             async () => {
               entered = true;
@@ -281,6 +281,7 @@ export function createRequestClient({
                     dnsLookup: (host, lookupOptions) =>
                       dnsLookup(host, {
                         ...lookupOptions,
+                        signal: combined,
                         diagnosticContext: {
                           ...context,
                           requestId,
@@ -368,7 +369,7 @@ export function createRequestClient({
             responseBytes: responseSize(response),
             ...parserMetadata(response),
           });
-          scheduler.recordOutcome?.(url.origin, {
+          attemptScheduler.recordOutcome?.(url.origin, {
             status: response.status,
             durationMs: attemptTransportMs,
           });
@@ -397,7 +398,7 @@ export function createRequestClient({
           );
           if (signal?.aborted) throw abortError(signal);
           if (phase === "transport")
-            scheduler.recordOutcome?.(url.origin, {
+            attemptScheduler.recordOutcome?.(url.origin, {
               status: 503,
               durationMs: attemptTransportMs,
             });

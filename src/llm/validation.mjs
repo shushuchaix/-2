@@ -1,11 +1,13 @@
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { getPromptDefinition } from "./prompt-registry.mjs";
+import { CONDITIONS_PARSER_VERSION } from "../domain/recruitment-evidence.mjs";
 export function evaluationCacheKey({
   jdHash,
   profileRevisionId,
   targetRevisionId,
   promptVersion,
   schemaVersion = getPromptDefinition("matching").schemaVersion,
+  conditionsParserVersion = CONDITIONS_PARSER_VERSION,
   ruleVersion,
   modelFingerprint,
 }) {
@@ -15,6 +17,7 @@ export function evaluationCacheKey({
     targetRevisionId,
     promptVersion,
     schemaVersion,
+    conditionsParserVersion,
     ruleVersion,
     modelFingerprint,
   });

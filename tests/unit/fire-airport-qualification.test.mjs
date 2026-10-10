@@ -10,9 +10,216 @@ import {
   prepareRecruitmentRecord,
   assessApplicationResponse,
   readJobPostingEvidence,
+  extractRecruitmentConditions,
 } from "../../src/domain/recruitment-evidence.mjs";
 import { job, profile } from "../helpers/fixtures.mjs";
 const now = Date.parse("2026-10-09T12:00:00Z");
+test("age minimum range and exclusive endpoints preserve literal boundaries", () => {
+  const cases = [
+    [
+      "要求年龄20周岁以上。",
+      [
+        [19, "fail"],
+        [20, "pass"],
+        [25, "pass"],
+      ],
+    ],
+    [
+      "要求年龄为18至24周岁。",
+      [
+        [17, "fail"],
+        [18, "pass"],
+        [24, "pass"],
+        [25, "fail"],
+      ],
+    ],
+    [
+      "要求年龄小于25周岁。",
+      [
+        [24, "pass"],
+        [25, "fail"],
+      ],
+    ],
+    [
+      "要求年龄大于20周岁。",
+      [
+        [20, "fail"],
+        [21, "pass"],
+      ],
+    ],
+    [
+      "要求年龄不超过25周岁。",
+      [
+        [25, "pass"],
+        [26, "fail"],
+      ],
+    ],
+  ];
+  for (const [description, ages] of cases)
+    for (const [age, status] of ages) {
+      const extracted = extractRecruitmentConditions(job({ description }));
+      assert.equal(
+        evaluateEvidenceQualification({
+          profileSnapshot: { age },
+          ...extracted,
+          now,
+        }).status,
+        status,
+        description + " age " + age,
+      );
+    }
+  assert.equal(
+    evaluateEvidenceQualification({
+      profileSnapshot: {},
+      ...extractRecruitmentConditions(job({ description: "年龄至少20周岁。" })),
+      now,
+    }).status,
+    "unknown",
+  );
+  assert.equal(
+    evaluateEvidenceQualification({
+      profileSnapshot: { age: "not an age" },
+      ...extractRecruitmentConditions(job({ description: "年龄至少20周岁。" })),
+      now,
+    }).status,
+    "unknown",
+  );
+});
+test("certificate OR permits either confirmed option, AND requires all, and each option owns its grade", () => {
+  const run = (description, certificates, confirmed = true) =>
+    evaluateEvidenceQualification({
+      profileSnapshot: {
+        certificates,
+        explicitFacts: { certificates: confirmed },
+      },
+      ...extractRecruitmentConditions(job({ description })),
+      now,
+    });
+  const or = "须持有一级注册消防工程师或中级注册安全工程师证书。";
+  assert.equal(run(or, ["一级注册消防工程师"]).status, "pass");
+  assert.equal(run(or, ["中级注册安全工程师"]).status, "pass");
+  assert.equal(run(or, []).status, "fail");
+  assert.equal(run(or, [], false).status, "unknown");
+  assert.equal(run(or, ["中级注册消防工程师"]).status, "fail");
+  assert.equal(
+    run("须持有注册消防工程师和注册安全工程师证书。", ["注册消防工程师"])
+      .status,
+    "fail",
+  );
+  assert.equal(
+    run("须持有注册消防工程师和注册安全工程师证书。", [
+      "注册消防工程师",
+      "注册安全工程师",
+    ]).status,
+    "pass",
+  );
+  assert.equal(
+    run("注册消防工程师或注册安全工程师证书优先。", []).status,
+    "pass",
+  );
+  const extracted = extractRecruitmentConditions(job({ description: or }));
+  assert.equal(extracted.conditions.length, 1);
+  assert.equal(extracted.conditions[0].operator, "any");
+  assert.equal(
+    new Set(extracted.sourceEvidence.map((e) => e.evidenceId)).size,
+    extracted.sourceEvidence.length,
+  );
+});
+test("explicit certificate all operator is enforced even for trusted structured conditions", () => {
+  const condition = {
+    type: "certificate",
+    operator: "all",
+    values: ["注册消防工程师", "注册安全工程师"],
+    required: true,
+    evidenceRefs: ["manual"],
+  };
+  const sourceEvidence = [
+    {
+      evidenceId: "manual",
+      status: "verified",
+      sourceExcerpt: "必须持两证",
+      confidence: 100,
+    },
+  ];
+  const result = evaluateEvidenceQualification({
+    profileSnapshot: {
+      certificates: ["注册消防工程师"],
+      explicitFacts: { certificates: true },
+    },
+    conditions: [condition],
+    sourceEvidence,
+    now,
+  });
+  assert.equal(result.status, "fail");
+});
+test("older derived conditions are reparsed while unsupported legacy constraints remain pending review", () => {
+  const original = job({
+    description: "本科，要求年龄20周岁以上。",
+    graduationYear: null,
+    conditionsParserVersion: "conditions-1",
+    conditions: [
+      {
+        origin: "local_parser",
+        type: "age",
+        operator: "maximum",
+        values: [20],
+        required: true,
+        evidenceRefs: ["old"],
+      },
+    ],
+    sourceEvidence: [
+      {
+        evidenceId: "old",
+        origin: "local_parser",
+        field: "age",
+        status: "verified",
+        sourceExcerpt: "年龄20周岁以上。",
+        confidence: 100,
+      },
+    ],
+  });
+  const prepared = prepareRecruitmentRecord(original);
+  assert.equal(
+    evaluateQualification(prepared, profile({ age: 25 }), {}, { now }).status,
+    "pass",
+  );
+  assert.notEqual(prepared.conditionsParserVersion, "conditions-1");
+  assert.equal(
+    evaluateQualification(original, profile({ age: 25 }), {}, { now }).status,
+    "pass",
+  );
+  const unknown = prepareRecruitmentRecord({
+    ...original,
+    conditions: [
+      {
+        type: "physical",
+        operator: "exact",
+        values: ["qualified"],
+        required: true,
+        evidenceRefs: ["old-foreign"],
+      },
+    ],
+    sourceEvidence: [
+      {
+        evidenceId: "old-foreign",
+        field: "physical",
+        status: "verified",
+        sourceExcerpt: "旧来源未能对应当前正文",
+        confidence: 100,
+      },
+    ],
+  });
+  assert.ok(unknown.conditions.some((c) => c.type === "physical"));
+  assert.equal(
+    evaluateQualification(
+      unknown,
+      profile({ age: 25, explicitFacts: { physicalQualified: true } }),
+      {},
+      { now },
+    ).status,
+    "unknown",
+  );
+});
 test("visible and JobPosting conflicts stay unknown and a login form is not an application form", () => {
   const record = job({
       title: "消防工程师",

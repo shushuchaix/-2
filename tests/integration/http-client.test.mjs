@@ -2,10 +2,72 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequestClient } from "../../src/infrastructure/http/client.mjs";
 import { createSourceBudget } from "../../src/infrastructure/http/budget.mjs";
-import { createScheduler } from "../../src/infrastructure/http/scheduler.mjs";
+import {
+  createScheduler,
+  sharedScheduler,
+  sharedSocialScheduler,
+} from "../../src/infrastructure/http/scheduler.mjs";
 const PUBLIC = "https://jobs.example.com/list";
 const dnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
 const scheduler = () => createScheduler({ minIntervalMs: 0 });
+
+test("request DNS receives the combined cancellation signal", async () => {
+  const controller = new AbortController();
+  let received;
+  const request = createRequestClient({
+    scheduler: scheduler(),
+    dnsLookup: async (_host, options) => {
+      received = options.signal;
+      return dnsLookup();
+    },
+    transport: async () => ({ status: 200, headers: {}, text: "ok" }),
+  });
+  await request(PUBLIC, { signal: controller.signal });
+  assert.ok(received instanceof AbortSignal);
+  controller.abort();
+  assert.equal(received.aborted, true);
+});
+
+test("social feedback is written to the scheduler that ran the attempt", async (t) => {
+  const social = [],
+    ordinary = [];
+  t.mock.method(sharedSocialScheduler, "run", async (_origin, fn) => fn());
+  t.mock.method(sharedSocialScheduler, "recordOutcome", (origin, outcome) =>
+    social.push({ origin, ...outcome }),
+  );
+  t.mock.method(sharedScheduler, "recordOutcome", (origin, outcome) =>
+    ordinary.push({ origin, ...outcome }),
+  );
+  for (const failure of [false, true]) {
+    const request = createRequestClient({
+      dnsLookup,
+      transport: async () => {
+        if (failure)
+          throw Object.assign(Error("offline failure"), { code: "ECONNRESET" });
+        return { status: 429, headers: {}, text: "" };
+      },
+    });
+    if (failure)
+      await assert.rejects(
+        request("https://m.weibo.cn/api/container/getIndex", { maxRetries: 0 }),
+        { code: "ECONNRESET" },
+      );
+    else
+      assert.equal(
+        (
+          await request("https://m.weibo.cn/api/container/getIndex", {
+            maxRetries: 0,
+          })
+        ).status,
+        429,
+      );
+  }
+  assert.deepEqual(
+    social.map((x) => x.status),
+    [429, 503],
+  );
+  assert.equal(ordinary.length, 0);
+});
 test("per-request retry cap avoids repeated gateway and transport failures", async () => {
   for (const transportFailure of [false, true]) {
     let calls = 0,

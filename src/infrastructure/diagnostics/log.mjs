@@ -310,8 +310,10 @@ export function createDiagnosticsLog({
   let queue = Promise.resolve(),
     memory = [],
     storage = { mode: "file" },
-    ioDisabled = false,
-    pendingWrites = 0;
+    ioStalled = false,
+    pendingWrites = 0,
+    droppedWrites = 0,
+    failedWrites = 0;
   const sessionId = "s-" + randomUUID();
   const safeRuntime = cleanMetadata({ runtime }).runtime || {};
   const failed = () => {
@@ -329,7 +331,7 @@ export function createDiagnosticsLog({
         code: "diagnostic_io_timeout",
       });
     const check = () => {
-      if (expired || ioDisabled) throw timeoutError();
+      if (expired) throw timeoutError();
     };
     try {
       return await Promise.race([
@@ -337,7 +339,7 @@ export function createDiagnosticsLog({
         new Promise((_, reject) => {
           timer = setTimeout(() => {
             expired = true;
-            ioDisabled = true;
+            ioStalled = true;
             reject(timeoutError());
           }, 500);
         }),
@@ -355,12 +357,11 @@ export function createDiagnosticsLog({
         : name;
   }
   async function collect(options = {}) {
-    await queue;
+    await boundedIO(() => queue).catch(failed);
     const entries = new Map();
     let damagedLines = 0,
       rotated = false;
     for (const filename of [previous, file]) {
-      if (ioDisabled) break;
       try {
         const records = await boundedIO(async (check) => {
           let handle;
@@ -430,7 +431,7 @@ export function createDiagnosticsLog({
     const entries = matching.slice(-limit);
     return {
       entries: reverse ? entries.reverse() : entries,
-      storage: { ...storage },
+      storage: { ...storage, pendingWrites, droppedWrites, failedWrites },
       file: "logs/application.log",
       runtime: safeRuntime,
       retention: {
@@ -465,7 +466,7 @@ export function createDiagnosticsLog({
           clock,
           sessionId,
         );
-        if (ioDisabled) return entry;
+        if (ioStalled) return entry;
         const line = JSON.stringify(entry) + "\n";
         if (Buffer.byteLength(line) > Math.min(16384, maxFileBytes))
           return entry;
@@ -504,47 +505,51 @@ export function createDiagnosticsLog({
       memory =
         maxMemoryEntries > 0 ? [...memory, entry].slice(-maxMemoryEntries) : [];
       // A stalled filesystem must not retain an unbounded chain of entries.
-      if (ioDisabled || pendingWrites >= 256) {
-        ioDisabled = true;
+      if (pendingWrites >= 256) {
+        droppedWrites++;
         failed();
         return entry;
       }
       pendingWrites++;
-      const write = queue.then(() => {
-        if (ioDisabled) return;
-        return boundedIO(async (check) => {
-          const line = JSON.stringify(entry) + "\n";
-          // Bound an entry too, even when a long stack is supplied.
-          if (Buffer.byteLength(line) > Math.min(16384, maxFileBytes)) return;
-          await fsAdapter.mkdir(dir, { recursive: true });
-          check();
-          let size = 0;
-          try {
-            size = (await fsAdapter.stat(file)).size;
-          } catch (error) {
+      // The native write owns its place in the queue until it actually settles.
+      // A caller deadline never starts a second writer or abandons a late write.
+      const write = queue.then(async () => {
+        const line = JSON.stringify(entry) + "\n";
+        // Bound an entry too, even when a long stack is supplied.
+        if (Buffer.byteLength(line) > Math.min(16384, maxFileBytes)) {
+          droppedWrites++;
+          failed();
+          return;
+        }
+        await fsAdapter.mkdir(dir, { recursive: true });
+        let size = 0;
+        try {
+          size = (await fsAdapter.stat(file)).size;
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        if (size + Buffer.byteLength(line) > maxFileBytes) {
+          await fsAdapter.unlink(previous).catch((error) => {
             if (error.code !== "ENOENT") throw error;
-          }
-          check();
-          if (size + Buffer.byteLength(line) > maxFileBytes) {
-            await fsAdapter.unlink(previous).catch((error) => {
-              if (error.code !== "ENOENT") throw error;
-            });
-            check();
-            await fsAdapter.rename(file, previous).catch((error) => {
-              if (error.code !== "ENOENT") throw error;
-            });
-            check();
-          }
-          await fsAdapter.appendFile(file, line, {
-            encoding: "utf8",
-            mode: 0o600,
           });
-          check();
-          storage = { mode: "file" };
+          await fsAdapter.rename(file, previous).catch((error) => {
+            if (error.code !== "ENOENT") throw error;
+          });
+        }
+        await fsAdapter.appendFile(file, line, {
+          encoding: "utf8",
+          mode: 0o600,
         });
+        ioStalled = false;
+        if (!failedWrites && !droppedWrites) storage = { mode: "file" };
       });
-      queue = write.catch(failed).finally(() => pendingWrites--);
-      await queue;
+      queue = write
+        .catch(() => {
+          failedWrites++;
+          failed();
+        })
+        .finally(() => pendingWrites--);
+      await boundedIO(() => queue).catch(failed);
       return entry;
     },
     async list(options = {}) {
@@ -572,6 +577,8 @@ export function createDiagnosticsLog({
         [
           "简历岗位雷达运行诊断（已省略私人内容）",
           result.storage.message || "日志文件：" + result.file,
+          "持久化状态：" +
+            JSON.stringify({ pendingWrites, droppedWrites, failedWrites }),
           "运行环境：" + JSON.stringify(result.runtime),
           "保留范围：" +
             JSON.stringify({ ...result.summary, ...result.retention }),

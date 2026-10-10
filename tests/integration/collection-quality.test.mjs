@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { projectCollectionQuality } from "../../src/domain/collection-quality.mjs";
 import { collectionFixture } from "../helpers/collection-fixture.mjs";
 import { job } from "../helpers/fixtures.mjs";
+import { RULE_VERSION } from "../../src/domain/ranking-policy.mjs";
+import { CONDITIONS_PARSER_VERSION } from "../../src/domain/recruitment-evidence.mjs";
 import {
   jobFactHash,
   selectVersionJobFact,
@@ -52,6 +54,8 @@ function memory() {
       profileRevisionId: profile,
       factContentHash: jobFactHash(record),
       qualification: { status },
+      ruleVersion: RULE_VERSION,
+      conditionsParserVersion: CONDITIONS_PARSER_VERSION,
       createdAt: new Date(now).toISOString(),
     };
   }
@@ -229,6 +233,8 @@ test("collection get uses the copied resume evaluation and exposes the same vali
         targetRevisionId: f.scope.targetRevisionId,
         profileRevisionId: f.target.profileSnapshot.revisionId,
         factContentHash: fact.factContentHash,
+        ruleVersion: RULE_VERSION,
+        conditionsParserVersion: CONDITIONS_PARSER_VERSION,
         qualification: { status: "pass" },
         createdAt: new Date(f.clock.now()).toISOString(),
       };

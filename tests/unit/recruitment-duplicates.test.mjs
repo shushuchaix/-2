@@ -1,5 +1,62 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { classifyJobDuplicate } from "../../src/domain/job-identity.mjs";
+test("age endpoint and alternative certificate grades remain distinct conflict evidence", () => {
+  const base = {
+    kind: "job",
+    company: "合成消防公司",
+    title: "消防工程师",
+    sourceId: "example",
+    siteId: "sample",
+    sourceRecordId: "123",
+    sourceRecordIdKind: "authority",
+    url: "https://example.org/job/123",
+    urlKind: "job_detail",
+    description: "本科，消防工程专业。",
+  };
+  const age = {
+    type: "age",
+    operator: "minimum",
+    values: [20],
+    required: true,
+    minimumInclusive: true,
+  };
+  assert.equal(
+    classifyJobDuplicate(
+      { ...base, conditions: [age] },
+      { ...base, conditions: [{ ...age, minimumInclusive: false }] },
+    ).relation,
+    "possible",
+  );
+  const cert = {
+    type: "certificate",
+    operator: "any",
+    values: ["注册消防工程师", "注册安全工程师"],
+    required: true,
+    certificateOptions: [
+      { name: "注册消防工程师", grade: "一级" },
+      { name: "注册安全工程师", grade: "中级" },
+    ],
+  };
+  assert.equal(
+    classifyJobDuplicate(
+      { ...base, conditions: [cert] },
+      {
+        ...base,
+        conditions: [
+          {
+            ...cert,
+            certificateOptions: [
+              { name: "注册消防工程师", grade: "二级" },
+              { name: "注册安全工程师", grade: "中级" },
+            ],
+          },
+        ],
+      },
+    ).relation,
+    "possible",
+  );
+});
 import { job } from "../helpers/fixtures.mjs";
 import {
   compareRecruitmentFacts,

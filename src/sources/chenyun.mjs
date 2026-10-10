@@ -295,6 +295,9 @@ function toJob(listItem, hostInfo, detail) {
     sanitizeText(listItem.company) || sanitizeText(detail.company);
   return {
     id: `chenyun:${normKey(hostInfo.name)}:${normKey(title)}|${normKey(company)}`,
+    sourceRecordId: listItem.href,
+    urlKind: "job_detail",
+    detailStatus: detail.description ? "complete" : "incomplete",
     source: meta.id,
     sourceName: `${meta.name}·${hostInfo.name}`,
     sources: [meta.id],
@@ -410,6 +413,12 @@ export async function collect({
       .sort((a, b) => b.score - a.score);
 
     const picked = ranked.slice(0, maxDetail);
+    if (maxDetail === 0) {
+      for (const item of ranked) {
+        const job = toJob(item, hostInfo, {});
+        if (job) jobs.push(job);
+      }
+    }
     if (!picked.length) log(`  ${hostInfo.name}：列表为空，跳过`);
     for (const item of picked) {
       if (signal?.aborted) break;
@@ -434,4 +443,17 @@ export async function collect({
     `晨云高校就业网：${names}｜翻页 ${stats.pages} 次，列表 ${stats.listed} 条，抓详情 ${stats.detailed} 条，得到 ${jobs.length} 个岗位`,
   );
   return { jobs, errors, stats: { ...stats, chenyun: jobs.length } };
+}
+
+export async function fetchDetail(record) {
+  const hostInfo = {
+    host: new URL(record.url).origin,
+    name: record.extra?.university || record.siteId || "高校",
+  };
+  const html = await req(hostInfo.host, record.url.replace(hostInfo.host, ""));
+  return toJob(
+    { ...record, href: record.url, city: record.city || record.cities?.[0] },
+    hostInfo,
+    parseDetail(html),
+  );
 }

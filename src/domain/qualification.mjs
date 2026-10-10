@@ -1,6 +1,6 @@
 import { clauseAt, isSoftRequirement } from "../match/requirements.mjs";
 import { termEvidence } from "./skills.mjs";
-import { extractRecruitmentConditions } from "./recruitment-evidence.mjs";
+import { resolveRecruitmentConditions } from "./recruitment-evidence.mjs";
 const degrees = [
   ["博士", 5],
   ["PhD", 5],
@@ -260,6 +260,7 @@ export function evaluateEvidenceQualification({
       sourceEvidence.find((e) => e.evidenceId === id),
     );
     const supported =
+      c.migrationStatus !== "needs_review" &&
       evidence.length > 0 &&
       evidence.every(
         (e) =>
@@ -293,26 +294,54 @@ export function evaluateEvidenceQualification({
           confirmed =
             profile.explicitFacts?.certificates === true ||
             profile.explicitFacts?.certificates?.confirmed === true;
-        const own = certificates.find(
-          (v) =>
-            values.some((name) => String(v.name || "").includes(name)) &&
-            (!c.grade ||
-              String(v.name || "").includes(c.grade) ||
-              v.grade === c.grade),
-        );
-        status = !own
-          ? confirmed
-            ? "fail"
-            : "unknown"
-          : c.registrationRequired
-            ? !own.registrationValidUntil
+        const options =
+          c.certificateOptions ||
+          values.map((name) => ({
+            name,
+            grade: c.grade,
+            registrationRequired: c.registrationRequired,
+          }));
+        const statuses = options.map((option) => {
+          const owned = certificates.filter(
+            (v) =>
+              String(v.name || "").includes(option.name) &&
+              (!option.grade ||
+                String(v.name || "").includes(option.grade) ||
+                v.grade === option.grade),
+          );
+          if (!owned.length) return confirmed ? "fail" : "unknown";
+          const matches = owned.map((own) =>
+            !option.registrationRequired
+              ? "pass"
+              : !own.registrationValidUntil
+                ? "unknown"
+                : !Number.isFinite(Date.parse(own.registrationValidUntil))
+                  ? "unknown"
+                  : Date.parse(own.registrationValidUntil) < Number(now)
+                    ? "fail"
+                    : "pass",
+          );
+          return matches.includes("pass")
+            ? "pass"
+            : matches.includes("unknown")
               ? "unknown"
-              : Date.parse(own.registrationValidUntil) < Number(now)
-                ? "fail"
-                : Number.isFinite(Date.parse(own.registrationValidUntil))
-                  ? "pass"
-                  : "unknown"
-            : "pass";
+              : "fail";
+        });
+        status = !statuses.length
+          ? "unknown"
+          : c.operator === "all"
+            ? statuses.includes("fail")
+              ? "fail"
+              : statuses.includes("unknown")
+                ? "unknown"
+                : "pass"
+            : c.operator === "any"
+              ? statuses.includes("pass")
+                ? "pass"
+                : statuses.includes("unknown")
+                  ? "unknown"
+                  : "fail"
+              : "unknown";
       } else if (c.type === "formal_experience") {
         const years = profile.formalExperienceYears ?? profile.experienceYears;
         status =
@@ -337,12 +366,34 @@ export function evaluateEvidenceQualification({
               ? 1
               : 0);
         }
-        status =
-          age == null
-            ? "unknown"
-            : Number(age) <= Number(values[0])
-              ? "pass"
-              : "fail";
+        const own =
+          typeof age === "number"
+            ? age
+            : typeof age === "string" && /^\d{1,3}$/.test(age)
+              ? Number(age)
+              : NaN;
+        const valid =
+          Number.isFinite(own) &&
+          own >= 0 &&
+          own <= 150 &&
+          values.length > 0 &&
+          values.every((v) => Number.isFinite(v) && v >= 0 && v <= 150);
+        let pass = null;
+        if (valid) {
+          const min = (v) =>
+              c.minimumInclusive === false ? own > v : own >= v,
+            max = (v) => (c.maximumInclusive === false ? own < v : own <= v);
+          if (c.operator === "minimum") pass = min(values[0]);
+          if (c.operator === "maximum") pass = max(values[0]);
+          if (
+            c.operator === "range" &&
+            values.length === 2 &&
+            values[0] <= values[1]
+          )
+            pass = min(values[0]) && max(values[1]);
+          if (c.operator === "exact") pass = own === values[0];
+        }
+        status = pass === null ? "unknown" : pass ? "pass" : "fail";
       } else if (c.type === "physical")
         status =
           profile.explicitFacts?.physicalQualified === true
@@ -388,22 +439,17 @@ export function evaluateQualification(
   target = {},
   options = {},
 ) {
-  const extracted = extractRecruitmentConditions(record),
+  const extracted = resolveRecruitmentConditions(record),
     legacy = evaluateLegacyQualification(
       { ...record, requiredCertificates: [] },
       profile,
       target,
     );
-  const conditions = record.conditions?.length
-    ? record.conditions
-    : extracted.conditions;
+  const conditions = extracted.conditions;
   const checked = evaluateEvidenceQualification({
     profileSnapshot: profile,
     conditions,
-    sourceEvidence: [
-      ...(record.sourceEvidence || []),
-      ...extracted.sourceEvidence,
-    ],
+    sourceEvidence: extracted.sourceEvidence,
     now: options.now,
   });
   const checks = [...legacy.checks, ...checked.checks],

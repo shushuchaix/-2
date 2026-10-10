@@ -129,6 +129,7 @@ const knownCertificates = [
   "英语六级",
   "英语四级",
 ];
+export const CONDITIONS_PARSER_VERSION = "conditions-2";
 export function extractRecruitmentConditions(record) {
   const text = String(record.description || ""),
     conditions = [],
@@ -138,7 +139,16 @@ export function extractRecruitmentConditions(record) {
       start = m.index ?? text.indexOf(excerpt),
       evidenceId =
         "e-" +
-        digest([record.url, type, start, excerpt].join("|")).slice(0, 24);
+        digest(
+          [
+            record.url,
+            type,
+            start,
+            excerpt,
+            JSON.stringify(values),
+            JSON.stringify(extra),
+          ].join("|"),
+        ).slice(0, 24);
     const preferred = isSoftRequirement(text, excerpt);
     const supplied = (record.sourceEvidence || []).find(
       (e) =>
@@ -148,6 +158,8 @@ export function extractRecruitmentConditions(record) {
     );
     sourceEvidence.push({
       evidenceId,
+      origin: "local_parser",
+      conditionsParserVersion: CONDITIONS_PARSER_VERSION,
       field: type,
       value: values,
       status:
@@ -168,6 +180,8 @@ export function extractRecruitmentConditions(record) {
     });
     conditions.push({
       type,
+      origin: "local_parser",
+      conditionsParserVersion: CONDITIONS_PARSER_VERSION,
       operator: "any",
       values,
       required: !preferred,
@@ -177,24 +191,66 @@ export function extractRecruitmentConditions(record) {
       ...extra,
     });
   };
-  for (const name of knownCertificates) {
-    const start = text.indexOf(name);
-    if (start < 0) continue;
-    const clause = clauseAt(text, start, name.length);
-    if (/公司(?:现有|拥有)|团队|企业资质|资质等级/.test(clause)) continue;
-    if (!/须|必须|要求|应具备|持有|取得|证书|资格|优先/.test(clause)) continue;
-    const grade = clause.match(
-      /(?:一级|二级|初级|中级|高级)(?=注册消防工程师|注册安全工程师|消防设施操作员)/,
-    )?.[0];
+  const certificateClauses = new Map();
+  for (const name of knownCertificates)
+    for (const match of text.matchAll(new RegExp(name, "g"))) {
+      const clause = clauseAt(text, match.index, name.length),
+        start = text.lastIndexOf(clause, match.index);
+      if (
+        /公司(?:现有|拥有)|团队|企业资质|资质等级/.test(clause) ||
+        !/须|必须|要求|应具备|持有|取得|证书|资格|优先/.test(clause)
+      )
+        continue;
+      const commonRegistration =
+        text
+          .slice(start + clause.length)
+          .match(
+            /^[，,]\s*注册(?:须|必须|应|需)[^。；\n]{0,35}(?:有效期|有效)[^。；\n]*/,
+          )?.[0] || "";
+      certificateClauses.set(start, {
+        clause: clause + commonRegistration,
+        commonRegistration: !!commonRegistration,
+      });
+    }
+  for (const [start, { clause, commonRegistration }] of certificateClauses) {
+    const found = knownCertificates
+      .filter((name) => clause.includes(name))
+      .sort((a, b) => clause.indexOf(a) - clause.indexOf(b));
+    const options = found.map((name, i) => {
+      const at = clause.indexOf(name),
+        end =
+          i + 1 < found.length ? clause.indexOf(found[i + 1]) : clause.length;
+      return {
+        name,
+        grade:
+          clause.slice(0, at).match(/(?:一级|二级|初级|中级|高级)$/)?.[0] ||
+          null,
+        registrationRequired:
+          commonRegistration ||
+          /(?:注册须|注册有效|注册.*有效期)/.test(clause.slice(at, end)),
+      };
+    });
+    const connectors = found
+      .slice(1)
+      .map((name, i) =>
+        clause.slice(
+          clause.indexOf(found[i]) + found[i].length,
+          clause.indexOf(name),
+        ),
+      );
+    const any = connectors.some((s) => /或|任选|任一/.test(s));
+    const all = connectors.some((s) => /和|且|以及|及|、/.test(s));
     add(
       "certificate",
-      [name],
-      { 0: clause, index: text.indexOf(clause) },
+      found,
+      { 0: clause, index: start },
       {
-        grade: grade || null,
-        registrationRequired: new RegExp(
-          name + "[\\s\\S]{0,80}(?:注册须|注册有效|注册.*有效期)",
-        ).test(text),
+        operator: any ? "any" : "all",
+        certificateOptions: options,
+        grade: options.length === 1 ? options[0].grade : null,
+        registrationRequired:
+          options.length === 1 && options[0].registrationRequired,
+        ...(any && all ? { migrationStatus: "needs_review" } : {}),
       },
     );
   }
@@ -252,33 +308,111 @@ export function extractRecruitmentConditions(record) {
     add("formal_experience", [Number(experience[1])], experience, {
       operator: "minimum",
     });
-  const age = text.match(
-    /(?:年龄|周岁)[^。；\n]{0,8}?(?:不超过|不大于|在)?\s*(\d{1,2})\s*(?:周岁|岁)(?:以下|以内)?/,
-  );
-  if (age) add("age", [Number(age[1])], age, { operator: "maximum" });
+  const ageMention = text.search(/年龄|年纪|周岁/);
+  if (ageMention >= 0) {
+    const clause = clauseAt(text, ageMention, 2),
+      start = text.indexOf(clause);
+    const range = clause.match(
+      /(\d{1,2})\s*(?:周岁|岁)?\s*[-—~～至到]\s*(\d{1,2})\s*(?:周岁|岁)/,
+    );
+    if (range)
+      add(
+        "age",
+        [Number(range[1]), Number(range[2])],
+        { 0: clause, index: start },
+        { operator: "range", minimumInclusive: true, maximumInclusive: true },
+      );
+    else {
+      const age = clause.match(
+        /(不超过|不大于|不高于|不得超过|最多|不满|未满|小于|大于|超过|至少|不低于|不小于|不得低于|满)?\s*(\d{1,2})\s*(?:周岁|岁)(及以上|以上|及以下|以下|以内)?/,
+      );
+      if (age) {
+        const direction = age[1] || age[3] || "",
+          minimum =
+            /大于|超过|至少|不低于|不小于|不得低于|满|以上/.test(direction) &&
+            !/不超过|不得超过|不满|未满/.test(direction);
+        const maximum =
+          /不超过|不大于|不高于|不得超过|最多|小于|不满|未满|以下|以内/.test(
+            direction,
+          );
+        add(
+          "age",
+          [Number(age[2])],
+          { 0: clause, index: start },
+          {
+            operator: minimum ? "minimum" : maximum ? "maximum" : "exact",
+            minimumInclusive: !["大于", "超过"].includes(direction),
+            maximumInclusive: !["小于", "不满", "未满"].includes(direction),
+            ...(!direction ? { migrationStatus: "needs_review" } : {}),
+          },
+        );
+      }
+    }
+  }
   const physical = text.match(
     /(?:须|必须|要求)[^。；\n]{0,12}(?:通过体能测试|体能测试合格|体检合格)/,
   );
   if (physical) add("physical", ["qualified"], physical, { operator: "exact" });
   return { conditions, sourceEvidence };
 }
+/** Rebuild local parse output; unknown legacy constraints are retained for review. */
+export function resolveRecruitmentConditions(record) {
+  const extracted = extractRecruitmentConditions(record),
+    text = String(record.description || "");
+  const evidenceById = new Map(
+    (record.sourceEvidence || []).map((e) => [e.evidenceId, e]),
+  );
+  const isDerived = (c) =>
+    c.origin === "local_parser" ||
+    (c.evidenceRefs || []).some((id) => {
+      const e = evidenceById.get(id);
+      return (
+        e?.origin === "local_parser" ||
+        (e?.sourceExcerpt &&
+          e.location?.start !== undefined &&
+          id ===
+            "e-" +
+              digest(
+                [record.url, c.type, e.location.start, e.sourceExcerpt].join(
+                  "|",
+                ),
+              ).slice(0, 24) &&
+          text.includes(e.sourceExcerpt))
+      );
+    });
+  const preserved = (record.conditions || [])
+    .filter((c) => !isDerived(c))
+    .map((c) =>
+      ["manual", "structured_source"].includes(c.origin) ||
+      c.conditionsParserVersion === CONDITIONS_PARSER_VERSION
+        ? structuredClone(c)
+        : { ...structuredClone(c), migrationStatus: "needs_review" },
+    );
+  const sourceEvidence = (record.sourceEvidence || []).filter(
+    (e) =>
+      e.origin !== "local_parser" &&
+      !(record.conditions || []).some(
+        (c) => isDerived(c) && (c.evidenceRefs || []).includes(e.evidenceId),
+      ),
+  );
+  return {
+    conditions: [...preserved, ...extracted.conditions],
+    sourceEvidence: [...sourceEvidence, ...extracted.sourceEvidence].filter(
+      (e, i, a) =>
+        a.findIndex(
+          (x) =>
+            x.evidenceId === e.evidenceId &&
+            x.field === e.field &&
+            x.sourceExcerpt === e.sourceExcerpt,
+        ) === i,
+    ),
+    conditionsParserVersion: CONDITIONS_PARSER_VERSION,
+  };
+}
 export function prepareRecruitmentRecord(record, now) {
   const r = structuredClone(record),
-    text = String(r.description || ""),
-    extracted = extractRecruitmentConditions(r);
-  r.conditions = r.conditions?.length ? r.conditions : extracted.conditions;
-  r.sourceEvidence = [
-    ...(r.sourceEvidence || []),
-    ...extracted.sourceEvidence,
-  ].filter(
-    (e, i, a) =>
-      a.findIndex(
-        (x) =>
-          x.evidenceId === e.evidenceId &&
-          x.field === e.field &&
-          x.sourceExcerpt === e.sourceExcerpt,
-      ) === i,
-  );
+    text = String(r.description || "");
+  Object.assign(r, resolveRecruitmentConditions(r));
   const deadline =
     text.match(
       /(?:报名|投递|申请)?(?:截止(?:时间|日期)?|截至)[：:\s]*(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})(?:日)?(?:\s*(\d{1,2})[:：](\d{2}))?/,

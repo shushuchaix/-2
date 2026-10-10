@@ -209,6 +209,11 @@ export function createLegacyProvider(id, { collector } = {}) {
     async fetchDetail(record, ctx) {
       if (!module.fetchDetail)
         return { ...record, detailStatus: "unavailable" };
+      ctx.signal?.throwIfAborted();
+      await ctx.budget?.claimDetail(
+        id + "/" + record.siteId + "/" + (record.sourceRecordId || record.url),
+      );
+      ctx.signal?.throwIfAborted();
       return withSourceContext(ctx, async () =>
         normalizeRecord({
           ...record,

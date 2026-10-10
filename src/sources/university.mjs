@@ -685,7 +685,7 @@ export function parseNoticeDetail(html) {
   // 公告里常带职位表格：序号 | 职位信息 | 需求专业 | 操作
   // 注意页脚也有 <table>（联系方式/电话/传真），必须排除，否则会产出「电话：xxx」这种假岗位
   const NOISE =
-    /联系方式|用人单位服务|服务热线|就业手续|职业规划|电话[:：]|传真|邮编|邮箱|地址[:：]|^序号$|投递简历$|^操作$/;
+    /联系方式|用人单位服务|服务热线|就业手续|职业规划|电话[:：]|传真|邮编|邮箱|地址[:：]|^序号$|^投递简历$|^操作$/;
   const positions = [];
   for (const t of html.matchAll(/<table[\s\S]*?<\/table>/g)) {
     const rows = [...t[0].matchAll(/<tr[\s\S]*?<\/tr>/g)].map((m) =>
@@ -726,6 +726,7 @@ export function parseNoticeDetail(html) {
         education: edu,
         jobType: typ,
         major: maj,
+        description: cells.filter((c) => c !== "投递简历").join(" | "),
       });
     }
   }
@@ -736,6 +737,10 @@ export function parseNoticeDetail(html) {
     expire,
     publishTime,
     description: truncate(text, 4000),
+    commonDescription: truncate(
+      htmlToText(html.replace(/<table[\s\S]*?<\/table>/gi, "")),
+      4000,
+    ),
     positions,
   };
 }
@@ -744,7 +749,9 @@ export function parseNoticeDetail(html) {
 
 function toJob(base, hostInfo, detail, kind) {
   // 列表页的标题本身就是岗位名，比详情页标题可靠（详情页常把站点名当标题）
-  let title = sanitizeText(base.title);
+  let title = sanitizeText(
+    kind === "招聘公告-职位表" ? detail.title : base.title,
+  );
   const dt = sanitizeText(detail.title);
   if (
     (!title || title.length < 2 || /就业信息网|就业网|欢迎访问/.test(title)) &&
@@ -754,6 +761,16 @@ function toJob(base, hostInfo, detail, kind) {
   if (!title) return null;
   return {
     id: `university:${normKey(hostInfo.name)}:${normKey(title)}|${normKey(detail.city)}`,
+    sourceRecordId:
+      kind === "招聘公告-职位表"
+        ? `${base.url}#${normKey(title)}|${normKey(detail.city)}`
+        : base.url,
+    kind: kind === "招聘公告" ? "recruitment_notice" : "job",
+    urlKind:
+      kind === "招聘公告" || kind === "招聘公告-职位表"
+        ? "announcement"
+        : "job_detail",
+    detailStatus: detail.description ? "complete" : "incomplete",
     source: meta.id,
     sourceName: `${meta.name}·${hostInfo.name}`,
     sources: [meta.id],
@@ -891,6 +908,18 @@ export async function collect({
     .sort((a, b) => b.score - a.score);
 
   const jobs = [];
+  if (maxDetail === 0) {
+    for (const item of ranked) {
+      const notice = /\/campus\/view\/id\//.test(item.url);
+      const job = toJob(
+        item,
+        item.hostInfo,
+        {},
+        notice ? "招聘公告" : "职位信息",
+      );
+      if (job) jobs.push(job);
+    }
+  }
   for (const item of ranked.slice(0, maxDetail)) {
     if (signal?.aborted) break;
     try {
@@ -927,7 +956,7 @@ export async function collect({
               education: p.education,
               jobType: p.jobType,
               major: p.major,
-              description: `${detail.title}\n${detail.description}`,
+              description: `${detail.title}\n${detail.commonDescription}\n${p.description}`,
               publishTime: detail.publishTime,
               expire: detail.expire,
             },
@@ -947,4 +976,17 @@ export async function collect({
     `高校就业网：检索 ${names}｜${stats.hosts} 所有数据，列表 ${stats.listed} 条，抓详情 ${stats.detailed} 条，得到 ${jobs.length} 个岗位`,
   );
   return { jobs, errors, stats: { ...stats, university: jobs.length } };
+}
+
+export async function fetchDetail(record) {
+  const hostInfo = {
+    host: new URL(record.url).origin,
+    name: record.extra?.university || record.siteId || "高校",
+  };
+  const html = await fetchText(record.url, {
+    referer: `${hostInfo.host}/search/list`,
+  });
+  const notice = /\/campus\/view\/id\//.test(record.url);
+  const detail = notice ? parseNoticeDetail(html) : parseJobDetail(html);
+  return toJob(record, hostInfo, detail, notice ? "招聘公告" : "职位信息");
 }

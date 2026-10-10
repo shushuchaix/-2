@@ -22,6 +22,8 @@ import { buildCollectionPlan } from "../../src/sources/planning.mjs";
 import { loadSiteCatalog } from "../../src/sources/catalog.mjs";
 import { loadRun } from "../../src/pipeline.mjs";
 import { jobFactHash } from "../../src/domain/job-facts.mjs";
+import { RULE_VERSION } from "../../src/domain/ranking-policy.mjs";
+import { CONDITIONS_PARSER_VERSION } from "../../src/domain/recruitment-evidence.mjs";
 
 async function legacy(t, ambiguous = false) {
   const repository = await tempRepository(t);
@@ -287,6 +289,8 @@ test("review 8: selected target uses its own evaluation revision and retains une
   await jobs.saveEvaluations([
     {
       evaluationId: "ea",
+      ruleVersion: RULE_VERSION,
+      conditionsParserVersion: CONDITIONS_PARSER_VERSION,
       jobId: jobIds[0],
       targetRevisionId: t1.revisionId,
       profileRevisionId: p.revisionId,
@@ -297,6 +301,8 @@ test("review 8: selected target uses its own evaluation revision and retains une
     },
     {
       evaluationId: "eb",
+      ruleVersion: RULE_VERSION,
+      conditionsParserVersion: CONDITIONS_PARSER_VERSION,
       jobId: jobIds[0],
       targetRevisionId: t2.revisionId,
       profileRevisionId: p.revisionId,

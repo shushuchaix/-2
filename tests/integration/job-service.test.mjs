@@ -7,6 +7,8 @@ import { createImportService } from "../../src/application/import-service.mjs";
 import { createWorkspaceService } from "../../src/application/workspace-service.mjs";
 import { profile, target, namedTargetInput } from "../helpers/fixtures.mjs";
 import { jobFactHash } from "../../src/domain/job-facts.mjs";
+import { RULE_VERSION } from "../../src/domain/ranking-policy.mjs";
+import { CONDITIONS_PARSER_VERSION } from "../../src/domain/recruitment-evidence.mjs";
 import { filters as httpFilters } from "../../src/server/validation.mjs";
 import { createExportService } from "../../src/application/export-service.mjs";
 
@@ -49,6 +51,8 @@ test("independent classifications include unevaluated, unknown, all and unassign
       await s.saveEvaluations([
         {
           evaluationId: "enum" + i,
+          ruleVersion: RULE_VERSION,
+          conditionsParserVersion: CONDITIONS_PARSER_VERSION,
           jobId: saved.jobIds[0],
           observationId: saved.observationIds[0],
           factContentHash: jobFactHash(r),

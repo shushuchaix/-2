@@ -1,14 +1,11 @@
-import fs from "node:fs";
+import { RANKING_POLICY as config, RULE_VERSION } from "./ranking-policy.mjs";
 import { evaluateQualification } from "./qualification.mjs";
 import { findSkillEvidence, termEvidence, majorRoleFit } from "./skills.mjs";
 import {
   assessRecruitmentEvidence,
   isVerifiedRecommendation,
 } from "./recruitment-evidence.mjs";
-const config = JSON.parse(
-  fs.readFileSync(new URL("./ranking-config.json", import.meta.url), "utf8"),
-);
-export const RULE_VERSION = config.ruleVersion;
+export { RULE_VERSION };
 export function evaluateRules(record, profile, target = {}, options = {}) {
   const qualification = evaluateQualification(record, profile, target, {
       now: options.now,
@@ -41,36 +38,47 @@ export function evaluateRules(record, profile, target = {}, options = {}) {
     );
   const components = {
     role: {
-      score: roleEvidence.length ? 22 : bodyRole ? 14 : 0,
-      max: 22,
+      score: roleEvidence.length
+        ? config.weights.role
+        : bodyRole
+          ? Math.round((config.weights.role * 14) / 22)
+          : 0,
+      max: config.weights.role,
       evidence: roleEvidence,
     },
     skills: {
       score: Math.min(
-        45,
-        Math.round((matched.size / Math.max(1, new Set(skills).size)) * 45),
+        config.weights.skills,
+        Math.round(
+          (matched.size / Math.max(1, new Set(skills).size)) *
+            config.weights.skills,
+        ),
       ),
-      max: 45,
+      max: config.weights.skills,
       evidence,
     },
     city: {
-      score: cityMatch ? 15 : record.cities?.length ? 3 : 8,
-      max: 15,
+      score: cityMatch
+        ? config.weights.city
+        : record.cities?.length
+          ? Math.round((config.weights.city * 3) / 15)
+          : Math.round((config.weights.city * 8) / 15),
+      max: config.weights.city,
       evidence: record.cities || [],
     },
     major: {
-      score: major.status === "matched" ? 8 : 0,
-      max: 8,
+      score: major.status === "matched" ? config.weights.major : 0,
+      max: config.weights.major,
       evidence: major.reasons,
     },
     eligibility: {
       score:
         qualification.status === "pass"
-          ? 10
+          ? config.weights.eligibility
           : qualification.status === "unknown"
-            ? 4
+            ? Math.round((config.weights.eligibility * 4) / 10)
             : 0,
-      max: 10,
+      max: config.weights.eligibility,
       evidence: qualification.checks,
     },
   };

@@ -11,6 +11,51 @@ import {
 import { createWorkspaceService } from "../../src/application/workspace-service.mjs";
 import { createJobService } from "../../src/application/job-service.mjs";
 import { createEvaluationService } from "../../src/application/evaluation-service.mjs";
+test("old rule evaluations stay in history but are not projected or reused as current qualifications", async (t) => {
+  const repository = await tempRepository(t),
+    ws = createWorkspaceService({ repository }),
+    jobs = createJobService({ repository }),
+    cache = new Map(),
+    evaluation = createEvaluationService({ repository, cache });
+  const p = await ws.saveProfile({ profile: profile({ age: 25 }) }),
+    tar = await ws.saveTarget(
+      namedTargetInput({ ...target(), profileRevisionId: p.revisionId }),
+    );
+  const {
+    jobIds: [id],
+  } = await jobs.ingestRecords({
+    targetRevisionId: tar.revisionId,
+    runId: "condition-version",
+    records: [
+      job({ description: "本科，要求年龄20周岁以上。", graduationYear: null }),
+    ],
+  });
+  const input = {
+    jobIds: [id],
+    profileRevisionId: p.revisionId,
+    targetRevisionId: tar.revisionId,
+    mode: "rules",
+  };
+  const first = (await evaluation.evaluate(input)).evaluations[0];
+  await repository.mutateWorkspace((w) => {
+    w.evaluations[first.evaluationId].ruleVersion = "synthetic-old-rules";
+  });
+  cache.set(first.cacheKey, { ...first, ruleVersion: "synthetic-old-rules" });
+  assert.equal(
+    (await jobs.queryJobs({ targetRevisionId: tar.revisionId })).items[0]
+      .evaluation,
+    null,
+  );
+  const fresh = (await evaluation.evaluate(input)).evaluations[0];
+  assert.notEqual(fresh.evaluationId, first.evaluationId);
+  assert.equal(fresh.qualification.status, "pass");
+  assert.ok(fresh.conditionsParserVersion);
+  const restarted = (
+    await createEvaluationService({ repository }).evaluate(input)
+  ).evaluations[0];
+  assert.equal(restarted.evaluationId, fresh.evaluationId);
+  assert.equal(Object.keys((await repository.read()).evaluations).length, 2);
+});
 test("fact hashes ignore runtime IDs and preserve exact business text", async () => {
   const { jobFactHash } = await import("../../src/domain/job-facts.mjs");
   assert.match(jobFactHash(job()), /^job-fact-v1:/);

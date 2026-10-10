@@ -18,6 +18,10 @@ export function createDnsLookup({
     throw Error("Invalid DNS mode");
   const cache = new Map();
   return async function (host, options = {}) {
+    const requestSignal =
+      signal && options.signal
+        ? AbortSignal.any([signal, options.signal])
+        : options.signal || signal;
     const started = clock.now(),
       context = { ...diagnosticContext, ...options.diagnosticContext };
     const safe = {};
@@ -47,9 +51,10 @@ export function createDnsLookup({
         error,
       );
     try {
-      signal?.throwIfAborted();
+      requestSignal?.throwIfAborted();
       if (mode !== "doh") {
         const system = await lookup(host, { all: true, verbatim: true });
+        requestSignal?.throwIfAborted();
         if (
           mode === "system" ||
           !system.length ||
@@ -70,15 +75,16 @@ export function createDnsLookup({
       resolver = "doh";
       const responses = await Promise.all(
         ["A", "AAAA"].map(async (type) => {
-          signal?.throwIfAborted();
+          requestSignal?.throwIfAborted();
           const reservation = await budget.claimRequest("dns", {
             bytesUpperBound: 65536,
           });
+          requestSignal?.throwIfAborted();
           const url = new URL("https://cloudflare-dns.com/dns-query");
           url.searchParams.set("name", host);
           url.searchParams.set("type", type);
-          const combined = signal
-            ? AbortSignal.any([signal, AbortSignal.timeout(5000)])
+          const combined = requestSignal
+            ? AbortSignal.any([requestSignal, AbortSignal.timeout(5000)])
             : AbortSignal.timeout(5000);
           const response = await transport({
             url,
@@ -87,6 +93,7 @@ export function createDnsLookup({
             signal: combined,
             maxBytes: 65536,
           });
+          combined.throwIfAborted();
           await budget.settleRequest?.(reservation, {
             bytes:
               response.bytes?.byteLength ??
@@ -114,7 +121,7 @@ export function createDnsLookup({
       emit({ outcome: "success", cacheHit: false });
       return structuredClone(addresses);
     } catch (error) {
-      const abortedBy = signal?.aborted
+      const abortedBy = requestSignal?.aborted
         ? "caller"
         : error?.name === "TimeoutError"
           ? "timeout"

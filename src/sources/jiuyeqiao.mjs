@@ -213,6 +213,9 @@ function toJob(item, detail) {
   const siteId = (item.href.match(/\/zhiwei\/(\d+)\.html/) || [, ""])[1];
   return {
     id: `${meta.id}:${siteId || `${normKey(title)}|${normKey(company)}|${normKey(item.city)}`}`,
+    sourceRecordId: siteId || item.href,
+    urlKind: "job_detail",
+    detailStatus: detail.description ? "complete" : "incomplete",
     source: meta.id,
     sourceName: meta.name,
     sources: [meta.id],
@@ -223,7 +226,10 @@ function toJob(item, detail) {
     salary: item.salary || detail.salary || "",
     education: item.education || detail.education || "",
     experience:
-      (item.condition.match(/(\d+\s*[-–~]?\s*\d*\s*年)/) || [, ""])[1] || "",
+      ((item.condition || "").match(/(\d+\s*[-–~]?\s*\d*\s*年)/) || [
+        ,
+        "",
+      ])[1] || "",
     jobType: "校招",
     skills: [],
     tags: [
@@ -303,6 +309,12 @@ export async function collect({
     .sort((a, b) => b.score - a.score);
 
   const jobs = [];
+  if (maxDetail === 0) {
+    for (const item of ranked) {
+      const job = toJob(item, {});
+      if (job) jobs.push(job);
+    }
+  }
   for (const item of ranked.slice(0, maxDetail)) {
     if (signal?.aborted) break;
     try {
@@ -320,4 +332,11 @@ export async function collect({
     `就业桥：检索 ${stats.queries} 次，列表 ${stats.listed} 条，抓详情 ${stats.detailed} 条，得到 ${jobs.length} 个岗位`,
   );
   return { jobs, errors, stats: { ...stats, jiuyeqiao: jobs.length } };
+}
+
+export async function fetchDetail(record) {
+  return toJob(
+    { ...record, href: record.url, city: record.city || record.cities?.[0] },
+    parseDetail(await get(record.url)),
+  );
 }

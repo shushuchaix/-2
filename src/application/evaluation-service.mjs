@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { gateRecommendation } from "../domain/recruitment-evidence.mjs";
+import { CONDITIONS_PARSER_VERSION } from "../domain/recruitment-evidence.mjs";
 import {
   runtimeRepository,
   runtimeGate,
@@ -148,6 +149,10 @@ function createLegacyEvaluationService({
             const reusable = (e) =>
               e &&
               e.schemaVersion === SCHEMA_VERSION &&
+              e.conditionsParserVersion === CONDITIONS_PARSER_VERSION &&
+              e.ruleVersion === RULE_VERSION &&
+              e.promptVersion === PROMPT_VERSION &&
+              e.modelFingerprint === fingerprint &&
               ["rules", "ai"].includes(e.status) &&
               jobIdMatches(workspace, e.jobId, id) &&
               e.profileRevisionId === profileRevisionId &&
@@ -377,6 +382,7 @@ function createLegacyEvaluationService({
                   observationId: fact.observationIds[0],
                   promptVersion: PROMPT_VERSION,
                   schemaVersion: SCHEMA_VERSION,
+                  conditionsParserVersion: CONDITIONS_PARSER_VERSION,
                   modelFingerprint: fingerprint,
                   cacheKey,
                   runId,

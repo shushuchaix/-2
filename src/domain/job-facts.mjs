@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { jobBusinessContent } from "./job-duplicates.mjs";
+import { jobBusinessContent } from "./job-identity.mjs";
 import { resolveJobId, jobIdMatches } from "./job-resolution.mjs";
 import { packageError } from "./packages.mjs";
+import { RULE_VERSION } from "./ranking-policy.mjs";
+import { CONDITIONS_PARSER_VERSION } from "./recruitment-evidence.mjs";
 const hash = (v) =>
   createHash("sha256")
     .update(typeof v === "string" ? v : JSON.stringify(v))
@@ -313,6 +315,8 @@ export function selectMatchingEvaluation(
       .filter(
         (e) =>
           jobIdMatches(w, e.jobId, jobId) &&
+          e.ruleVersion === RULE_VERSION &&
+          e.conditionsParserVersion === CONDITIONS_PARSER_VERSION &&
           (!targetRevisionId || e.targetRevisionId === targetRevisionId) &&
           (!profileRevisionId || e.profileRevisionId === profileRevisionId) &&
           resolveEvaluationFactBasis(w, e).factContentHash === factContentHash,

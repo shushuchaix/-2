@@ -263,6 +263,7 @@ test("282 results with 64 cached AI scores retain 148 AI and 134 rule fallbacks 
       targetRevisionId: "t1@1",
       promptVersion: PROMPT_VERSION,
       schemaVersion: "matching-results-1",
+      conditionsParserVersion: "conditions-2",
       ruleVersion: RULE_VERSION,
       modelFingerprint: fingerprint,
     });
@@ -276,6 +277,7 @@ test("282 results with 64 cached AI scores retain 148 AI and 134 rule fallbacks 
       targetRevisionId: "t1@1",
       promptVersion: PROMPT_VERSION,
       schemaVersion: "matching-results-1",
+      conditionsParserVersion: "conditions-2",
       ruleVersion: RULE_VERSION,
       modelFingerprint: fingerprint,
       status: "ai",

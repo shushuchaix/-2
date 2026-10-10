@@ -53,11 +53,19 @@ export function createDocConverter({ executable, cleanup } = {}) {
         throw Object.assign(Error("DOC converter unavailable"), {
           code: "doc_converter_unavailable",
         });
-      verified ||= run(executable, ["--version"], { signal });
-      if (!/LibreOffice/i.test(await verified))
-        throw Object.assign(Error("DOC converter unsupported"), {
-          code: "doc_converter_unavailable",
+      verified ||= run(executable, ["--version"], { signal })
+        .then((output) => {
+          if (!/LibreOffice/i.test(output))
+            throw Object.assign(Error("DOC converter unsupported"), {
+              code: "doc_converter_unavailable",
+            });
+          return output;
+        })
+        .catch((error) => {
+          verified = null;
+          throw error;
         });
+      await verified;
       const base = attemptId,
         input = await cleanup.register({
           scope: ref.scope,

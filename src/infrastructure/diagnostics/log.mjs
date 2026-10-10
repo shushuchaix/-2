@@ -73,6 +73,7 @@ const messages = {
   "application.start": "工作区启动检查已结束。",
   "application.migration": "历史数据迁移检查已结束。",
   "application.recovery": "工作区恢复检查已结束。",
+  "application.shutdown": "应用关闭资源检查。",
   "application.settings": "设置保存操作已结束。",
   "application.backup": "备份操作已结束。",
   "application.restore": "恢复备份操作已结束。",

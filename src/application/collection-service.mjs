@@ -1213,6 +1213,10 @@ export function createCollectionService({
                 }
               }
               record = await enrichRecord(record, context);
+              if (record.attachmentBudgetExhausted) {
+                issues.push(...(record.attachmentIssues || []));
+                stopCode = "source_budget_exhausted";
+              }
               records.push(record);
             }
             page = { ...page, records, issues };
@@ -1903,7 +1907,9 @@ export function createCollectionService({
           (a) => a.extraction?.status === "extracted",
         ).length,
       },
-      outcome: "completed",
+      outcome: enriched.attachments.some((a) => a.textStatus === "pending")
+        ? "partial"
+        : "completed",
     });
     const extracts = [];
     for (const a of enriched.attachments || [])

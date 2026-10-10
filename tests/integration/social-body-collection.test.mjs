@@ -11,6 +11,109 @@ import {
 import { createContentReadService } from "../../src/application/content-read-service.mjs";
 import wechatProvider from "../../src/sources/adapters/wechat-public.mjs";
 import weiboProvider from "../../src/sources/adapters/weibo-public.mjs";
+
+test("social list transport failures never advance a successful empty page", async () => {
+  for (const provider of [wechatProvider, weiboProvider]) {
+    const site = { siteId: provider.id },
+      config = {
+        [provider.id]: {
+          accountIds: [provider.id === "wechat" ? "syntheticBiz=" : "123"],
+        },
+      };
+    let requests = 0;
+    const context = {
+      config,
+      request: async (_url, options) => {
+        requests++;
+        assert.equal(options.maxRetries, 0);
+        return { status: 500, text: '{"ok":1,"data":{"cards":[]}}' };
+      },
+    };
+    await assert.rejects(
+      provider.collectPage({ site, context }),
+      (error) => error.status === 500,
+    );
+    assert.equal(requests, 1);
+  }
+  for (const text of [
+    '{"data":',
+    '{"ok":0,"msg":"服务异常"}',
+    "<main>服务暂不可用</main>",
+    '{"ok":1,"data":{}}',
+  ]) {
+    await assert.rejects(
+      weiboProvider.collectPage({
+        site: { siteId: "weibo" },
+        context: {
+          config: { weibo: { accountIds: ["123"] } },
+          request: async () => ({ status: 200, text }),
+        },
+      }),
+      { code: "parse_error" },
+    );
+  }
+  const empty = await weiboProvider.collectPage({
+    site: { siteId: "weibo" },
+    context: {
+      config: { weibo: { accountIds: ["123"] } },
+      request: async () => ({
+        status: 200,
+        text: '{"ok":1,"data":{"cards":[],"cardlistInfo":{}}}',
+      }),
+    },
+  });
+  assert.equal(empty.records.length, 0);
+  assert.equal(empty.raw, 0);
+  assert.equal(empty.done, true);
+  assert.deepEqual(empty.issues, []);
+});
+
+test("weibo href-only links survive preview long text and provider detail", async () => {
+  const text =
+    '公司现招聘消防工程师，要求本科。<a href="https://jobs.example.org/roles.pdf">岗位表</a><a href="https://jobs.example.org/apply">报名入口</a>';
+  const post = { id: "123", text };
+  for (const input of [
+    { post },
+    {
+      post: { ...post, isLongText: true, text: "公司招聘……" },
+      longText: { longTextContent: text },
+    },
+  ]) {
+    const parsed = parseWeiboContent({
+      ...input,
+      url: "https://m.weibo.cn/detail/123",
+    });
+    assert.deepEqual(parsed.externalLinks.map((link) => link.url).sort(), [
+      "https://jobs.example.org/apply",
+      "https://jobs.example.org/roles.pdf",
+    ]);
+    assert.equal(parsed.description.includes("<a"), false);
+  }
+  const context = {
+    config: { weibo: { accountIds: ["123"] } },
+    budget: { claimDetail: async () => {} },
+    request: async (url) => ({
+      status: 200,
+      text: JSON.stringify(
+        new URL(url).pathname.includes("getIndex")
+          ? { ok: 1, data: { cards: [{ mblog: post }], cardlistInfo: {} } }
+          : { ok: 1, data: post },
+      ),
+    }),
+  };
+  const page = await weiboProvider.collectPage({
+    site: { siteId: "weibo" },
+    context,
+  });
+  const detail = await weiboProvider.fetchDetail(page.records[0], context);
+  for (const record of [page.records[0], detail]) {
+    assert.equal(record.externalLinks.length, 2);
+    assert.deepEqual(
+      record.attachments.map((attachment) => attachment.url),
+      ["https://jobs.example.org/roles.pdf"],
+    );
+  }
+});
 test("review: long-text endpoint returning truncated preview stays retryable", () => {
   const post = {
     id: "123",
@@ -52,6 +155,7 @@ test("account provider follows real cursor past page two and filters unrelated p
         return {
           status: 200,
           text: JSON.stringify({
+            ok: 1,
             data: {
               cards: [
                 {

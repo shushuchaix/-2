@@ -186,6 +186,61 @@ test("eight legacy contracts retain partial records and classify failures", asyn
       assert.equal(result.records[0].kind, "recruitment_notice");
   }
 });
+
+test("nowcoder malformed embedded state is a failure while explicit empty list is successful", async () => {
+  for (const html of [
+    "<script>window.__INITIAL_STATE__ = {broken:};</script>",
+    '<script>window.__INITIAL_STATE__ = {"app":{}};</script>',
+    "<main>结构变化</main>",
+  ]) {
+    const result = await createLegacyProvider("nowcoder").collect({
+      queries: [],
+      request: async () => ({ status: 200, headers: {}, text: html }),
+    });
+    assert.equal(result.records.length, 0);
+    assert.equal(result.coverage[0].status, "failed");
+    assert.ok(result.issues.some((issue) => issue.code === "parse_error"));
+  }
+  const result = await createLegacyProvider("nowcoder").collect({
+    queries: [],
+    request: async () => ({
+      status: 200,
+      headers: {},
+      text: '<script>window.__INITIAL_STATE__ = {"app":{"jobListData":[]}};</script>',
+    }),
+  });
+  assert.equal(result.records.length, 0);
+  assert.equal(result.coverage[0].status, "complete");
+  assert.deepEqual(result.issues, []);
+});
+
+test("nowcoder invalid IDs cannot become authority and raw counts include rejected rows", async () => {
+  for (const id of [undefined, null, "", "undefined", "null"])
+    assert.equal(normalizeNowcoderJob({ id, jobName: "合成岗位甲" }), null);
+  const state = {
+    app: {
+      jobListData: [
+        { jobName: "合成岗位甲" },
+        { id: "123", jobName: "合成岗位乙" },
+      ],
+    },
+  };
+  const result = await createLegacyProvider("nowcoder").collect({
+    queries: [],
+    request: async () => ({
+      status: 200,
+      headers: {},
+      text:
+        "<script>window.__INITIAL_STATE__ = " +
+        JSON.stringify(state) +
+        ";</script>",
+    }),
+  });
+  assert.equal(result.records.length, 1);
+  assert.equal(result.records[0].sourceRecordId, "123");
+  assert.equal(result.stats.raw, 2);
+  assert.equal(result.stats.rejected, 1);
+});
 test("legacy fetches share the injected context and combine cancellation", async () => {
   let calls = 0;
   await withSourceContext(

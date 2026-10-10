@@ -279,8 +279,37 @@ export function createAttachmentService({
     },
     async enrich({ record, ...context }) {
       const attachments = [];
-      for (const a of (record.attachments || []).slice(0, 40)) {
+      let attempts = 0,
+        budgetExhausted = false;
+      const pending = (attachment, code) => ({
+        ...attachment,
+        textStatus: "pending",
+        issues: [
+          ...(attachment.issues || []).filter((issue) => issue.code !== code),
+          { code },
+        ],
+      });
+      for (const a of record.attachments || []) {
         context.signal?.throwIfAborted();
+        if (
+          a.textStatus === "extracted" &&
+          a.extraction?.status === "extracted"
+        ) {
+          attachments.push(a);
+          continue;
+        }
+        if (budgetExhausted || attempts >= 40) {
+          attachments.push(
+            pending(
+              a,
+              budgetExhausted
+                ? "source_budget_exhausted"
+                : "attachment_batch_limit",
+            ),
+          );
+          continue;
+        }
+        attempts++;
         try {
           const parsed = await service.extract({ ...context, attachment: a });
           attachments.push({
@@ -291,7 +320,17 @@ export function createAttachmentService({
           });
         } catch (e) {
           context.signal?.throwIfAborted();
-          if (e.code === "source_budget_exhausted") throw e;
+          if (
+            ["collection_stale_epoch", "workspace_write_failed"].includes(
+              e.code,
+            )
+          )
+            throw e;
+          if (e.code === "source_budget_exhausted") {
+            budgetExhausted = true;
+            attachments.push(pending(a, e.code));
+            continue;
+          }
           attachments.push({
             ...a,
             textStatus: "pending",
@@ -302,6 +341,16 @@ export function createAttachmentService({
       return {
         ...record,
         attachments,
+        attachmentBudgetExhausted: budgetExhausted,
+        attachmentIssues: budgetExhausted
+          ? [
+              {
+                code: "source_budget_exhausted",
+                budgetKind: "attachments",
+                retryable: false,
+              },
+            ]
+          : [],
         attachmentEvidence: attachments.flatMap(
           (a) =>
             a.extraction?.fields?.map((f) => ({

@@ -74,6 +74,19 @@ const countKeys = [
   "issues",
 ];
 const enums = {
+  shutdownResource: [
+    "application",
+    "browser",
+    "server",
+    "collection",
+    "trash",
+    "settings",
+    "runs",
+    "attachments",
+    "ocr",
+    "worker",
+    "owned",
+  ],
   engine: ["http", "browser", "static", "dynamic", "enhanced"],
   stage: [
     "queued",

@@ -1,13 +1,156 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import { parseAttachmentBytes } from "../../src/attachments/service.mjs";
+import path from "node:path";
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import { EventEmitter } from "node:events";
+import { createTempDir } from "../helpers/fixtures.mjs";
+import { createDocConverter } from "../../src/attachments/doc-converter.mjs";
+import {
+  parseAttachmentBytes,
+  createAttachmentService,
+} from "../../src/attachments/service.mjs";
 import { makeDocx, makeZip } from "../helpers/resume-files.mjs";
 import { createLocalOcr } from "../../src/attachments/ocr.mjs";
 const fixture = (name) =>
   fs.readFile(
     new URL("../fixtures/recruitment-attachments/" + name, import.meta.url),
   );
+
+test("DOC converter retries a failed version probe and caches only a successful probe", async (t) => {
+  const dataDir = await createTempDir(t),
+    executable = path.join(dataDir, "synthetic-office.exe");
+  await fs.writeFile(executable, "synthetic-placeholder");
+  let probes = 0,
+    conversions = 0;
+  const docx = makeDocx({
+    "word/document.xml":
+      '<w:document xmlns:w="urn:test"><w:body><w:p><w:r><w:t>合成岗位</w:t></w:r></w:p></w:body></w:document>',
+  });
+  t.mock.method(childProcess, "spawn", (_executable, args) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.kill = () => {};
+    queueMicrotask(async () => {
+      try {
+        if (args.includes("--version")) {
+          probes++;
+          if (probes === 1) return child.emit("close", 1);
+          child.stdout.emit("data", Buffer.from("LibreOffice synthetic"));
+        } else {
+          conversions++;
+          await fs.writeFile(
+            path.join(args[args.indexOf("--outdir") + 1], "input.docx"),
+            docx,
+          );
+        }
+        child.emit("close", 0);
+      } catch (error) {
+        child.emit("error", error);
+      }
+    });
+    return child;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  const converter = createDocConverter({
+    executable,
+    cleanup: {
+      register: async ({ relativePath }) => path.join(dataDir, relativePath),
+    },
+  });
+  const input = {
+    bytes: Buffer.from("synthetic-doc"),
+    ref: { scope: {}, activityId: "synthetic" },
+  };
+  await assert.rejects(converter.convert({ ...input, attemptId: "one" }), {
+    code: "doc_conversion_failed",
+  });
+  assert.deepEqual(
+    await converter.convert({ ...input, attemptId: "two" }),
+    docx,
+  );
+  assert.deepEqual(
+    await converter.convert({ ...input, attemptId: "three" }),
+    docx,
+  );
+  assert.equal(probes, 2);
+  assert.equal(conversions, 2);
+});
+
+test("attachment manifest retains all 41 entries and marks unattempted items", async () => {
+  let requests = 0;
+  const attachments = Array.from({ length: 41 }, (_, i) => ({
+    url: `https://jobs.example.org/a/${i}.pdf`,
+  }));
+  const service = createAttachmentService({
+    ledger: {
+      reserve: async () => ({ duplicate: false, reservationId: "synthetic" }),
+    },
+    cleanup: { cleanupAttempt: async () => {} },
+    request: async () => {
+      requests++;
+      return { status: 404 };
+    },
+  });
+  const result = await service.enrich({
+    record: { attachments },
+    ref: { scope: {} },
+    token: {},
+  });
+  assert.deepEqual(
+    result.attachments.map((a) => a.url),
+    attachments.map((a) => a.url),
+  );
+  assert.equal(requests, 40);
+  assert.equal(result.attachments[40].textStatus, "pending");
+  assert.ok(
+    result.attachments[40].issues.some(
+      (issue) => issue.code === "attachment_batch_limit",
+    ),
+  );
+});
+
+test("attachment budget exhaustion preserves attempted evidence and remaining manifest", async () => {
+  let credits = 0,
+    requests = 0;
+  const service = createAttachmentService({
+    ledger: {
+      reserve: async () => {
+        if (credits >= 2)
+          throw Object.assign(Error("source_budget_exhausted"), {
+            code: "source_budget_exhausted",
+            budgetKind: "attachments",
+          });
+        credits++;
+        return { duplicate: false, reservationId: "synthetic" };
+      },
+    },
+    cleanup: { cleanupAttempt: async () => {} },
+    request: async () => {
+      requests++;
+      return { status: 404 };
+    },
+  });
+  const result = await service.enrich({
+    record: {
+      attachments: Array.from({ length: 3 }, (_, i) => ({
+        url: `https://jobs.example.org/${i}.pdf`,
+      })),
+    },
+    ref: { scope: {} },
+    token: {},
+  });
+  assert.equal(result.attachments.length, 3);
+  assert.equal(result.attachments[0].extraction.status, "pending");
+  assert.equal(result.attachments[2].textStatus, "pending");
+  assert.equal(result.attachmentBudgetExhausted, true);
+  assert.equal(requests, 2);
+});
 test("spreadsheet_rows_keep_degree_cell_and_shared_merge_provenance_without_guessing", async () => {
   for (const name of ["roles.xlsx", "roles.xls"]) {
     const r = await parseAttachmentBytes({ bytes: await fixture(name) });

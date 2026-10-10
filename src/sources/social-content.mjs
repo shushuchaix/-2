@@ -150,7 +150,13 @@ export function parseWeiboContent({
       : description && !incomplete && status === 200
         ? "complete"
         : "incomplete";
-  const media = linksAndImages(d.querySelector(".weibo-text"), canonical);
+  const originalHtml = rawFull || post?.text || post?.text_raw;
+  const media = linksAndImages(
+    originalHtml
+      ? doc("<main>" + String(originalHtml) + "</main>").querySelector("main")
+      : d.querySelector(".weibo-text"),
+    canonical,
+  );
   for (const pic of post?.pics || []) {
     try {
       const imageUrl = publicCollectionUrl(pic.large?.url || pic.url).href;

@@ -62,6 +62,7 @@ import { verifyCollectionRuntime } from "../infrastructure/collection/runtime.mj
 import { createContentReadService } from "./content-read-service.mjs";
 import { assertCollectionWrite } from "../domain/collection.mjs";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
+import { createResourceShutdown } from "../infrastructure/lifecycle/resource-shutdown.mjs";
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
@@ -411,26 +412,65 @@ export async function createApplicationContext({
     }),
     exportService = createExportService({ repository });
   let settingsQueue = Promise.resolve();
+  const shutdown = createResourceShutdown({
+    resources: () => [
+      {
+        id: "collection",
+        stop: async () => {
+          const outcomes = await Promise.allSettled([
+            collectionRefresh?.stop(),
+            collectionService?.stop(),
+          ]);
+          const failures = outcomes
+            .filter((result) => result.status === "rejected")
+            .map((result) => result.reason);
+          if (failures.length)
+            throw new AggregateError(failures, "Collection shutdown failed");
+        },
+      },
+      { id: "trash", stop: () => trashScheduler.stop() },
+      { id: "settings", stop: () => settingsQueue },
+      {
+        id: "runs",
+        stop: async () => {
+          const w = await repository.read();
+          if (w.schemaVersion !== 3) return;
+          const outcomes = await Promise.allSettled(
+            Object.values(w.packages)
+              .filter((p) => p.state === "active" && p.kind === "target")
+              .map((p) => runService.cancelPackageAndWait(p.packageId)),
+          );
+          const failures = outcomes
+            .filter((result) => result.status === "rejected")
+            .map((result) => result.reason);
+          if (failures.length)
+            throw new AggregateError(failures, "Run shutdown failed");
+        },
+      },
+      { id: "attachments", stop: () => attachmentCleanup.resumePending() },
+      { id: "ocr", stop: () => ocr.close?.() },
+      { id: "worker", stop: () => anonymousWorker.stop() },
+      { id: "owned", stop: () => dependencies.stopOwnedResources?.() },
+    ],
+    onError: (shutdownResource, error) =>
+      recordDiagnostic(
+        diagnostics,
+        {
+          operation: "application.shutdown",
+          phase: "finished",
+          shutdownResource,
+          outcome: "failed",
+          code: "shutdown_resource_failed",
+        },
+        error,
+      ),
+  });
   const context = {
     trashService,
     purgeService,
     assignmentService,
     trashScheduler,
-    async close() {
-      await collectionRefresh?.stop();
-      await trashScheduler.stop();
-      await settingsQueue;
-      const w = await repository.read();
-      if (w.schemaVersion === 3)
-        for (const p of Object.values(w.packages).filter(
-          (p) => p.state === "active" && p.kind === "target",
-        ))
-          await runService.cancelPackageAndWait(p.packageId);
-      await attachmentCleanup.resumePending();
-      await ocr.close?.();
-      await anonymousWorker.stop();
-      await dependencies.stopOwnedResources?.();
-    },
+    close: () => shutdown.close(),
     jobCleanupService: createJobCleanupService({ repository, operationGate }),
     operationGate,
     diagnostics,

@@ -1,4 +1,4 @@
-import { createPagedProvider, baseRecord } from "./shared.mjs";
+import { createPagedProvider, baseRecord, jsonResponse } from "./shared.mjs";
 import {
   canonicalSocialUrl,
   parseWeiboContent,
@@ -9,6 +9,16 @@ const retained = (record) =>
   record.intent === "employer_recruitment" ||
   (record.intent === "unknown" &&
     /招[聘录]|岗位|投递|应聘|报名/.test(record.description || ""));
+const attachmentsFor = (parsed) => [
+  ...(parsed.images || []).map((image) => ({
+    ...image,
+    kind: "poster",
+    textStatus: "not_extracted",
+  })),
+  ...(parsed.externalLinks || [])
+    .filter((link) => /\.(?:pdf|docx?|xlsx?)(?:\?|$)/i.test(link.url))
+    .map((link) => ({ ...link, textStatus: "not_extracted" })),
+];
 function recordFor(post, site) {
   const parsed = parseWeiboContent({
     post,
@@ -36,11 +46,7 @@ function recordFor(post, site) {
             },
           ]
         : [],
-    attachments: parsed.images.map((i) => ({
-      ...i,
-      kind: "poster",
-      textStatus: "not_extracted",
-    })),
+    attachments: attachmentsFor(parsed),
   });
 }
 const provider = createPagedProvider({
@@ -103,14 +109,19 @@ const provider = createPagedProvider({
         code: response.status === 429 ? "rate_limited" : "login_required",
         nextDueAt: response.nextDueAt,
       });
-    let payload;
-    try {
-      payload = JSON.parse(response.text);
-    } catch {
-      throw Object.assign(Error("微博列表未返回公开数据。"), {
-        code: "challenge_required",
+    const payload = jsonResponse(response);
+    if (
+      payload?.ok !== 1 ||
+      !payload.data ||
+      ![payload.data.cards, payload.data.list, payload.data.statuses].some(
+        Array.isArray,
+      )
+    )
+      throw Object.assign(Error("parse_error: 微博列表业务或结构无效。"), {
+        code: "parse_error",
+        phase: "parse",
+        requestId: response.requestId,
       });
-    }
     const list = parseWeiboList(payload),
       nextAccount = list.nextSinceId ? accountIndex : accountIndex + 1,
       hasMore = !!list.nextSinceId || nextAccount < accounts.length;
@@ -185,11 +196,7 @@ const provider = createPagedProvider({
       ...record,
       ...parsed,
       post: undefined,
-      attachments: (parsed.images || []).map((i) => ({
-        ...i,
-        kind: "poster",
-        textStatus: "not_extracted",
-      })),
+      attachments: attachmentsFor(parsed),
       detailStatus:
         parsed.bodyStatus === "complete" ? "available" : "unavailable",
       evidenceLevel: parsed.bodyStatus === "complete" ? "body" : "discovery",

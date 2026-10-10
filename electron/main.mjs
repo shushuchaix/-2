@@ -29,6 +29,7 @@ import { createCollectionBrowser } from "./collection/browser.mjs";
 import { registerCollectionIpc } from "./collection/ipc.mjs";
 import { createEgressProxy } from "../src/infrastructure/collection/egress-proxy.mjs";
 import { createCollectionLedger } from "../src/application/collection-ledger.mjs";
+import { createResourceShutdown } from "../src/infrastructure/lifecycle/resource-shutdown.mjs";
 import { assertScope } from "../src/domain/packages.mjs";
 import { resolveDataLayout } from "../src/infrastructure/storage/layout.mjs";
 import { registerDirectoryIpc } from "./directories.mjs";
@@ -610,11 +611,34 @@ async function boot() {
 let collectionBrowser,
   shutdownPromise,
   shutdownComplete = false;
+const desktopShutdown = createResourceShutdown({
+  resources: () => [
+    { id: "application", stop: () => applicationContext?.close?.() },
+    { id: "browser", stop: () => collectionBrowser?.stop() },
+    {
+      id: "server",
+      stop: async () => {
+        httpServer?.closeAllConnections?.();
+        if (httpServer?.listening)
+          await new Promise((resolve) => httpServer.close(resolve));
+      },
+    },
+  ],
+  onError: (shutdownResource, error) =>
+    recordDiagnostic(
+      diagnostics,
+      {
+        operation: "application.shutdown",
+        phase: "finished",
+        shutdownResource,
+        outcome: "failed",
+        code: "shutdown_resource_failed",
+      },
+      error,
+    ),
+});
 function shutdownDesktop() {
-  return (shutdownPromise ||= Promise.resolve().then(async () => {
-    await applicationContext?.close?.();
-    await collectionBrowser?.stop();
-    if (httpServer) httpServer.close();
+  return (shutdownPromise ||= desktopShutdown.close().finally(() => {
     shutdownComplete = true;
   }));
 }
@@ -622,7 +646,10 @@ app.on("before-quit", (event) => {
   if (shutdownComplete) return;
   event.preventDefault();
   if (shutdownPromise) return;
-  shutdownDesktop().finally(() => app.quit());
+  shutdownDesktop().then(
+    () => app.quit(),
+    () => app.quit(),
+  );
 });
 // 只允许开一个实例，第二次启动时聚焦已有窗口
 const gotLock = app.requestSingleInstanceLock();

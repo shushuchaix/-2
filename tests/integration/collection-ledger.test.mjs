@@ -9,11 +9,70 @@ import {
 } from "../../src/application/collection-ledger.mjs";
 import { createRequestClient } from "../../src/infrastructure/http/client.mjs";
 import { DeepSeek } from "../../src/llm/deepseek.mjs";
+import { createAttachmentService } from "../../src/attachments/service.mjs";
 
 const modelConfig = {
   baseUrl: "https://api.deepseek.com/v1",
   model: "deepseek-flash",
 };
+
+test("attachment manifest and exhausted credits remain durable after reopening", async (t) => {
+  const f = await fixture(t, { maxAttachments: 2 });
+  const serviceFor = (ledger) =>
+    createAttachmentService({
+      ledger,
+      cleanup: { cleanupAttempt: async () => {} },
+      request: async () => ({ status: 404 }),
+    });
+  const input = {
+    ref: f.ref,
+    token: f.token,
+    operationLease: f.lease,
+    record: {
+      attachments: Array.from({ length: 3 }, (_, i) => ({
+        url: `https://jobs.example.org/${i}.pdf`,
+      })),
+    },
+  };
+  const result = await serviceFor(f.ledger).enrich(input);
+  await f.repository.mutateWorkspace(
+    (w) => {
+      const p = w.runs[f.ref.activityId].collectionProgress;
+      p.pendingBodies ||= {};
+      p.pendingBodies["synthetic-attachment"] = {
+        unitId: "synthetic",
+        record: result,
+      };
+    },
+    { operationLease: f.lease },
+  );
+  assert.equal((await f.ledger.snapshot(f.ref)).usedAttachments, 2);
+  await f.reopen();
+  const ledger = createCollectionLedger({
+    repository: f.repository,
+    operationGate: f.operationGate,
+  });
+  const restored = (await f.repository.read()).runs[f.ref.activityId]
+    .collectionProgress.pendingBodies["synthetic-attachment"].record;
+  assert.equal(restored.attachments.length, 3);
+  assert.equal(restored.attachments[2].textStatus, "pending");
+  let requests = 0;
+  const resumed = createAttachmentService({
+    ledger,
+    cleanup: { cleanupAttempt: async () => {} },
+    request: async () => {
+      requests++;
+      return { status: 404 };
+    },
+  });
+  const third = await resumed.enrich({
+    ...input,
+    record: { attachments: [restored.attachments[2]] },
+  });
+  assert.equal(third.attachmentBudgetExhausted, true);
+  assert.equal(requests, 0);
+  assert.equal((await ledger.snapshot(f.ref)).usedAttachments, 2);
+});
 test("physical_attachment_bytes_repeat_and_retry_are_reserved_before_transport", async (t) => {
   const f = await fixture(t, {
     maxAttachmentBytes: 100,

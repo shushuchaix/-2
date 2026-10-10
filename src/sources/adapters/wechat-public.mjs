@@ -76,6 +76,12 @@ const provider = createPagedProvider({
         code: response.status === 429 ? "rate_limited" : "login_required",
         nextDueAt: response.nextDueAt,
       });
+    if (response.status !== 200)
+      throw Object.assign(Error("公众号列表 HTTP " + response.status), {
+        status: response.status,
+        code: "unavailable",
+        requestId: response.requestId,
+      });
     const list = parseWechatList(response.text, url);
     return {
       records: list.articleUrls.map((u) => seedRecord(u, site)),

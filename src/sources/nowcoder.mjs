@@ -82,7 +82,9 @@ function parseState(html) {
   try {
     return JSON.parse(balancedFrom(html, i).replace(/;\s*$/, ""));
   } catch {
-    return null;
+    throw Object.assign(Error("parse_error: 内嵌 JSON 无效"), {
+      code: "parse_error",
+    });
   }
 }
 
@@ -94,7 +96,7 @@ function findArray(root, field) {
     const cur = stack.pop();
     if (!cur || typeof cur !== "object" || seen.has(cur)) continue;
     seen.add(cur);
-    if (Array.isArray(cur[field]) && cur[field].length) return cur[field];
+    if (Array.isArray(cur[field])) return cur[field];
     for (const v of Object.values(cur))
       if (v && typeof v === "object") stack.push(v);
   }
@@ -150,6 +152,17 @@ function msToDate(ms) {
 
 export function normalizeNowcoderJob(j) {
   if (!j || !j.jobName) return null;
+  if (
+    (typeof j.id !== "string" && typeof j.id !== "number") ||
+    (typeof j.id === "number" && !Number.isSafeInteger(j.id))
+  )
+    return null;
+  const sourceRecordId = String(j.id).trim();
+  if (
+    !/^[A-Za-z0-9_-]{1,120}$/.test(sourceRecordId) ||
+    /^(?:undefined|null|NaN|Infinity)$/i.test(sourceRecordId)
+  )
+    return null;
   const ext = parseExt(j.ext);
   const company = sanitizeText(
     j.recommendInternCompany?.companyName ||
@@ -179,8 +192,8 @@ export function normalizeNowcoderJob(j) {
   const description = htmlToText(descParts.join("\n"));
 
   return {
-    id: `nowcoder:${j.id}`,
-    sourceRecordId: String(j.id),
+    id: `nowcoder:${sourceRecordId}`,
+    sourceRecordId,
     source: meta.id,
     sourceName: meta.name,
     sources: [meta.id],
@@ -228,8 +241,11 @@ export async function fetchCampusJobs({
 } = {}) {
   const html = await getWithRetry(JOBS_URL, { timeoutMs, log });
   const state = parseState(html);
-  if (!state) return { jobs: [], note: "未找到内嵌数据" };
-  const list = findArray(state, "jobListData") || [];
+  const list = state && findArray(state, "jobListData");
+  if (!list)
+    throw Object.assign(Error("parse_error: 缺少内嵌岗位列表"), {
+      code: "parse_error",
+    });
   return {
     jobs: list.map(normalizeNowcoderJob).filter(Boolean),
     raw: list.length,

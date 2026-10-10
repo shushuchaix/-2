@@ -62,6 +62,7 @@ export function createLegacyProvider(id, { collector } = {}) {
       const records = [],
         issues = [],
         coverage = [];
+      let raw = 0;
       const keywords = [
         ...new Set((ctx.queries || []).map((q) => q.keyword).filter(Boolean)),
       ];
@@ -116,6 +117,10 @@ export function createLegacyProvider(id, { collector } = {}) {
             },
           );
           ctx.signal?.throwIfAborted();
+          raw +=
+            result.stats?.nowcoderRaw ??
+            result.stats?.raw ??
+            (result.jobs || []).length;
           for (const message of result.errors || []) {
             const entry = await ctx.reportError?.(
               message instanceof Error ? message : Error(String(message)),
@@ -200,9 +205,10 @@ export function createLegacyProvider(id, { collector } = {}) {
         issues,
         coverage,
         stats: {
-          raw: records.length,
+          raw,
           parsed: records.length,
           accepted: records.length,
+          rejected: Math.max(0, raw - records.length),
         },
       };
     },

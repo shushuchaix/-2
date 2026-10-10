@@ -90,6 +90,7 @@ export function SiteDialog({
     op.clear();
   };
   async function save() {
+    if (op.busy) return;
     const input = Object.fromEntries(
       Object.entries(draft).map(([k, v]) => [k, v.trim()]),
     ) as typeof draft;
@@ -195,7 +196,10 @@ export function SiteDialog({
               ),
             )}
           </FieldGroup>
-          <OperationFeedback busy={op.busy} />
+          <OperationFeedback
+            busy={op.busy}
+            busyLabel="正在保存共享目录候选站点…"
+          />
           <DialogFooter>
             <Button
               type="button"
@@ -206,7 +210,7 @@ export function SiteDialog({
               取消
             </Button>
             <Button type="submit" disabled={op.busy || !sources.length}>
-              保存候选站点
+              {op.busy ? "正在保存候选站点…" : "保存候选站点"}
             </Button>
           </DialogFooter>
         </form>

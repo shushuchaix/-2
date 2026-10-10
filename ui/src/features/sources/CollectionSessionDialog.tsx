@@ -1,7 +1,12 @@
-import { useEffect, useState } from "react";
-import type { ApiClient, DesktopAdapter, Scope } from "../../lib/types";
-import type { CollectionActivity } from "../workbench/CollectionProgress";
-import { useOperation, useQuery } from "../../lib/hooks";
+import { useEffect, useRef, useState } from "react";
+import type {
+  ApiClient,
+  DesktopAdapter,
+  Scope,
+  CollectionActivity,
+} from "../../lib/types";
+import { useVersionContext } from "../../app/VersionContext";
+import { useOperation } from "../../lib/hooks";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +22,7 @@ export function CollectionSessionDialog({
   api,
   desktop,
   scope,
+  activity,
   platform,
   initialSessionRef,
   onClose,
@@ -24,6 +30,7 @@ export function CollectionSessionDialog({
   api: ApiClient;
   desktop: DesktopAdapter;
   scope: Scope;
+  activity: CollectionActivity | null;
   platform: "wechat" | "weibo" | "boss";
   initialSessionRef?: string;
   onClose(): void;
@@ -37,16 +44,23 @@ export function CollectionSessionDialog({
     [bodyVerified, setBodyVerified] = useState(false);
   const boss = platform === "boss";
   const op = useOperation();
-  const roots = useQuery<{ collections?: CollectionActivity[] }>(
-      api,
-      "/collections",
-      scope,
-    ),
-    active = roots.data?.collections?.find((a) =>
-      boss
-        ? !["completed", "cancelled"].includes(a.collectionProgress.status)
-        : a.collectionProgress.status === "collecting",
-    );
+  const version = useVersionContext();
+  const generation = useRef(version.generation);
+  const owned =
+    generation.current === version.generation &&
+    version.scope?.packageId === scope.packageId &&
+    version.scope?.targetRevisionId === scope.targetRevisionId;
+  const active =
+    owned &&
+    activity &&
+    (!activity.ownerPackageId || activity.ownerPackageId === scope.packageId) &&
+    (!activity.targetSnapshot?.revisionId ||
+      activity.targetSnapshot.revisionId === scope.targetRevisionId) &&
+    (boss
+      ? !["completed", "cancelled"].includes(activity.collectionProgress.status)
+      : activity.collectionProgress.status === "collecting")
+      ? activity
+      : null;
   useEffect(() => {
     let live = true;
     void desktop
@@ -90,6 +104,7 @@ export function CollectionSessionDialog({
       setRisk(result.riskBlocked);
       setBodyVerified(result.sourceStatus === "ready");
     }, "Boss来源核验已结束，请查看状态");
+  if (!owned) return null;
   return (
     <Dialog
       open
@@ -156,6 +171,7 @@ export function CollectionSessionDialog({
           busy={op.busy}
           error={op.error}
           result={op.message}
+          busyLabel="正在操作本版本独立采集会话…"
         />
         <DialogFooter className="flex flex-wrap gap-2">
           <Button

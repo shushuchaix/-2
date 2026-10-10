@@ -9,6 +9,12 @@ import type {
 import { useVersionContext } from "../../app/VersionContext";
 import { useOperation } from "../../lib/hooks";
 import { OperationFeedback } from "../../components/OperationFeedback";
+import { RecordCounts } from "../../components/RecordCounts";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
 import { TextField } from "../../components/TextField";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -56,6 +62,20 @@ const date = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString("zh-CN")
     : "旧删除时间不可确认";
+const phaseLabels: Record<string, string> = {
+  prepared: "清理已准备",
+  purge_pending: "等待续清理",
+  files: "清理关联文件",
+  verified: "清理已核验",
+  completed: "清理完成",
+  purged: "清理完成",
+};
+const failureLabel = (code?: string) =>
+  code === "purge_file_failed"
+    ? "关联文件清理未完成，可重试。"
+    : code?.startsWith("backup_")
+      ? "管理备份清理未完成，可重试。"
+      : "清理未完成，请查看技术详情并重试。";
 function state(row: TrashRow, now: number) {
   if (row.state === "purge_pending") return "pending";
   if (
@@ -318,9 +338,18 @@ export function TrashPage({ api }: { api: ApiClient }) {
             <p>部分版本已停止访问，清理待重试；所有文件完成后才释放名称。</p>
           )}
           {result.failed.map((item) => (
-            <p key={item.operationId}>
-              失败操作：{item.operationId} · {item.code}
-            </p>
+            <div key={item.operationId}>
+              <p>{failureLabel(item.code)}</p>
+              <Collapsible>
+                <CollapsibleTrigger render={<Button variant="outline" />}>
+                  技术详情
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-3">
+                  <p>失败操作编号：{item.operationId}</p>
+                  <p>错误编号：{item.code}</p>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
           ))}
         </div>
       )}
@@ -330,11 +359,19 @@ export function TrashPage({ api }: { api: ApiClient }) {
         visible.map((row) => {
           const current = state(row, now);
           return (
-            <Card key={row.packageId}>
+            <Card
+              key={row.packageId}
+              role="region"
+              aria-label={
+                current === "pending"
+                  ? "清理操作摘要"
+                  : (row.versionName || "版本名称未提供") + "回收摘要"
+              }
+            >
               <CardHeader>
                 <CardTitle>
                   {current === "pending"
-                    ? "清理操作 " + (row.operationId || "等待登记")
+                    ? "版本清理"
                     : row.versionName || "未命名版本"}
                 </CardTitle>
                 <CardDescription>{kindLabels[row.kind]}</CardDescription>
@@ -344,7 +381,9 @@ export function TrashPage({ api }: { api: ApiClient }) {
                   variant={current === "unexpired" ? "secondary" : "outline"}
                 >
                   {current === "pending"
-                    ? "清理待重试"
+                    ? row.code
+                      ? "清理失败，可重试"
+                      : "清理中"
                     : current === "expired"
                       ? "已到期，等待清理"
                       : "三天内可恢复"}
@@ -362,22 +401,55 @@ export function TrashPage({ api }: { api: ApiClient }) {
                     )}
                   </>
                 )}
-                <p>
-                  岗位 {row.counts.jobs || 0} · 评价{" "}
-                  {row.counts.evaluations || 0} · 检索 {row.counts.runs || 0} ·
-                  投递 {row.counts.applications || 0}
-                </p>
+                <RecordCounts
+                  counts={row.counts || {}}
+                  label={
+                    current === "pending" ? "清理内容计数" : "回收版本内容计数"
+                  }
+                />
                 {current === "pending" && (
                   <>
-                    <p>
-                      步骤：{row.phase || "等待续清理"}
-                      {row.code && " · " + row.code}
-                    </p>
+                    <p>步骤：{phaseLabels[row.phase || ""] || "等待续清理"}</p>
+                    {row.code && <p>{failureLabel(row.code)}</p>}
                     {row.nextRetryAt && (
                       <p>下次重试：{date(row.nextRetryAt)}</p>
                     )}
                   </>
                 )}
+                <Collapsible>
+                  <CollapsibleTrigger render={<Button variant="outline" />}>
+                    技术详情
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="flex flex-col gap-2 pt-3">
+                    {current === "pending" ? (
+                      <>
+                        <p>
+                          操作编号：
+                          <span className="break-all font-mono">
+                            {row.operationId || "等待登记"}
+                          </span>
+                        </p>
+                        <p>步骤编号：{row.phase || "未提供"}</p>
+                        {row.code && <p>错误编号：{row.code}</p>}
+                      </>
+                    ) : (
+                      <>
+                        <p>
+                          资料包编号：
+                          <span className="break-all font-mono">
+                            {row.packageId}
+                          </span>
+                        </p>
+                        <p>
+                          归档实例编号：
+                          <span className="break-all font-mono">
+                            {row.archiveId || "未提供"}
+                          </span>
+                        </p>
+                      </>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
               </CardContent>
               <CardFooter className="flex flex-wrap gap-2">
                 {current === "unexpired" && (
@@ -451,6 +523,7 @@ export function TrashPage({ api }: { api: ApiClient }) {
         busy={op.busy}
         error={op.error}
         stale={stale}
+        scope={reason}
         onConfirm={() => void purge()}
         onCancel={() => {
           setPreview(null);

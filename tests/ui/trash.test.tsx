@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { act } from "@testing-library/react";
+import { act, within } from "@testing-library/react";
+import type { TestContext } from "node:test";
 import { renderApp } from "../helpers/react-fixture";
 
 const counts = {
@@ -58,6 +59,149 @@ const preview = {
     counts,
   })),
 };
+
+function controlledClock(t: TestContext, initial: number) {
+  let now = initial;
+  let next = 0;
+  const intervals = new Map<number, () => void>();
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "setInterval", (callback: () => void) => {
+    const id = ++next;
+    intervals.set(id, callback);
+    return id;
+  });
+  t.mock.method(globalThis, "clearInterval", (id: number) =>
+    intervals.delete(id),
+  );
+  return {
+    async advance(ms: number) {
+      await act(async () => {
+        now += ms;
+        for (const callback of [...intervals.values()]) callback();
+      });
+    },
+  };
+}
+
+test("unexpired trash explains its owned version before technical details and removes all content at expiry", async (t) => {
+  const start = Date.parse("2099-01-01T00:00:00Z");
+  const clock = controlledClock(t, start);
+  const row = {
+    ...rows[0],
+    enabled: false,
+    purgeAt: new Date(start + 2000).toISOString(),
+  };
+  const f = await renderApp(t, {
+    route: "#/trash",
+    apiHandler: (path) =>
+      path === "/trash"
+        ? { items: [row] }
+        : path === "/trash/target-trash"
+          ? {
+              package: row,
+              counts,
+              targets: [
+                {
+                  versionName: row.versionName,
+                  revisionId: "target-version-technical",
+                  enabled: true,
+                  roles: ["消防工程师"],
+                  cities: ["深圳"],
+                  cityMode: "selected",
+                  profileSnapshot: {
+                    revisionId: "copy-technical",
+                    text: "PRIVATE_BODY_SENTINEL",
+                    profile: {
+                      name: "合成回收副本人",
+                      degree: "本科",
+                      major: "安全工程",
+                    },
+                  },
+                },
+              ],
+              profiles: [],
+              snapshots: [{ message: "PRIVATE_DIAGNOSTIC_SENTINEL" }],
+              privatePayload: "PRIVATE_DIAGNOSTIC_SENTINEL",
+            }
+          : undefined,
+  });
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "查看内容合成消防方向" }),
+  );
+  const summary = await f.screen.findByRole("region", { name: "版本内容摘要" });
+  assert.ok(within(summary).getByText("合成消防方向"));
+  assert.ok(within(summary).getByText("目标版本"));
+  assert.ok(within(summary).getByText("消防工程师"));
+  assert.ok(within(summary).getByText("深圳"));
+  assert.ok(within(summary).getByText("合成回收副本人"));
+  assert.ok(within(summary).getByText("已停用"));
+  assert.equal(f.screen.queryByText(/"profileSnapshot"/), null);
+  assert.doesNotMatch(
+    summary.textContent ?? "",
+    /target-trash|target-version-technical|PRIVATE_DIAGNOSTIC/,
+  );
+  await f.user.click(within(summary).getByRole("button", { name: "简历正文" }));
+  assert.ok(f.screen.getByText("PRIVATE_BODY_SENTINEL"));
+  await f.user.click(within(summary).getByRole("button", { name: "技术详情" }));
+  assert.ok(within(summary).getByText("target-trash"));
+  assert.doesNotMatch(document.body.textContent ?? "", /PRIVATE_DIAGNOSTIC/);
+  const detailRead = f.apiCalls.find((c) => c.path === "/trash/target-trash")!;
+  assert.equal(detailRead.scope, undefined);
+  await clock.advance(2000);
+  assert.equal(f.screen.queryByRole("region", { name: "版本内容摘要" }), null);
+  assert.equal(f.screen.queryByText("PRIVATE_BODY_SENTINEL"), null);
+  assert.equal(
+    f.screen.queryByRole("button", { name: "恢复合成消防方向" }),
+    null,
+  );
+  assert.equal(detailRead.options.signal?.aborted, true);
+  assert.equal(
+    f.apiCalls.filter(
+      (c) => c.path === "/trash/purge" || c.path === "/trash/restore",
+    ).length,
+    0,
+  );
+});
+
+test("purge confirmation uses semantic counts and preserves zero and unreported values", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/trash",
+    apiHandler: (path) =>
+      path === "/trash"
+        ? { items: rows }
+        : path === "/trash/preview"
+          ? {
+              ...preview,
+              totals: { jobs: 2, applications: 0, observations: 3 },
+            }
+          : undefined,
+  });
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "清空整个回收站" }),
+  );
+  const totals = await f.screen.findByRole("region", {
+    name: "永久删除内容计数",
+  });
+  assert.equal(
+    within(totals).getByText("岗位").nextElementSibling?.textContent,
+    "2",
+  );
+  assert.equal(
+    within(totals).getByText("投递记录").nextElementSibling?.textContent,
+    "0",
+  );
+  assert.equal(
+    within(totals).getByText("来源记录").nextElementSibling?.textContent,
+    "3",
+  );
+  assert.equal(
+    within(totals).getByText("文件").nextElementSibling?.textContent,
+    "未统计",
+  );
+  assert.equal(f.screen.queryByText("trash-plan"), null);
+  await f.user.click(f.screen.getByRole("button", { name: "取消" }));
+  assert.equal(f.apiCalls.filter((c) => c.path === "/trash/purge").length, 0);
+});
 
 test("empty confirmation covers all trash despite profile filter and cancel never purges", async (t) => {
   const f = await renderApp(t, {
@@ -120,7 +264,13 @@ test("expired and pending rows cannot reveal private body or restore", async (t)
   assert.equal(f.screen.queryByRole("button", { name: /^恢复/ }), null);
   assert.equal(f.screen.queryByRole("button", { name: /^查看内容/ }), null);
   assert.doesNotMatch(document.body.textContent || "", /PRIVATE_/);
-  assert.ok(f.screen.getByText(/purge-anonymous-1/));
+  assert.equal(f.screen.queryByText(/purge-anonymous-1/), null);
+  const operation = f.screen.getByRole("region", { name: "清理操作摘要" });
+  assert.ok(within(operation).getByText("清理失败，可重试"));
+  await f.user.click(
+    within(operation).getByRole("button", { name: "技术详情" }),
+  );
+  assert.ok(within(operation).getByText("purge-anonymous-1"));
 });
 
 test("stale preview blocks repeat purge and asks for a new preview", async (t) => {

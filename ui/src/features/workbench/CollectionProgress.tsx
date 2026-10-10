@@ -204,6 +204,18 @@ export function CollectionProgress({
             <p className="text-sm text-muted-foreground">
               浏览器资源、重试、重定向和详情均计入；未知用量保留预约上界，人工登录流量单列。
             </p>
+            <p>
+              详情占额 {stat(u.usedDetails)} / {stat(p.limits.maxDetails)} ·
+              附件占额 {stat(u.usedAttachments)} /{" "}
+              {stat(p.limits.maxAttachments)}
+            </p>
+            <p>
+              累计字节占额 {stat(u.usedBytes)} /{" "}
+              {stat(p.limits.maxTotalAttachmentBytes)} 字节
+            </p>
+            <p className="text-sm text-muted-foreground">
+              请求次数、详情、附件和字节各自受限。失败或未确认完成的请求保留用量上界；请求次数仍有余额也可能达到字节上限。
+            </p>
             {!readOnly && scope && (
               <div className="grid gap-4 md:grid-cols-2">
                 <TextField

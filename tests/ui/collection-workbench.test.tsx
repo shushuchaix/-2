@@ -165,6 +165,39 @@ for (const status of ["completed", "partial"] as const)
     );
     assert.equal(f.screen.queryByText("任务已取消"), null);
   });
+test("advanced activity counts expose byte and attachment occupancy independently of spare requests", async (t) => {
+  const byteLimited = {
+    ...root,
+    collectionProgress: {
+      ...root.collectionProgress,
+      limits: {
+        ...root.collectionProgress.limits,
+        maxDetails: 87,
+        maxAttachments: 10,
+        maxTotalAttachmentBytes: 104857600,
+      },
+    },
+    collectionUsage: {
+      ...root.collectionUsage,
+      usedDetails: 27,
+      usedAttachments: 2,
+      usedBytes: 104574484,
+    },
+  };
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) =>
+      p === "/collections"
+        ? { collections: [byteLimited] }
+        : syntheticApi(p, o),
+  });
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "高级计数与额度" }),
+  );
+  assert.ok(f.screen.getByText(/详情占额 27 \/ 87.*附件占额 2 \/ 10/));
+  assert.ok(f.screen.getByText(/累计字节占额 104574484 \/ 104857600 字节/));
+  assert.ok(f.screen.getByText(/失败或未确认完成的请求保留用量上界/));
+});
 test("quality reports measured numerator/denominator and keeps unknown requests separate", async (t) => {
   const measured = {
     ...root,

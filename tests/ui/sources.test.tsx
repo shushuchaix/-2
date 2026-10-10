@@ -213,7 +213,7 @@ test("successful source probe updates provider availability count", async (t) =>
   assert.ok(
     (
       await f.screen.findAllByText(
-        /1 个目录站点 · 1 个本版本探针取得有效样本站点/,
+    /1 个目录站点 · 1 个探针取得有效样本站点/,
       )
     ).length,
   );

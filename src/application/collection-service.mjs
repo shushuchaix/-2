@@ -27,7 +27,12 @@ import { readProviderPage } from "../sources/collection-page.mjs";
 import { runtimeRepository } from "./package-runtime-service.mjs";
 import { cancellableSleep } from "../infrastructure/http/scheduler.mjs";
 import { sourceRefreshDelay } from "../sources/source-quality.mjs";
-import { contentKey, queueContentDraft } from "../sources/content-queue.mjs";
+import {
+  contentKey,
+  queueContentDraft,
+  refreshArticleQueue,
+} from "../sources/content-queue.mjs";
+import { articleCacheIdentity } from "../llm/prompt-registry.mjs";
 import { expandArticles } from "../match/article.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
@@ -531,7 +536,13 @@ export function createCollectionService({
               observedAt: at(),
               provenanceOperationId: operationLease.operationId,
             });
-            queueContentDraft(p, unitId, page.records, Number(clock.now()));
+            queueContentDraft(
+              p,
+              unitId,
+              page.records,
+              Number(clock.now()),
+              articleCacheIdentity({ modelConfig }),
+            );
             unit.committedPageKeys.push(page.pageKey);
             unit.committedPages++;
             unit.roundPages = (unit.roundPages || 0) + 1;
@@ -1089,7 +1100,13 @@ export function createCollectionService({
               ...new Set([...(child.jobIds || []), ...result.jobIds]),
             ];
           }
-          queueContentDraft(p, pending.unitId, [record], Number(clock.now()));
+          queueContentDraft(
+            p,
+            pending.unitId,
+            [record],
+            Number(clock.now()),
+            articleCacheIdentity({ modelConfig }),
+          );
           if (p.pendingBodies[key]) {
             p.pendingBodies[key].attempts++;
             if (task.automatic)
@@ -1354,6 +1371,7 @@ export function createCollectionService({
               pending.unitId,
               [record],
               Number(clock.now()),
+              articleCacheIdentity({ modelConfig }),
             );
             r.collectionProgress.officialLinkCache[key] = {
               jobIds: result.jobIds,
@@ -1382,9 +1400,6 @@ export function createCollectionService({
         }
       }
       root = await service.get(ref);
-      const articleQueue = Object.entries(
-        root.collectionProgress.pendingArticles || {},
-      ).slice(0, 10);
       const modelClient =
         root.collectionMode === "rules"
           ? undefined
@@ -1395,6 +1410,60 @@ export function createCollectionService({
               modelConfig,
               diagnosticContext: { runId: token.sliceRunId },
             });
+      await mutateCurrent(ref, token, lease, (w, r) => {
+        const p = r.collectionProgress,
+          identity = articleCacheIdentity({ modelConfig, modelClient });
+        const legacyKeys = Object.entries(p.articleCache || {})
+          .filter(
+            ([, entry]) =>
+              !entry.record &&
+              (!entry.promptVersion ||
+                !entry.schemaVersion ||
+                !entry.modelFingerprint),
+          )
+          .map(([key]) => key);
+        if (legacyKeys.length) {
+          const ids = new Set(
+            Object.values(w.runs)
+              .filter(
+                (run) =>
+                  run.ownerPackageId === ref.scope.packageId &&
+                  run.collectionActivityId === r.runId,
+              )
+              .flatMap((run) => run.jobIds || []),
+          );
+          for (const jobId of ids) {
+            const fact = selectVersionJobFact(w, {
+              targetRevisionId: ref.scope.targetRevisionId,
+              jobId,
+            });
+            if (
+              fact.status !== "verified" ||
+              fact.record.kind !== "recruitment_notice"
+            )
+              continue;
+            const unit = Object.values(p.units).find(
+              (u) =>
+                u.sourceId === fact.record.sourceId &&
+                u.siteId === fact.record.siteId,
+            );
+            if (unit)
+              queueContentDraft(
+                p,
+                unit.unitId,
+                [fact.record],
+                Number(clock.now()),
+                identity,
+              );
+          }
+          for (const key of legacyKeys) delete p.articleCache[key];
+        }
+        refreshArticleQueue(p, identity);
+      });
+      root = await service.get(ref);
+      const articleQueue = Object.entries(
+        root.collectionProgress.pendingArticles || {},
+      ).slice(0, 10);
       for (const [key, pending] of articleQueue) {
         if (!modelClient) break;
         try {
@@ -1441,7 +1510,15 @@ export function createCollectionService({
             ];
             child.counts.newForTarget += result.newForTarget.length;
             child.counts.deduplicated = child.jobIds.length;
-            p.articleCache[key] = { jobIds: result.jobIds, completedAt: at() };
+            p.articleCache[key] = {
+              ...pending.cacheIdentity,
+              record: structuredClone(pending.record),
+              unitId: pending.unitId,
+              partIndex: pending.partIndex,
+              partCount: pending.partCount,
+              jobIds: result.jobIds,
+              completedAt: at(),
+            };
             p.newJobIds = [
               ...new Set([...(p.newJobIds ?? []), ...result.newForTarget]),
             ];

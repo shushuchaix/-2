@@ -30,7 +30,10 @@ test("known official link remains a bounded independent evidence task and unchan
   queueContentDraft(p, "unit", [record], 0);
   assert.equal(Object.keys(p.pendingOfficialLinks).length, 1);
   const key = Object.keys(p.pendingArticles)[0];
-  p.articleCache[key] = { jobIds: ["job"] };
+  p.articleCache[key] = {
+    ...p.pendingArticles[key].cacheIdentity,
+    jobIds: ["job"],
+  };
   delete p.pendingArticles[key];
   queueContentDraft(p, "unit", [record], 0);
   assert.equal(Object.keys(p.pendingArticles).length, 0);

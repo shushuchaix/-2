@@ -1,5 +1,50 @@
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { classifyRecruitmentIntent } from "./social-intent.mjs";
+import { articleCacheIdentity } from "../llm/prompt-registry.mjs";
+const articlePartKey = (pending) =>
+  contentHash([
+    contentKey(pending.record),
+    pending.record.parserVersion,
+    pending.cacheIdentity,
+    pending.record.description,
+  ]);
+const cacheMatches = (cached, identity) =>
+  cached && Object.keys(identity).every((k) => cached[k] === identity[k]);
+/** Re-key persisted chunks in place; keep the original full-body hash and tail. */
+export function refreshArticleQueue(
+  progress,
+  identity = articleCacheIdentity(),
+) {
+  progress.pendingArticles ||= {};
+  progress.articleCache ||= {};
+  for (const [key, cached] of Object.entries(progress.articleCache)) {
+    if (cached.record && !cacheMatches(cached, identity)) {
+      progress.pendingArticles[key] = {
+        unitId: cached.unitId,
+        partIndex: cached.partIndex,
+        partCount: cached.partCount,
+        bodyHash: cached.bodyHash,
+        record: structuredClone(cached.record),
+        status: "pending",
+        attempts: 0,
+      };
+      delete progress.articleCache[key];
+    }
+  }
+  for (const [oldKey, previous] of Object.entries(progress.pendingArticles)) {
+    const pending = {
+      ...previous,
+      cacheIdentity: {
+        ...identity,
+        bodyHash: previous.bodyHash || contentHash(previous.record.description),
+      },
+    };
+    const key = articlePartKey(pending);
+    delete progress.pendingArticles[oldKey];
+    if (!cacheMatches(progress.articleCache[key], pending.cacheIdentity))
+      progress.pendingArticles[key] = pending;
+  }
+}
 export const contentKey = (r) =>
   contentHash([r.sourceId, r.identityScope, r.sourceRecordId || r.url]);
 export function articleParts(text, size = 6000) {
@@ -17,7 +62,13 @@ export function articleParts(text, size = 6000) {
   return parts;
 }
 /** Private queue lives in the owned root run, never in the global catalog. */
-export function queueContentDraft(progress, unitId, records, now) {
+export function queueContentDraft(
+  progress,
+  unitId,
+  records,
+  now,
+  identity = articleCacheIdentity(),
+) {
   progress.pendingBodies ||= {};
   progress.pendingArticles ||= {};
   progress.articleCache ||= {};
@@ -95,19 +146,22 @@ export function queueContentDraft(progress, unitId, records, now) {
       )
         delete progress.pendingArticles[partKey];
     for (const [partIndex, description] of parts.entries()) {
-      const partKey = contentHash([
-        key,
-        record.parserVersion,
-        "article-scope-4",
-        description,
-      ]);
-      if (progress.articleCache[partKey] || progress.pendingArticles[partKey])
+      const cacheIdentity = { ...identity, bodyHash };
+      const partKey = articlePartKey({
+        record: { ...record, description },
+        cacheIdentity,
+      });
+      if (
+        cacheMatches(progress.articleCache[partKey], cacheIdentity) ||
+        progress.pendingArticles[partKey]
+      )
         continue;
       progress.pendingArticles[partKey] = {
         unitId,
         partIndex,
         partCount: parts.length,
         bodyHash,
+        cacheIdentity,
         record: { ...structuredClone(record), description },
         status: "pending",
         attempts: 0,

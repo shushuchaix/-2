@@ -13,39 +13,8 @@ import {
   sharedArticleHeader,
 } from "./article-evidence.mjs";
 import { createHash } from "node:crypto";
-
-const SYSTEM = `你是招聘信息抽取助手，负责从中文微信公众号文章中抽取校园招聘 / 实习岗位。
-
-严格规则：
-1. 只抽取文章里**明确写出**的信息，绝不编造公司名、城市、学历、薪资或截止时间；未提及的一律留空字符串。
-2. 先判断体裁：经验分享、行业资讯、求职鸡汤、培训广告、活动通知等都**不是**招聘公告，此时 isRecruiting=false 且 positions 为空数组。
-3. 一篇文章可能汇总多家公司的岗位（如「校招信息汇编」）。此时要逐个岗位给出各自的 company；若整篇只讲一家公司，company 可留空，由外部沿用文章级公司名。
-4. 逐一抽取当前正文片段内所有明确岗位，不以固定岗位数量截断。**如果文章只写了「招聘岗位详见附件 / 详见招聘简章」而没有列出任何具体岗位名称，就把 positions 留空**，不要把指引语当成岗位名。
-5. summary 用一句话概括该岗位的关键要求（60 字以内），不要照抄整段。
-6. 严格输出 JSON，不要任何解释或 Markdown 围栏。`;
-
-const SCHEMA = `{
-  "isRecruiting": true,
-  "company": "文章主体的招聘公司名（若为多公司汇总可留空）",
-  "batch": "招聘批次，如 2026届秋季校园招聘",
-  "deadline": "截止时间，如 2025-10-31；未提及留空",
-  "applyMethod": "投递方式概述，如「官网网申」「邮箱投递」「扫码投递」，60 字以内",
-  "positions": [
-    {
-      "company": "该公司名（多公司汇总时必填；单公司时留空）",
-      "title": "岗位名称",
-      "city": "工作城市",
-      "education": "学历要求",
-      "major": "专业要求",
-      "experience": "经验要求，如「3年以上」「应届生」「经验不限」；未提及留空",
-      "jobType": "校招 | 实习 | 社招 | 未说明（依据文章措辞判断，不要一律填校招）",
-      "salary": "薪资，未提及留空",
-      "headcount": "招聘人数，未提及留空",
-      "summary": "该岗位关键要求，60 字以内",
-      "requirementsExcerpt": "对应岗位要求的正文原文，逐字摘录，不能改写"
-    }
-  ]
-}`;
+import { getPromptDefinition, renderPrompt } from "../llm/prompt-registry.mjs";
+import { validateArticleResponse } from "../llm/validation.mjs";
 
 /**
  * 判断这篇文章值不值得调用 LLM
@@ -225,17 +194,18 @@ export async function expandArticles(
     try {
       signal?.throwIfAborted();
       const text = article.description || "";
-      const res = await llm.chatJson(
-        SYSTEM,
-        `## 文章标题\n${article.title}\n\n## 公众号\n${article.extra?.account || "未知"}\n\n## 文章正文\n${text}\n\n请按下面结构输出 JSON：\n${SCHEMA}`,
-        {
-          temperature: 0.1,
-          maxTokens: 4000,
-          signal,
-          diagnosticContext,
-          repair: false,
-        },
-      );
+      const definition = getPromptDefinition("article"),
+        prompt = renderPrompt("article", { article });
+      const res = await llm.chatJson(prompt.system, prompt.user, {
+        ...definition.parameters,
+        signal,
+        diagnosticContext,
+        repair: false,
+      });
+      if (!validateArticleResponse(res).valid)
+        throw Object.assign(Error("Article model structure invalid"), {
+          code: "article_model_invalid",
+        });
 
       if (
         !res ||
@@ -338,10 +308,13 @@ export async function expandArticles(
               .slice(0, 24),
           kind: "job",
           bodyStatus: article.bodyStatus,
+          bodyIncomplete: article.bodyIncomplete,
+          promptVersion: definition.promptVersion,
+          schemaVersion: definition.schemaVersion,
           publishedAt: article.publishedAt,
           deadlineAt: verifiedArticle.deadline || null,
           applyUrl: article.applyUrl || null,
-          parserVersion: "article-scope-4",
+          parserVersion: definition.parserVersion,
           sourceRecordIdKind: "generated",
           urlKind: "notice_detail",
           description: p.requirementsExcerpt,
@@ -359,7 +332,7 @@ export async function expandArticles(
               status:
                 article.attachmentRows?.length && !row ? "unknown" : "verified",
               contentHash: article.bodyHash || null,
-              parserVersion: "article-scope-4",
+              parserVersion: definition.parserVersion,
               confidence: row
                 ? Math.min(...row.cells.map((c) => c.confidence))
                 : (article.ocrConfidence ?? 100),

@@ -17,7 +17,11 @@ import {
   validateModelResults,
   evaluationCacheKey,
 } from "../llm/validation.mjs";
-import { evaluationPrompt, PROMPT_VERSION } from "../llm/prompts.mjs";
+import {
+  evaluationPrompt,
+  PROMPT_VERSION,
+  SCHEMA_VERSION,
+} from "../llm/prompts.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import {
   resolveJobId,
@@ -134,6 +138,7 @@ function createLegacyEvaluationService({
               profileRevisionId,
               targetRevisionId,
               promptVersion: PROMPT_VERSION,
+              schemaVersion: SCHEMA_VERSION,
               ruleVersion: RULE_VERSION,
               modelFingerprint: fingerprint,
             });
@@ -142,6 +147,7 @@ function createLegacyEvaluationService({
               : rawCacheKey;
             const reusable = (e) =>
               e &&
+              e.schemaVersion === SCHEMA_VERSION &&
               ["rules", "ai"].includes(e.status) &&
               jobIdMatches(workspace, e.jobId, id) &&
               e.profileRevisionId === profileRevisionId &&
@@ -158,6 +164,7 @@ function createLegacyEvaluationService({
                 (e) =>
                   reusable(e) &&
                   e.promptVersion === PROMPT_VERSION &&
+                  e.schemaVersion === SCHEMA_VERSION &&
                   e.ruleVersion === RULE_VERSION &&
                   e.modelFingerprint === fingerprint &&
                   e.cacheKey ===
@@ -166,6 +173,7 @@ function createLegacyEvaluationService({
                       profileRevisionId,
                       targetRevisionId,
                       promptVersion: PROMPT_VERSION,
+                      schemaVersion: SCHEMA_VERSION,
                       ruleVersion: RULE_VERSION,
                       modelFingerprint: fingerprint,
                     }) &&
@@ -368,6 +376,7 @@ function createLegacyEvaluationService({
                   factContentHash: fact.factContentHash,
                   observationId: fact.observationIds[0],
                   promptVersion: PROMPT_VERSION,
+                  schemaVersion: SCHEMA_VERSION,
                   modelFingerprint: fingerprint,
                   cacheKey,
                   runId,

@@ -174,6 +174,7 @@ test("announcement expansion keeps only literal facts and original provenance", 
   const result = await expandArticles(
     {
       chatJson: async () => ({
+        isRecruiting: true,
         company: "虚构企业",
         batch: "2027届校招",
         deadline: "2099-12-31",

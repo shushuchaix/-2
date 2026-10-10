@@ -1,9 +1,11 @@
 import { contentHash } from "../infrastructure/storage/repository.mjs";
+import { getPromptDefinition } from "./prompt-registry.mjs";
 export function evaluationCacheKey({
   jdHash,
   profileRevisionId,
   targetRevisionId,
   promptVersion,
+  schemaVersion = getPromptDefinition("matching").schemaVersion,
   ruleVersion,
   modelFingerprint,
 }) {
@@ -12,9 +14,39 @@ export function evaluationCacheKey({
     profileRevisionId,
     targetRevisionId,
     promptVersion,
+    schemaVersion,
     ruleVersion,
     modelFingerprint,
   });
+}
+export function validateArticleResponse(raw) {
+  const valid =
+    !!raw &&
+    typeof raw === "object" &&
+    !Array.isArray(raw) &&
+    typeof raw.isRecruiting === "boolean" &&
+    Array.isArray(raw.positions) &&
+    raw.positions.every(
+      (p) =>
+        p &&
+        typeof p.title === "string" &&
+        typeof p.requirementsExcerpt === "string" &&
+        [
+          "company",
+          "city",
+          "education",
+          "major",
+          "experience",
+          "jobType",
+          "salary",
+          "headcount",
+          "summary",
+        ].every((k) => p[k] == null || typeof p[k] === "string"),
+    ) &&
+    ["company", "batch", "deadline", "applyMethod"].every(
+      (k) => raw[k] == null || typeof raw[k] === "string",
+    );
+  return { valid, code: valid ? null : "article_model_invalid" };
 }
 export function validateModelResults(raw, { records }) {
   const known = new Map(records.map((r) => [r.jobId, r])),

@@ -247,6 +247,10 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
   }
   const running = !!run && !terminal.has(String(run.status)),
     counts = (run?.counts ?? {}) as Record<string, unknown>;
+  const visibleOutcome =
+    activity && outcome === "任务已取消"
+      ? "上次批次已取消，当前活动状态以采集活动为准"
+      : outcome;
   return (
     <div className="flex flex-col gap-6">
       {(!ctx.profiles.length || !ctx.targets.length) && (
@@ -274,7 +278,11 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
         <CardHeader>
           <CardTitle>更新当前目标岗位</CardTitle>
           <CardDescription>
-            检索与评价保存在当前版本中，其他版本保留各自记录。
+            {target?.roles?.join("、") || "方向待选择"} ·{" "}
+            {target?.cityMode === "selected"
+              ? target.cities?.join("、") || "地区待确认"
+              : "按当前版本地区偏好"}
+            。 检索与评价保存在当前版本中，其他版本保留各自记录。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -290,7 +298,8 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
               coverageMode: coverageMode === "broad" ? "broad" : "standard",
               overrides: Object.fromEntries(
                 Object.entries(target?.budgets ?? {}).filter(
-                  (entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]),
+                  (entry): entry is [string, number] =>
+                    typeof entry[1] === "number" && Number.isFinite(entry[1]),
                 ),
               ),
               modelBudget: settings.data?.budgets,
@@ -362,12 +371,17 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
           api={api}
           scope={ctx.scope}
           mode={mode}
+          slice={run}
           userKey={userKey}
           onKeyUsed={() => setUserKey("")}
           onChanged={(next) => {
             if (ctx.scope) adopt(next, ctx.scope);
             const id = next.collectionProgress.activeSliceRunId;
-            if (id && ctx.scope) {
+            if (
+              id &&
+              ctx.scope &&
+              next.collectionProgress.status === "collecting"
+            ) {
               setOutcome("");
               setRun({ runId: id, status: "running" });
               void connect(id, ctx.scope);
@@ -414,14 +428,20 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
           重新连接任务
         </Button>
       )}
-      {run && (
+      {run && (!activity || terminal.has(String(run.status))) && (
         <Card>
           <CardHeader>
-            <CardTitle>运行进度</CardTitle>
+            <CardTitle>{activity ? "最近批次结果" : "运行进度"}</CardTitle>
             <CardDescription>
               任务状态：
               {stageLabels[String(run.status)] ??
                 String(run.status ?? "准备中")}
+              {" · 所属版本：" + (target?.versionName ?? "名称未提供")}
+              {" · 批次时间：" +
+                (typeof run.createdAt === "string" &&
+                Number.isFinite(Date.parse(run.createdAt))
+                  ? new Date(run.createdAt).toLocaleString("zh-CN")
+                  : "未提供")}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -437,7 +457,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
                   counts.raw ??
                   run.collected ??
                   run.collectedCount ??
-                  0,
+                  "未统计",
               )}{" "}
               条 · 保存{" "}
               {String(
@@ -446,7 +466,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
                   counts.normalized ??
                   run.saved ??
                   run.savedCount ??
-                  0,
+                  "未统计",
               )}{" "}
               条 · 候选{" "}
               {String(
@@ -454,11 +474,11 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
                   counts.shortlisted ??
                   run.candidates ??
                   run.candidateCount ??
-                  0,
+                  "未统计",
               )}{" "}
               条
             </p>
-            <RunSummary run={run} />
+            {terminal.has(String(run.status)) && <RunSummary run={run} />}
             {Array.isArray(run.warnings) &&
               run.warnings.map((w, i) => <p key={i}>{String(w)}</p>)}
             {Array.isArray(run.issues) &&
@@ -485,7 +505,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
                   </p>
                 );
               })}
-            {outcome && <p role="status">{outcome}</p>}
+            {visibleOutcome && <p role="status">{visibleOutcome}</p>}
           </CardContent>
           <CardFooter>
             <a

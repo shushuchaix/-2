@@ -84,6 +84,9 @@ test("late version A collection response cannot replace version B", async (t) =>
         : syntheticApi(p, o),
   });
   await f.selectTarget({ packageId: "B", targetRevisionId: "t2@1" });
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "高级计数与额度" }),
+  );
   await f.screen.findByText(/B_CURRENT_ROOT/);
   await act(async () =>
     releaseA({ collections: [{ ...paused, runId: "A_PRIVATE_ACTIVITY" }] }),

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderApp, syntheticApi } from "../helpers/react-fixture";
-import { render, cleanup, waitFor } from "@testing-library/react";
+import { render, cleanup, waitFor, within } from "@testing-library/react";
 import { RecruitmentEvidence } from "../../ui/src/features/jobs/RecruitmentEvidence";
 const root = {
   runId: "activity-A",
@@ -29,6 +29,23 @@ const root = {
     usedBytes: 1024,
   },
 };
+test("current collection region uses the root status and does not imply a completed child finished the activity", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) =>
+      p === "/collections" ? { collections: [root] } : syntheticApi(p, o),
+  });
+  await f.screen.findByText("持续采集活动");
+  assert.equal(
+    f.screen.getAllByRole("region", { name: "当前采集活动" }).length,
+    1,
+  );
+  assert.match(
+    f.screen.getByRole("region", { name: "当前采集活动" }).textContent!,
+    /已暂停，可继续/,
+  );
+  assert.equal(f.screen.queryByText("计划范围已完成"), null);
+});
 async function pausedSliceFixture(
   t: Parameters<typeof renderApp>[0],
   {
@@ -109,14 +126,17 @@ async function pausedSliceFixture(
   );
   await f.user.click(f.screen.getByRole("button", { name: "暂停采集" }));
   await f.screen.findAllByText("活动已暂停");
-  await f.screen.findByText("任务已取消");
+  await f.screen.findByText("上次批次已取消，当前活动状态以采集活动为准");
   return f;
 }
 test("resuming a paused activity clears the previous slice cancellation outcome", async (t) => {
   const f = await pausedSliceFixture(t);
   await f.user.click(f.screen.getByRole("button", { name: "继续采集" }));
   await f.screen.findAllByText("已继续采集，沿用活动累计额度");
-  await f.screen.findByText(/任务状态：正在更新/);
+  assert.match(
+    f.screen.getByRole("region", { name: "当前采集活动" }).textContent!,
+    /正在采集/,
+  );
   await f.screen.findByText(/阶段：采集岗位/);
   assert.equal(
     f.screen.queryByText("任务已取消") === null,
@@ -124,11 +144,11 @@ test("resuming a paused activity clears the previous slice cancellation outcome"
     "the active slice must not show the previous cancellation outcome",
   );
 });
-test("a failed resume preserves the previous slice cancellation outcome", async (t) => {
+test("a failed resume preserves the previous slice result as history", async (t) => {
   const f = await pausedSliceFixture(t, { resumeError: true });
   await f.user.click(f.screen.getByRole("button", { name: "继续采集" }));
   await f.screen.findAllByText(/合成续采失败/);
-  assert.ok(f.screen.getByText("任务已取消"));
+  assert.ok(f.screen.getByText("上次批次已取消，当前活动状态以采集活动为准"));
   assert.equal(
     f.apiCalls.some((c) => c.path === "/runs/slice-after-resume/events"),
     false,
@@ -198,7 +218,8 @@ test("job evidence labels expired and invalid and separates stale platform obser
   );
   assert.ok(view.getByText("已过期"));
   assert.ok(view.getByText("入口失效"));
-  assert.ok(view.getByText(/平台观察：待复核/));
+  assert.ok(within(view.getByRole("note")).getByText("平台观察"));
+  assert.ok(within(view.getByRole("note")).getByText(/^待复核/));
   assert.ok(view.getByText(/沟通入口.*不构成投递证据/));
 });
 test("communication-only job keeps application unverified even with a current platform status", (t) => {
@@ -224,7 +245,8 @@ test("communication-only job keeps application unverified even with a current pl
     />,
   );
   assert.ok(view.getByText("投递入口待核验"));
-  assert.ok(view.getByText(/平台观察：在招/));
+  assert.ok(within(view.getByRole("note")).getByText("平台观察"));
+  assert.ok(within(view.getByRole("note")).getByText(/^在招/));
   assert.ok(view.getByText(/沟通入口.*不构成投递证据/));
 });
 test("review: source changes can replan the same activity with preserved cost", async (t) => {
@@ -279,7 +301,10 @@ test("failed limits keep draft and business history does not count slices", asyn
             ? Promise.reject(Error("保存失败"))
             : syntheticApi(p, o),
   });
-  const input = await f.screen.findByLabelText("活动请求上限");
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "高级计数与额度" }),
+  );
+  const input = f.screen.getByLabelText("活动请求上限");
   await f.user.clear(input);
   await f.user.type(input, "600");
   await f.user.click(f.screen.getByRole("button", { name: "保存活动额度" }));
@@ -309,6 +334,7 @@ test("history contains one root for two collection slices", async (t) => {
             }
           : syntheticApi(p, o),
   });
+  await f.user.click(await f.screen.findByRole("button", { name: "技术详情" }));
   await f.screen.findByText("activity-A");
   assert.equal(f.screen.queryByText("slice1"), null);
   assert.equal(f.screen.queryByText("slice2"), null);

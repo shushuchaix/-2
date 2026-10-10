@@ -5,6 +5,10 @@ const money = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) && value >= 0
     ? String(Number(value.toFixed(6)))
     : "未提供";
+const count = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? String(value)
+    : "未统计";
 export function RunSummary({ run }: { run: Record<string, unknown> }) {
   const counts = object(run.counts),
     usage = object(run.usage),
@@ -59,20 +63,18 @@ export function RunSummary({ run }: { run: Record<string, unknown> }) {
       )}
       {Object.keys(counts).length > 0 && (
         <p>
-          资格通过 {String(counts.eligible ?? 0)} · 资格待核实{" "}
-          {String(counts.qualificationUnknown ?? 0)} · 资格不符合{" "}
-          {String(counts.qualificationFailed ?? 0)} · 模型评价{" "}
-          {String(counts.aiSuccess ?? 0)} · 规则回退{" "}
-          {String(counts.fallback ?? 0)}
+          资格通过 {count(counts.eligible)} · 资格待核实{" "}
+          {count(counts.qualificationUnknown)} · 资格不符合{" "}
+          {count(counts.qualificationFailed)} · 模型评价{" "}
+          {count(counts.aiSuccess)} · 规则回退 {count(counts.fallback)}
         </p>
       )}
       {Object.keys(usage).length > 0 && (
         <p>
-          来源请求 {String(source.requests ?? 0)} /{" "}
-          {String(source.maxRequests ?? "—")} · 详情{" "}
-          {String(source.details ?? 0)} / {String(source.maxDetails ?? "—")} ·
-          模型尝试 {String(model.requests ?? 0)} /{" "}
-          {String(model.maxRequests ?? "—")}
+          来源请求 {count(source.requests)} /{" "}
+          {String(source.maxRequests ?? "—")} · 详情 {count(source.details)} /{" "}
+          {String(source.maxDetails ?? "—")} · 模型尝试 {count(model.requests)}{" "}
+          / {String(model.maxRequests ?? "—")}
         </p>
       )}
       {model.costMode === "cny_upper_bound" && (

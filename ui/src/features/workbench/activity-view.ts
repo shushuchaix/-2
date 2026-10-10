@@ -1,5 +1,5 @@
 import type { CollectionActivity } from "../../lib/types";
-const labels: Record<string, string> = {
+export const activityLabels: Record<string, string> = {
   collecting: "正在采集",
   paused: "已暂停，可继续",
   waiting_for_auth: "等待独立窗口登录",
@@ -27,7 +27,7 @@ export function deriveActivityView(
   return {
     rootId: activity?.runId ?? null,
     status,
-    label: labels[status] ?? status,
+    label: activityLabels[status] ?? status,
     phase:
       matches && slice
         ? String(slice.stage ?? slice.phase ?? "") || null

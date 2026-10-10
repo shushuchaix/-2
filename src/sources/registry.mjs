@@ -11,6 +11,7 @@ import wechatPublic from "./adapters/wechat-public.mjs";
 import weiboPublic from "./adapters/weibo-public.mjs";
 import weiboOfficial from "./adapters/weibo-official.mjs";
 import wechatAuthorized from "./adapters/wechat-authorized.mjs";
+import boss from "./adapters/boss.mjs";
 export function createSourceRegistry(providers) {
   const entries = new Map();
   for (const provider of providers) {
@@ -50,5 +51,6 @@ export function createDefaultSourceRegistry() {
     weiboPublic,
     weiboOfficial,
     wechatAuthorized,
+    boss,
   ]);
 }

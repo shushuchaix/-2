@@ -144,6 +144,18 @@ export interface DesktopBridge {
     code?: string;
     checkedAt?: string;
   }>;
+  probeBossSession?(input: {
+    scope: Scope;
+    activityId: string;
+    sessionRef: string;
+    requestId: string;
+    clearRisk?: boolean;
+  }): Promise<{
+    state: string;
+    riskBlocked: boolean;
+    sourceStatus?: string;
+    code?: string;
+  }>;
   isAvailable(): Promise<unknown>;
   getKeyStatus(provider: string): Promise<unknown>;
   saveKey(provider: string, key: string): Promise<unknown>;

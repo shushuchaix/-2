@@ -10,6 +10,71 @@ const base = {
   openDataLocation: async () => ({}),
   copyDataLocation: async () => ({}),
 };
+test("Boss version session supports a paused root and keeps risk recovery an explicit action", async (t) => {
+  const probes: any[] = [];
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    desktopBridge: {
+      ...base,
+      getCollectionCapabilities: async () => ({
+        available: true,
+        canRemember: true,
+      }),
+      getCollectionSessionStatus: async () => ({
+        state: "verified",
+        riskBlocked: true,
+        code: "boss_environment_risk",
+      }),
+      probeBossSession: async (input: any) => {
+        probes.push(input);
+        return {
+          state: "verified",
+          riskBlocked: input.clearRisk !== true,
+          sourceStatus: "ready",
+        };
+      },
+    },
+    apiHandler: (p, o) =>
+      p === "/sources"
+        ? {
+            sources: [
+              {
+                sourceId: "boss",
+                name: "Boss直聘",
+                sessionRef: "session-A",
+                config: { enabled: false },
+              },
+            ],
+            sites: [],
+          }
+        : p === "/collections"
+          ? {
+              collections: [
+                {
+                  runId: "owned-root",
+                  collectionProgress: { status: "paused" },
+                },
+              ],
+            }
+          : syntheticApi(p, o),
+  });
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "Boss直聘独立登录" }),
+  );
+  await f.screen.findByText("风险阻塞：普通继续和重新打开窗口不会解除");
+  assert.equal(f.screen.queryByLabelText("公开文章或帖子链接"), null);
+  await f.user.click(
+    f.screen.getByRole("button", { name: "明确解除风险并重新核验" }),
+  );
+  await f.screen.findByText("Boss来源正文已核验");
+  assert.equal(probes.length, 1);
+  assert.equal(probes[0].activityId, "owned-root");
+  assert.equal(probes[0].clearRisk, true);
+  assert.deepEqual(probes[0].scope, {
+    packageId: "A",
+    targetRevisionId: "t1@1",
+  });
+});
 test("dedicated login never treats a closed window as verified and cannot remember without encryption", async (t) => {
   let calls = 0;
   const f = await renderApp(t, {

@@ -386,6 +386,20 @@ function SourceCard({
             </Button>
           </div>
         )}
+        {source.sourceId === "boss" && (
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="outline"
+              disabled={!ctx.scope}
+              onClick={() => setLogin(true)}
+            >
+              {source.name}独立登录
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              本版本独立登录后按原活动累计额度核验列表与正文；风险阻塞需明确重新核验后解除。
+            </p>
+          </div>
+        )}
         {source.optionalService && (
           <p className="text-sm text-muted-foreground">
             可选官方服务默认关闭。必须先核实账号读取权限、正文能力、额度与价格；未开通时仍使用公开网页。
@@ -430,13 +444,14 @@ function SourceCard({
           重试保存来源设置
         </Button>
       </CardFooter>
-      {login && social && ctx.scope && (
+      {login && (social || source.sourceId === "boss") && ctx.scope && (
         <CollectionSessionDialog
           key={ctx.scope.packageId}
           api={api}
           desktop={desktop}
           scope={ctx.scope}
-          platform={source.sourceId as "wechat" | "weibo"}
+          platform={source.sourceId as "wechat" | "weibo" | "boss"}
+          initialSessionRef={source.sessionRef || undefined}
           onClose={() => setLogin(false)}
         />
       )}

@@ -23,5 +23,7 @@ export function createDesktopAdapter(bridge?: DesktopBridge): DesktopAdapter {
       bridge?.clearCollectionSession?.(input) ?? unavailable(),
     getCollectionSessionStatus: (input) =>
       bridge?.getCollectionSessionStatus?.(input) ?? unavailable(),
+    probeBossSession: (input) =>
+      bridge?.probeBossSession?.(input) ?? unavailable(),
   };
 }

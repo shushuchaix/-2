@@ -1,5 +1,32 @@
 [
   {
+    "siteId": "boss",
+    "providerId": "boss",
+    "category": "job_board",
+    "name": "Boss直聘",
+    "institutionUrl": "https://www.zhipin.com/",
+    "origin": "https://www.zhipin.com/",
+    "tenantId": null,
+    "regions": [],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": "unverified",
+      "detail": "unverified",
+      "discovery": false
+    },
+    "evidenceUrl": "https://www.zhipin.com/web/geek/jobs",
+    "verifiedAt": null,
+    "status": "candidate",
+    "allowedDomains": ["www.zhipin.com", "zhipin.com"],
+    "jobFamilies": [],
+    "adapter": "boss",
+    "identityEvidence": {
+      "url": "https://www.zhipin.com/",
+      "kind": "official_entry",
+      "checkedAt": null
+    }
+  },
+  {
     "siteId": "zhaopin",
     "providerId": "zhaopin",
     "category": "job_board",

@@ -33,6 +33,7 @@ export type SourceSummary = {
   service?: boolean;
   optionalService?: boolean;
   serviceCapability?: Record<string, unknown> | null;
+  sessionRef?: string | null;
 };
 export type SourceHealth = {
   siteId?: string;

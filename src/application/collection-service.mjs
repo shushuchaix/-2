@@ -31,6 +31,16 @@ import { expandArticles } from "../match/article.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 const terminal = new Set(["completed", "cancelled"]);
+const bossRiskCodes = new Set([
+  "boss_account_risk",
+  "boss_environment_risk",
+  "boss_risk_blocked",
+]);
+const bossAuthCodes = new Set([
+  ...bossRiskCodes,
+  "boss_auth_expired",
+  "boss_login_required",
+]);
 const stale = () =>
   packageError("collection_stale_epoch", "活动已停止或进度已变化，请刷新。");
 const idValid = (id) =>
@@ -411,7 +421,8 @@ export function createCollectionService({
                 p.manualPaused = false;
                 p.refreshReady = true;
                 for (const u of Object.values(p.units))
-                  if (u.status === "waiting_for_auth") u.status = "pending";
+                  if (u.status === "waiting_for_auth" && !u.riskBlocked)
+                    u.status = "pending";
               }
               const sliceRunId = "slice-" + randomUUID();
               p.status = "collecting";
@@ -731,6 +742,185 @@ export function createCollectionService({
         task.pending.delete(pending);
       }
     },
+    async withDiagnosticContext({ ref, requestId }, callback) {
+      if (!idValid(requestId))
+        throw packageError("validation_failed", "诊断请求标识无效。", 400);
+      const before = rootFor(await repository.read(), ref);
+      if (terminal.has(before.collectionProgress.status))
+        throw packageError("collection_terminal", "已结束活动不能启动诊断。");
+      if (before.collectionProgress.status === "collecting")
+        return service.withActivityContext(ref, callback);
+      const lease = await operationGate.acquire("collect", {
+        scope: ref.scope,
+      });
+      let claim;
+      try {
+        claim = (
+          await repository.mutateWorkspace(
+            (w) => {
+              const root = rootFor(w, ref),
+                p = root.collectionProgress;
+              checkLease(w, ref.scope, lease);
+              if (terminal.has(p.status))
+                throw packageError(
+                  "collection_terminal",
+                  "已结束活动不能启动诊断。",
+                );
+              if (p.activeSliceRunId || active.has(ref.activityId))
+                throw packageError(
+                  "collection_probe_unavailable",
+                  "当前已有操作，请稍后重试。",
+                );
+              p.diagnosticRequests ||= {};
+              if (p.diagnosticRequests[requestId])
+                throw packageError(
+                  "collection_diagnostic_replayed",
+                  "此诊断请求已执行，请刷新状态。",
+                );
+              const previous = {
+                status: p.status,
+                manualPaused: p.manualPaused,
+                refreshReady: p.refreshReady,
+              };
+              const sliceRunId = "diagnostic-" + randomUUID();
+              p.status = "collecting";
+              p.activeSliceRunId = sliceRunId;
+              p.epoch++;
+              p.revision++;
+              p.updatedAt = at();
+              p.diagnosticRequests[requestId] = { sliceRunId, createdAt: at() };
+              const keys = Object.keys(p.diagnosticRequests);
+              if (keys.length > 200) delete p.diagnosticRequests[keys[0]];
+              w.runs[sliceRunId] = {
+                runId: sliceRunId,
+                recordId: randomUUID(),
+                ownerPackageId: ref.scope.packageId,
+                collectionRole: "collection_slice",
+                collectionActivityId: root.runId,
+                diagnosticOnly: true,
+                targetSnapshot: structuredClone(root.targetSnapshot),
+                profileRevisionId: root.profileSnapshot.revisionId,
+                status: "running",
+                stage: "diagnostic",
+                mode: "rules",
+                createdAt: at(),
+                startedAt: at(),
+                finishedAt: null,
+                lastSeq: 0,
+                events: [],
+                issues: [],
+                usage: {},
+                counts: {
+                  raw: 0,
+                  normalized: 0,
+                  deduplicated: 0,
+                  newForTarget: 0,
+                  notices: 0,
+                },
+                coverage: [],
+                evaluationIds: [],
+              };
+              return { previous, token: tokenFor(root) };
+            },
+            { operationLease: lease },
+          )
+        ).result;
+      } catch (error) {
+        await lease.release();
+        throw error;
+      }
+      const task = {
+        controller: new AbortController(),
+        lease,
+        token: claim.token,
+        pending: new Set(),
+      };
+      active.set(ref.activityId, task);
+      let diagnosticError;
+      task.promise = Promise.resolve()
+        .then(async () => {
+          const signal = task.controller.signal;
+          signal.throwIfAborted();
+          const budgets = await createActivityBudgets({
+            ledger,
+            ref,
+            token: task.token,
+            operationLease: lease,
+            modelConfig,
+            maxModelRequests: 1000,
+          });
+          const request = requestFactory({
+            budget: budgets.sources,
+            signal,
+            diagnosticContext: { runId: task.token.sliceRunId },
+          });
+          task.apiContext = {
+            budget: budgets.sources,
+            modelBudget: budgets.model,
+            request,
+            signal,
+            operationLease: lease,
+            collectionGuard: { ref, token: task.token },
+            ref,
+            token: task.token,
+            readService,
+          };
+          const result = await callback(task.apiContext);
+          signal.throwIfAborted();
+          return result;
+        })
+        .catch((error) => {
+          diagnosticError = error;
+          throw error;
+        })
+        .finally(async () => {
+          try {
+            await Promise.allSettled([...task.pending]);
+            await repository.mutateWorkspace(
+              (w) => {
+                const root = rootFor(w, ref),
+                  p = root.collectionProgress;
+                const child = w.runs[task.token.sliceRunId];
+                if (
+                  p.epoch === task.token.epoch &&
+                  p.activeSliceRunId === task.token.sliceRunId &&
+                  p.status === "collecting"
+                ) {
+                  Object.assign(p, claim.previous);
+                  p.activeSliceRunId = null;
+                  p.revision++;
+                  p.updatedAt = at();
+                  child.status = diagnosticError ? "failed" : "completed";
+                  child.stage = "finished";
+                  child.finishedAt = at();
+                  if (diagnosticError)
+                    child.issues.push({
+                      code: idValid(diagnosticError.code)
+                        ? diagnosticError.code
+                        : "collection_diagnostic_failed",
+                    });
+                }
+              },
+              { operationLease: lease },
+            );
+          } finally {
+            await lease.release();
+            if (active.get(ref.activityId) === task)
+              active.delete(ref.activityId);
+          }
+        });
+      return task.promise;
+    },
+    async resolveBossRisk({ ref, token, operationLease }) {
+      return mutateCurrent(ref, token, operationLease, (_w, root) => {
+        for (const unit of Object.values(root.collectionProgress.units))
+          if (unit.sourceId === "boss") unit.riskBlocked = false;
+        for (const pending of Object.values(
+          root.collectionProgress.pendingBodies || {},
+        ))
+          if (pending.record.sourceId === "boss") pending.riskBlocked = false;
+      });
+    },
   };
   async function stopActivity(ref, status, manual) {
     await repository.mutateWorkspace((w) => {
@@ -785,6 +975,7 @@ export function createCollectionService({
       });
       task.apiContext = {
         budget: budgets.sources,
+        modelBudget: budgets.model,
         request,
         signal,
         operationLease: lease,
@@ -843,6 +1034,11 @@ export function createCollectionService({
         root.collectionProgress.pendingBodies || {},
       )
         .filter(([, pending]) => {
+          if (
+            pending.riskBlocked ||
+            (task.automatic && pending.status === "waiting_for_auth")
+          )
+            return false;
           const eligibleAt = task.automatic
             ? pending.nextDueAt
             : pending.serverCooldownUntil;
@@ -885,6 +1081,10 @@ export function createCollectionService({
             sourceId: record.sourceId,
             siteId: record.siteId,
           };
+          if (bossAuthCodes.has(e.code)) {
+            await issue(unit, e.code, true);
+            continue;
+          }
         }
         await mutateCurrent(ref, token, lease, (w, r) => {
           const p = r.collectionProgress;
@@ -986,7 +1186,8 @@ export function createCollectionService({
                   if (
                     signal.aborted ||
                     e.code === "collection_stale_epoch" ||
-                    e.code === "workspace_write_failed"
+                    e.code === "workspace_write_failed" ||
+                    bossAuthCodes.has(e.code)
                   )
                     throw e;
                   record = {
@@ -1091,7 +1292,7 @@ export function createCollectionService({
                 "restricted",
                 "captcha",
                 "http_forbidden",
-              ].includes(e.code),
+              ].includes(e.code) || bossAuthCodes.has(e.code),
               e.nextDueAt,
             );
           }
@@ -1502,6 +1703,29 @@ export function createCollectionService({
     }
     async function issue(unit, code, auth, nextDueAt) {
       await mutateCurrent(ref, token, lease, (w, r) => {
+        if (unit.sourceId === "boss" && bossAuthCodes.has(code)) {
+          for (const blocked of Object.values(r.collectionProgress.units))
+            if (blocked.sourceId === "boss") {
+              blocked.status = "waiting_for_auth";
+              blocked.lastErrorCode = code;
+              blocked.lastAttemptAt = at();
+              blocked.riskBlocked ||= bossRiskCodes.has(code);
+              blocked.nextDueAt = null;
+            }
+          for (const pending of Object.values(
+            r.collectionProgress.pendingBodies || {},
+          ))
+            if (pending.record.sourceId === "boss") {
+              pending.status = "waiting_for_auth";
+              pending.riskBlocked ||= bossRiskCodes.has(code);
+            }
+          w.runs[token.sliceRunId].issues.push({
+            code,
+            sourceId: "boss",
+            siteId: unit.siteId,
+          });
+          return;
+        }
         const u = r.collectionProgress.units[unit.unitId];
         u.lastErrorCode = idValid(code) ? code : "source_unavailable";
         u.lastAttemptAt = at();

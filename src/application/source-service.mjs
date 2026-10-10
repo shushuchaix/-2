@@ -193,6 +193,7 @@ export function createSourceService({
         optionalService: p.optionalService === true,
         serviceCapability:
           pkg.collectionSettings?.serviceCapabilities?.[p.id] || null,
+        sessionRef: pkg.collectionSettings?.sessionRefs?.[p.id] || null,
       }));
     },
     async saveScopedConfig({ scope, sourceId, config = {} }) {
@@ -227,6 +228,11 @@ export function createSourceService({
         provider = registry.get(sourceId);
       if (!provider)
         throw packageError("source_not_found", "招聘来源不存在。", 404);
+      if (sourceId === "boss" && !ref)
+        throw packageError(
+          "collection_activity_required",
+          "Boss核验需使用本版本已有活动的累计额度。",
+        );
       if (provider.optionalService)
         return service.probeOptionalReadService({
           scope,
@@ -246,6 +252,12 @@ export function createSourceService({
         ...w.settings.sourceOverrides[sourceId],
         ...pkg.collectionSettings?.sourceOverrides[sourceId],
       };
+      const target = ref ? w.runs[ref.activityId]?.targetSnapshot : undefined;
+      const bossUnit =
+        ref &&
+        Object.values(
+          w.runs[ref.activityId]?.collectionProgress?.units || {},
+        ).find((u) => u.sourceId === "boss");
       const probe = async ({
         budget,
         request,
@@ -259,8 +271,16 @@ export function createSourceService({
         const context = {
           scope,
           sites: [site],
-          queries: [{ keyword: "", pageLimit: 1 }],
-          targetSnapshot: { cities: [] },
+          queries: [
+            sourceId === "boss"
+              ? {
+                  keyword: bossUnit?.query?.keyword || target?.roles?.[0],
+                  city: bossUnit?.query?.city || target?.cities?.[0],
+                  pageLimit: 1,
+                }
+              : { keyword: "", pageLimit: 1 },
+          ],
+          targetSnapshot: target || { cities: [] },
           clock,
           budget,
           request,
@@ -280,6 +300,17 @@ export function createSourceService({
             details.push(await provider.fetchDetail(record, context));
           } catch (e) {
             signal?.throwIfAborted();
+            if (
+              sourceId === "boss" &&
+              [
+                "boss_account_risk",
+                "boss_environment_risk",
+                "boss_risk_blocked",
+                "boss_auth_expired",
+                "boss_login_required",
+              ].includes(e.code)
+            )
+              throw e;
             issues.push({ code: e.code || "detail_unavailable" });
           }
         const quality = assessSourceProbe({
@@ -328,6 +359,7 @@ export function createSourceService({
                 );
             }
             if (
+              sourceId === "boss" ||
               ["social", "social_discovery"].includes(
                 provider.capabilities.category,
               )
@@ -403,6 +435,11 @@ export function createSourceService({
       }));
     },
     async probe(sourceId, siteId) {
+      if (sourceId === "boss")
+        throw packageError(
+          "collection_activity_required",
+          "Boss核验需在当前目标版本中执行。",
+        );
       const provider = registry.get(sourceId);
       if (!provider) throw Error("Source not found");
       const w = await repository.read();

@@ -11,11 +11,59 @@ function safe(value) {
   url.hash = "";
   if (
     [...url.searchParams.keys()].some((k) =>
-      /token|api.?key|auth|ticket|cookie|secret/i.test(k),
+      /token|api.?key|auth|ticket|cookie|secret|signature|^sig$|session|password|x-amz|x-goog|expires/i.test(
+        k,
+      ),
     )
   )
     throw Error("Private query parameters");
+  if (
+    /(?:^|\/)(?:private|resume|personal|my|account|login)(?:\/|\.|$)/i.test(
+      decodeURIComponent(url.pathname),
+    )
+  )
+    throw Error("Private discovery path");
   return url;
+}
+const seedChannels = new Set([
+  "official_platform",
+  "official_employer_announcements",
+  "official_airport_announcements",
+  "official_group_announcements",
+  "official_employer_careers",
+  "official_institution",
+  "wechat",
+  "weibo",
+  "rss",
+]);
+export function validatePublicSeeds(seeds) {
+  if (!Array.isArray(seeds) || !seeds.length || seeds.length > 100)
+    throw Error("Invalid public seeds");
+  return seeds.map((seed) => {
+    if (
+      !seed ||
+      typeof seed !== "object" ||
+      Array.isArray(seed) ||
+      Object.keys(seed).length !== 4 ||
+      Object.keys(seed).some(
+        (key) =>
+          !["institutionName", "homepage", "evidenceUrl", "channel"].includes(
+            key,
+          ),
+      ) ||
+      typeof seed.institutionName !== "string" ||
+      !seed.institutionName.trim() ||
+      seed.institutionName.length > 200 ||
+      !seedChannels.has(seed.channel)
+    )
+      throw Error("Invalid public seed fields");
+    return {
+      institutionName: seed.institutionName.trim(),
+      homepage: safe(seed.homepage).href,
+      evidenceUrl: safe(seed.evidenceUrl).href,
+      channel: seed.channel,
+    };
+  });
 }
 export async function discoverSourceCandidates({
   seed,

@@ -88,6 +88,42 @@ const limits = {
   maxCostCny: 10,
 };
 
+export function summarizeSocialValidation({ sources, facts }) {
+  return ["wechat", "weibo"].map((sourceId) => {
+    const source = sources.find((s) => s.sourceId === sourceId),
+      units = source?.units || [];
+    const records = facts.filter((f) => f.record.sourceId === sourceId),
+      bodyComplete = records.filter((f) => f.evidence.bodyVerified).length;
+    const reasons = [...new Set(units.map((u) => u.reason).filter(Boolean))];
+    const status = reasons.some((r) =>
+      /risk|restricted|challenge|captcha|forbidden/.test(r),
+    )
+      ? "restricted"
+      : reasons.some((r) => /auth|login/.test(r))
+        ? "login_required"
+        : reasons.length
+          ? "failed"
+          : bodyComplete
+            ? "body_extracted"
+            : records.length
+              ? "list_only"
+              : units.some((u) => u.committedPages > 0)
+                ? "listed_no_retained_records"
+                : "not_measured";
+    return {
+      sourceId,
+      status,
+      reasons,
+      retainedRecords: records.length,
+      bodyComplete,
+      verifiedApplication: records.filter(
+        (f) => f.evidence.applicationStatus === "available",
+      ).length,
+      recall: null,
+    };
+  });
+}
+
 /** Read an existing activity. Resume always uses this same persisted root and ledger. */
 export async function pilotRecruitmentCoverage({
   scope,
@@ -149,7 +185,7 @@ export async function pilotRecruitmentCoverage({
       (f) => f.evidence.applicationStatus === "available",
     ).length,
     expired: facts.filter((f) =>
-      ["closed", "historical"].includes(f.evidence.openingStatus),
+      ["closed", "historical", "expired"].includes(f.evidence.openingStatus),
     ).length,
     pending: facts.filter((f) => !f.valid).length,
     duplicateCandidates: Math.max(
@@ -210,6 +246,7 @@ export async function pilotRecruitmentCoverage({
       : null,
     sources,
     social: {
+      sourceResults: summarizeSocialValidation({ sources, facts }),
       verifiedAccountLimit: 20,
       targetSample: 100,
       since,
@@ -228,7 +265,9 @@ export async function pilotRecruitmentCoverage({
         .map(publicEvidence),
       expired: facts
         .filter((f) =>
-          ["closed", "historical"].includes(f.evidence.openingStatus),
+          ["closed", "historical", "expired"].includes(
+            f.evidence.openingStatus,
+          ),
         )
         .slice(0, 10)
         .map(publicEvidence),

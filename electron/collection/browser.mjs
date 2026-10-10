@@ -309,7 +309,8 @@ export function createCollectionBrowser({
           "collection_session_scope",
           "请先打开当前版本的独立登录窗口。",
         );
-      await assertBossRisk(input);
+      // The owned session queue checks risk before reserving/sending. Checking
+      // asynchronously here lets a later invocation overtake the first read.
       return service.read({
         ...input,
         operation,

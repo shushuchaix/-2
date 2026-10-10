@@ -277,6 +277,73 @@ test("risk response is latched before a queued read can start and explicit recov
     false,
   );
 });
+test("Boss reads acquire their session queue before asynchronous risk checks can reorder them", async (t) => {
+  const h = await fixture(t),
+    entry = await h.store.create({
+      scope: a,
+      platform: "boss",
+      accountRef: "owned-a",
+    });
+  let release,
+    entered,
+    checks = 0;
+  const gate = new Promise((r) => {
+      release = r;
+    }),
+    ready = new Promise((r) => {
+      entered = r;
+    });
+  const store = {
+    ...h.store,
+    async getStatus(input) {
+      checks++;
+      if (checks === 1) {
+        entered();
+        await gate;
+      }
+      return h.store.getStatus(input);
+    },
+  };
+  const windows = collectionBrowserFixture({
+    executeJavaScript: async () =>
+      JSON.stringify({
+        status: 200,
+        payload: { code: 37, message: "请求环境异常" },
+      }),
+  });
+  const browser = createCollectionBrowser({
+    ...windows,
+    sessionStore: store,
+    ledger: { reserve: async (v) => v, settle: async () => {} },
+  });
+  t.after(() => browser.stop());
+  const input = {
+    ref: { scope: a, activityId: "root" },
+    token: {},
+    sessionRef: entry.sessionRef,
+    operation,
+  };
+  const first = browser.readBoss(input);
+  await ready;
+  const second = browser.readBoss(input);
+  // Own rejections immediately; high system load must not produce unhandled promises.
+  const settled = Promise.allSettled([first, second]);
+  try {
+    await new Promise(setImmediate);
+    assert.equal(
+      checks,
+      1,
+      "queued read must not race the first asynchronous status read",
+    );
+  } finally {
+    release();
+    await settled;
+  }
+  const outcomes = await settled;
+  assert.equal(outcomes[0].status, "fulfilled");
+  assert.equal(outcomes[1].status, "rejected");
+  assert.equal(outcomes[1].reason.code, "boss_risk_blocked");
+});
 test("restarted Boss material restores only owned platform cookies into a fresh ephemeral partition", async (t) => {
   const h = await fixture(t);
   const entry = await h.store.create({

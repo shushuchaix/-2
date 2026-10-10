@@ -32,6 +32,8 @@ import {
 import { Skeleton } from "../../components/ui/skeleton";
 import { LegacyAssignmentPanel } from "./LegacyAssignmentPanel";
 import { DedupDialog } from "./DedupDialog";
+import { BudgetSummary } from "../../components/BudgetSummary";
+import { budgetView } from "../../lib/budget-view";
 
 type Settings = {
   model?: { baseUrl?: string; model?: string; configured?: boolean };
@@ -65,6 +67,10 @@ function ModelSettings({
     String(Math.min(20, settings.budgets?.maxModelRequests ?? 20)),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [savedDraft, setSavedDraft] = useState(() =>
+    JSON.stringify({ model, cost, requests }),
+  );
+  const currentDraft = JSON.stringify({ model, cost, requests });
   const op = useOperation();
   const fieldErrors = { ...errors, ...op.error?.fieldErrors };
   const change = (action: () => void) => {
@@ -88,7 +94,7 @@ function ModelSettings({
     const invalid = validateInput("settings", input) as Record<string, string>;
     setErrors(invalid);
     if (Object.keys(invalid).length) return;
-    await op.run(
+    const committed = await op.run(
       () =>
         api.request("/settings", {
           method: "PUT",
@@ -106,6 +112,7 @@ function ModelSettings({
         }),
       "设置已保存",
     );
+    if (committed) setSavedDraft(currentDraft);
   }
   return (
     <Card>
@@ -127,6 +134,19 @@ function ModelSettings({
         className="flex flex-col gap-4"
       >
         <CardContent className="flex flex-col gap-4">
+          <BudgetSummary
+            label={
+              savedDraft === currentDraft
+                ? "已保存预算设置"
+                : "预算设置（待保存）"
+            }
+            view={budgetView({
+              modelBudget: {
+                maxCostCny: cost === "" ? null : Number(cost),
+                maxModelRequests: cost === "" ? Number(requests) : 1000,
+              },
+            })}
+          />
           <FormFeedback errors={fieldErrors} error={op.error} />
           <FieldGroup>
             <TextField

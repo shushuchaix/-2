@@ -22,6 +22,7 @@ import { OperationFeedback } from "../../components/OperationFeedback";
 import { FormFeedback } from "../../components/FormFeedback";
 import { factOf, type JobItem } from "../jobs/job-view";
 import { validateInput } from "../../../../public/js/validation-rules.js";
+import { budgetView } from "../../lib/budget-view";
 const terminal = new Set([
   "completed",
   "partial",
@@ -87,10 +88,9 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
     ctx.selection ? "/jobs?page=1&pageSize=5&recommendation=high" : null,
     ctx.selection ?? undefined,
   );
-  const settings = useQuery<{ budgets?: { maxCostCny?: number } }>(
-    api,
-    "/settings",
-  );
+  const settings = useQuery<{
+    budgets?: { maxCostCny?: number | null; maxModelRequests?: number };
+  }>(api, "/settings");
   useEffect(() => {
     setUserKey("");
   }, [ctx.generation]);
@@ -286,11 +286,16 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
             userKey={userKey}
             onKey={setUserKey}
             keyError={errors.userApiKey ?? op.error?.fieldErrors?.userApiKey}
-            budgetCny={
-              typeof target?.budgets?.maxCostCny === "number"
-                ? target.budgets.maxCostCny
-                : (settings.data?.budgets?.maxCostCny ?? null)
-            }
+            budget={budgetView({
+              coverageMode: coverageMode === "broad" ? "broad" : "standard",
+              overrides: Object.fromEntries(
+                Object.entries(target?.budgets ?? {}).filter(
+                  (entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]),
+                ),
+              ),
+              modelBudget: settings.data?.budgets,
+              activity,
+            })}
           />
           <FormFeedback
             errors={errors}

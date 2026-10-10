@@ -13,6 +13,8 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { TextField } from "../../components/TextField";
 import { OperationFeedback } from "../../components/OperationFeedback";
+import { BudgetSummary } from "../../components/BudgetSummary";
+import { budgetView } from "../../lib/budget-view";
 export type { CollectionActivity } from "../../lib/types";
 export const collectionStatus: Record<string, string> = {
   collecting: "正在采集",
@@ -112,14 +114,10 @@ export function CollectionProgress({
           页 · 计划 {sites.size} 站 · 实际 {actualSites.size} 站 ·
           未覆盖或未完成 {pending} 个单元
         </p>
-        <p>
-          活动累计费用上界 ¥{Number(u.costUpperBoundCny ?? 0).toFixed(2)} / ¥
-          {p.limits.maxCostCny} · 剩余 ¥
-          {Math.max(
-            0,
-            p.limits.maxCostCny - (u.costUpperBoundCny ?? 0),
-          ).toFixed(2)}
-        </p>
+        <BudgetSummary
+          view={budgetView({ activity })}
+          label="活动预算与累计用量"
+        />
         <p>
           累计请求占额 {u.usedRequests ?? 0} / {p.limits.maxRequests} ·
           未结算占额 {u.reservedRequests ?? 0} · 流量占额{" "}

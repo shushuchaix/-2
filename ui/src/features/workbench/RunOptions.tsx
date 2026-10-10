@@ -12,12 +12,14 @@ import {
 } from "../../components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 import { TextField } from "../../components/TextField";
+import { BudgetSummary } from "../../components/BudgetSummary";
+import type { BudgetView } from "../../lib/budget-view";
 export function RunOptions({
   mode,
   onMode,
   userKey,
   onKey,
-  budgetCny,
+  budget,
   keyError,
   coverageMode = "standard",
   onCoverageMode,
@@ -26,7 +28,7 @@ export function RunOptions({
   onMode: (v: "rules" | "ai") => void;
   userKey: string;
   onKey: (key: string) => void;
-  budgetCny: number | null;
+  budget: BudgetView;
   keyError?: string;
   coverageMode?: string;
   onCoverageMode?: (mode: string) => void;
@@ -51,7 +53,7 @@ export function RunOptions({
               <ToggleGroupItem value="broad">广覆盖</ToggleGroupItem>
             </ToggleGroup>
             <FieldDescription>
-              标准最多24站/400请求/每查询4页，广覆盖最多50站/1000请求/10页；实际受启用来源与证据准入限制。继续沿用原活动计划。
+              标准覆盖优先扫描相关来源，广覆盖扩大来源与分页范围。现有活动继续沿用原计划。
             </FieldDescription>
           </Field>
           <Field>
@@ -82,13 +84,9 @@ export function RunOptions({
                 maxLength={512}
                 description="仅用于本次任务；创建成功或离开页面后清除。"
               />
-              <p>
-                新活动模型费用上限：
-                {budgetCny === null ? "使用请求次数预算" : budgetCny + " 元"}
-                。所有批次共享累计上限，最多10元；0 元禁用模型调用。
-              </p>
             </>
           )}
+          <BudgetSummary view={budget} label="运行预算预览" />
         </FieldGroup>
       </CollapsibleContent>
     </Collapsible>

@@ -5,7 +5,12 @@ import type {
   ProfileVersion,
   TargetVersion,
 } from "../../lib/types";
-import { validateInput } from "../../../../public/js/validation-rules.js";
+import {
+  validateInput,
+  validateCollectionLimits,
+} from "../../../../public/js/validation-rules.js";
+import { budgetView } from "../../lib/budget-view";
+import { BudgetSummary } from "../../components/BudgetSummary";
 import { useOperation } from "../../lib/hooks";
 import { TextField } from "../../components/TextField";
 import { FormFeedback } from "../../components/FormFeedback";
@@ -129,6 +134,14 @@ export function CreateTargetDialog({
   const operation = useOperation();
   const controller = useRef(new AbortController());
   const submission = useRef({ id: crypto.randomUUID(), hash: "" });
+  const submittedDraft = useRef<Record<string, unknown> | null>(null);
+  const pendingFocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingFocus.current) {
+      document.getElementById(pendingFocus.current)?.focus();
+      pendingFocus.current = null;
+    }
+  }, [step]);
   useEffect(() => {
     void Promise.all([
       api.request<{ sources: Source[]; sites: Site[] }>("/sources", {
@@ -158,10 +171,48 @@ export function CreateTargetDialog({
       });
     return () => controller.current.abort();
   }, [api, source]);
-  const allErrors = {
-    ...errors,
-    ...(operation.error as ApiError | null)?.fieldErrors,
-  };
+  const draft = input();
+  const draftHash = JSON.stringify(draft);
+  useEffect(() => setErrors({}), [draftHash]);
+  const fieldValue = (value: Record<string, unknown> | null, name: string) =>
+    name
+      .split(".")
+      .reduce<unknown>(
+        (v, k) =>
+          v && typeof v === "object"
+            ? (v as Record<string, unknown>)[k]
+            : undefined,
+        value,
+      );
+  const relevantServerErrors = Object.fromEntries(
+    Object.entries(operation.error?.fieldErrors ?? {}).filter(
+      ([key]) =>
+        JSON.stringify(fieldValue(submittedDraft.current, key)) ===
+        JSON.stringify(fieldValue(draft, key)),
+    ),
+  );
+  const allErrors = { ...errors, ...relevantServerErrors };
+  const visibleError =
+    operation.error?.fieldErrors && !Object.keys(relevantServerErrors).length
+      ? null
+      : operation.error;
+  const validBudgetDraft: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(budgets)) {
+    if (!raw.trim() || !Number.isFinite(Number(raw))) continue;
+    if (key === "maxModelRequests") {
+      if (Number.isSafeInteger(Number(raw)) && Number(raw) >= 0)
+        validBudgetDraft[key] = Number(raw);
+      continue;
+    }
+    try {
+      Object.assign(
+        validBudgetDraft,
+        validateCollectionLimits({ [key]: Number(raw) }),
+      );
+    } catch {
+      /* Invalid draft remains in its field and is rejected by form validation. */
+    }
+  }
   const chosen = available.find((p) => p.revisionId === profileRevisionId);
   function input() {
     return {
@@ -223,7 +274,13 @@ export function CreateTargetDialog({
     setErrors(validation);
     if (!Object.keys(validation).length) setStep(step + 1);
   }
+  function focusField(name: string) {
+    const destination = name === "profileRevisionId" ? 0 : name === "versionName" ? 3 : name.startsWith("budgets") || ["coverageMode", "sourceIds", "siteIds"].includes(name) ? 2 : 1;
+    if (destination === step) document.getElementById(name)?.focus();
+    else { pendingFocus.current = name; setStep(destination); }
+  }
   async function save() {
+    if (operation.busy) return;
     operation.clear();
     const validation = validate(3);
     setErrors(validation);
@@ -258,6 +315,7 @@ export function CreateTargetDialog({
     if (submission.current.hash && submission.current.hash !== hash)
       submission.current.id = crypto.randomUUID();
     submission.current.hash = hash;
+    submittedDraft.current = body;
     await operation.run(async () => {
       const saved = await api.request<TargetVersion>("/targets", {
         method: "POST",
@@ -329,8 +387,9 @@ export function CreateTargetDialog({
         </DialogHeader>
         <FormFeedback
           errors={allErrors}
-          error={operation.error || catalogError}
-          onFocusField={(name) => document.getElementById(name)?.focus()}
+          includeServerErrors={false}
+          error={visibleError || catalogError}
+          onFocusField={focusField}
         />
         <FieldGroup>
           {step === 0 && (
@@ -457,11 +516,21 @@ export function CreateTargetDialog({
                 "覆盖预算",
                 coverageMode,
                 [
-                  ["standard", "标准 · 12 站点 / 120 请求"],
-                  ["broad", "广泛 · 24 站点 / 240 请求"],
+                  ["standard", "标准覆盖"],
+                  ["broad", "广覆盖"],
                 ],
                 setCoverage,
               )}
+              <BudgetSummary
+                label="新活动预算预览"
+                view={budgetView({
+                  coverageMode: coverageMode === "broad" ? "broad" : "standard",
+                  overrides: validBudgetDraft,
+                  modelBudget: settings.budgets as
+                    | { maxCostCny?: number | null; maxModelRequests?: number }
+                    | undefined,
+                })}
+              />
               <FieldSet id="sourceIds">
                 <FieldLegend>招聘来源</FieldLegend>
                 <FieldDescription>

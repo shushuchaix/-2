@@ -144,7 +144,8 @@ export function createPagePolicy({
   webContentsId,
 } = {}) {
   let requests = 0,
-    closed = false;
+    closed = false,
+    bossSent = false;
   return {
     async authorize(details) {
       if (routePolicy.platform === "boss") {
@@ -170,6 +171,36 @@ export function createPagePolicy({
                 op.method === "GET"));
           if (!sameOperation && !(manual && routePolicy.manualPath?.(url)))
             return { cancel: true };
+          if (sameOperation && !manual) {
+            if (bossSent || !op.parameters) return { cancel: true };
+            let values;
+            if (op.method === "POST") {
+              if (
+                !Array.isArray(details.uploadData) ||
+                details.uploadData.some((v) => !v.bytes || v.file)
+              )
+                return { cancel: true };
+              const body = Buffer.concat(
+                details.uploadData.map((v) => Buffer.from(v.bytes)),
+              );
+              if (body.length > 16384) return { cancel: true };
+              values = new URLSearchParams(body.toString("utf8"));
+              if ([...url.searchParams.keys()].some((k) => k !== "_"))
+                return { cancel: true };
+            } else {
+              values = new URLSearchParams(url.searchParams);
+              values.delete("_");
+            }
+            if (
+              [...values.keys()].length !== Object.keys(op.parameters).length ||
+              Object.entries(op.parameters).some(
+                ([k, v]) =>
+                  values.getAll(k).length !== 1 || values.get(k) !== String(v),
+              )
+            )
+              return { cancel: true };
+            bossSent = true;
+          }
         }
       }
       if (

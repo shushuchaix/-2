@@ -14,6 +14,14 @@ export function createContentReadService({
     setBrowser(value) {
       browser = value;
     },
+    async readBoss(input) {
+      if (!browser?.readBoss)
+        throw Object.assign(Error("Boss采集窗口不可用。"), {
+          code: "collection_browser_unavailable",
+          retryable: false,
+        });
+      return browser.readBoss(input);
+    },
     async read(input) {
       const { providerId, signal } = input,
         platform = providerId,

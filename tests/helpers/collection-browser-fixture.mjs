@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-export function collectionBrowserFixture() {
+export function collectionBrowserFixture({ executeJavaScript } = {}) {
   const values = new Map(),
     windows = [];
   let id = 0;
@@ -50,8 +50,11 @@ export function collectionBrowserFixture() {
         setWebRTCIPHandlingPolicy: () => {},
         setWindowOpenHandler: () => {},
         getURL: () => this.url,
-        executeJavaScript: async () =>
-          this.html || '<div id="captcha">验证码</div><title>安全验证</title>',
+        executeJavaScript: async (code) =>
+          executeJavaScript
+            ? executeJavaScript(code, this)
+            : this.html ||
+              '<div id="captcha">验证码</div><title>安全验证</title>',
       });
       windows.push(this);
     }

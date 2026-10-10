@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import {
+  bossPageScript,
+  bossAbortScript,
+  decodeBossPageResult,
+  validateBossOperation,
+} from "./boss-page.mjs";
 import { recordDiagnostic } from "../../src/infrastructure/diagnostics/log.mjs";
 import {
   publicCollectionUrl,
@@ -276,6 +282,20 @@ export function createCollectionBrowser({
     return item;
   }
   const service = {
+    async readBoss(input) {
+      const operation = validateBossOperation(input.operation);
+      if (!input.sessionRef)
+        throw failure(
+          "collection_session_scope",
+          "请先打开当前版本的独立登录窗口。",
+        );
+      return service.read({
+        ...input,
+        operation,
+        url: platformPolicy("boss").entryUrl,
+        routePolicy: { ...platformPolicy("boss"), bossOperation: operation },
+      });
+    },
     async read({
       ref,
       token,
@@ -284,6 +304,7 @@ export function createCollectionBrowser({
       operationLease,
       signal,
       sessionRef,
+      operation,
     }) {
       publicCollectionUrl(url);
       await assertScope?.(ref.scope);
@@ -330,11 +351,32 @@ export function createCollectionBrowser({
         const aborted = new Promise((_, reject) => {
           rejectAbort = reject;
         });
+        let abortDrain;
         const abort = () => {
+          if (abortDrain) return;
+          item.policy.close();
+          item.client.revoke();
           rejectAbort(
             signal?.reason || failure("collection_cancelled", "采集已取消。"),
           );
-          if (!item.window.isDestroyed()) item.window.destroy();
+          abortDrain = Promise.resolve().then(async () => {
+            let timeout;
+            try {
+              if (operation && !item.window.isDestroyed())
+                await Promise.race([
+                  item.window.webContents.executeJavaScript(
+                    bossAbortScript(item.id),
+                  ),
+                  new Promise((r) => {
+                    timeout = setTimeout(r, 200);
+                  }),
+                ]);
+            } catch {
+            } finally {
+              clearTimeout(timeout);
+              if (!item.window.isDestroyed()) item.window.destroy();
+            }
+          });
         };
         signal?.addEventListener("abort", abort, { once: true });
         item.lifetime.signal.addEventListener("abort", abort, { once: true });
@@ -342,7 +384,7 @@ export function createCollectionBrowser({
         const deadline = new Promise((_, reject) => {
           timer = setTimeout(() => {
             reject(failure("collection_browser_timeout", "页面读取超时。"));
-            if (!item.window.isDestroyed()) item.window.destroy();
+            abort();
           }, 45000);
         });
         try {
@@ -350,12 +392,27 @@ export function createCollectionBrowser({
           signal?.throwIfAborted();
           const document = await Promise.race([
             item.window.webContents.executeJavaScript(
-              `({html:document.documentElement.outerHTML,selectorFound:!!document.querySelector(${JSON.stringify(routePolicy.bodySelector || "__no_body_selector__")})?.textContent.trim()})`,
+              operation
+                ? bossPageScript(operation, item.id)
+                : `({html:document.documentElement.outerHTML,selectorFound:!!document.querySelector(${JSON.stringify(routePolicy.bodySelector || "__no_body_selector__")})?.textContent.trim()})`,
               true,
             ),
             aborted,
             deadline,
           ]);
+          signal?.throwIfAborted();
+          if (item.lifetime.signal.aborted)
+            throw failure("collection_cancelled", "采集已取消。");
+          if (operation)
+            return {
+              ...decodeBossPageResult(document),
+              checkedAt: new Date().toISOString(),
+              channel: "authorized_browser",
+              usage: {
+                ...item.policy.snapshot(),
+                wireBytes: item.client.snapshot().bytes,
+              },
+            };
           const html = typeof document === "string" ? document : document.html;
           if (typeof html !== "string" || Buffer.byteLength(html) > 8388608)
             throw failure(
@@ -385,6 +442,7 @@ export function createCollectionBrowser({
           clearTimeout(timer);
           signal?.removeEventListener("abort", abort);
           item.lifetime.signal.removeEventListener("abort", abort);
+          await abortDrain;
         }
       } finally {
         try {

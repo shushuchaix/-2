@@ -12,6 +12,7 @@ test("Boss only permits the selected fixed API operation for every resource type
       kind: "boss.search",
       method: "POST",
       url: "https://www.zhipin.com/wapi/zpgeek/search/joblist.json",
+      parameters: { query: "消防", page: 1, pageSize: 15, scene: 1 },
     },
   };
   let claims = 0;
@@ -27,6 +28,13 @@ test("Boss only permits the selected fixed API operation for every resource type
         url: routePolicy.bossOperation.url,
         method: "POST",
         resourceType: "xhr",
+        uploadData: [
+          {
+            bytes: Buffer.from(
+              "query=%E6%B6%88%E9%98%B2&page=1&pageSize=15&scene=1",
+            ),
+          },
+        ],
       })
     ).cancel,
     false,

@@ -1,5 +1,11 @@
-import { createPagedProvider, jsonResponse, baseRecord } from "./shared.mjs";
+import {
+  createPagedProvider,
+  jsonResponse,
+  baseRecord,
+  extractApplicationLinks,
+} from "./shared.mjs";
 import { elementText } from "../../util/html-elements.mjs";
+import { parseHTML } from "linkedom";
 const id = "ncss";
 function entryOrigin(site) {
   const url = new URL(site.origin || "https://www.ncss.cn");
@@ -169,9 +175,16 @@ export default createPagedProvider({
       if (insufficient) error.retryable = false;
       throw error;
     }
+    const { document } = parseHTML(response.text);
+    const links = extractApplicationLinks(
+      document.querySelector(body.selector)?.innerHTML,
+      { baseUrl: r.url, record: r },
+    );
     return {
       ...r,
       description: body.text,
+      ...(links.applyUrl ? { applyUrl: links.applyUrl } : {}),
+      sourceEvidence: [...(r.sourceEvidence || []), ...links.sourceEvidence],
       detailStatus: "complete",
       evidence: [
         ...r.evidence,

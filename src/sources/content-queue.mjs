@@ -50,6 +50,8 @@ export function queueContentDraft(progress, unitId, records, now) {
         unitId,
         record: structuredClone(record),
         attempts: previous?.attempts || 0,
+        automaticAttempts: previous?.automaticAttempts || 0,
+        riskBlocked: previous?.riskBlocked || false,
         nextDueAt:
           record.retryAt ||
           record.nextDueAt ||
@@ -59,11 +61,14 @@ export function queueContentDraft(progress, unitId, records, now) {
           record.nextDueAt ||
           previous?.serverCooldownUntil ||
           null,
-        status: ["challenge_required", "login_required", "restricted"].includes(
-          record.bodyStatus,
-        )
-          ? "waiting_for_auth"
-          : "pending",
+        status:
+          previous?.automaticAttempts >= 3
+            ? "needs_review"
+            : ["challenge_required", "login_required", "restricted"].includes(
+                  record.bodyStatus,
+                )
+              ? "waiting_for_auth"
+              : "pending",
       };
       continue;
     }

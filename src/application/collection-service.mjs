@@ -4,6 +4,7 @@ import {
   assessRecruitmentEvidence,
   isVerifiedRecommendation,
   prepareRecruitmentRecord,
+  prepareApplicationCheck,
 } from "../domain/recruitment-evidence.mjs";
 import {
   selectVersionJobFact,
@@ -1036,7 +1037,10 @@ export function createCollectionService({
         .filter(([, pending]) => {
           if (
             pending.riskBlocked ||
-            (task.automatic && pending.status === "waiting_for_auth")
+            (task.automatic &&
+              (pending.status === "waiting_for_auth" ||
+                pending.status === "needs_review" ||
+                (pending.automaticAttempts || 0) >= 3))
           )
             return false;
           const eligibleAt = task.automatic
@@ -1103,7 +1107,14 @@ export function createCollectionService({
             ];
           }
           queueContentDraft(p, pending.unitId, [record], Number(clock.now()));
-          if (p.pendingBodies[key]) p.pendingBodies[key].attempts++;
+          if (p.pendingBodies[key]) {
+            p.pendingBodies[key].attempts++;
+            if (task.automatic)
+              p.pendingBodies[key].automaticAttempts =
+                (p.pendingBodies[key].automaticAttempts || 0) + 1;
+            if (p.pendingBodies[key].automaticAttempts >= 3)
+              p.pendingBodies[key].status = "needs_review";
+          }
         });
       }
       const now = Number(clock.now()),
@@ -1416,13 +1427,24 @@ export function createCollectionService({
             },
           );
           signal.throwIfAborted();
+          const expandedRecords = [];
+          if (!expanded.failed)
+            for (const extracted of expanded.jobs)
+              expandedRecords.push(
+                await enrichRecord(
+                  normalizeRecord(extracted),
+                  await makeContext(
+                    root.collectionProgress.units[pending.unitId],
+                  ),
+                ),
+              );
           await mutateCurrent(ref, token, lease, (w, r) => {
             const p = r.collectionProgress;
             if (expanded.failed) {
               p.pendingArticles[key].attempts++;
               return;
             }
-            const records = expanded.jobs.map(normalizeRecord),
+            const records = expandedRecords,
               result = ingestRecordsDraft(w, {
                 scope: ref.scope,
                 runId: token.sliceRunId,
@@ -1746,10 +1768,8 @@ export function createCollectionService({
     }
   }
   async function enrichRecord(record, context) {
-    const evidence = prepareRecruitmentRecord(
-      record,
-      clock.now(),
-    ).recruitmentEvidence;
+    const applicationCheck = prepareApplicationCheck(record, clock.now()),
+      evidence = applicationCheck.evidence;
     await recordDiagnostic(diagnostics, {
       operation: "collection.body",
       runId: context.runId,
@@ -1761,10 +1781,7 @@ export function createCollectionService({
     });
     if (
       record.kind === "job" &&
-      record.applyUrl &&
-      evidence.bodyVerified &&
-      ["open", "unknown"].includes(evidence.openingStatus) &&
-      evidence.conflicts.length === 0 &&
+      applicationCheck.shouldRequest &&
       evidence.applicationStatus !== "available"
     ) {
       try {
@@ -1843,11 +1860,34 @@ export function createCollectionService({
           });
       }
     if (!extracts.length) return enriched;
+    const description = [enriched.description, ...extracts.map((a) => a.text)]
+      .filter(Boolean)
+      .join("\n");
+    const attachmentBodyComplete =
+      enriched.attachmentBodyPending &&
+      description.trim().length >= 30 &&
+      enriched.attachments.every((a) => {
+        if (a.extraction?.status !== "extracted") return false;
+        const blocks = [
+          ...(a.extraction.blocks || []),
+          ...(a.extraction.tables || []).flatMap((t) => t.cells || []),
+        ];
+        return (
+          blocks.length > 0 &&
+          blocks.every((b) => b.confidence >= 85 && !b.ambiguousMerge)
+        );
+      });
     return {
       ...enriched,
-      description: [enriched.description, ...extracts.map((a) => a.text)]
-        .filter(Boolean)
-        .join("\n"),
+      description,
+      ...(attachmentBodyComplete
+        ? {
+            bodyStatus: "complete",
+            detailStatus: "complete",
+            attachmentBodyPending: false,
+            retryEligible: false,
+          }
+        : {}),
       attachmentRows: extracts.flatMap((a) => {
         const groups = new Map();
         for (const b of a.blocks) {

@@ -1,5 +1,9 @@
 import { parseHTML } from "linkedom";
-import { createPagedProvider, baseRecord } from "./shared.mjs";
+import {
+  createPagedProvider,
+  baseRecord,
+  extractApplicationLinks,
+} from "./shared.mjs";
 import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
 import { canonicalizeSourceUrl } from "../../domain/identity.mjs";
@@ -178,12 +182,10 @@ export default createPagedProvider({
       throw e;
     }
     const description = htmlToText(node.innerHTML).trim();
-    if (description.length < 30) {
-      const e = Error("Notice body insufficient");
-      e.code = "parse_error";
-      throw e;
-    }
-    const attachments = [...node.querySelectorAll("a[href]")].flatMap((a) => {
+    const attachmentNodes = site.template.attachmentRule
+      ? [...document.querySelectorAll(site.template.attachmentRule)]
+      : [...node.querySelectorAll("a[href]")];
+    const attachments = attachmentNodes.flatMap((a) => {
       try {
         const url = canonicalizeSourceUrl(
           new URL(a.getAttribute("href"), record.url).href,
@@ -198,13 +200,40 @@ export default createPagedProvider({
     const dateNode = site.template.dateRule
       ? document.querySelector(site.template.dateRule)
       : null;
+    const shortBody = description.length < 30;
+    if (shortBody && !attachments.length)
+      throw Object.assign(Error("Notice body insufficient"), {
+        code: "detail_insufficient",
+        retryable: false,
+      });
+    const links = extractApplicationLinks(node.innerHTML, {
+      baseUrl: record.url,
+      record,
+    });
+    const structuredEvidence = readJobPostingEvidence(response.text, {
+      ...record,
+      description,
+    });
     return {
       ...record,
       description,
       publishedAt: explicitDate(dateNode?.textContent) || record.publishedAt,
       attachments,
-      detailStatus: "complete",
-      ...readJobPostingEvidence(response.text, { ...record, description }),
+      detailStatus: shortBody ? "incomplete" : "complete",
+      ...(shortBody
+        ? {
+            bodyStatus: "incomplete",
+            attachmentBodyPending: true,
+            retryEligible: true,
+          }
+        : {}),
+      ...(links.applyUrl ? { applyUrl: links.applyUrl } : {}),
+      ...structuredEvidence,
+      sourceEvidence: [
+        ...(record.sourceEvidence || []),
+        ...links.sourceEvidence,
+        ...(structuredEvidence.sourceEvidence || []),
+      ],
       evidence: [
         ...record.evidence,
         {

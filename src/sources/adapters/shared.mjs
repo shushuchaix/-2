@@ -1,5 +1,69 @@
 import { assertSourceRecord } from "../../domain/contracts.mjs";
 import { recordDiagnostic } from "../../infrastructure/diagnostics/log.mjs";
+import { parseHTML } from "linkedom";
+import { validatePublicUrl } from "../../infrastructure/http/public-url.mjs";
+
+export function extractApplicationLinks(html, { baseUrl, record }) {
+  const { document } = parseHTML(String(html || ""));
+  for (const node of document.querySelectorAll(
+    'script,style,nav,header,footer,[hidden],[aria-hidden="true"]',
+  ))
+    node.remove();
+  const entries = new Map();
+  const add = (href, label, sourceKind) => {
+    try {
+      const url = validatePublicUrl(new URL(href, baseUrl).href);
+      if (
+        /login|signin|captcha/i.test(url.pathname) ||
+        [...url.searchParams.keys()].some((k) =>
+          /token|secret|signature|sign$|password|session|cookie|auth|ticket/i.test(
+            k,
+          ),
+        )
+      )
+        return;
+      entries.set(url.href, {
+        field: "applyUrl",
+        value: url.href,
+        sourceId: record.sourceId,
+        sourceUrl: baseUrl,
+        sourceKind,
+        sourceExcerpt: label.slice(0, 300),
+        status: "unknown",
+        location: {
+          selector: sourceKind === "public_anchor" ? "a[href]" : "p,li",
+        },
+      });
+    } catch {}
+  };
+  for (const anchor of document.querySelectorAll("a[href]")) {
+    const label = anchor.textContent.trim(),
+      href = anchor.getAttribute("href");
+    if (
+      !/报名|投递|应聘|申请职位|提交申请/.test(label) ||
+      /登录|验证码|导航|指南|说明/.test(label) ||
+      !href ||
+      href.startsWith("#")
+    )
+      continue;
+    add(href, label, "public_anchor");
+  }
+  for (const paragraph of document.querySelectorAll("p,li")) {
+    const text = paragraph.textContent;
+    if (
+      !/(?:报名|投递|应聘)[^。\n]{0,100}(?:网站|网址|地址)|(?:网站|网址|地址)[^。\n]{0,100}(?:报名|投递|应聘)/.test(
+        text,
+      )
+    )
+      continue;
+    for (const match of text.matchAll(/https?:\/\/[^\s<>"'（）。，；]+/g))
+      add(match[0], text, "public_text_entry");
+  }
+  return {
+    applyUrl: entries.size === 1 ? [...entries.keys()][0] : null,
+    sourceEvidence: [...entries.values()],
+  };
+}
 const coverageReasons = {
   listing_only: "仅采集当前列表页，尚未支持历史分页。",
   page_limit: "已达到本次查询分页上限。",

@@ -36,6 +36,16 @@ export function createCollectionRefresh({
                 u.status !== "waiting_for_auth" &&
                 (!u.nextDueAt ||
                   Date.parse(u.nextDueAt) <= Number(clock.now())),
+            ) &&
+            !Object.values(p.pendingBodies || {}).some(
+              (b) =>
+                !b.riskBlocked &&
+                b.status !== "waiting_for_auth" &&
+                b.status !== "needs_review" &&
+                (b.automaticAttempts || 0) < 3 &&
+                b.record?.retryEligible !== false &&
+                (!b.nextDueAt ||
+                  Date.parse(b.nextDueAt) <= Number(clock.now())),
             )
           )
             continue;

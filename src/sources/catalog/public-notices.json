@@ -1,5 +1,39 @@
 [
   {
+    "siteId": "official-guizhou-airport",
+    "providerId": "official-announcements",
+    "category": "public",
+    "name": "贵州民航集团招聘公告",
+    "institutionUrl": "https://www.gz-gcac.com",
+    "origin": "https://www.gz-gcac.com",
+    "tenantId": null,
+    "regions": ["贵州"],
+    "majorFamilies": [],
+    "capabilities": {
+      "list": "unverified",
+      "detail": "unverified",
+      "attachments": "unverified"
+    },
+    "evidenceUrl": "https://www.gz-gcac.com/content/details_182_28403.html",
+    "verifiedAt": null,
+    "status": "candidate",
+    "template": {
+      "listUrl": "https://www.gz-gcac.com/srecruitment.html",
+      "linkRule": "a[href]",
+      "bodyRule": ".news_detial .news_de_con > .edit",
+      "attachmentRule": ".news_detial .news_de_con > .edit_down a[href]",
+      "pathPrefix": "/content/"
+    },
+    "allowedDomains": ["www.gz-gcac.com"],
+    "jobFamilies": ["消防", "机场", "航空"],
+    "adapter": "official-announcements",
+    "identityEvidence": {
+      "url": "https://www.gz-gcac.com/content/details_182_28403.html",
+      "kind": "official_entry",
+      "checkedAt": "2026-10-10T01:32:06.403Z"
+    }
+  },
+  {
     "siteId": "public-ict",
     "providerId": "official-announcements",
     "category": "public",
@@ -12,9 +46,7 @@
     "capabilities": {
       "list": true,
       "detail": true,
-      "kinds": [
-        "recruitment_notice"
-      ]
+      "kinds": ["recruitment_notice"]
     },
     "evidenceUrl": "https://www.ict.ac.cn/rczp/202510/t20251015_7989499.html",
     "verifiedAt": "2026-10-05T05:05:31.561Z",
@@ -46,9 +78,7 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "www.ict.ac.cn"
-    ],
+    "allowedDomains": ["www.ict.ac.cn"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -70,9 +100,7 @@
     "capabilities": {
       "list": true,
       "detail": true,
-      "kinds": [
-        "recruitment_notice"
-      ]
+      "kinds": ["recruitment_notice"]
     },
     "evidenceUrl": "https://www.iscas.ac.cn/rcdw/rczp/202607/t20260717_8251365.html",
     "verifiedAt": "2026-10-05T05:05:34.784Z",
@@ -104,9 +132,7 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "www.iscas.ac.cn"
-    ],
+    "allowedDomains": ["www.iscas.ac.cn"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -128,9 +154,7 @@
     "capabilities": {
       "list": true,
       "detail": true,
-      "kinds": [
-        "recruitment_notice"
-      ]
+      "kinds": ["recruitment_notice"]
     },
     "evidenceUrl": "https://www.iop.cas.cn/zszp/zp/202608/t20260817_8261008.html",
     "verifiedAt": "2026-10-05T05:05:34.414Z",
@@ -162,9 +186,7 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "www.iop.cas.cn"
-    ],
+    "allowedDomains": ["www.iop.cas.cn"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -186,9 +208,7 @@
     "capabilities": {
       "list": true,
       "detail": true,
-      "kinds": [
-        "recruitment_notice"
-      ]
+      "kinds": ["recruitment_notice"]
     },
     "evidenceUrl": "https://gibh.cas.cn/rczp/202609/t20260904_8278624.html",
     "verifiedAt": "2026-10-05T05:05:36.768Z",
@@ -220,9 +240,7 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "gibh.cas.cn"
-    ],
+    "allowedDomains": ["gibh.cas.cn"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -244,9 +262,7 @@
     "capabilities": {
       "list": true,
       "detail": true,
-      "kinds": [
-        "recruitment_notice"
-      ]
+      "kinds": ["recruitment_notice"]
     },
     "evidenceUrl": "https://las.cas.cn/edu/rczp/202605/t20260525_8208837.html",
     "verifiedAt": "2026-10-05T05:05:40.039Z",
@@ -278,9 +294,7 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "las.cas.cn"
-    ],
+    "allowedDomains": ["las.cas.cn"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -302,9 +316,7 @@
     "capabilities": {
       "list": true,
       "detail": true,
-      "kinds": [
-        "recruitment_notice"
-      ]
+      "kinds": ["recruitment_notice"]
     },
     "evidenceUrl": "https://ipe.cas.cn/rcdw/rczp/202608/t20260818_8261766.html",
     "verifiedAt": "2026-10-05T05:05:40.650Z",
@@ -336,9 +348,7 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "ipe.cas.cn"
-    ],
+    "allowedDomains": ["ipe.cas.cn"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {

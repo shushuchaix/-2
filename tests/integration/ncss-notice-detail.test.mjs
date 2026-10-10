@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import ncss from "../../src/sources/adapters/ncss.mjs";
 import { job } from "../helpers/fixtures.mjs";
 
@@ -7,6 +8,22 @@ const requirements =
   "负责设备维护与工程实施，要求具备相关专业知识、工程实践能力及现场项目经验。";
 const longTitle =
   "合成单位公开招聘机场行为识别工作人员及相关技术支持岗位的招聘信息";
+
+test("NCSS actual public structure preserves body without treating a placeholder as applying", async () => {
+  const html = await fs.readFile(
+    new URL(
+      "../fixtures/recruitment-details/ncss-fire-control.html",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const { record, ctx } = fixture(html);
+  const result = await ncss.fetchDetail(record, ctx);
+  assert.ok(result.description.length > 30);
+  assert.ok(!result.applyUrl);
+  assert.ok(!result.deadlineAt);
+  assert.equal(result.detailStatus, "complete");
+});
 function fixture(html, overrides = {}) {
   const record = job({
     sourceId: "ncss",

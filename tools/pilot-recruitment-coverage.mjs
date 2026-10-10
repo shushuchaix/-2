@@ -11,6 +11,7 @@ import { createLocalOcr } from "../src/attachments/ocr.mjs";
 import { createConditionalCache } from "../src/infrastructure/http/conditional-cache.mjs";
 import { createRequestClient } from "../src/infrastructure/http/client.mjs";
 import { createDefaultSourceRegistry } from "../src/sources/registry.mjs";
+import { loadSiteCatalog } from "../src/sources/catalog.mjs";
 import {
   assessRecruitmentEvidence,
   isVerifiedRecommendation,
@@ -33,16 +34,9 @@ const pilotSites = [
     origin: "https://main.ncss.cn/student/jobs/index.html",
   },
   {
-    siteId: "pilot-guizhou-airport",
-    providerId: "official-announcements",
-    name: "贵州民航集团",
-    origin: "https://www.gz-gcac.com",
-    template: {
-      listUrl: "https://www.gz-gcac.com/srecruitment.html",
-      linkRule: "a[href]",
-      bodyRule: "article,.news_content,.news-detail,.content_detail",
-      pathPrefix: "/",
-    },
+    ...loadSiteCatalog().find(
+      (site) => site.siteId === "official-guizhou-airport",
+    ),
   },
   {
     siteId: "pilot-shanghai-airport",

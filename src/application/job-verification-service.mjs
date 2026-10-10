@@ -5,9 +5,11 @@ import { ingestRecordsDraft } from "../domain/ingest-records.mjs";
 import {
   prepareRecruitmentRecord,
   assessApplicationResponse,
+  prepareApplicationCheck,
 } from "../domain/recruitment-evidence.mjs";
 import { validatePublicUrl } from "../infrastructure/http/public-url.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
+import { randomUUID } from "node:crypto";
 export function createJobVerificationService({
   repository,
   registry,
@@ -59,8 +61,9 @@ export function createJobVerificationService({
             sessionRefs: pkg.collectionSettings?.sessionRefs || {},
           });
         const checkedAt = new Date(clock.now()).toISOString();
-        if (record.applyUrl) {
-          const url = validatePublicUrl(record.applyUrl).href,
+        const check = prepareApplicationCheck(record, clock.now());
+        if (check.shouldRequest) {
+          const url = validatePublicUrl(check.applyUrl).href,
             response = await ctx.request(url, {
               signal: ctx.signal,
               maxBytes: 1048576,
@@ -103,9 +106,13 @@ export function createJobVerificationService({
                 "核验发现岗位身份或条件冲突，请保留原记录并单独复核。",
                 409,
               );
-            const application = w.applications[jobId];
+            const application = Object.values(w.applications).find(
+              (a) => a.jobId === jobId && a.ownerPackageId === scope.packageId,
+            );
             if (application)
               application.events.push({
+                recordId: randomUUID(),
+                ownerPackageId: scope.packageId,
                 type: "recruitment_verified",
                 at: checkedAt,
                 evidence: record.recruitmentEvidence,

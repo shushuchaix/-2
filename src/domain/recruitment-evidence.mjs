@@ -279,9 +279,13 @@ export function prepareRecruitmentRecord(record, now) {
           x.sourceExcerpt === e.sourceExcerpt,
       ) === i,
   );
-  const deadline = text.match(
-    /(?:报名|投递|申请)?(?:截止(?:时间|日期)?|截至)[：:\s]*(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})(?:日)?/,
-  );
+  const deadline =
+    text.match(
+      /(?:报名|投递|申请)?(?:截止(?:时间|日期)?|截至)[：:\s]*(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})(?:日)?(?:\s*(\d{1,2})[:：](\d{2}))?/,
+    ) ||
+    text.match(
+      /报名时间[^。；\n]{0,55}?(?:至|到|—|－|~|～)\s*(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})(?:日)?(?:\s*(\d{1,2})[:：](\d{2}))?/,
+    );
   if (deadline) {
     const d = `${deadline[1]}-${deadline[2].padStart(2, "0")}-${deadline[3].padStart(2, "0")}`;
     if (time(d) !== null) {
@@ -290,7 +294,28 @@ export function prepareRecruitmentRecord(record, now) {
           ...(r.evidenceConflicts || []),
           { field: "deadlineAt", code: "visible_structured_conflict" },
         ];
-      else r.deadlineAt = d + "T15:59:59.999Z";
+      else {
+        const hour = deadline[4] === undefined ? 23 : Number(deadline[4]),
+          minute = deadline[5] === undefined ? 59 : Number(deadline[5]);
+        const value = new Date(
+          Date.UTC(
+            Number(deadline[1]),
+            Number(deadline[2]) - 1,
+            Number(deadline[3]),
+            hour - 8,
+            minute,
+            deadline[4] === undefined ? 59 : 0,
+            deadline[4] === undefined ? 999 : 0,
+          ),
+        );
+        const local = new Date(value.getTime() + 8 * 3600000);
+        if (
+          hour <= 23 &&
+          minute <= 59 &&
+          local.toISOString().slice(0, 10) === d
+        )
+          r.deadlineAt = value.toISOString();
+      }
     }
   }
   if (/长期招聘|常年招聘|长期有效/.test(text)) r.longTermRecruiting = true;
@@ -381,6 +406,20 @@ export function assessRecruitmentEvidence({ record, now = Date.now() }) {
     applicationCheckedAt: verification.checkedAt || null,
     missing,
     conflicts,
+  };
+}
+export function prepareApplicationCheck(record, now = Date.now()) {
+  const prepared = prepareRecruitmentRecord(record, now),
+    evidence = prepared.recruitmentEvidence;
+  return {
+    evidence,
+    applyUrl: prepared.applyUrl || null,
+    shouldRequest: Boolean(
+      prepared.applyUrl &&
+        evidence.bodyVerified &&
+        ["open", "unknown"].includes(evidence.openingStatus) &&
+        evidence.conflicts.length === 0,
+    ),
   };
 }
 export const isVerifiedRecommendation = ({ qualification, evidence }) =>

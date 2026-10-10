@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ApiClient, Scope, CollectionQuality } from "../../lib/types";
+import type { ApiClient, Scope, CollectionActivity } from "../../lib/types";
 import { useOperation } from "../../lib/hooks";
 import { Button } from "../../components/ui/button";
 import {
@@ -13,29 +13,7 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { TextField } from "../../components/TextField";
 import { OperationFeedback } from "../../components/OperationFeedback";
-export type CollectionActivity = {
-  runId: string;
-  collectionRole?: string;
-  status?: string;
-  createdAt?: string;
-  ownerPackageId?: string;
-  targetSnapshot?: { revisionId: string };
-  collectionUsage?: Record<string, number>;
-  quality?: CollectionQuality;
-  collectionProgress: {
-    status: string;
-    revision: number;
-    activeSliceRunId?: string | null;
-    limits: Record<string, number>;
-    metrics?: Record<string, number>;
-    lastErrorCode?: string;
-    replanRequired?: boolean;
-    units: Record<
-      string,
-      { status: string; siteId: string; committedPages: number }
-    >;
-  };
-};
+export type { CollectionActivity } from "../../lib/types";
 export const collectionStatus: Record<string, string> = {
   collecting: "正在采集",
   paused: "已暂停，可继续",

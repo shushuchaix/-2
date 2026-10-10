@@ -1,6 +1,29 @@
 export type PackageKind = "profile" | "target" | "legacy_unassigned";
 export type PackageState = "active" | "trashed" | "purge_pending" | "purged";
 export type Scope = { packageId: string; targetRevisionId: string };
+export type CollectionActivity = {
+  runId: string;
+  collectionRole?: string;
+  status?: string;
+  createdAt?: string;
+  ownerPackageId?: string;
+  targetSnapshot?: { revisionId: string };
+  collectionUsage?: Record<string, number>;
+  quality?: CollectionQuality;
+  collectionProgress: {
+    status: string;
+    revision: number;
+    activeSliceRunId?: string | null;
+    limits: Record<string, number>;
+    metrics?: Record<string, number>;
+    lastErrorCode?: string;
+    replanRequired?: boolean;
+    units: Record<
+      string,
+      { status: string; siteId: string; committedPages: number }
+    >;
+  };
+};
 export type CollectionQuality = {
   uniqueRecords: number;
   bodyVerified: number;

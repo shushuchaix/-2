@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { ApiClient, RunEvent, Scope } from "../../lib/types";
 import { useQuery, useOperation } from "../../lib/hooks";
 import { useVersionContext } from "../../app/VersionContext";
+import { useCollectionActivity } from "../../app/CollectionContext";
 import { buildHash } from "../../app/router";
 import { RunOptions } from "./RunOptions";
 import { RunSummary } from "./RunSummary";
-import {
-  CollectionProgress,
-  type CollectionActivity,
-} from "./CollectionProgress";
+import { CollectionProgress } from "./CollectionProgress";
 import { getPendingStart, startRunOnce } from "./pending-start";
 import { Button } from "../../components/ui/button";
 import {
@@ -70,44 +68,13 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
   const op = useOperation(),
     cancel = useOperation();
   const connecting = useRef(false);
-  const [activity, setActivity] = useState<CollectionActivity | null>(null),
-    [activityError, setActivityError] = useState<unknown>(null),
-    [activityLoading, setActivityLoading] = useState(!!ctx.scope);
-  useEffect(() => {
-    setActivity(null);
-    setActivityError(null);
-    setActivityLoading(!!ctx.scope);
-    if (!ctx.scope || ctx.loading || ctx.error) return;
-    const scope = ctx.scope,
-      read = new AbortController();
-    let live = true,
-      busy = false;
-    const refresh = async () => {
-      if (busy) return;
-      busy = true;
-      try {
-        const result = await api.request<{
-          collections?: CollectionActivity[];
-        }>("/collections", { scope, signal: read.signal });
-        if (live) {
-          setActivity(result.collections?.[0] ?? null);
-          setActivityError(null);
-        }
-      } catch (e) {
-        if (live && !read.signal.aborted) setActivityError(e);
-      } finally {
-        busy = false;
-        if (live) setActivityLoading(false);
-      }
-    };
-    void refresh();
-    const timer = setInterval(() => void refresh(), 2000);
-    return () => {
-      live = false;
-      read.abort();
-      clearInterval(timer);
-    };
-  }, [api, ctx.generation, ctx.loading, ctx.error, run?.runId]);
+  const {
+    activity,
+    error: activityError,
+    loading: activityLoading,
+    refresh: refreshActivity,
+    adopt,
+  } = useCollectionActivity();
   const target = ctx.targets.find((t) => t.packageId === ctx.scope?.packageId);
   const [coverageMode, setCoverageMode] = useState("standard");
   useEffect(
@@ -221,6 +188,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
                       : "岗位更新失败，请查看运行日志",
             );
             query.refresh();
+            void refreshActivity();
           }
         },
       });
@@ -273,6 +241,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
       if (token !== generation.current) return;
       setUserKey("");
       setRun(created);
+      void refreshActivity();
       void connect(String(created.runId), scope);
     }, "检索任务已创建");
   }
@@ -391,7 +360,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
           userKey={userKey}
           onKeyUsed={() => setUserKey("")}
           onChanged={(next) => {
-            setActivity(next);
+            if (ctx.scope) adopt(next, ctx.scope);
             const id = next.collectionProgress.activeSliceRunId;
             if (id && ctx.scope) {
               setOutcome("");

@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import type { ApiClient, DesktopAdapter } from "../lib/types";
 import { VersionProvider, useVersionContext } from "./VersionContext";
+import { CollectionProvider, useCollectionActivity } from "./CollectionContext";
+import { deriveActivityView } from "../features/workbench/activity-view";
 import { parseRoute, buildHash, type Page } from "./router";
 import {
   SidebarProvider,
@@ -72,6 +74,8 @@ const navigation: { label: string; items: [Page, string, LucideIcon][] }[] = [
 function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
   const version = useVersionContext();
+  const collection = useCollectionActivity();
+  const activityView = deriveActivityView(collection.activity, null);
   useEffect(() => {
     const sync = () => setRoute(parseRoute(window.location.hash));
     window.addEventListener("hashchange", sync);
@@ -170,6 +174,29 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
             </p>
           </div>
           <TargetPicker />
+          <section
+            aria-label="当前版本任务"
+            className="w-full text-sm text-muted-foreground"
+          >
+            {version.allTargets
+              ? "全部目标只读汇总"
+              : !version.scope
+                ? "选择目标版本后查看任务"
+                : collection.loading && !collection.activity
+                  ? "正在读取任务…"
+                  : activityView.label}
+            {collection.error && (
+              <span role="status">
+                {" "}
+                · 任务读取失败
+                {collection.lastFetchedAt
+                  ? "，保留最后成功读取的状态（" +
+                    new Date(collection.lastFetchedAt).toLocaleTimeString() +
+                    "）"
+                  : ""}
+              </span>
+            )}
+          </section>
         </header>
         <section
           id="main-content"
@@ -205,7 +232,9 @@ export function App(props: { api: ApiClient; desktop: DesktopAdapter }) {
     <CSPProvider disableStyleElements>
       <TooltipProvider>
         <VersionProvider api={props.api}>
-          <Shell {...props} />
+          <CollectionProvider api={props.api}>
+            <Shell {...props} />
+          </CollectionProvider>
         </VersionProvider>
         <Toaster />
       </TooltipProvider>

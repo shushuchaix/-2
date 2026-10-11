@@ -18,6 +18,25 @@ export const desktopPages = Object.freeze([
 ]);
 export const desktopWidths = Object.freeze([1440, 1024, 768, 375]);
 
+export function desktopNavigationMatches(width, { links, toggle }) {
+  return width <= 768 ? toggle && links === 0 : links === 9;
+}
+
+export async function withDesktopKeyboardFocus(debuggerApi, verify) {
+  const attachedHere = !debuggerApi.isAttached();
+  if (attachedHere) debuggerApi.attach("1.3");
+  try {
+    await debuggerApi.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
+    return await verify();
+  } finally {
+    try {
+      await debuggerApi.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: false });
+    } finally {
+      if (attachedHere) debuggerApi.detach();
+    }
+  }
+}
+
 export function validateDesktopMatrix(screenshots, dpr) {
   const issues = [], keys = new Set();
   for (const shot of screenshots.filter(shot => shot.matrix === true)) {
@@ -96,11 +115,11 @@ export function inspectDesktopUi(contrast) {
     if (field || hasBorder) boundaries.push({ label:label(el), fillRatio, borderRatio, required:3, ok:Math.max(fillRatio,borderRatio)+0.001>=3 });
     if (fillRatio>=3) { tested.delete(el); text(el,'primary'); }
   }
-  const icons=[...document.querySelectorAll('[data-slot=button] svg,[data-slot=sidebar-trigger] svg')].filter(el=>shown(el)&&!el.closest(':disabled')).map(el=>{
+  const icons=[...document.querySelectorAll('[data-slot=button] svg,[data-slot=sidebar-trigger] svg,[data-slot=sheet-close] svg,[data-slot=dialog-close] svg')].filter(el=>shown(el)&&!el.closest(':disabled')).map(el=>{
     const bg=background(el),fg=blend(rgba(getComputedStyle(el).color),bg),ratio=contrast(fg,bg);
     return {label:label(el.closest('button,a')||el),ratio,required:3,ok:ratio+0.001>=3};
   });
-  const hitTargets = [...document.querySelectorAll('[role=tab],[data-slot=button],[data-slot=sidebar-trigger],[data-slot=sidebar-menu-button],[data-slot=select-trigger]')]
+  const hitTargets = [...document.querySelectorAll('[role=tab],[data-slot=button],[data-slot=sidebar-trigger],[data-slot=sidebar-menu-button],[data-slot=select-trigger],[data-slot=sheet-close],[data-slot=dialog-close]')]
     .filter(shown).map(el => ({ label:label(el), ...rectangle(el), ok:el.getBoundingClientRect().width>=43.5 && el.getBoundingClientRect().height>=43.5 }));
   const tables = [...document.querySelectorAll('table')].filter(shown).map(el => {
     let container = el.parentElement;
@@ -112,6 +131,11 @@ export function inspectDesktopUi(contrast) {
     return { label:label(el), ...r, ok:r.left>=-1 && r.right<=innerWidth+1 && r.top>=-1 && r.bottom<=innerHeight+1 };
   });
   const active = document.activeElement;
+  const focusState = { documentFocused:document.hasFocus(), active:active ? {
+    tag:active.tagName, label:label(active), slot:active.getAttribute('data-slot'),
+    visible:shown(active), focusVisible:active.matches(':focus-visible'),
+    focusGuard:active.hasAttribute('data-base-ui-focus-guard'), ...rectangle(active),
+  } : null };
   let focus;
   if (active && shown(active) && active.matches(':focus-visible')) {
     const style = getComputedStyle(active), outside=background(active.parentElement);
@@ -119,7 +143,7 @@ export function inspectDesktopUi(contrast) {
     focus={ label:label(active), ratio, outlineWidth:style.outlineWidth, outlineStyle:style.outlineStyle, ok:parseFloat(style.outlineWidth)>0 && style.outlineStyle!=='none' && ratio+0.001>=3 };
   }
   return { actualWidth:innerWidth, dpr:devicePixelRatio, scrollWidth:document.documentElement.scrollWidth,
-    overflow:document.documentElement.scrollWidth>innerWidth+1, samples, boundaries, icons, hitTargets, tables, popups, focus,
+    overflow:document.documentElement.scrollWidth>innerWidth+1, samples, boundaries, icons, hitTargets, tables, popups, focus, focusState,
     reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches };
 }
 function checkParents(directory) {
@@ -1047,7 +1071,7 @@ export async function runWorkspaceSelfTest({
           await delay(80);
           const geometry=await audit(label+" / "+width+"px");
           const nav=await js(`({links:[...document.querySelectorAll('nav a')].filter(${visible}).length,toggle:Boolean(${locate("切换导航")})})`);
-          observe(label+"：实际视口导航断点",geometry.actualWidth<768 ? nav.toggle && nav.links===0 : nav.links===9,{...nav,actualWidth:geometry.actualWidth});
+          observe(label+"：实际视口导航断点",desktopNavigationMatches(geometry.actualWidth,nav),{...nav,actualWidth:geometry.actualWidth});
           await capture(`matrix-${page}-${width}-${String(geometry.dpr).replace('.','_')}.png`,{matrix:true,sizing});
         }
       }
@@ -1079,7 +1103,7 @@ export async function runWorkspaceSelfTest({
           const scrollable=[dialog,...dialog.querySelectorAll('*')].filter(el=>['auto','scroll'].includes(getComputedStyle(el).overflowY));
           scrollable.forEach(el=>el.scrollTop=el.scrollHeight);
           const last=[...dialog.querySelectorAll('p,dd')].filter(shown).at(-1);
-          const focus=[...dialog.querySelectorAll('button,a[href],[tabindex="0"]')].filter(el=>shown(el)&&!el.getAttribute('aria-label')?.startsWith('关闭')).at(-1);
+          const focus=[...dialog.querySelectorAll('button,a[href],[tabindex="0"]')].filter(el=>shown(el)&&!el.matches('[data-slot=sheet-close],[data-slot=dialog-close]')&&!el.getAttribute('aria-label')?.startsWith('关闭')).at(-1);
           const uncovered=el=>{el.scrollIntoView({block:'end'});const r=el.getBoundingClientRect(),x=Math.max(1,Math.min(innerWidth-1,r.left+r.width/2)),y=Math.max(1,Math.min(innerHeight-1,r.top+r.height/2)),top=document.elementFromPoint(x,y);return {label:el.textContent.trim().slice(0,80),top:r.top,bottom:r.bottom,ok:r.top>=-1&&r.bottom<=innerHeight+1&&Boolean(top&&(el.contains(top)||top.contains(el)))};};
           const content=last?uncovered(last):null;
           if(focus)focus.focus();
@@ -1087,13 +1111,17 @@ export async function runWorkspaceSelfTest({
           return {content,active,scrollContainers:scrollable.length,stickyActions:[...dialog.querySelectorAll('*')].filter(el=>['sticky','fixed'].includes(getComputedStyle(el).position)).length};
         })()`);
         check("底部操作不遮挡最后内容与焦点",scrollEnd.content?.ok && scrollEnd.active?.ok,scrollEnd);
-        window.webContents.focus();
-        window.webContents.sendInputEvent({type:"keyDown",keyCode:"Tab"});
-        window.webContents.sendInputEvent({type:"keyUp",keyCode:"Tab"});
-        await delay(50);
-        const keyboard=await audit("375px 键盘焦点");
-        check("真实键盘焦点有可读边界",Boolean(keyboard.focus?.ok),keyboard.focus);
-        await capture("job-detail-scroll-end.png",{scenario:"底部内容与焦点"});
+        await withDesktopKeyboardFocus(window.webContents.debugger,async()=>{
+          await js("window.__rjrKeyboardEvent=null;document.addEventListener('keydown',event=>{window.__rjrKeyboardEvent={key:event.key,isTrusted:event.isTrusted};},{once:true,capture:true})");
+          window.webContents.focus();
+          window.webContents.sendInputEvent({type:"keyDown",keyCode:"Tab"});
+          window.webContents.sendInputEvent({type:"keyUp",keyCode:"Tab"});
+          await delay(80);
+          const keyboard=await audit("375px 键盘焦点");
+          const event=await js("window.__rjrKeyboardEvent");
+          await capture("job-detail-scroll-end.png",{scenario:"底部内容与焦点"});
+          check("真实键盘焦点有可读边界",Boolean(keyboard.focusState.documentFocused && event?.key==='Tab' && event.isTrusted && keyboard.focus?.ok),{focus:keyboard.focus,focusState:keyboard.focusState,event});
+        });
         await escaped();
         await wait("![...document.querySelectorAll('[role=dialog]')].some(el=>el.getClientRects().length&&!el.hasAttribute('data-closed'))");
         check("岗位详情 Esc 关闭并归还触发按钮焦点",await js("document.activeElement===window.__rjrReturnFocus"));

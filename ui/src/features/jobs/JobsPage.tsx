@@ -293,7 +293,7 @@ export function JobsPage({ api }: { api: ApiClient }) {
                 const updatedAt = applicationUpdatedAt(row.application);
                 return (
                   <TableRow key={row.jobId + row.ownerPackageId}>
-                    <TableCell className="max-w-80 whitespace-normal">
+                    <TableCell className="min-w-52 max-w-80 whitespace-normal">
                       <p className="font-semibold">{f.title}</p>
                       <p className="text-sm text-muted-foreground">
                         {f.organization ?? f.company ?? "单位待核实"}

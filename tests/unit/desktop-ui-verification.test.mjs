@@ -17,6 +17,40 @@ const report = dpr => ({
 });
 
 const pages = ['workbench','jobs','applications','profiles','targets','sources','logs','trash','settings'];
+test("navigation keeps 768px in the drawer range and switches at 769px", () => {
+  for (const width of [374, 375, 376, 768]) {
+    assert.equal(desktop.desktopNavigationMatches(width, { links: 0, toggle: true }), true);
+    assert.equal(desktop.desktopNavigationMatches(width, { links: 9, toggle: false }), false);
+  }
+  for (const width of [769, 1024, 1440]) {
+    assert.equal(desktop.desktopNavigationMatches(width, { links: 9, toggle: false }), true);
+    assert.equal(desktop.desktopNavigationMatches(width, { links: 0, toggle: true }), false);
+  }
+});
+
+test("offscreen keyboard focus restores emulation and debugger ownership even when verification fails", async () => {
+  for (const attached of [false, true]) {
+    const calls = [];
+    const debuggerApi = {
+      isAttached: () => attached,
+      attach: version => calls.push(["attach", version]),
+      detach: () => calls.push(["detach"]),
+      sendCommand: async (command, options) => calls.push([command, options.enabled]),
+    };
+    const failure = Error("focus audit failed");
+    await assert.rejects(desktop.withDesktopKeyboardFocus(debuggerApi, async () => {
+      assert.deepEqual(calls.at(-1), ["Emulation.setFocusEmulationEnabled", true]);
+      throw failure;
+    }), error => error === failure);
+    assert.deepEqual(calls, [
+      ...(!attached ? [["attach", "1.3"]] : []),
+      ["Emulation.setFocusEmulationEnabled", true],
+      ["Emulation.setFocusEmulationEnabled", false],
+      ...(!attached ? [["detach"]] : []),
+    ]);
+  }
+});
+
 function matrix(dpr) {
   return pages.flatMap(page => [1440,1024,768,375].map(width => ({ page, width, actualWidth: width, dpr, file: `${page}-${width}.png`, matrix: true })));
 }

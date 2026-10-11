@@ -280,7 +280,7 @@ export function SourcesPage({
       )}
       <OperationFeedback error={error} />
       <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 basis-full sm:basis-auto sm:flex-1">
           <TextField
             name="source-search"
             label="搜索来源"

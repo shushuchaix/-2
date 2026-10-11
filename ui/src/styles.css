@@ -112,6 +112,8 @@
     touch-action: manipulation;
   }
   [data-slot="button"],
+  [data-slot="sheet-close"],
+  [data-slot="dialog-close"],
   [data-slot="select-trigger"],
   [data-slot="input"],
   [data-slot="sidebar-menu-button"],
@@ -282,6 +284,8 @@
   background: var(--sidebar-accent-foreground);
 }
 [data-slot="button"],
+[data-slot="sheet-close"],
+[data-slot="dialog-close"],
 [data-slot="select-trigger"],
 [data-slot="input"],
 [data-slot="sidebar-trigger"],
@@ -289,8 +293,18 @@
   transition-duration: var(--workspace-motion-duration);
 }
 [data-slot="button"],
+[data-slot="sheet-close"],
+[data-slot="dialog-close"],
 [data-slot="sidebar-trigger"] {
   min-width: 44px;
+}
+[data-slot="sheet-content"]:has(> [data-slot="sheet-close"])
+  [data-slot="sheet-header"] {
+  padding-inline-end: 64px;
+}
+[data-slot="dialog-content"]:has(> [data-slot="dialog-close"])
+  [data-slot="dialog-header"] {
+  padding-inline-end: 44px;
 }
 [data-slot="toast"] {
   transition-duration: var(--workspace-motion-duration);

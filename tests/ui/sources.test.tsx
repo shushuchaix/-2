@@ -791,3 +791,44 @@ test("unconfigured and bounded probe issues use readable labels in cards and det
     /template_not_configured|candidate_not_verified|page_limit_reached/,
   );
 });
+
+test("list samples do not claim verified content when the body remains unverified", async (t) => {
+  const data = {
+    sources: [
+      {
+        sourceId: "school",
+        name: "正文高校",
+        config: { enabled: true },
+        health: [
+          {
+            siteId: "body-pending",
+            status: "parse_error",
+            checkedAt: "2026-10-11T12:00:00Z",
+            sampleCount: 1,
+            capabilities: { list: "verified", body: "unverified" },
+            issues: [{ code: "body_unverified" }],
+          },
+        ],
+      },
+    ],
+    sites: [
+      {
+        siteId: "body-pending",
+        providerId: "school",
+        name: "正文目录",
+        status: "ready",
+        origin: "https://example.org/jobs",
+      },
+    ],
+  };
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => (p === "/sources" ? data : syntheticApi(p, o)),
+  });
+  await openSource(f, "正文高校");
+  const site = f.screen.getByRole("region", { name: "正文目录站点探针" });
+  assert.ok(within(site).getByText("列表样本：1 条"));
+  assert.equal(within(site).queryByText(/有效样本：1/), null);
+  assert.ok(within(site).getByText("页面结构无法解析"));
+  assert.ok(within(site).getByText("正文待验证"));
+});

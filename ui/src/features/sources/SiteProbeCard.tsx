@@ -86,7 +86,7 @@ export function SiteProbeCard({
       </p>
       {current?.sampleCount != null && (
         <p>
-          有效样本：{current.sampleCount} 条
+          列表样本：{current.sampleCount} 条
           {current.truncated ? " · 检查范围受限" : ""}
         </p>
       )}

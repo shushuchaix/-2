@@ -37,6 +37,57 @@ export async function withDesktopKeyboardFocus(debuggerApi, verify) {
   }
 }
 
+export async function withDesktopResponses(debuggerApi, origin, pathname, verify) {
+  // This probe owns its CDP session so disabling Network cannot disturb another
+  // observer. It observes response metadata, never response bodies or headers.
+  if (debuggerApi.isAttached()) throw Error("self_test_debugger_busy");
+  const responses = [];
+  const listener = (_event, method, params) => {
+    if (method !== "Network.responseReceived") return;
+    try {
+      const url = new URL(params.response.url);
+      if (url.origin === origin && url.pathname === pathname)
+        responses.push({ status: params.response.status, requestId: params.requestId });
+    } catch {}
+  };
+  debuggerApi.attach("1.3");
+  debuggerApi.on("message", listener);
+  try {
+    await debuggerApi.sendCommand("Network.enable");
+    return await verify(responses);
+  } finally {
+    debuggerApi.removeListener("message", listener);
+    try {
+      await debuggerApi.sendCommand("Network.disable");
+    } finally {
+      debuggerApi.detach();
+    }
+  }
+}
+
+// Run in Chromium before measuring geometry, including toast roots. Wait for
+// finite entering/exiting transitions and stable frames without changing CSS.
+export async function settleDesktopPopups() {
+  const started = performance.now();
+  let previous, stable = 0, frames = 0;
+  for (;;) {
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    frames++;
+    const popups = [...document.querySelectorAll('[role=dialog],[role=alertdialog],[role=listbox],[role=menu]')]
+      .filter(el => el.getClientRects().length && !el.closest('[data-closed],[inert],[aria-hidden=true]'));
+    const animating = popups.some(el => el.getAnimations({ subtree: true }).some(animation =>
+      ['running','pending'].includes(animation.playState) && Number.isFinite(animation.effect?.getComputedTiming().endTime)));
+    const geometry = JSON.stringify(popups.map(el => {
+      const r = el.getBoundingClientRect();
+      return [r.left,r.top,r.right,r.bottom].map(value => Math.round(value * 1000) / 1000);
+    }));
+    stable = !animating && geometry === previous ? stable + 1 : 0;
+    if (stable >= 2) return { frames, elapsedMs: performance.now() - started, popupCount: popups.length };
+    if (performance.now() - started > 2000) throw Error("self_test_popup_animation_timeout");
+    previous = geometry;
+  }
+}
+
 export function validateDesktopMatrix(screenshots, dpr) {
   const issues = [], keys = new Set();
   for (const shot of screenshots.filter(shot => shot.matrix === true)) {
@@ -70,6 +121,17 @@ export function inspectDesktopUi(contrast) {
   const shown = el => el.getClientRects().length > 0 &&
     !el.closest('[data-closed],[inert],[aria-hidden=true]') &&
     getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).opacity !== '0';
+  const iconShown = el => {
+    if (!el.getClientRects().length) return false;
+    for (let node=el; node; node=node.parentElement) {
+      // Decorative SVGs remain painted even when hidden from the accessibility tree.
+      if (node.matches('[hidden],[data-closed],[inert]') ||
+          (node!==el && node.getAttribute('aria-hidden')==='true')) return false;
+      const style=getComputedStyle(node);
+      if (style.display==='none' || ['hidden','collapse'].includes(style.visibility) || style.opacity==='0') return false;
+    }
+    return true;
+  };
   const label = el => (el.getAttribute('aria-label') || el.textContent || el.id || el.tagName).trim().slice(0,80);
   const rectangle = el => {
     const r = el.getBoundingClientRect();
@@ -115,7 +177,7 @@ export function inspectDesktopUi(contrast) {
     if (field || hasBorder) boundaries.push({ label:label(el), fillRatio, borderRatio, required:3, ok:Math.max(fillRatio,borderRatio)+0.001>=3 });
     if (fillRatio>=3) { tested.delete(el); text(el,'primary'); }
   }
-  const icons=[...document.querySelectorAll('[data-slot=button] svg,[data-slot=sidebar-trigger] svg,[data-slot=sheet-close] svg,[data-slot=dialog-close] svg')].filter(el=>shown(el)&&!el.closest(':disabled')).map(el=>{
+  const icons=[...document.querySelectorAll('[data-slot=button] svg,[data-slot=sidebar-trigger] svg,[data-slot=sheet-close] svg,[data-slot=dialog-close] svg')].filter(el=>iconShown(el)&&!el.closest(':disabled')).map(el=>{
     const bg=background(el),fg=blend(rgba(getComputedStyle(el).color),bg),ratio=contrast(fg,bg);
     return {label:label(el.closest('button,a')||el),ratio,required:3,ok:ratio+0.001>=3};
   });
@@ -423,8 +485,9 @@ export async function runWorkspaceSelfTest({
     screenshots.push({page,width:requestedWidth,actualWidth:geometry.actualWidth,dpr:geometry.dpr,file,...extra});
   };
   const audit = async (label) => {
+    const settled=await js(`(${settleDesktopPopups.toString()})()`);
     const value=await js(`(${inspectDesktopUi.toString()})(${desktopContrastRatio.toString()})`);
-    visualAudits.push({page:lastPage,width:requestedWidth,label,...value});
+    visualAudits.push({page:lastPage,width:requestedWidth,label,settled,...value});
     observe(label+"：页面无横向溢出",!value.overflow,{actualWidth:value.actualWidth,scrollWidth:value.scrollWidth});
     observe(label+"：文字对比度符合 4.5/3",value.samples.length>0 && value.samples.every(sample=>sample.ok),{sampleCount:value.samples.length,failures:value.samples.filter(sample=>!sample.ok)});
     observe(label+"：必要控件边界对比度至少 3",value.boundaries.every(sample=>sample.ok),{sampleCount:value.boundaries.length,failures:value.boundaries.filter(sample=>!sample.ok)});
@@ -1095,7 +1158,8 @@ export async function runWorkspaceSelfTest({
         await click("查看岗位");
         await wait(textHas("辅助评分：100 分"));
         check("高分不隐藏待核验时效与投递入口",(await js(textHas("招聘时效待核验"))) && (await js(textHas("投递入口待核验"))) && !(await js(`Boolean(${locate("前往投递")})`)));
-        await audit("375px 高分低证据详情");
+        const detailAudit=await audit("375px 高分低证据详情");
+        check("岗位详情实际图标样本非空",detailAudit.icons.length>0,{sampleCount:detailAudit.icons.length});
         await capture("job-high-score-low-evidence.png",{scenario:"高分低证据"});
         const scrollEnd=await js(`(()=>{
           const dialog=[...document.querySelectorAll('[role=dialog]')].find(el=>(${visible})(el));
@@ -1111,6 +1175,7 @@ export async function runWorkspaceSelfTest({
           return {content,active,scrollContainers:scrollable.length,stickyActions:[...dialog.querySelectorAll('*')].filter(el=>['sticky','fixed'].includes(getComputedStyle(el).position)).length};
         })()`);
         check("底部操作不遮挡最后内容与焦点",scrollEnd.content?.ok && scrollEnd.active?.ok,scrollEnd);
+        await capture("job-detail-scroll-end-content.png",{scenario:"Tab 前的底部内容"});
         await withDesktopKeyboardFocus(window.webContents.debugger,async()=>{
           await js("window.__rjrKeyboardEvent=null;document.addEventListener('keydown',event=>{window.__rjrKeyboardEvent={key:event.key,isTrusted:event.isTrusted};},{once:true,capture:true})");
           window.webContents.focus();
@@ -1149,11 +1214,13 @@ export async function runWorkspaceSelfTest({
         text:"合成修改修订简历正文，本科消防工程专业，2027届，具有课程项目和机场应急管理的合成经历。",
         profile:{major:"消防工程",education:"本科",graduationYear:2027},
       });
-      await js(`(()=>{window.__rjrPurgeStatuses=[];const originalFetch=window.fetch;window.__rjrOriginalFetch=originalFetch;window.fetch=async(...args)=>{const response=await originalFetch(...args);if(new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname==='/api/v2/trash/purge')window.__rjrPurgeStatuses.push(response.status);return response;};})()`);
       try {
+        await withDesktopResponses(window.webContents.debugger,origin,"/api/v2/trash/purge",async responses=>{
         await click("确认永久删除");
         await wait(textHas("回收站内容已变化，请关闭并重新预览"));
-        check("真实 409 禁止旧预览重复提交",(await js("window.__rjrPurgeStatuses.includes(409)")) && (await js("[...document.querySelectorAll('[role=alertdialog] button')].find(el=>el.textContent.trim()==='确认永久删除')?.disabled===true")));
+        for(let attempt=0;!responses.some(response=>response.status===409)&&attempt<100;attempt++) await delay(20);
+        const disabled=await js("[...document.querySelectorAll('[role=alertdialog] button')].find(el=>el.textContent.trim()==='确认永久删除')?.disabled===true");
+        check("真实 409 禁止旧预览重复提交",responses.some(response=>response.status===409) && disabled,{responses,disabled});
         check("409 未删除合成候选包",(await context.repository.read()).packages[candidate.packageId]?.state==='trashed');
         await trace("conflict","永久删除预览失效",{status:409});
         await capture("trash-preview-409.png",{scenario:"409 预览失效"});
@@ -1163,8 +1230,8 @@ export async function runWorkspaceSelfTest({
         await click("确认永久删除");
         await wait(textHas("永久删除完成"));
         check("重新预览后清理所选包",!(await context.repository.read()).packages[candidate.packageId]);
+        });
       } finally {
-        await js("window.fetch=window.__rjrOriginalFetch;delete window.__rjrOriginalFetch");
         await resizeViewport(1440);
       }
     });

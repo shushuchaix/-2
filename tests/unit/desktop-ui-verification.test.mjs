@@ -4,6 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
+import vm from "node:vm";
+import { createApiClient } from "../../public/js/api.js";
 import { createTempDir } from "../helpers/fixtures.mjs";
 import * as desktop from "../../electron/self-test.mjs";
 
@@ -49,6 +52,68 @@ test("offscreen keyboard focus restores emulation and debugger ownership even wh
       ...(!attached ? [["detach"]] : []),
     ]);
   }
+});
+
+test("a late fetch wrapper cannot observe a request from an already-created API client", async () => {
+  const original = globalThis.fetch;
+  let transportCalls = 0, wrapperCalls = 0;
+  try {
+    globalThis.fetch = async () => {
+      transportCalls++;
+      return new Response(JSON.stringify({ code: "trash_preview_stale", message: "synthetic conflict" }), { status: 409, headers: { "content-type": "application/json" } });
+    };
+    const client = createApiClient();
+    const captured = globalThis.fetch;
+    globalThis.fetch = (...args) => { wrapperCalls++; return captured(...args); };
+    await assert.rejects(client.request("/trash/purge", { method: "POST", body: {} }));
+    assert.equal(transportCalls, 1);
+    assert.equal(wrapperCalls, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("native response observer filters origin and route, preserves other listeners, and cleans up on failure", async () => {
+  const debuggerApi = new EventEmitter(), calls = [];
+  debuggerApi.isAttached = () => false;
+  debuggerApi.attach = version => calls.push(["attach", version]);
+  debuggerApi.detach = () => calls.push(["detach"]);
+  debuggerApi.sendCommand = async command => calls.push([command]);
+  const unrelated = () => {};
+  debuggerApi.on("message", unrelated);
+  const failure = Error("synthetic check failure");
+  await assert.rejects(desktop.withDesktopResponses(debuggerApi, "http://127.0.0.1:1234", "/api/v2/trash/purge", async responses => {
+    for (const url of ["http://other.invalid/api/v2/trash/purge", "http://127.0.0.1:1234/api/v2/trash/preview", "http://127.0.0.1:1234/api/v2/trash/purge"]) {
+      debuggerApi.emit("message", {}, "Network.responseReceived", { requestId: "synthetic-id", response: { url, status: 409, headers: { private: "not retained" } } });
+    }
+    assert.deepEqual(responses, [{ requestId: "synthetic-id", status: 409 }]);
+    throw failure;
+  }), error => error === failure);
+  assert.deepEqual(calls, [["attach","1.3"],["Network.enable"],["Network.disable"],["detach"]]);
+  assert.deepEqual(debuggerApi.listeners("message"), [unrelated]);
+  debuggerApi.isAttached = () => true;
+  await assert.rejects(desktop.withDesktopResponses(debuggerApi, "http://127.0.0.1:1234", "/api/v2/trash/purge", () => assert.fail("must not borrow another debugger session")), /self_test_debugger_busy/);
+  assert.equal(calls.length, 4);
+});
+
+test("popup inspection waits for entering animations and stable frames, and rejects motion that never settles", async () => {
+  const run = (neverSettles = false) => {
+    let frame = 0;
+    const popup = {
+      getClientRects: () => [{}], closest: () => null,
+      getAnimations: () => [{ playState: neverSettles || frame < 4 ? "running" : "finished", effect: { getComputedTiming: () => ({ endTime: 150 }) } }],
+      getBoundingClientRect: () => ({ left: 16, top: 840, right: 344, bottom: frame < 4 ? 902.113 : 900 }),
+    };
+    return vm.runInNewContext(`(${desktop.settleDesktopPopups.toString()})()`, {
+      performance: { now: () => frame * (neverSettles ? 500 : 16) },
+      requestAnimationFrame: callback => { frame++; queueMicrotask(callback); },
+      document: { querySelectorAll: () => [popup] },
+    });
+  };
+  const result = await run();
+  assert.equal(result.frames, 6);
+  assert.equal(result.popupCount, 1);
+  await assert.rejects(run(true), /self_test_popup_animation_timeout/);
 });
 
 function matrix(dpr) {

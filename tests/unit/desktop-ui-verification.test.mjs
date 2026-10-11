@@ -20,6 +20,34 @@ const report = dpr => ({
 });
 
 const pages = ['workbench','jobs','applications','profiles','targets','sources','logs','trash','settings'];
+test("expiry clock scripts return cloneable values and restore the renderer clock", () => {
+  const source = fs.readFileSync(new URL("../../electron/self-test.mjs", import.meta.url), "utf8");
+  // Execute the actual native fixture expressions, including the IPC return value.
+  const setup = source.match(/await js\(`([^`]*__rjrOriginalDateNow[^`]*)`\)/)[1]
+    .replace('${clock.now()}', '1234');
+  const restore = source.match(/await js\("([^"\n]*__rjrOriginalDateNow[^"\n]*)"\)/)[1];
+  const original = () => 99;
+  const renderer = vm.createContext({ window: {}, Date: { now: original } });
+  // A failed setup may leave no saved clock; cleanup must still preserve Date.now.
+  assert.doesNotThrow(() => structuredClone(vm.runInContext(restore, renderer)));
+  assert.equal(renderer.Date.now, original);
+  try {
+    const result = vm.runInContext(setup, renderer);
+    assert.doesNotThrow(() => structuredClone(result), "executeJavaScript must not return a function");
+    assert.equal(vm.runInContext("Date.now()", renderer), 1234);
+  } finally {
+    assert.doesNotThrow(() => structuredClone(vm.runInContext(restore, renderer)));
+    assert.equal(renderer.Date.now, original);
+    assert.equal(Object.hasOwn(renderer.window, "__rjrOriginalDateNow"), false);
+    assert.equal(Object.hasOwn(renderer.window, "__rjrRendererNow"), false);
+  }
+  const rememberFocus = source.match(/await js\(`([^`]*__rjrReturnFocus[^`]*)`\)/)[1]
+    .replace('${locate("查看岗位")}', 'window.syntheticElement');
+  renderer.window.syntheticElement = { focus() {} };
+  assert.doesNotThrow(() => structuredClone(vm.runInContext(rememberFocus, renderer)));
+  assert.equal(renderer.window.__rjrReturnFocus, renderer.window.syntheticElement);
+});
+
 test("navigation keeps 768px in the drawer range and switches at 769px", () => {
   for (const width of [374, 375, 376, 768]) {
     assert.equal(desktop.desktopNavigationMatches(width, { links: 0, toggle: true }), true);

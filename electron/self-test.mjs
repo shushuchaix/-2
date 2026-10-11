@@ -1154,7 +1154,7 @@ export async function runWorkspaceSelfTest({
         await context.repository.mutateWorkspace(w=>{w.evaluations[syntheticId]={...saved,evaluationId:syntheticId,recordId:randomUUID(),score:100,createdAt:new Date(clock.now()+60000).toISOString()};});
         await resizeViewport(375);
         await navigate("岗位库");
-        await js(`window.__rjrReturnFocus=${locate("查看岗位")}`);
+        await js(`void(window.__rjrReturnFocus=${locate("查看岗位")})`);
         await click("查看岗位");
         await wait(textHas("辅助评分：100 分"));
         check("高分不隐藏待核验时效与投递入口",(await js(textHas("招聘时效待核验"))) && (await js(textHas("投递入口待核验"))) && !(await js(`Boolean(${locate("前往投递")})`)));
@@ -1245,8 +1245,8 @@ export async function runWorkspaceSelfTest({
       await context.trashService.archive({packageId:candidate.packageId});
       const deadline=Date.parse((await context.repository.read()).packages[candidate.packageId].purgeAt);
       clock.advance(Math.max(0,deadline-clock.now()-1000));
-      await js(`window.__rjrOriginalDateNow=Date.now;window.__rjrRendererNow=${clock.now()};Date.now=()=>window.__rjrRendererNow`);
       try {
+        await js(`(()=>{window.__rjrOriginalDateNow=Date.now;window.__rjrRendererNow=${clock.now()};Date.now=()=>window.__rjrRendererNow;})()`);
         await navigate("回收站");
         await click("查看内容"+candidate.versionName);
         await wait("Boolean(document.querySelector('[aria-label=版本内容摘要]'))");
@@ -1264,7 +1264,7 @@ export async function runWorkspaceSelfTest({
         check("界面到期合成包由既有服务清理",!(await context.repository.read()).packages[candidate.packageId]);
         await navigate("设置");
       } finally {
-        await js("Date.now=window.__rjrOriginalDateNow;delete window.__rjrOriginalDateNow;delete window.__rjrRendererNow");
+        await js("(()=>{if(typeof window.__rjrOriginalDateNow==='function')Date.now=window.__rjrOriginalDateNow;delete window.__rjrOriginalDateNow;delete window.__rjrRendererNow;})()");
       }
     });
     await phase("减少动效仍显示正常合成数据",async()=>{

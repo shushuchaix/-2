@@ -7,13 +7,13 @@ import { OperationFeedback } from "../../components/OperationFeedback";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import type { SourceSite, SourceHealth } from "./SiteDialog";
-import { sourceStatusLabels } from "./source-view";
+import {
+  sourceStatusLabels,
+  probeStatus,
+  sourceIssueLabel,
+} from "./source-view";
 import { formatDate } from "../../../../public/js/format.js";
 
-const issueLabels: Record<string, string> = {
-  content_non_json: "返回 HTML 等非 JSON 内容，无法按接口格式读取",
-  login_required: "认证受限，需要登录后读取",
-};
 export function SiteProbeCard({
   api,
   sourceId,
@@ -45,15 +45,25 @@ export function SiteProbeCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3>{site.name}</h3>
         <Badge variant="outline">
-          {sourceStatusLabels[current?.status || site.status || "unknown"] ||
-            "状态待检查"}
+          {sourceStatusLabels[probeStatus(current)] || "状态待检查"}
         </Badge>
       </div>
+      <p className="text-sm text-muted-foreground">
+        目录状态：{site.status === "candidate" ? "候选，待检查" : "已收录"}
+      </p>
       <p className="break-all text-muted-foreground">
         {site.origin || "未提供公开地址"}
       </p>
-      <p>本次尝试：{formatDate(current?.checkedAt)}</p>
-      <p>最近成功：{formatDate(current?.lastSuccessAt || site.verifiedAt)}</p>
+      <p>
+        本次尝试：{formatDate(current?.lastAttemptAt || current?.checkedAt)}
+      </p>
+      <p>
+        最近成功：
+        {formatDate(
+          current?.lastSuccessAt ||
+            (probeStatus(current) === "ready" ? current?.checkedAt : undefined),
+        )}
+      </p>
       <p className="text-sm">
         {Object.entries({
           list: "列表",
@@ -88,13 +98,7 @@ export function SiteProbeCard({
       />
       {current?.issues?.map((issue, i) => (
         <p key={i}>
-          {issueLabels[issue.code || ""] ||
-            issue.message ||
-            issue.code ||
-            "检查遇到问题"}
-          {issueLabels[issue.code || ""] &&
-            issue.message &&
-            "：" + issue.message}
+          {sourceIssueLabel(issue)}
           {issue.diagnosticId && (
             <a
               className="ml-2 text-primary underline"
@@ -129,9 +133,7 @@ export function SiteProbeCard({
               lastSuccessAt:
                 result.status === "ready"
                   ? result.checkedAt
-                  : result.lastSuccessAt ||
-                    current?.lastSuccessAt ||
-                    site.verifiedAt,
+                  : result.lastSuccessAt || current?.lastSuccessAt,
             };
             setCurrent(next);
             onHealth(next);

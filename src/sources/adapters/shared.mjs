@@ -1,4 +1,5 @@
 import { assertSourceRecord } from "../../domain/contracts.mjs";
+import { normalizeSourceStatus } from "../source-status.mjs";
 import { recordDiagnostic } from "../../infrastructure/diagnostics/log.mjs";
 import { parseHTML } from "linkedom";
 import { validatePublicUrl } from "../../infrastructure/http/public-url.mjs";
@@ -532,17 +533,20 @@ export function createPagedProvider({
       return {
         sourceId: id,
         siteId: ctx.sites?.[0]?.siteId || id,
-        status: ready
-          ? "ready"
-          : result.issues.some((e) =>
-                ["restricted", "captcha"].includes(e.code),
-              )
-            ? "restricted"
-            : result.issues.length
-              ? "unavailable"
-              : result.records.length
-                ? "parse_error"
-                : "empty",
+        status: normalizeSourceStatus({
+          status: ready
+            ? "ready"
+            : result.issues.some((e) =>
+                  ["restricted", "captcha"].includes(e.code),
+                )
+              ? "restricted"
+              : result.issues.length
+                ? "unavailable"
+                : result.records.length
+                  ? "parse_error"
+                  : "empty",
+          issues: result.issues,
+        }),
         sampleCount: result.records.length,
         checkedAt: new Date().toISOString(),
         issues: result.issues,

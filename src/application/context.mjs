@@ -26,6 +26,7 @@ import { createJobVerificationService } from "./job-verification-service.mjs";
 import { createJobCleanupService } from "./job-cleanup-service.mjs";
 import { createEvaluationService } from "./evaluation-service.mjs";
 import { createSourceService } from "./source-service.mjs";
+import { projectSourceHealth } from "./source-health-projection.mjs";
 import { createImportService } from "./import-service.mjs";
 import { createExportService } from "./export-service.mjs";
 import { createRunService } from "./run-service.mjs";
@@ -528,13 +529,14 @@ export async function createApplicationContext({
       });
     },
     async getCatalog() {
-      const w = await repository.read();
+      const w = await repository.read(),
+        health = projectSourceHealth(w, { registry });
       return (
         dependencies.catalog ||
         loadSiteCatalog({ customSites: w.settings.customSites })
       ).map((site) => ({
         ...site,
-        health: w.sourceHealth[site.providerId + "/" + site.siteId] || null,
+        health: health[site.providerId + "/" + site.siteId] || null,
       }));
     },
     async getSettings() {

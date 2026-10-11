@@ -70,7 +70,7 @@ export default createPagedProvider({
       };
     if (!template?.listUrl || !template.linkRule || !template.bodyRule) {
       const e = Error("Verified notice template required");
-      e.code = "parse_error";
+      e.code = "template_not_configured";
       throw e;
     }
     const listUrl = listLocation(site, ctx.cursor?.url || template.listUrl);

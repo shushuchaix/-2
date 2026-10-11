@@ -528,3 +528,266 @@ test("all-target sources read the shared directory without private activity or c
   );
   assert.equal(f.apiCalls.find((c) => c.path === "/sources")?.scope, undefined);
 });
+
+test("catalog readiness does not become probe evidence in source cards filters or details", async (t) => {
+  const data = {
+    sources: [
+      { sourceId: "school", name: "目录高校", config: { enabled: true } },
+    ],
+    sites: [
+      {
+        siteId: "listed",
+        providerId: "school",
+        name: "已收录目录",
+        status: "ready",
+        origin: "https://example.org/jobs",
+        verifiedAt: "2026-10-05T00:00:00Z",
+      },
+    ],
+  };
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => (p === "/sources" ? data : syntheticApi(p, o)),
+  });
+  const card = await f.screen.findByRole("region", {
+    name: "目录高校来源摘要",
+  });
+  assert.ok(within(card).getByText("1 个目录站点 · 0 个探针取得有效样本站点"));
+  assert.ok(within(card).getByText("暂无探针记录"));
+  const summary = f.screen.getByRole("region", { name: "来源状态摘要" });
+  assert.match(
+    within(summary).getByText("有有效样本探针记录").parentElement
+      ?.textContent || "",
+    /0 个来源/,
+  );
+  await f.user.click(f.screen.getByRole("combobox", { name: "来源探针状态" }));
+  assert.equal(
+    f.screen.queryByRole("option", { name: "最近探针取得有效样本" }),
+    null,
+  );
+  await f.user.click(
+    await f.screen.findByRole("option", { name: "暂无探针记录" }),
+  );
+  await openSource(f, "目录高校");
+  const site = f.screen.getByRole("region", { name: "已收录目录站点探针" });
+  assert.ok(within(site).getByText("暂无探针记录"));
+  assert.ok(within(site).getByText("目录状态：已收录"));
+  assert.ok(within(site).getByText("最近成功：未提供"));
+});
+
+test("legacy budget exhaustion describes an incomplete probe and shows the latest attempt", async (t) => {
+  const data = {
+    sources: [
+      {
+        sourceId: "school",
+        name: "额度高校",
+        config: { enabled: true },
+        health: [
+          {
+            siteId: "limited",
+            status: "unavailable",
+            checkedAt: "2026-10-08T12:00:00Z",
+            lastAttemptAt: "2026-10-11T12:00:00Z",
+            lastSuccessAt: "2026-10-07T12:00:00Z",
+            issues: [
+              {
+                code: "unavailable",
+                message: "budget_exhausted:requests",
+                diagnosticId: "d-budget",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    sites: [
+      {
+        siteId: "limited",
+        providerId: "school",
+        name: "额度目录",
+        status: "candidate",
+        origin: "https://example.org/jobs",
+      },
+    ],
+  };
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => (p === "/sources" ? data : syntheticApi(p, o)),
+  });
+  const card = await f.screen.findByRole("region", {
+    name: "额度高校来源摘要",
+  });
+  assert.ok(within(card).getByText("累计额度不足，检查未完成"));
+  assert.equal(
+    within(card).queryByText(/暂时不可访问|budget_exhausted:requests/),
+    null,
+  );
+  assert.match(
+    within(card).getByText(/最近探针：/).textContent || "",
+    /2026.*10.*11/,
+  );
+  await f.user.click(f.screen.getByRole("combobox", { name: "来源探针状态" }));
+  await f.user.click(
+    await f.screen.findByRole("option", { name: "累计额度不足，检查未完成" }),
+  );
+  await openSource(f, "额度高校");
+  const site = f.screen.getByRole("region", { name: "额度目录站点探针" });
+  assert.ok(within(site).getAllByText("累计额度不足，检查未完成").length);
+  assert.match(
+    within(site).getByText(/本次尝试：/).textContent || "",
+    /2026.*10.*11/,
+  );
+  assert.match(
+    within(site).getByText(/最近成功：/).textContent || "",
+    /2026.*10.*7/,
+  );
+  assert.equal(
+    within(site).queryByText(/暂时不可访问|budget_exhausted:requests/),
+    null,
+  );
+  assert.ok(within(site).getByRole("link", { name: "查看更新日志" }));
+});
+
+test("a budget issue does not hide an independent network failure", async (t) => {
+  const data = {
+    sources: [
+      {
+        sourceId: "school",
+        name: "失败高校",
+        config: { enabled: true },
+        health: [
+          {
+            siteId: "mixed",
+            status: "unavailable",
+            checkedAt: "2026-10-11T12:00:00Z",
+            issues: [{ code: "budget_exhausted" }, { code: "network_error" }],
+          },
+        ],
+      },
+    ],
+    sites: [
+      {
+        siteId: "mixed",
+        providerId: "school",
+        name: "失败目录",
+        status: "candidate",
+        origin: "https://example.org/jobs",
+      },
+    ],
+  };
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => (p === "/sources" ? data : syntheticApi(p, o)),
+  });
+  const card = await f.screen.findByRole("region", {
+    name: "失败高校来源摘要",
+  });
+  assert.ok(within(card).getByText("暂时不可访问"));
+  await openSource(f, "失败高校");
+  assert.ok(f.screen.getByText("网络读取失败"));
+  assert.equal(f.screen.queryByText("network_error"), null);
+});
+
+test("unmatched provider history does not qualify a catalog site as probed", async (t) => {
+  const data = {
+    sources: [
+      {
+        sourceId: "school",
+        name: "历史高校",
+        config: { enabled: true },
+        health: [
+          {
+            siteId: "school",
+            status: "ready",
+            checkedAt: "2026-10-10T12:00:00Z",
+            sampleCount: 1,
+          },
+        ],
+      },
+    ],
+    sites: [
+      {
+        siteId: "listed",
+        providerId: "school",
+        name: "未检查目录",
+        status: "candidate",
+        origin: "https://example.org/jobs",
+      },
+    ],
+  };
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => (p === "/sources" ? data : syntheticApi(p, o)),
+  });
+  const card = await f.screen.findByRole("region", {
+    name: "历史高校来源摘要",
+  });
+  assert.ok(within(card).getByText("1 个目录站点 · 0 个探针取得有效样本站点"));
+  assert.ok(within(card).getByText("暂无探针记录"));
+  assert.ok(within(card).getByText("来源历史探针（未关联目录站点）"));
+  assert.match(
+    within(card).getByText(/最近探针：/).textContent || "",
+    /2026.*10.*10/,
+  );
+  await f.user.click(f.screen.getByRole("combobox", { name: "来源探针状态" }));
+  assert.equal(
+    f.screen.queryByRole("option", { name: "最近探针取得有效样本" }),
+    null,
+  );
+});
+
+test("unconfigured and bounded probe issues use readable labels in cards and details", async (t) => {
+  const data = {
+    sources: [
+      {
+        sourceId: "notices",
+        name: "公告来源",
+        config: { enabled: true },
+        health: [
+          {
+            siteId: "notice-site",
+            status: "skipped",
+            checkedAt: "2026-10-11T12:00:00Z",
+            issues: [
+              { code: "template_not_configured" },
+              { code: "candidate_not_verified" },
+              { code: "page_limit_reached" },
+            ],
+          },
+        ],
+      },
+    ],
+    sites: [
+      {
+        siteId: "notice-site",
+        providerId: "notices",
+        name: "公告目录",
+        status: "candidate",
+        origin: "https://example.org/jobs",
+      },
+    ],
+  };
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => (p === "/sources" ? data : syntheticApi(p, o)),
+  });
+  const card = await f.screen.findByRole("region", {
+    name: "公告来源来源摘要",
+  });
+  assert.match(card.textContent || "", /尚未配置公告列表与正文模板/);
+  assert.match(card.textContent || "", /目录候选，尚未验证采集能力/);
+  assert.match(card.textContent || "", /已达到本次分页上限/);
+  assert.doesNotMatch(
+    card.textContent || "",
+    /template_not_configured|candidate_not_verified|page_limit_reached/,
+  );
+  await openSource(f, "公告来源");
+  const site = f.screen.getByRole("region", { name: "公告目录站点探针" });
+  assert.ok(within(site).getByText("尚未配置公告列表与正文模板"));
+  assert.ok(within(site).getByText("目录候选，尚未验证采集能力"));
+  assert.ok(within(site).getByText("已达到本次分页上限"));
+  assert.doesNotMatch(
+    site.textContent || "",
+    /template_not_configured|candidate_not_verified|page_limit_reached/,
+  );
+});

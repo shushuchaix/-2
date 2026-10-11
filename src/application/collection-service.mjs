@@ -35,6 +35,7 @@ import { normalizeRecord } from "../domain/record.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { projectCollectionQuality } from "../domain/collection-quality.mjs";
 import { createRecordEnrichment } from "./record-enrichment.mjs";
+import { recordCollectionSourceHealth } from "./collection-source-health.mjs";
 const terminal = new Set(["completed", "cancelled"]);
 const bossRiskCodes = new Set([
   "boss_account_risk",
@@ -594,6 +595,15 @@ export function createCollectionService({
               observedAt: at(),
               provenanceOperationId: operationLease.operationId,
             });
+            recordCollectionSourceHealth(w, {
+              scope: ref.scope,
+              provider: registry.get(unit.sourceId),
+              sourceId: unit.sourceId,
+              siteId: unit.siteId,
+              records: page.records,
+              issues: page.issues || [],
+              now: clock.now(),
+            });
             queueContentDraft(
               p,
               unitId,
@@ -1117,6 +1127,8 @@ export function createCollectionService({
           record = await provider.fetchDetail(record, ctx);
           record = await enrichRecord(record, ctx);
         } catch (e) {
+          if (e.code === "source_budget_exhausted" && !signal.aborted)
+            await issue(unit, e.code, false, e.nextDueAt);
           if (
             signal.aborted ||
             [
@@ -1145,6 +1157,15 @@ export function createCollectionService({
         await mutateCurrent(ref, token, lease, (w, r) => {
           const p = r.collectionProgress;
           if (retryIssue) w.runs[token.sliceRunId].issues.push(retryIssue);
+          recordCollectionSourceHealth(w, {
+            scope: ref.scope,
+            provider,
+            sourceId: unit.sourceId,
+            siteId: unit.siteId,
+            records: [record],
+            issues: retryIssue ? [retryIssue] : [],
+            now: clock.now(),
+          });
           if (!record.retryEligible && record.bodyStatus === "complete") {
             const result = ingestRecordsDraft(w, {
               scope: ref.scope,
@@ -1359,6 +1380,7 @@ export function createCollectionService({
             )
               throw e;
             if (e.code === "source_budget_exhausted") {
+              await issue(unit, e.code, false, e.nextDueAt);
               stopCode = e.code;
               break;
             }
@@ -1853,6 +1875,15 @@ export function createCollectionService({
     }
     async function issue(unit, code, auth, nextDueAt) {
       await mutateCurrent(ref, token, lease, (w, r) => {
+        recordCollectionSourceHealth(w, {
+          scope: ref.scope,
+          provider: registry.get(unit.sourceId),
+          sourceId: unit.sourceId,
+          siteId: unit.siteId,
+          records: [],
+          issues: [{ code }],
+          now: clock.now(),
+        });
         if (unit.sourceId === "boss" && bossAuthCodes.has(code)) {
           for (const blocked of Object.values(r.collectionProgress.units))
             if (blocked.sourceId === "boss") {
@@ -1879,14 +1910,17 @@ export function createCollectionService({
         const u = r.collectionProgress.units[unit.unitId];
         u.lastErrorCode = idValid(code) ? code : "source_unavailable";
         u.lastAttemptAt = at();
-        u.refreshDelayMs = sourceRefreshDelay({
-          failed: true,
-          previousMs: u.refreshDelayMs,
-        });
+        if (code !== "source_budget_exhausted")
+          u.refreshDelayMs = sourceRefreshDelay({
+            failed: true,
+            previousMs: u.refreshDelayMs,
+          });
         u.status = auth ? "waiting_for_auth" : "pending";
         u.nextDueAt =
-          nextDueAt ||
-          new Date(Number(clock.now()) + u.refreshDelayMs).toISOString();
+          code === "source_budget_exhausted"
+            ? null
+            : nextDueAt ||
+              new Date(Number(clock.now()) + u.refreshDelayMs).toISOString();
         w.runs[token.sliceRunId].issues.push({
           code: u.lastErrorCode,
           sourceId: u.sourceId,

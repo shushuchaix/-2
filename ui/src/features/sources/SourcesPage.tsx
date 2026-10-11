@@ -46,7 +46,10 @@ import {
   sourceCategories,
   sourceHealthStatuses,
   sourceHasProblems,
-  siteHealth,
+  sourceReadySiteCount,
+  sourceProbeHealth,
+  sourceLastAttemptAt,
+  sourceIssueLabel,
   categoryLabel,
   sourceStatusLabels,
   sourceDraft,
@@ -258,8 +261,8 @@ export function SourcesPage({
               <dt>有有效样本探针记录</dt>
               <dd>
                 {
-                  sources.filter((source) =>
-                    sourceHealthStatuses(source, sites).includes("ready"),
+                  sources.filter(
+                    (source) => sourceReadySiteCount(source, sites) > 0,
                   ).length
                 }{" "}
                 个来源
@@ -331,23 +334,14 @@ export function SourcesPage({
         <div className="grid gap-4 lg:grid-cols-2">
           {result.items.map((source) => {
             const owned = sites.filter((s) => s.providerId === source.sourceId);
-            const ready = owned.filter(
-              (s) => siteHealth(source, s)?.status === "ready",
-            ).length;
-            const issues = [
-              ...(source.health || []),
-              ...owned.map((s) => s.health),
-            ].flatMap((h) => h?.issues || []);
-            const checkedAt = [
-              ...(source.health || []),
-              ...owned.map((s) => siteHealth(source, s)),
-            ]
-              .map((h) => h?.checkedAt)
-              .filter(
-                (s): s is string =>
-                  typeof s === "string" && Number.isFinite(Date.parse(s)),
-              )
-              .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+            const ready = sourceReadySiteCount(source, owned);
+            const issues = sourceProbeHealth(source, owned).flatMap(
+              (health) => health.issues || [],
+            );
+            const checkedAt = sourceLastAttemptAt(source, owned);
+            const unmatchedHistory = source.health?.some(
+              (health) => !owned.some((site) => site.siteId === health.siteId),
+            );
             return (
               <Card
                 key={source.sourceId}
@@ -372,6 +366,11 @@ export function SourcesPage({
                     ))}
                   </div>
                   <p>最近探针：{formatDate(checkedAt)}</p>
+                  {unmatchedHistory && (
+                    <p className="text-sm text-muted-foreground">
+                      来源历史探针（未关联目录站点）
+                    </p>
+                  )}
                   <p className="text-sm text-muted-foreground">
                     {sourceHealthStatuses(source, owned)
                       .map((status) => sourceStatusLabels[status] || status)
@@ -381,12 +380,7 @@ export function SourcesPage({
                     <p className="text-sm">
                       运行问题：
                       {issues
-                        .map(
-                          (issue) =>
-                            sourceStatusLabels[issue.code || ""] ||
-                            issue.message ||
-                            "检查遇到问题",
-                        )
+                        .map(sourceIssueLabel)
                         .filter((v, i, values) => values.indexOf(v) === i)
                         .join("；")}
                     </p>

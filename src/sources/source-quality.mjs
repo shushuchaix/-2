@@ -3,7 +3,8 @@ export function hasRecentSourceProof(site, health, now = Date.now()) {
   const success = health?.lastSuccessAt || site.verifiedAt;
   const body =
     site.probeEvidence?.some((e) => e.hasRequirements === true) ||
-    health?.capabilities?.body === "verified";
+    health?.capabilities?.body === "verified" ||
+    health?.lastSuccessCapabilities?.body === "verified";
   return Boolean(
     body &&
       Number.isFinite(Date.parse(success)) &&

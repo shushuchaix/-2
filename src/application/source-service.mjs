@@ -4,12 +4,18 @@ import { createSourceBudget } from "../infrastructure/http/budget.mjs";
 import { redactBusiness } from "../domain/redact.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
 import { recordSourceHealth } from "./source-health.mjs";
+import { projectSourceHealth } from "./source-health-projection.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { assertScope, packageError } from "../domain/packages.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assessSourceProbe } from "../sources/source-quality.mjs";
 import { canonicalSocialUrl } from "../sources/social-content.mjs";
 import { randomUUID } from "node:crypto";
+import {
+  normalizeSourceStatus,
+  safeSourceIssues,
+  isVersionPrivateSource,
+} from "../sources/source-status.mjs";
 import { assertCollectionWrite } from "../domain/collection.mjs";
 import {
   probeReadService,
@@ -24,59 +30,13 @@ const privateKeys = new Set([
   "queries",
   "keywords",
 ]);
-const probeIssueCodes = new Set([
-  "parse_error",
-  "content_non_json",
-  "risk_blocked",
-  "unavailable",
-  "captcha",
-  "http_forbidden",
-  "restricted",
-  "budget_exhausted",
-  "source_budget_exhausted",
-  "rate_limited",
-  "request_timeout",
-  "http_timeout",
-  "network_error",
-  "invalid_record",
-  "detail_unavailable",
-  "detail_insufficient",
-  "body_unverified",
-  "list_unverified",
-  "source_restricted",
-  "pagination_not_supported",
-  "account_history_limited",
-  "login_required",
-  "challenge_required",
-  "session_unavailable",
-  "boss_account_risk",
-  "boss_environment_risk",
-  "boss_risk_blocked",
-  "boss_auth_expired",
-  "boss_login_required",
-  "service_disabled",
-  "not_configured",
-]);
 function safeProbeResult(result, sourceId, siteId) {
-  if (!Array.isArray(result.issues)) return result;
   return {
     ...result,
-    issues: result.issues.map((issue) => ({
-      code: probeIssueCodes.has(issue?.code)
-        ? issue.code
-        : "source_probe_failed",
-      sourceId,
-      siteId,
-      ...(typeof issue?.retryable === "boolean"
-        ? { retryable: issue.retryable }
-        : {}),
-      ...(typeof issue?.diagnosticId === "string" &&
-      /^d-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
-        issue.diagnosticId,
-      )
-        ? { diagnosticId: issue.diagnosticId }
-        : {}),
-    })),
+    sourceId,
+    siteId,
+    status: normalizeSourceStatus(result),
+    issues: safeSourceIssues(result.issues, sourceId, siteId),
   };
 }
 function validateConfig(provider, config) {
@@ -230,7 +190,8 @@ export function createSourceService({
     },
     async listScopedSources({ scope }) {
       const w = await repository.read(),
-        pkg = assertScope(w, scope, clock.now());
+        pkg = assertScope(w, scope, clock.now()),
+        health = projectSourceHealth(w, { registry, scope });
       return registry.list().map((p) => ({
         sourceId: p.id,
         name: p.name,
@@ -241,10 +202,7 @@ export function createSourceService({
           ...(w.settings.sourceOverrides[p.id] || {}),
           ...(pkg.collectionSettings?.sourceOverrides[p.id] || {}),
         },
-        health: Object.values({
-          ...w.sourceHealth,
-          ...pkg.collectionSettings?.sourceVerification,
-        }).filter((h) => h.sourceId === p.id),
+        health: Object.values(health).filter((h) => h.sourceId === p.id),
         optionalService: p.optionalService === true,
         serviceCapability:
           pkg.collectionSettings?.serviceCapabilities?.[p.id] || null,
@@ -347,7 +305,34 @@ export function createSourceService({
           operationLease,
           sessionRefs: pkg.collectionSettings?.sessionRefs || {},
         };
-        const list = await provider.collect({ ...context, onBatch: undefined });
+        let list;
+        try {
+          list = await provider.collect({ ...context, onBatch: undefined });
+        } catch (error) {
+          signal?.throwIfAborted();
+          if (
+            error.runFatal ||
+            error.code === "workspace_write_failed" ||
+            error.code === "collection_stale_epoch" ||
+            error.name === "AbortError" ||
+            /^boss_/.test(error.code || "")
+          )
+            throw error;
+          const entry = await recordDiagnostic(
+            diagnostics,
+            { operation: "source.probe", sourceId, siteId: site.siteId },
+            error,
+          );
+          list = {
+            records: [],
+            issues: [
+              {
+                code: error.code || "unavailable",
+                ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
+              },
+            ],
+          };
+        }
         const details = [],
           issues = [...(list.issues || [])];
         for (const record of list.records.slice(0, 2))
@@ -402,6 +387,7 @@ export function createSourceService({
           issues: [...issues, ...quality.issues],
           budget: budget.snapshot(),
         };
+        result.status = normalizeSourceStatus(result);
         await repository.mutateWorkspace(
           (d) => {
             const owner = assertScope(d, scope, clock.now());
@@ -420,29 +406,29 @@ export function createSourceService({
                   "活动已停止，探针结果未保存。",
                 );
             }
-            if (
-              sourceId === "boss" ||
-              ["social", "social_discovery"].includes(
-                provider.capabilities.category,
-              )
-            ) {
+            if (isVersionPrivateSource(provider)) {
               owner.collectionSettings ||= {
                 sourceOverrides: {},
                 sessionRefs: {},
                 refreshEnabled: false,
               };
               owner.collectionSettings.sourceVerification ||= {};
-              owner.collectionSettings.sourceVerification[
-                sourceId + "/" + site.siteId
-              ] = {
-                sourceId,
-                siteId: site.siteId,
-                status: result.status,
-                capabilities: quality.capabilities,
-                checkedAt: result.checkedAt,
-                lastSuccessAt:
-                  result.status === "ready" ? result.checkedAt : null,
-              };
+              recordSourceHealth(
+                { sourceHealth: owner.collectionSettings.sourceVerification },
+                {
+                  sourceId,
+                  siteId: site.siteId,
+                  status: result.status,
+                  sampleCount: result.sampleCount,
+                  issues: safeSourceIssues(
+                    result.issues,
+                    sourceId,
+                    site.siteId,
+                  ),
+                  capabilities: quality.capabilities,
+                },
+                clock.now(),
+              );
             } else
               recordSourceHealth(
                 d,
@@ -452,6 +438,7 @@ export function createSourceService({
                   status: result.status,
                   sampleCount: result.sampleCount,
                   capabilities: quality.capabilities,
+                  issues: result.issues,
                 },
                 clock.now(),
               );
@@ -484,16 +471,15 @@ export function createSourceService({
       }
     },
     async listSources() {
-      const w = await repository.read();
+      const w = await repository.read(),
+        health = projectSourceHealth(w, { registry });
       return registry.list().map((p) => ({
         sourceId: p.id,
         name: p.name,
         capabilities: p.capabilities,
         configSchema: p.configSchema,
         config: { ...p.defaultConfig, ...w.settings.sourceOverrides[p.id] },
-        health: Object.values(w.sourceHealth).filter(
-          (h) => h.sourceId === p.id,
-        ),
+        health: Object.values(health).filter((h) => h.sourceId === p.id),
       }));
     },
     async probe(sourceId, siteId) {
@@ -504,13 +490,21 @@ export function createSourceService({
         );
       const provider = registry.get(sourceId);
       if (!provider) throw Error("Source not found");
+      if (isVersionPrivateSource(provider))
+        throw packageError(
+          "source_scope_required",
+          "此来源需在目标版本中检查，账号和探针记录按版本隔离。",
+          409,
+        );
       const w = await repository.read();
       const site = (
         catalog ||
         loadSiteCatalog({
           customSites: w.settings.customSites,
         })
-      ).find((s) => s.siteId === siteId && s.providerId === sourceId);
+      ).find(
+        (s) => (!siteId || s.siteId === siteId) && s.providerId === sourceId,
+      );
       if (siteId && !site) throw Error("Site not found for provider");
       const budget = createSourceBudget({ maxRequests: 6, maxDetails: 2 });
       const started = clock.now();
@@ -552,6 +546,30 @@ export function createSourceService({
           error,
         );
         if (entry) error.diagnosticId = entry.diagnosticId;
+        if (
+          !error.runFatal &&
+          !["workspace_write_failed", "collection_stale_epoch"].includes(
+            error.code,
+          ) &&
+          error.name !== "AbortError"
+        )
+          await repository.mutateWorkspace((d) =>
+            recordSourceHealth(
+              d,
+              {
+                sourceId,
+                siteId: site?.siteId || sourceId,
+                status: "unavailable",
+                issues: [
+                  {
+                    code: error.code || "unavailable",
+                    ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
+                  },
+                ],
+              },
+              clock.now(),
+            ),
+          );
         throw error;
       }
       await recordDiagnostic(diagnostics, {
@@ -585,7 +603,7 @@ export function createSourceService({
       await repository.mutateWorkspace((d) => {
         const health = recordSourceHealth(
           d,
-          { ...result, sourceId, siteId: siteId || sourceId },
+          { ...result, sourceId, siteId: site?.siteId || sourceId },
           clock.now(),
         );
         const custom = d.settings.customSites.find((s) => s.siteId === siteId);

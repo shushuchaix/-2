@@ -6,6 +6,7 @@ import { loadSiteCatalog } from "../src/sources/catalog.mjs";
 import { createRequestClient } from "../src/infrastructure/http/client.mjs";
 import { createSourceBudget } from "../src/infrastructure/http/budget.mjs";
 import { assessSourceProbe } from "../src/sources/source-quality.mjs";
+import { normalizeSourceStatus } from "../src/sources/source-status.mjs";
 export async function probeCapabilities(
   provider,
   site,
@@ -44,14 +45,17 @@ export async function probeCapabilities(
   return {
     sourceId: provider.id,
     siteId: site.siteId,
-    status:
-      q.verification === "ready"
-        ? "ready"
-        : q.verification === "restricted"
-          ? "restricted"
-          : list.records.length
-            ? "parse_error"
-            : "empty",
+    status: normalizeSourceStatus({
+      status:
+        q.verification === "ready"
+          ? "ready"
+          : q.verification === "restricted"
+            ? "restricted"
+            : list.records.length
+              ? "parse_error"
+              : "empty",
+      issues,
+    }),
     capabilities: q.capabilities,
     capabilityEvidence: q.evidence,
     checkedAt: q.checkedAt,
@@ -122,7 +126,7 @@ export async function probeCatalog(
             sourceId: site.providerId,
             siteId: site.siteId,
             category: site.category,
-            status: "unavailable",
+            status: "skipped",
             checkedAt: new Date().toISOString(),
             sampleCount: 0,
             evidence: [],

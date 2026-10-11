@@ -93,7 +93,7 @@ test("version scoped probes apply the same safe issue projection", async (t) => 
     siteId: "synthetic-1",
   });
   assertSafe(result);
-  assert.equal(result.status, "empty");
+  assert.equal(result.status, "parse_error");
   assert.equal(result.issues.at(-1).code, "list_unverified");
   assert.equal(
     JSON.stringify(await f.repository.read()).includes(canary),

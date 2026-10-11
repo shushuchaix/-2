@@ -250,7 +250,12 @@ for (const [name, text, code] of responses.filter(
     assert.equal(result.sampleCount, 0);
     assert.equal(result.capabilities.list, "unverified");
     assert.equal(result.capabilities.body, "unverified");
-    const health = (await f.repository.read()).sourceHealth["weibo/weibo"];
+    const workspace = await f.repository.read();
+    const health =
+      workspace.packages[scope.packageId].collectionSettings.sourceVerification[
+        "weibo/weibo"
+      ];
+    assert.equal(workspace.sourceHealth["weibo/weibo"], undefined);
     assert.equal(health.lastSuccessAt, null);
     assert.equal(JSON.stringify(result).includes(text), false);
   });

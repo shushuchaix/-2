@@ -41,6 +41,7 @@ export type SourceHealth = {
   capabilities?: Record<string, unknown>;
   status?: string;
   checkedAt?: string;
+  lastAttemptAt?: string;
   lastSuccessAt?: string;
   sampleCount?: number;
   truncated?: boolean;

@@ -16,9 +16,11 @@ import { createResponseCache } from "./cache.mjs";
 
 const elapsed = (clock, start) => Math.max(0, Math.round(clock.now() - start));
 const responseSize = (response) =>
-  response.bytes instanceof Uint8Array
-    ? response.bytes.byteLength
-    : Buffer.byteLength(response.text || "");
+  Number.isSafeInteger(response.wireByteLength) && response.wireByteLength >= 0
+    ? response.wireByteLength
+    : response.bytes instanceof Uint8Array
+      ? response.bytes.byteLength
+      : Buffer.byteLength(response.text || "");
 const token = (value) =>
   typeof value === "string" && /^[A-Za-z0-9_.@-]{1,160}$/.test(value);
 function requestContext(defaults, overrides) {
@@ -331,7 +333,15 @@ export function createRequestClient({
                 transportMs += attemptTransportMs;
               }
               phase = "response";
-              if (responseSize(result) > byteLimit)
+              // Wire bytes charge the request ledger. Expanded payloads still
+              // obey the memory limit, including custom transport results.
+              if (
+                responseSize(result) > byteLimit ||
+                (result.bytes instanceof Uint8Array &&
+                  result.bytes.byteLength > byteLimit) ||
+                (typeof result.text === "string" &&
+                  result.text.length > byteLimit)
+              )
                 throw Object.assign(Error("Response size limit exceeded"), {
                   code: "response_size_exceeded",
                 });
@@ -423,7 +433,10 @@ export function createRequestClient({
           response.headers.location
         ) {
           phase = "redirect";
-          if (++redirects > 3) throw Error("Redirect limit exceeded");
+          if (++redirects > 3)
+            throw Object.assign(Error("Redirect limit exceeded"), {
+              code: "http_redirect_limit",
+            });
           const next = validatePublicUrl(
             new URL(response.headers.location, url).href,
           );

@@ -1,4 +1,5 @@
 import { sourceFetch as fetch } from "./request-context.mjs";
+import { safeLegacyErrorDetails } from "./legacy-error-details.mjs";
 import { parseHTML } from "linkedom";
 // 就业桥（全域智慧就业资讯服务平台）岗位源
 //
@@ -44,7 +45,8 @@ async function get(url, timeoutMs = 20000) {
     redirect: "follow",
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok)
+    throw Object.assign(Error(`HTTP ${res.status}`), { status: res.status });
   const buf = Buffer.from(await res.arrayBuffer());
   let text = buf.toString("utf8");
   if ((text.match(/\uFFFD/g) || []).length > text.length * 0.01) {
@@ -277,6 +279,7 @@ export async function collect({
   signal,
 } = {}) {
   const errors = [];
+  const errorDetails = [];
   const found = [];
   const stats = { queries: 0, listed: 0, detailed: 0 };
   const kws = keywords.filter(Boolean).slice(0, 6);
@@ -297,6 +300,7 @@ export async function collect({
         log(`  就业桥「${kw}」第 ${page} 页 → ${items.length} 条`);
       } catch (e) {
         errors.push(`就业桥「${kw}」检索失败：${e.message}`);
+        errorDetails.push(safeLegacyErrorDetails(e));
       }
       await sleep(delayMs);
     }
@@ -334,6 +338,7 @@ export async function collect({
       if (job) jobs.push(job);
     } catch (e) {
       errors.push(`就业桥详情抓取失败：${e.message}`);
+      errorDetails.push(safeLegacyErrorDetails(e));
     }
     await sleep(delayMs);
   }
@@ -341,7 +346,12 @@ export async function collect({
   log(
     `就业桥：检索 ${stats.queries} 次，列表 ${stats.listed} 条，抓详情 ${stats.detailed} 条，得到 ${jobs.length} 个岗位`,
   );
-  return { jobs, errors, stats: { ...stats, jiuyeqiao: jobs.length } };
+  return {
+    jobs,
+    errors,
+    errorDetails,
+    stats: { ...stats, jiuyeqiao: jobs.length },
+  };
 }
 
 export async function fetchDetail(record) {

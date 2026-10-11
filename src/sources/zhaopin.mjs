@@ -1,4 +1,5 @@
 import { sourceFetch as fetch } from "./request-context.mjs";
+import { safeLegacyErrorDetails } from "./legacy-error-details.mjs";
 // 智联招聘适配器
 // 通道：列表页 SSR 内嵌 __INITIAL_STATE__ → positionList[]（真实结构化岗位）
 //       详情页 SSR 内嵌 jobDetail → 完整 JD 正文
@@ -153,11 +154,16 @@ export async function fetchListPage(
     redirect: "follow",
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw new Error(`智联列表页 HTTP ${res.status}`);
+  if (!res.ok)
+    throw Object.assign(Error(`智联列表页 HTTP ${res.status}`), {
+      status: res.status,
+    });
   const html = await res.text();
   const state = extractAssignedJson(html, "__INITIAL_STATE__");
   if (!state || !Array.isArray(state.positionList))
-    throw Error("parse_error: 智联列表缺少 positionList");
+    throw Object.assign(Error("parse_error: 智联列表缺少 positionList"), {
+      code: "parse_error",
+    });
   const list = Array.isArray(state.positionList) ? state.positionList : [];
   const jobs = list.map(normalizePosition).filter(Boolean);
   return {
@@ -180,6 +186,7 @@ export async function search({
 } = {}) {
   const collected = [];
   const errors = [];
+  const errorDetails = [];
   let totalPages = 1;
   for (let p = 1; p <= maxPages; p++) {
     if (signal?.aborted) break;
@@ -192,11 +199,12 @@ export async function search({
       if (p >= (r.pages || 1)) break;
     } catch (e) {
       errors.push(`p${p}: ${e.message}`);
+      errorDetails.push(safeLegacyErrorDetails(e));
       log(`智联「${keyword}」第 ${p} 页失败：${e.message}`);
     }
     if (p < maxPages) await sleep(delayMs);
   }
-  return { jobs: collected, errors, totalPages };
+  return { jobs: collected, errors, errorDetails, totalPages };
 }
 
 /** 解析详情页 state 中的 JD 正文 */
@@ -259,7 +267,10 @@ export async function fetchDetail(job, { timeoutMs = 25000 } = {}) {
     redirect: "follow",
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw new Error(`智联详情页 HTTP ${res.status}`);
+  if (!res.ok)
+    throw Object.assign(Error(`智联详情页 HTTP ${res.status}`), {
+      status: res.status,
+    });
   const html = await res.text();
   const state = extractAssignedJson(html, "__INITIAL_STATE__");
   let description = state ? extractDetailFromState(state) : null;

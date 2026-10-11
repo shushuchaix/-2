@@ -1,6 +1,8 @@
 import http from "node:http";
 import https from "node:https";
 import { isPublicAddress } from "./public-url.mjs";
+import { decodeResponseText } from "./text-decoding.mjs";
+import { decompressResponseBytes } from "./response-decoding.mjs";
 export function socketTransport({
   url,
   addresses,
@@ -42,43 +44,45 @@ export function socketTransport({
         });
         res.on("error", reject);
         res.on("end", () => {
-          const content = Buffer.concat(chunks);
-          const responseHeaders = Object.fromEntries(
-            Object.entries(res.headers).map(([k, v]) => [
-              k,
-              Array.isArray(v) ? v.join(",") : String(v || ""),
-            ]),
-          );
-          if (responseType === "bytes") {
-            resolve({
-              status: res.statusCode,
-              headers: responseHeaders,
-              bytes: new Uint8Array(content),
-              url: url.href,
-            });
-            return;
-          }
-          const charset =
-            String(res.headers["content-type"] || "").match(
-              /charset\s*=\s*([^;\s]+)/i,
-            )?.[1] || "utf-8";
-          let text;
           try {
-            text = new TextDecoder(charset).decode(content);
-          } catch {
-            text = content.toString("utf8");
-          }
-          resolve({
-            status: res.statusCode,
-            headers: Object.fromEntries(
+            const wireContent = Buffer.concat(chunks);
+            const responseHeaders = Object.fromEntries(
               Object.entries(res.headers).map(([k, v]) => [
                 k,
                 Array.isArray(v) ? v.join(",") : String(v || ""),
               ]),
-            ),
-            text,
-            url: url.href,
-          });
+            );
+            // Encoding metadata may describe a representation even when the
+            // method or status prohibits a body. Received bytes still count.
+            const bodyAllowed =
+              method !== "HEAD" && ![204, 304].includes(res.statusCode);
+            const content = bodyAllowed
+              ? decompressResponseBytes(wireContent, responseHeaders, maxBytes)
+              : Buffer.alloc(0);
+            if (responseType === "bytes") {
+              resolve({
+                status: res.statusCode,
+                headers: responseHeaders,
+                bytes: new Uint8Array(content),
+                url: url.href,
+                wireByteLength: wireContent.length,
+              });
+              return;
+            }
+            const text = decodeResponseText(
+              content,
+              String(res.headers["content-type"] || ""),
+            );
+            resolve({
+              status: res.statusCode,
+              headers: responseHeaders,
+              text,
+              url: url.href,
+              wireByteLength: wireContent.length,
+            });
+          } catch (error) {
+            reject(error);
+          }
         });
       },
     );

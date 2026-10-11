@@ -279,8 +279,12 @@
     "regions": [],
     "majorFamilies": [],
     "capabilities": {
-      "list": true,
-      "detail": true
+      "list": "unverified",
+      "detail": "unverified",
+      "body": "unverified",
+      "date": "unverified",
+      "attachments": "unverified",
+      "apply": "unverified"
     },
     "evidenceUrl": "https://www.siemens.com/zh-cn/company/jobs/",
     "verifiedAt": null,
@@ -291,6 +295,47 @@
     ],
     "jobFamilies": [],
     "adapter": "official-announcements",
+    "adapterVerification": "unverified",
+    "suggestedAdapter": "official-announcements",
+    "entryUrl": "https://jobs.siemens.com/en_US/externaljobs/SearchJobs",
+    "template": {
+      "recordKind": "job",
+      "listUrl": "https://jobs.siemens.com/en_US/externaljobs/SearchJobs",
+      "linkRule": "article.article--result .article__header__text__title a.link[href]",
+      "linkAttribute": "href",
+      "rowRule": "article.article--result",
+      "titleRule": ".article__header__text__title a.link",
+      "listDateRule": null,
+      "urlIdPattern": "^/en_US/externaljobs/JobDetail/(\\d+)$",
+      "detailIdRule": "#section0__content .article__content__view > .article__content__view__field:nth-child(1) > .article__content__view__field__value",
+      "detailTitleRule": "h3.section__header__text__title",
+      "bodyRule": "#section1__content .article__content__view__field__value",
+      "requiredBodyRules": [
+        "#section1__content .article__content__view__field__value > div > p:nth-of-type(2) + ul:nth-of-type(1)",
+        "#section1__content .article__content__view__field__value > div > p:nth-of-type(3) + ul:nth-of-type(2)"
+      ],
+      "dateRule": null,
+      "pathPrefix": "/en_US/externaljobs/JobDetail/",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "listStructureUrl": "https://jobs.siemens.com/en_US/externaljobs/SearchJobs",
+      "bodyStructureUrl": "https://jobs.siemens.com/en_US/externaljobs/JobDetail/525348",
+      "provenance": "tests/fixtures/official-template-repair/siemens-provenance.json",
+      "requiresLiveProbe": true,
+      "observedNativeJobCount": 6,
+      "identityEvidence": "数字JobDetail URL ID与详情可见Job ID绑定；分享按钮ID不是岗位身份",
+      "bodyEvidence": "完整正文含15条职责、5条资格及2条福利；职责与资格列表必须分别非空",
+      "dateEvidence": "列表未见发布日期；详情Posted since为11-Oct-2026，暂未启用英文月份日期解析",
+      "openingEvidence": "未实证截止日期或当前在招窗口",
+      "applicationEvidence": {
+        "url": "https://jobs.siemens.com/en_US/externaljobs/ApplicationMethods?folderId=525348",
+        "selector": "article.article--actions a.button--hero[href]",
+        "label": "Apply",
+        "status": "unknown",
+        "formVerified": false
+      }
+    },
     "identityEvidence": {
       "url": "https://www.siemens.com/zh-cn/company/jobs/",
       "kind": "official_entry",
@@ -403,6 +448,26 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.zjairports.com/newRecruitment.html",
+    "template": {
+      "listUrl": "https://www.zjairports.com/newRecruitment.html",
+      "linkRule": ".newsItem02 .cp-block-headline a[href]",
+      "bodyRule": ".detailContent",
+      "dateRule": null,
+      "attachmentRule": ".detailContent a[href]",
+      "pathPrefix": "/newRecruitmentInfo.html",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "mode": "reduced_public_structure_fixture",
+      "listUrl": "https://www.zjairports.com/newRecruitment.html",
+      "detailUrl": "https://www.zjairports.com/newRecruitmentInfo.html?id=132",
+      "observedAt": "2026-10-11T08:46:12.359Z",
+      "publicationDate": "unverified_split_list_date_and_empty_detail_date",
+      "opening": "expired_historical_sample",
+      "application": "unverified_downloadable_registration_attachment",
+      "pagination": "unverified",
+      "requiresLiveProbe": true
+    },
     "allowedDomains": [
       "www.zjairports.com"
     ],
@@ -442,7 +507,7 @@
     ],
     "suggestedAdapter": "official-announcements",
     "identitySource": "官方招聘页及机场运营、机场保障成员名单",
-    "entryRead": "招聘列表已读；样本详情主要为图片及DOC附件，完整正文未验证",
+    "entryRead": "招聘列表及详情容器已读；最新样本仅22字DOC附件说明，完整正文待受控附件解析",
     "status": "candidate",
     "verifiedAt": null,
     "siteId": "official-0201d47ae30267a0",
@@ -466,6 +531,28 @@
       "kind": "official_identity",
       "description": "官方招聘页及机场运营、机场保障成员名单",
       "checkedAt": "2026-10-09T07:00:00Z"
+    },
+    "template": {
+      "listUrl": "https://www.cah.com.cn/Information/Recruit/",
+      "linkRule": ".jtyw-list > ul > li > a.clearfix[href]",
+      "bodyRule": "#content",
+      "dateRule": ".content-title-box .time",
+      "attachmentRule": "#content a[href]",
+      "pathPrefix": "/content/",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "mode": "reduced_public_structure_fixture",
+      "listUrl": "https://www.cah.com.cn/Information/Recruit/",
+      "detailUrl": "https://www.cah.com.cn/content/2026/03-23/7442058771477565440.html",
+      "observedAt": "2026-10-11T16:56:42.784Z",
+      "publicationDate": "explicit_list_and_detail_date",
+      "body": "incomplete_22_character_attachment_anchor_only",
+      "attachments": "doc_download_observed_text_not_extracted",
+      "opening": "unverified_without_attachment_body",
+      "application": "unverified_download_is_not_application",
+      "pagination": "unverified",
+      "requiresLiveProbe": true
     }
   },
   {
@@ -873,6 +960,26 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.wzair.cn/zygg/rlzygg/",
+    "template": {
+      "listUrl": "https://www.wzair.cn/zygg/rlzygg/",
+      "linkRule": ".bg_c a[href]",
+      "bodyRule": "td.wz",
+      "dateRule": ".wenzhnag td[height=\"26\"]",
+      "pathPrefix": "/zygg/rlzygg/",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "mode": "reduced_public_structure_fixture",
+      "listUrl": "https://www.wzair.cn/zygg/rlzygg/",
+      "detailUrl": "https://www.wzair.cn/zygg/rlzygg/2024/08/15/310851.html",
+      "observedAt": "2026-10-11T07:06:00.935Z",
+      "publicationDate": "explicit_detail_date",
+      "opening": "unverified_historical_sample_without_deadline",
+      "application": "unverified_no_public_application_url",
+      "attachments": "unverified_no_attachment_in_sample",
+      "pagination": "unverified",
+      "requiresLiveProbe": true
+    },
     "allowedDomains": [
       "www.wzair.cn"
     ],
@@ -1542,16 +1649,16 @@
       "河北",
       "中国大陆"
     ],
-    "suggestedAdapter": "pending",
+    "suggestedAdapter": "official-announcements",
     "identitySource": "官网搜索索引对应企业全称、秦皇岛地址及消防产品业务",
-    "entryRead": "官网打开超时；索引可见人才招聘菜单，历史招聘路径已404",
+    "entryRead": "公开联系页招聘区有3个独立data-target岗位身份、内联职责与任职要求及明确发布日期；在招窗口和投递可用性未知",
     "status": "candidate",
     "verifiedAt": null,
     "siteId": "official-9b7b3076410fcacc",
     "providerId": "official-announcements",
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
-    "entryUrl": "https://www.gst.com.cn/",
+    "entryUrl": "https://www.gst.com.cn/contactus/",
     "allowedDomains": [
       "www.gst.com.cn"
     ],
@@ -1562,6 +1669,35 @@
       "date": "unverified",
       "attachments": "unverified",
       "apply": "unverified"
+    },
+    "template": {
+      "recordKind": "job",
+      "inlineJob": true,
+      "listUrl": "https://www.gst.com.cn/contactus/",
+      "rowRule": "#careers .careers-list > .career-box",
+      "titleRule": ".career-main > h3.career-title",
+      "nativeIdRule": ".career-actions > button.career-toggle[data-target]",
+      "nativeIdAttribute": "data-target",
+      "nativeIdPattern": "^career-detail-\\d+$",
+      "bodyRule": "article.career-card > .career-detail",
+      "requiredBodyRules": [
+        "article.career-card > .career-detail > .career-detail-text:nth-child(2)",
+        "article.career-card > .career-detail > .career-detail-text:nth-child(4)"
+      ],
+      "dateRule": "article.career-card .career-meta > .career-meta-row:nth-child(2) > .career-meta-value",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "listStructureUrl": "https://www.gst.com.cn/contactus/",
+      "bodyStructureUrl": "https://www.gst.com.cn/contactus/",
+      "provenance": "tests/fixtures/official-template-repair/gst-provenance.json",
+      "requiresLiveProbe": true,
+      "observedNativeJobCount": 3,
+      "identityEvidence": "每个button data-target与同一岗位正文DOM ID严格对应；没有独立详情href",
+      "bodyEvidence": "每个内联岗位的职责和任职要求均为非空HTML文字；未见截断容器或图片正文",
+      "dateEvidence": "发布时间及Posted Date标签仅证明发布日期",
+      "openingEvidence": "未实证当前在招窗口或截止日期",
+      "applicationEvidence": "公开mailto仅证明人工联系入口，未核验投递可用性"
     },
     "identityEvidence": {
       "url": "https://www.gst.com.cn/",
@@ -1801,16 +1937,16 @@
     "regions": [
       "中国大陆"
     ],
-    "suggestedAdapter": "pending",
+    "suggestedAdapter": "official-announcements",
     "identitySource": "官网关于我们页明确企业全称及消防救援装备业务，列出消防成员企业",
-    "entryRead": "官网简介已读，可见公司招聘菜单；招聘栏目未读",
+    "entryRead": "公司招聘栏目与最新详情已读；6个独立岗位链接，55字说明与列表摘要相同且职责区为空，正文及投递未验证",
     "status": "candidate",
     "verifiedAt": null,
     "siteId": "official-a64ede1720adf4fa",
     "providerId": "official-announcements",
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
-    "entryUrl": "https://www.cimc-tdholding.com/AboutUs/index.aspx",
+    "entryUrl": "https://www.cimc-tdholding.com/Job/index_lcid_2.html",
     "allowedDomains": [
       "www.cimc-tdholding.com"
     ],
@@ -1827,6 +1963,36 @@
       "kind": "official_identity",
       "description": "官网关于我们页明确企业全称及消防救援装备业务，列出消防成员企业",
       "checkedAt": "2026-10-09T07:00:00Z"
+    },
+    "template": {
+      "recordKind": "job",
+      "listUrl": "https://www.cimc-tdholding.com/Job/index_lcid_2.html",
+      "linkRule": ".job-list .item .more a[data-url]",
+      "linkAttribute": "data-url",
+      "rowRule": ".item",
+      "titleRule": ".top .title h3",
+      "listDateRule": ".top .title p",
+      "detailTitleRule": ".job-info > .title > h3",
+      "bodyRule": ".job-info > .box-info > article.edit-info",
+      "requiredBodyRules": [
+        ".job-info > .box-info > article.edit-info",
+        ".job-info > .box-info + .box-info > article.edit-info"
+      ],
+      "dateRule": ".job-info > .title > p",
+      "pathPrefix": "/Job/info_itemid_",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "mode": "reduced_public_structure_fixture",
+      "listUrl": "https://www.cimc-tdholding.com/Job/index_lcid_2.html",
+      "detailUrl": "https://www.cimc-tdholding.com/Job/info_itemid_8.html",
+      "observedAt": "2026-10-11T17:04:21.182Z",
+      "publicationDate": "visible_unlabeled_list_and_detail_date",
+      "body": "incomplete_shared_55_character_description_and_empty_required_duties",
+      "opening": "unverified_visible_2025_date_only",
+      "application": "unverified_no_apply_link_form_or_attachment",
+      "pagination": "unverified",
+      "requiresLiveProbe": true
     }
   },
   {

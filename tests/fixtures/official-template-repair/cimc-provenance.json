@@ -1,0 +1,18 @@
+{
+  "cimc-list.html": {
+    "siteId": "official-a64ede1720adf4fa",
+    "sourceUrl": "https://www.cimc-tdholding.com/Job/index_lcid_2.html",
+    "capturedAt": "2026-10-11T16:48:04.595Z",
+    "purpose": "Reduced observed job-list/item, card title/date, data-url navigation and ellipsis__3 summary structure. Native URL paths 8/7/6/5/3/2 and visible 2025-07-01 date are preserved. Titles, counts, location and all summary prose are synthetic; five equal titles preserve the observed identity boundary.",
+    "currentRecruiting": "unknown; visible date alone is not an opening status"
+  },
+  "cimc-detail.html": {
+    "siteId": "official-a64ede1720adf4fa",
+    "sourceUrl": "https://www.cimc-tdholding.com/Job/info_itemid_8.html",
+    "capturedAt": "2026-10-11T17:04:21.182Z",
+    "purpose": "Reduced observed job-info title/date and two box-info/article.edit-info sections. The 55-character description shared with all six list summaries and empty duties section are preserved structurally using synthetic prose. No real job body, contact details or executable inline JavaScript is included.",
+    "bodyEvidence": "incomplete; required duties section is empty",
+    "currentRecruiting": "unknown",
+    "applicationEvidence": "unknown; observed detail has no apply link, form or attachment"
+  }
+}

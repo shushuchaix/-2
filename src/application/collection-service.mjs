@@ -13,6 +13,7 @@ import {
   normalizeCollectionRun,
 } from "../domain/collection.mjs";
 import { ingestRecordsDraft } from "../domain/ingest-records.mjs";
+import { assertSourceRecord } from "../domain/contracts.mjs";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { collectionLimitsFor } from "../../public/js/validation-rules.js";
 import { assertOperationWriteAllowed } from "./workspace-operations.mjs";
@@ -36,6 +37,7 @@ import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { projectCollectionQuality } from "../domain/collection-quality.mjs";
 import { createRecordEnrichment } from "./record-enrichment.mjs";
 import { recordCollectionSourceHealth } from "./collection-source-health.mjs";
+import { safeSourceIssues } from "../sources/source-status.mjs";
 const terminal = new Set(["completed", "cancelled"]);
 const bossRiskCodes = new Set([
   "boss_account_risk",
@@ -697,6 +699,148 @@ export function createCollectionService({
               revision: p.revision,
               ...result,
             };
+          },
+          { operationLease },
+        )
+      ).result;
+    },
+    async commitDiagnosticRecords({
+      ref,
+      token,
+      unitId,
+      records,
+      observationKey,
+      issues = [],
+      operationLease,
+    }) {
+      const invalid = () =>
+        packageError(
+          "collection_diagnostic_invalid",
+          "来源重查结果无效。",
+          400,
+        );
+      if (
+        !idValid(unitId) ||
+        !idValid(observationKey) ||
+        !Array.isArray(records) ||
+        records.length > 5000 ||
+        !Array.isArray(issues) ||
+        issues.length > 5000 ||
+        issues.some(
+          (issue) =>
+            !issue || typeof issue !== "object" || Array.isArray(issue),
+        )
+      )
+        throw invalid();
+      try {
+        for (const record of records) assertSourceRecord(record);
+      } catch {
+        throw invalid();
+      }
+      return (
+        await repository.mutateWorkspace(
+          (w) => {
+            const root = rootFor(w, ref),
+              progress = root.collectionProgress;
+            checkLease(w, ref.scope, operationLease);
+            checkToken(root, token, false);
+            const unit = progress.units[unitId];
+            if (!unit)
+              throw packageError("collection_unit_missing", "未找到采集单元。");
+            if (
+              records.some(
+                (record) =>
+                  record.sourceId !== unit.sourceId ||
+                  record.siteId !== unit.siteId,
+              )
+            )
+              throw packageError(
+                "collection_diagnostic_source_mismatch",
+                "来源重查结果与原采集单元不一致。",
+              );
+            const key = contentHash(observationKey),
+              previous = progress.diagnosticObservations?.[key];
+            if (previous) {
+              if (previous.unitId !== unitId)
+                throw packageError(
+                  "collection_diagnostic_key_conflict",
+                  "来源重查标识已属于另一采集单元。",
+                );
+              return {
+                ...structuredClone(previous.result),
+                duplicate: true,
+                revision: progress.revision,
+              };
+            }
+            checkToken(root, token, true);
+            const child = w.runs[token.sliceRunId];
+            if (
+              !child ||
+              child.ownerPackageId !== ref.scope.packageId ||
+              child.collectionRole !== "collection_slice" ||
+              child.collectionActivityId !== ref.activityId
+            )
+              throw packageError(
+                "collection_scope",
+                "来源重查子活动范围无效。",
+              );
+            const result = ingestRecordsDraft(w, {
+              scope: ref.scope,
+              runId: token.sliceRunId,
+              records,
+              observedAt: at(),
+              provenanceOperationId: operationLease.operationId,
+            });
+            recordCollectionSourceHealth(w, {
+              scope: ref.scope,
+              provider: registry.get(unit.sourceId),
+              sourceId: unit.sourceId,
+              siteId: unit.siteId,
+              records,
+              issues,
+              now: clock.now(),
+            });
+            // Scoped ingest replaces owned run objects; update the current draft.
+            const p = w.runs[ref.activityId].collectionProgress,
+              run = w.runs[token.sliceRunId];
+            run.counts ||= {};
+            run.counts.raw = (run.counts.raw || 0) + records.length;
+            run.counts.normalized =
+              (run.counts.normalized || 0) + records.length;
+            run.counts.newForTarget =
+              (run.counts.newForTarget || 0) + result.newForTarget.length;
+            run.counts.notices =
+              (run.counts.notices || 0) +
+              records.filter((record) => record.kind !== "job").length;
+            run.jobIds = [
+              ...new Set([...(run.jobIds || []), ...result.jobIds]),
+            ];
+            run.counts.deduplicated = run.jobIds.length;
+            run.issues ||= [];
+            run.issues.push(
+              ...safeSourceIssues(issues, unit.sourceId, unit.siteId),
+            );
+            p.metrics ||= {};
+            p.metrics.newUnique =
+              (p.metrics.newUnique || 0) + result.newForTarget.length;
+            p.newJobIds = [
+              ...new Set([...(p.newJobIds || []), ...result.newForTarget]),
+            ];
+            p.revision++;
+            p.updatedAt = at();
+            const committed = {
+              duplicate: false,
+              revision: p.revision,
+              sliceRunId: token.sliceRunId,
+              ...result,
+            };
+            p.diagnosticObservations ||= {};
+            p.diagnosticObservations[key] = {
+              unitId,
+              observedAt: at(),
+              result: structuredClone(committed),
+            };
+            return committed;
           },
           { operationLease },
         )

@@ -8,6 +8,11 @@ import * as chenyun from "../chenyun.mjs";
 import * as jiuyeqiao from "../jiuyeqiao.mjs";
 import { normalizeRecord } from "../../domain/record.mjs";
 import { withSourceContext } from "../request-context.mjs";
+import { safeSourceIssues } from "../source-status.mjs";
+import {
+  isLegacyNetworkErrorCode,
+  legacyErrorFromDetails,
+} from "../legacy-error-details.mjs";
 const modules = {
   zhaopin,
   shixiseng,
@@ -18,19 +23,44 @@ const modules = {
   chenyun,
   jiuyeqiao,
 };
-const explicitBodySources = new Set(["zhaopin", "shixiseng", "jiuyeqiao"]);
+const explicitBodySources = new Set([
+  "zhaopin",
+  "shixiseng",
+  "jiuyeqiao",
+  "nowcoder",
+]);
 export function sourceIssue(error, sourceId, siteId) {
   const message = String(error.message || error).slice(0, 300);
-  const code = /captcha|验证码|验证/.test(message)
-    ? "captcha"
-    : /401|403/.test(message)
-      ? "http_forbidden"
-      : /budget_exhausted/.test(message)
-        ? "budget_exhausted"
-        : /parse|内嵌|结构|json/i.test(message)
-          ? "parse_error"
-          : "unavailable";
-  return { code, sourceId, siteId, message, retryable: code === "unavailable" };
+  const checked = safeSourceIssues([{ code: error.code }], sourceId, siteId)[0]
+    .code;
+  const structured =
+    checked !== "source_probe_failed" || error.code === "source_probe_failed"
+      ? checked
+      : error.name === "TimeoutError" || error.code === "ETIMEDOUT"
+        ? "request_timeout"
+        : isLegacyNetworkErrorCode(error.code)
+          ? "network_error"
+          : null;
+  const code =
+    structured ||
+    (/captcha|验证码|验证/.test(message)
+      ? "captcha"
+      : /401|403/.test(message)
+        ? "http_forbidden"
+        : /budget_exhausted/.test(message)
+          ? "budget_exhausted"
+          : /parse|内嵌|结构|json/i.test(message)
+            ? "parse_error"
+            : "unavailable");
+  return {
+    code,
+    sourceId,
+    siteId,
+    message,
+    retryable: ["unavailable", "request_timeout", "network_error"].includes(
+      code,
+    ),
+  };
 }
 export function createLegacyProvider(id, { collector } = {}) {
   const module = modules[id];
@@ -122,13 +152,22 @@ export function createLegacyProvider(id, { collector } = {}) {
             result.stats?.nowcoderRaw ??
             result.stats?.raw ??
             (result.jobs || []).length;
-          for (const message of result.errors || []) {
-            const entry = await ctx.reportError?.(
-              message instanceof Error ? message : Error(String(message)),
-              { sourceId: id, siteId: site.siteId },
-            );
+          for (const [index, message] of (result.errors || []).entries()) {
+            const details = Array.isArray(result.errorDetails)
+              ? result.errorDetails[index]
+              : undefined;
+            const error =
+              details && typeof details === "object"
+                ? legacyErrorFromDetails(details)
+                : message instanceof Error
+                  ? message
+                  : Error(String(message));
+            const entry = await ctx.reportError?.(error, {
+              sourceId: id,
+              siteId: site.siteId,
+            });
             issues.push({
-              ...sourceIssue(message, id, site.siteId),
+              ...sourceIssue(details ? error : message, id, site.siteId),
               ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
             });
           }
@@ -235,6 +274,10 @@ export function createLegacyProvider(id, { collector } = {}) {
         delete freshRecord[field];
       return withSourceContext(ctx, async () => {
         const detail = await module.fetchDetail(freshRecord);
+        if (detail?.errorDetails && typeof detail.errorDetails === "object") {
+          ctx.signal?.throwIfAborted();
+          throw legacyErrorFromDetails(detail.errorDetails);
+        }
         const result = {
           ...freshRecord,
           ...detail,

@@ -35,7 +35,7 @@ for (const [name, provider, sourceSite, html] of [
     "campus campaign",
     yingjiesheng,
     { siteId: "yingjiesheng", origin: "https://www.yingjiesheng.com" },
-    '<table><tr><td><a href="/job-1.html">合成公司校园招聘</a></td><td>2026-12-30</td></tr></table>',
+    '<table><tr><td><a href="/job-000-001-001.html">合成公司校园招聘</a></td><td>2026-12-30</td></tr></table>',
   ],
 ]) {
   test(`${name} reports one actual page and keeps limited coverage conservative`, async () => {

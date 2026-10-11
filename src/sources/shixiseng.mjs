@@ -1,5 +1,6 @@
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { sourceFetch as fetch } from "./request-context.mjs";
+import { safeLegacyErrorDetails } from "./legacy-error-details.mjs";
 // 实习僧适配器（校招/实习主战场）
 // 通道：列表页 Nuxt 内嵌载荷（函数序列化形式，需执行还原）→ interns.data[]
 //
@@ -215,7 +216,10 @@ export async function fetchListPage(
     redirect: "follow",
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw new Error(`实习僧列表页 HTTP ${res.status}`);
+  if (!res.ok)
+    throw Object.assign(Error(`实习僧列表页 HTTP ${res.status}`), {
+      status: res.status,
+    });
   const html = await res.text();
 
   let list = [];
@@ -231,7 +235,10 @@ export async function fetchListPage(
       ),
     ];
     list = uuids.map((uuid) => ({ uuid, name: "", cname: "" }));
-    if (!list.length) throw Error("parse_error: 实习僧列表缺少岗位数据");
+    if (!list.length)
+      throw Object.assign(Error("parse_error: 实习僧列表缺少岗位数据"), {
+        code: "parse_error",
+      });
   }
 
   const jobs = list
@@ -255,6 +262,7 @@ export async function search({
 } = {}) {
   const collected = [];
   const errors = [];
+  const errorDetails = [];
   const seen = new Set();
   for (let p = 1; p <= maxPages; p++) {
     if (signal?.aborted) break;
@@ -270,11 +278,12 @@ export async function search({
       if (fresh.length === 0) break;
     } catch (e) {
       errors.push(`p${p}: ${e.message}`);
+      errorDetails.push(safeLegacyErrorDetails(e));
       log(`实习僧「${keyword}」第 ${p} 页失败：${e.message}`);
     }
     if (p < maxPages) await sleep(delayMs);
   }
-  return { jobs: collected, errors };
+  return { jobs: collected, errors, errorDetails };
 }
 
 /* ==================== 标题混淆解码 ==================== */
@@ -475,7 +484,8 @@ export async function fetchDetail(job, { timeoutMs = 20000 } = {}) {
       redirect: "follow",
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok)
+      throw Object.assign(Error(`HTTP ${res.status}`), { status: res.status });
     const html = await res.text();
 
     // 详情页标题是明文，可顺带修复标题
@@ -524,7 +534,11 @@ export async function fetchDetail(job, { timeoutMs = 20000 } = {}) {
       retryEligible: false,
     };
   } catch (e) {
-    return { description: "", error: e.message };
+    return {
+      description: "",
+      error: e.message,
+      errorDetails: safeLegacyErrorDetails(e),
+    };
   }
 }
 

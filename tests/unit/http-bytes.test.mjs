@@ -111,3 +111,61 @@ test("fast_failures_slow_scheduler_instead_of_speeding_it_up", () => {
   s.recordOutcome("https://example.com", { durationMs: 5000, status: 200 });
   assert.ok(s.originState("https://example.com").intervalMs >= 5000);
 });
+
+test("expanded_payload_cannot_hide_behind_compressed_wire_size", async () => {
+  for (const payload of [
+    { bytes: new Uint8Array(50) },
+    { text: "x".repeat(50) },
+  ]) {
+    const request = setup(async () => ({
+      status: 200,
+      headers: {},
+      wireByteLength: 3,
+      ...payload,
+    }));
+    await assert.rejects(
+      request(url, {
+        responseType: payload.bytes ? "bytes" : "text",
+        maxBytes: 20,
+        maxRetries: 0,
+      }),
+      { code: "response_size_exceeded" },
+    );
+  }
+});
+
+test("compressed_response_settles_physical_wire_bytes", async () => {
+  const settlements = [];
+  const request = setup(
+    async () => ({
+      status: 200,
+      headers: {},
+      text: "中".repeat(10),
+      wireByteLength: 8,
+    }),
+    {
+      budget: {
+        claimRequest: async () => "reserved",
+        settleRequest: async (reservation, value) =>
+          settlements.push({ reservation, ...value }),
+      },
+    },
+  );
+  assert.equal(
+    (await request(url, { maxBytes: 20, maxRetries: 0 })).text.length,
+    10,
+  );
+  assert.deepEqual(settlements, [{ reservation: "reserved", bytes: 8 }]);
+});
+
+test("redirect_loops_keep_a_structured_failure_and_charge_each_attempt", async () => {
+  const budget = createSourceBudget({ maxRequests: 4 });
+  const request = setup(
+    async () => ({ status: 302, headers: { location: "/loop" }, text: "" }),
+    { budget },
+  );
+  await assert.rejects(request(url, { maxRetries: 0 }), {
+    code: "http_redirect_limit",
+  });
+  assert.equal(budget.snapshot().requests, 4);
+});

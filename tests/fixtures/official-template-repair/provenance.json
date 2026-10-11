@@ -1,0 +1,31 @@
+{
+  "zhejiang-list.html": {
+    "siteId": "official-d80ddfbc91795a1f",
+    "sourceUrl": "https://www.zjairports.com/newRecruitment.html",
+    "capturedAt": "2026-10-11T06:56:33.395Z",
+    "purpose": "Reduced observed headline, duplicate summary anchor and split visible date structure; titles are synthetic.",
+    "currentRecruiting": "not_verified"
+  },
+  "zhejiang-detail.html": {
+    "siteId": "official-d80ddfbc91795a1f",
+    "sourceUrl": "https://www.zjairports.com/newRecruitmentInfo.html?id=132",
+    "capturedAt": "2026-10-11T08:46:12.359Z",
+    "purpose": "Reduced observed detail ancestry, empty publication-date container and XLSX/DOCX anchors. Deadline date is preserved; other prose and attachment filenames are synthetic. Names and contact details are omitted.",
+    "currentRecruiting": "expired; structure fixture only",
+    "applicationEvidence": "downloadable registration attachment only; no verified application page"
+  },
+  "wenzhou-list.html": {
+    "siteId": "official-1144ced905f90a21",
+    "sourceUrl": "https://www.wzair.cn/zygg/rlzygg/",
+    "capturedAt": "2026-10-11T07:05:54.725Z",
+    "purpose": "Reduced observed nested table and bg_c recruitment anchor structure; titles are synthetic.",
+    "currentRecruiting": "not_verified"
+  },
+  "wenzhou-detail.html": {
+    "siteId": "official-1144ced905f90a21",
+    "sourceUrl": "https://www.wzair.cn/zygg/rlzygg/2024/08/15/310851.html",
+    "capturedAt": "2026-10-11T07:06:00.935Z",
+    "purpose": "Reduced observed wenzhnag table, explicit publication-date cell and td.wz body ancestry. Publication date is preserved; prose and titles are synthetic. Names, contact details and complete article are omitted.",
+    "currentRecruiting": "unknown; no deadline or verified application evidence"
+  }
+}

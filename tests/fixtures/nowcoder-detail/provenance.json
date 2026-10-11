@@ -1,0 +1,9 @@
+{
+  "443976-reduced.html": {
+    "sourceUrl": "https://www.nowcoder.com/jobs/detail/443976",
+    "capturedAt": "2026-10-11T16:55:48.193Z",
+    "derivedFrom": ".cache/actual-campaign/repair-response-0a5c7228814fb7f5294467925238f108915b819312078e2f722bba958ae18d8b.json",
+    "purpose": "Reduced actual jobDetail state path and body DOM ancestry. Text, company, compensation and timestamps replaced with synthetic values; user and publisher objects omitted. Actual body blocks exactly match native ext.infos and ext.requirements. Apply button has no href.",
+    "currentRecruiting": "not_measured; structure fixture only"
+  }
+}

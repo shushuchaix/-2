@@ -38,6 +38,12 @@ const issueCodes = new Set([
   "pagination_cycle",
   "empty_evidence_unverified",
   "template_not_configured",
+  "http_redirect_limit",
+  "response_size_exceeded",
+  "response_decode_failed",
+  "unsupported_content_encoding",
+  "detail_identity_mismatch",
+  "detail_title_mismatch",
 ]);
 export function isVersionPrivateSource(provider) {
   return (

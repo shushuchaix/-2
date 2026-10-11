@@ -548,8 +548,12 @@ export function assessRecruitmentEvidence({ record, now = Date.now() }) {
       // Split table jobs embedded the truncated common text before their position text.
       r.extra?.kind === "招聘公告-职位表");
   const legacyUnscopedBody =
-    ["zhaopin", "shixiseng", "jiuyeqiao"].includes(r.sourceId) &&
+    ["zhaopin", "shixiseng", "jiuyeqiao", "nowcoder"].includes(r.sourceId) &&
     /^legacy-adapter-[12]$/.test(r.parserVersion || "");
+  // These Chenyun versions marked any nonempty, 3000-character excerpt complete.
+  const legacyChenyunTruncation =
+    r.sourceId === "chenyun" &&
+    /^legacy-adapter-[123]$/.test(r.parserVersion || "");
   // The old PDF parser could mark a text header complete while skipping a scanned table.
   const legacyPdfCoverage =
     Array.isArray(r.attachments) &&
@@ -562,6 +566,7 @@ export function assessRecruitmentEvidence({ record, now = Date.now() }) {
     !/^article-literal-[23]$/.test(r.parserVersion || "") &&
     !legacyUniversityTruncation &&
     !legacyUnscopedBody &&
+    !legacyChenyunTruncation &&
     !legacyPdfCoverage &&
     !!text.trim() &&
     !r.bodyIncomplete &&

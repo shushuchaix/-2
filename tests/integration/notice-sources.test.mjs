@@ -47,7 +47,7 @@ test("campus deadlines remain company campaigns and WAF pages are explicit", asy
   const context = {
     ...ctx(async () => ({
       status: 200,
-      text: '<table><tr><td><a href="/job-1.html">合成公司2027校园招聘</a></td><td>2026-12-30</td></tr></table>',
+      text: '<table><tr><td><a href="/job-000-001-001.html">合成公司2027校园招聘</a></td><td>2026-12-30</td></tr></table>',
       headers: {},
     })),
     sites: [{ siteId: "yingjiesheng", origin: "https://www.yingjiesheng.com" }],
@@ -75,7 +75,7 @@ test("static notice archives stay truncated and campaign hosts require a domain 
   const context = {
     ...ctx(async () => ({
       status: 200,
-      text: '<table><tr><td><a href="https://notyingjiesheng.com/post">错误来源</a><a href="https://www.yingjiesheng.com/job-1.html">真实网申窗口</a></td></tr></table>',
+      text: '<table><tr><td><a href="https://notyingjiesheng.com/post">错误来源</a><a href="https://www.yingjiesheng.com/job-000-001-001.html">真实网申窗口</a></td></tr></table>',
       headers: {},
     })),
     sites: [{ siteId: "yingjiesheng", origin: "https://www.yingjiesheng.com" }],

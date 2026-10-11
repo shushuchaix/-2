@@ -1,4 +1,5 @@
 import { sourceFetch as fetch } from "./request-context.mjs";
+import { parseHTML } from "linkedom";
 // 晨云智慧就业管理服务系统 岗位源
 //
 // 为什么单独写一个源：中国民用航空飞行学院（及多所院校）用的**不是**才立方那套系统，
@@ -209,24 +210,12 @@ export function parseDetail(html) {
   );
 
   // 正文：这是真正装 JD 的容器
-  let requirement = sanitizeText(
-    htmlToText(
-      (html.match(/id="index_detail_content"[^>]*>([\s\S]*?)<\/div>/i) || [
-        ,
-        "",
-      ])[1],
-    ),
-  );
+  const { document } = parseHTML(html);
+  const bodyText = (node) => sanitizeText(htmlToText(node?.innerHTML || ""));
+  let requirement = bodyText(document.getElementById("index_detail_content"));
   if (!requirement) {
     // 兜底：取第一个 .job_need
-    requirement = sanitizeText(
-      htmlToText(
-        (html.match(/class="[^"]*job_need[^"]*"[^>]*>([\s\S]*?)<\/div>/i) || [
-          ,
-          "",
-        ])[1],
-      ),
-    );
+    requirement = bodyText(document.querySelector(".job_need"));
   }
 
   // 工作地址：详情页「工作地址」模块
@@ -275,12 +264,9 @@ export function parseDetail(html) {
     expire,
     industry,
     requirement,
-    description: truncate(
-      [requirement, address ? `工作地址：${address}` : ""]
-        .filter(Boolean)
-        .join("\n"),
-      3000,
-    ),
+    description: [requirement, address ? `工作地址：${address}` : ""]
+      .filter(Boolean)
+      .join("\n"),
     publishTime,
   };
 }
@@ -297,7 +283,9 @@ function toJob(listItem, hostInfo, detail) {
     id: `chenyun:${normKey(hostInfo.name)}:${normKey(title)}|${normKey(company)}`,
     sourceRecordId: listItem.href,
     urlKind: "job_detail",
-    detailStatus: detail.description ? "complete" : "incomplete",
+    detailStatus: detail.requirement ? "complete" : "incomplete",
+    bodyStatus: detail.requirement ? "complete" : "incomplete",
+    parserVersion: "chenyun-body-1",
     source: meta.id,
     sourceName: `${meta.name}·${hostInfo.name}`,
     sources: [meta.id],

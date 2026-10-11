@@ -128,7 +128,7 @@ test("legacy university table jobs cannot hide a truncated common body between t
   );
 });
 
-for (const sourceId of ["zhaopin", "shixiseng", "jiuyeqiao"]) {
+for (const sourceId of ["zhaopin", "shixiseng", "jiuyeqiao", "nowcoder"]) {
   test(`persisted ${sourceId} fallback bodies require a current scoped parser`, () => {
     for (const parserVersion of ["legacy-adapter-1", "legacy-adapter-2"]) {
       const evidence = assessRecruitmentEvidence({

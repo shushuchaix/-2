@@ -1,4 +1,6 @@
 import { sourceFetch as fetch } from "./request-context.mjs";
+import { createHash } from "node:crypto";
+import { parseHTML } from "linkedom";
 // 牛客校招岗位源
 //
 // 通道：https://www.nowcoder.com/jobs/school/jobs 的 SSR 内嵌 __INITIAL_STATE__
@@ -32,11 +34,8 @@ async function get(url, timeoutMs = 25000) {
   return res.text();
 }
 
-/**
- * 带重试的抓取。
- * 牛客的 SSR 偶发只返回壳页面（没有 __INITIAL_STATE__），重试一次通常就能拿到。
- */
-async function getWithRetry(url, { timeoutMs = 25000 } = {}) {
+/** Read one SSR page; missing native state remains an explicit parse failure. */
+async function getInitialStatePage(url, { timeoutMs = 25000 } = {}) {
   const html = await get(url, timeoutMs);
   if (!/__INITIAL_STATE__/.test(html))
     throw Error("parse_error: 页面未包含内嵌数据");
@@ -147,7 +146,8 @@ function parseExt(raw) {
 function msToDate(ms) {
   const n = Number(ms);
   if (!Number.isFinite(n) || n <= 0) return "";
-  return new Date(n).toISOString().slice(0, 10);
+  const date = new Date(n);
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : "";
 }
 
 export function normalizeNowcoderJob(j) {
@@ -218,6 +218,8 @@ export function normalizeNowcoderJob(j) {
       240,
     ),
     description,
+    bodyStatus: "incomplete",
+    detailStatus: "incomplete",
     extra: {
       refreshTime: j.refreshTime,
       // 结构化届别字段 —— 过滤时优先级最高
@@ -235,12 +237,217 @@ export function normalizeNowcoderJob(j) {
   };
 }
 
+function detailError(code, message) {
+  return Object.assign(Error(`${code}: ${message}`), {
+    code,
+    retryable: false,
+  });
+}
+
+function detailId(raw) {
+  if (
+    (typeof raw !== "string" && typeof raw !== "number") ||
+    (typeof raw === "number" && !Number.isSafeInteger(raw))
+  )
+    return "";
+  const id = String(raw).trim();
+  return /^[A-Za-z0-9_-]{1,120}$/.test(id) &&
+    !/^(?:undefined|null|NaN|Infinity)$/i.test(id)
+    ? id
+    : "";
+}
+
+const WINDOW_SELECTOR = ".job-detail-word .job-detail-infos > .deliver-range";
+const WINDOW_PATHS = {
+  startsAt: "store.jobDetail.detail.deliverBegin",
+  deadlineAt: "store.jobDetail.detail.deliverEnd",
+};
+function readDetailWindow(html, native, job) {
+  const result = {
+    startsAt: null,
+    deadlineAt: null,
+    deadline: null,
+    sourceEvidence: (job.sourceEvidence || []).filter(
+      (e) => !["startsAt", "deadlineAt", "deadline"].includes(e.field),
+    ),
+    evidenceConflicts: (job.evidenceConflicts || []).filter(
+      (e) =>
+        !(
+          WINDOW_PATHS[e.field] &&
+          e.sourceId === meta.id &&
+          e.sourcePath === WINDOW_PATHS[e.field] &&
+          ["visible_structured_conflict", "invalid_structured_time"].includes(
+            e.code,
+          )
+        ),
+    ),
+  };
+  const conflict = (field, code) =>
+    result.evidenceConflicts.push({
+      field,
+      code,
+      sourceId: meta.id,
+      sourcePath: WINDOW_PATHS[field],
+    });
+  const { document } = parseHTML(html);
+  for (const node of document.querySelectorAll(
+    'script,style,[hidden],[aria-hidden="true"]',
+  ))
+    node.remove();
+  for (const node of document.querySelectorAll("[style]"))
+    if (
+      /display\s*:\s*none|visibility\s*:\s*hidden/i.test(
+        node.getAttribute("style"),
+      )
+    )
+      node.remove();
+  const headings = document.querySelectorAll(".job-detail-wrap h1.title");
+  const ranges = document.querySelectorAll(WINDOW_SELECTOR);
+  if (
+    headings.length !== 1 ||
+    sanitizeText(headings[0].textContent) !== sanitizeText(native.jobName) ||
+    ranges.length !== 1
+  )
+    return result;
+  const visible = ranges[0].textContent.trim();
+  if (!/投递时间|投递日期/.test(visible)) return result;
+  const dates = [
+    ...visible.matchAll(/(20\d\d)[年.\/-](\d{1,2})[月.\/-](\d{1,2})/g),
+  ].map((m) => `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`);
+  if (dates.length !== 2) return result;
+  const fields = [
+    ["startsAt", "deliverBegin", dates[0]],
+    ["deadlineAt", "deliverEnd", dates[1]],
+  ];
+  for (const [field, key, visibleDate] of fields) {
+    const value = native[key];
+    if (
+      typeof value !== "number" ||
+      !Number.isSafeInteger(value) ||
+      value <= 0 ||
+      !Number.isFinite(new Date(value).getTime()) ||
+      !Number.isFinite(new Date(value + 8 * 3600000).getTime())
+    ) {
+      conflict(field, "invalid_structured_time");
+      return result;
+    }
+    if (
+      new Date(value + 8 * 3600000).toISOString().slice(0, 10) !== visibleDate
+    ) {
+      conflict(field, "visible_structured_conflict");
+      return result;
+    }
+  }
+  if (native.deliverBegin > native.deliverEnd) {
+    conflict("deadlineAt", "invalid_structured_time");
+    return result;
+  }
+  for (const [field, key] of fields) {
+    const value = new Date(native[key]).toISOString();
+    const sourcePath = `store.jobDetail.detail.${key}`;
+    result[field] = value;
+    result.sourceEvidence.push({
+      evidenceId:
+        "nowcoder-window-" +
+        createHash("sha256")
+          .update(job.url + field + value)
+          .digest("hex")
+          .slice(0, 24),
+      field,
+      value,
+      status: "verified",
+      sourceId: meta.id,
+      sourceUrl: job.url,
+      sourceKind: "native_state",
+      sourcePath,
+      sourceExcerpt: visible,
+      location: { jsonPath: sourcePath, selector: WINDOW_SELECTOR },
+      parserVersion: "nowcoder-detail-1",
+      confidence: 100,
+    });
+  }
+  return result;
+}
+
+/** Only the requested job's native detail payload can establish complete JD evidence. */
+export async function fetchDetail(job, { timeoutMs = 25000 } = {}) {
+  let url;
+  try {
+    url = new URL(job?.url);
+  } catch {
+    throw detailError("parse_error", "牛客详情 URL 无效");
+  }
+  const urlId = url.pathname.match(
+    /^\/jobs\/detail\/([A-Za-z0-9_-]{1,120})\/?$/,
+  )?.[1];
+  const expectedId = detailId(job.sourceRecordId);
+  if (
+    url.origin !== "https://www.nowcoder.com" ||
+    url.username ||
+    url.password ||
+    !expectedId ||
+    urlId !== expectedId
+  )
+    throw detailError("parse_error", "牛客详情 URL 与岗位身份不符");
+  const html = await get(url.href, timeoutMs);
+  let state;
+  try {
+    state = parseState(html);
+  } catch (error) {
+    error.retryable = false;
+    throw error;
+  }
+  const scoped = state?.store?.jobDetail;
+  const native = scoped?.detail;
+  if (
+    !native ||
+    detailId(native.id) !== expectedId ||
+    (scoped.jobId !== undefined && detailId(scoped.jobId) !== expectedId) ||
+    typeof native.jobName !== "string" ||
+    !sanitizeText(native.jobName)
+  )
+    throw detailError("parse_error", "牛客原生详情缺失或岗位身份不符");
+  let ext;
+  try {
+    if (typeof native.ext !== "string") throw Error();
+    ext = JSON.parse(native.ext);
+    if (
+      !ext ||
+      typeof ext !== "object" ||
+      Array.isArray(ext) ||
+      typeof ext.infos !== "string" ||
+      typeof ext.requirements !== "string"
+    )
+      throw Error();
+  } catch {
+    throw detailError("parse_error", "牛客原生详情 ext JSON 或正文字段无效");
+  }
+  const description = htmlToText([ext.infos, ext.requirements].join("\n"));
+  if (!description)
+    throw detailError("detail_insufficient", "牛客原生详情正文为空");
+  return {
+    title: sanitizeText(native.jobName),
+    company: sanitizeText(scoped.jobCompany?.companyName) || job.company || "",
+    description,
+    bodyStatus: "complete",
+    detailStatus: "complete",
+    retryEligible: false,
+    extra: {
+      ...job.extra,
+      nativeStatus: native.status,
+      deliverBegin: msToDate(native.deliverBegin),
+      deliverEnd: msToDate(native.deliverEnd),
+    },
+    ...readDetailWindow(html, native, job),
+  };
+}
+
 /** 抓取校招岗位列表 */
 export async function fetchCampusJobs({
   timeoutMs = 25000,
   log = () => {},
 } = {}) {
-  const html = await getWithRetry(JOBS_URL, { timeoutMs, log });
+  const html = await getInitialStatePage(JOBS_URL, { timeoutMs, log });
   const state = parseState(html);
   const list = state && findArray(state, "jobListData");
   if (!list)
@@ -301,7 +508,7 @@ export async function fetchSchedule({
   timeoutMs = 25000,
   log = () => {},
 } = {}) {
-  const html = await getWithRetry(SCHEDULE_URL, { timeoutMs, log });
+  const html = await getInitialStatePage(SCHEDULE_URL, { timeoutMs, log });
   const state = parseState(html);
   if (!state) return { items: [], note: "未找到内嵌数据" };
   const list = findArray(state, "datas") || [];

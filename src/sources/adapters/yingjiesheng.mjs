@@ -3,6 +3,36 @@ import { noticeDocument } from "./official-announcements.mjs";
 import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
 import { canonicalizeSourceUrl } from "../../domain/identity.mjs";
+import { parseHTML } from "linkedom";
+
+function campusDocument(response) {
+  if (response.status === 200) {
+    const { document } = parseHTML(response.text);
+    const cookieReload = [...document.querySelectorAll("script")].some(
+      (script) =>
+        /\bacw_sc__v2\b/.test(script.textContent) &&
+        /\bdocument\.cookie\b/.test(script.textContent) &&
+        /\b(?:document\.)?location\.reload\s*\(/.test(script.textContent),
+    );
+    if (
+      document.querySelector("textarea#renderData") &&
+      document.querySelector('meta[name="aliyun_waf_aa"]') &&
+      document.querySelector('meta[name="aliyun_waf_bb"]') &&
+      cookieReload
+    )
+      throw Object.assign(
+        Error("Public campus page requires JavaScript verification"),
+        {
+          code: "challenge_required",
+          phase: "parse",
+          requestId: response.requestId,
+          retryable: false,
+        },
+      );
+  }
+  return noticeDocument(response);
+}
+
 export default createPagedProvider({
   id: "yingjiesheng",
   name: "应届生网申窗口",
@@ -21,7 +51,7 @@ export default createPagedProvider({
         truncationReason: "listing_only",
       };
     const url = "https://www.yingjiesheng.com/deadline/";
-    const document = noticeDocument(
+    const document = campusDocument(
       await ctx.request(url, { signal: ctx.signal }),
     );
     const records = [],
@@ -29,22 +59,31 @@ export default createPagedProvider({
     for (const a of document.querySelectorAll("table tr a[href]")) {
       const title = a.textContent.trim();
       if (!title || /首页|上一页|下一页|登录|注册/.test(title)) continue;
-      let href;
+      let candidate;
       try {
-        href = canonicalizeSourceUrl(new URL(a.getAttribute("href"), url).href);
+        candidate = new URL(a.getAttribute("href"), url);
       } catch {
         continue;
       }
+      const nativeId = candidate.pathname.match(
+        /^\/job-(\d{3}-\d{3}-\d{3})\.html$/,
+      )?.[1];
       if (
-        !/(?:^|\.)yingjiesheng\.com$/.test(new URL(href).hostname) ||
-        seen.has(href)
+        candidate.origin !== new URL(url).origin ||
+        candidate.username ||
+        candidate.password ||
+        !nativeId ||
+        seen.has(nativeId)
       )
         continue;
-      seen.add(href);
+      const href = canonicalizeSourceUrl(new URL(candidate.pathname, url).href);
+      seen.add(nativeId);
       const deadlineAt = explicitDate(a.closest("tr")?.textContent);
       records.push(
         baseRecord({
-          id: href,
+          id: nativeId,
+          sourceRecordIdKind: "authority",
+          urlKind: "notice_detail",
           sourceId: "yingjiesheng",
           siteId: site.siteId,
           scope: "deadline",
@@ -76,7 +115,7 @@ export default createPagedProvider({
     };
   },
   async detail(record, ctx) {
-    const document = noticeDocument(
+    const document = campusDocument(
       await ctx.request(record.url, { signal: ctx.signal }),
     );
     const node = document.querySelector(

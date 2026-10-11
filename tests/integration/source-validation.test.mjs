@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { collectionFixture } from "../helpers/collection-fixture.mjs";
 import {
   createPagedProvider,
@@ -12,6 +13,8 @@ import { createAttachmentService } from "../../src/attachments/service.mjs";
 import { createRequestClient } from "../../src/infrastructure/http/client.mjs";
 import { createScheduler } from "../../src/infrastructure/http/scheduler.mjs";
 import weibo from "../../src/sources/adapters/weibo-public.mjs";
+import announcements from "../../src/sources/adapters/official-announcements.mjs";
+import { loadSiteCatalog } from "../../src/sources/catalog.mjs";
 
 async function moduleUnderTest() {
   const module = await import("../../tools/source-validation.mjs").catch(
@@ -237,8 +240,21 @@ test("default catalog emits all 98 rows with template, public seed and login blo
   assert.equal(new Set(report.rows.map((row) => row.siteId)).size, 98);
   assert.equal(
     report.rows.filter((row) => row.blockReason === "template_missing").length,
-    47,
+    41,
   );
+  for (const siteId of [
+    "official-d80ddfbc91795a1f",
+    "official-1144ced905f90a21",
+    "official-0201d47ae30267a0",
+    "official-a64ede1720adf4fa",
+    "official-9b7b3076410fcacc",
+    "siemens",
+  ]) {
+    assert.notEqual(
+      report.rows.find((row) => row.siteId === siteId).blockReason,
+      "template_missing",
+    );
+  }
   for (const id of ["wechat", "weibo"]) {
     assert.equal(
       report.rows.find((row) => row.siteId === id).blockReason,
@@ -257,6 +273,124 @@ test("default catalog emits all 98 rows with template, public seed and login blo
     new Set(report.rows.map((r) => r.siteId)),
   );
 });
+
+function inlineValidationSite() {
+  const entry = loadSiteCatalog().find(
+    (row) => row.siteId === "official-9b7b3076410fcacc",
+  );
+  return {
+    ...entry,
+    siteId: "inline-validation-fixture",
+    name: "Public inline structure fixture",
+    origin: "https://jobs.example.org",
+    allowedDomains: ["jobs.example.org"],
+    template: {
+      ...entry.template,
+      listUrl: "https://jobs.example.org/contactus/",
+    },
+  };
+}
+
+test("source validation accepts a valid explicit inline template without linkRule", async (t) => {
+  const { validateSources } = await moduleUnderTest();
+  const catalog = [inlineValidationSite()];
+  assert.equal(catalog[0].template.linkRule, undefined);
+  const text = fs.readFileSync(
+    new URL(
+      "../fixtures/official-template-repair/gst-inline.html",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const f = await prepared(
+    t,
+    [announcements],
+    catalog,
+    { maxRequests: 1, maxDetails: 0 },
+    {
+      transport: async (url) => {
+        assert.equal(url, "https://jobs.example.org/contactus/");
+        return { status: 200, text, headers: {} };
+      },
+    },
+  );
+  const report = await validateSources({
+    context: f.context,
+    ref: f.ref,
+    catalog,
+    detailsPerSite: 0,
+  });
+  assert.equal(report.rows[0].blockReason, null);
+  assert.equal(report.rows[0].status, "parsed");
+  assert.equal(report.rows[0].listAttempted, true);
+  assert.equal(report.rows[0].listContractVerified, false);
+  assert.equal(report.rows[0].rawBasis, "accepted_fallback");
+  assert.equal(report.rows[0].rawCount, null);
+  assert.equal(report.rows[0].acceptedFallbackCount, 3);
+  assert.equal(report.rows[0].pageCommitted, true);
+  assert.equal(report.rows[0].parsedCount, 3);
+  assert.equal(report.rows[0].bodyVerifiedCount, 3);
+  assert.equal(report.rows[0].applicationAvailableCount, 0);
+  assert.equal(report.rows[0].validNewUniqueCount, 0);
+  assert.equal(f.networkCalls, 1);
+  assert.equal(report.usage.usedRequests, 1);
+  assert.equal(report.usage.usedModelRequests, 0);
+});
+
+for (const [name, mutate] of [
+  [
+    "wrong native attribute",
+    (template) => {
+      template.nativeIdAttribute = "href";
+    },
+  ],
+  [
+    "unanchored native pattern",
+    (template) => {
+      template.nativeIdPattern = "career-detail-\\d+";
+    },
+  ],
+  [
+    "missing required sections",
+    (template) => {
+      delete template.requiredBodyRules;
+    },
+  ],
+  [
+    "duplicate required sections",
+    (template) => {
+      template.requiredBodyRules = [
+        template.requiredBodyRules[0],
+        template.requiredBodyRules[0],
+      ];
+    },
+  ],
+]) {
+  test(`source validation blocks inline ${name} before any transport even when linkRule exists`, async (t) => {
+    const { validateSources } = await moduleUnderTest();
+    const entry = inlineValidationSite();
+    entry.template.linkRule = "a[href]";
+    mutate(entry.template);
+    const catalog = [entry];
+    const f = await prepared(t, [announcements], catalog, {
+      maxRequests: 1,
+      maxDetails: 0,
+    });
+    const report = await validateSources({
+      context: f.context,
+      ref: f.ref,
+      catalog,
+      detailsPerSite: 0,
+    });
+    assert.equal(report.rows[0].status, "blocked");
+    assert.equal(report.rows[0].blockReason, "template_missing");
+    assert.equal(report.rows[0].listAttempted, false);
+    assert.equal(report.rows[0].pageCommitted, false);
+    assert.equal(f.networkCalls, 0);
+    assert.equal(report.usage.usedRequests, 0);
+    assert.equal(report.usage.usedModelRequests, 0);
+  });
+}
 
 test("source-filtered records retain trusted raw counts and cannot become a normal empty list", async (t) => {
   const { validateSources } = await moduleUnderTest();

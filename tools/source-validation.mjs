@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { loadSiteCatalog } from "../src/sources/catalog.mjs";
 import { readProviderPage } from "../src/sources/collection-page.mjs";
 import { canonicalSocialUrl } from "../src/sources/social-content.mjs";
+import { validateInlineOfficialJobTemplate } from "../src/sources/adapters/inline-official-jobs.mjs";
 import { assertSourceRecord } from "../src/domain/contracts.mjs";
 import { assertCollectionWrite } from "../src/domain/collection.mjs";
 import { evaluateRules } from "../src/domain/ranking.mjs";
@@ -182,11 +183,19 @@ function publicConfig(sourceId, supplied) {
 }
 
 function prerequisite(site, cfg, scoped, context) {
-  if (
-    site.providerId === "official-announcements" &&
-    ["listUrl", "linkRule", "bodyRule"].some((key) => !site.template?.[key])
-  )
-    return "template_missing";
+  if (site.providerId === "official-announcements") {
+    if (site.template?.inlineJob === true) {
+      try {
+        validateInlineOfficialJobTemplate(site);
+      } catch {
+        return "template_missing";
+      }
+    } else if (
+      ["listUrl", "linkRule", "bodyRule"].some((key) => !site.template?.[key])
+    ) {
+      return "template_missing";
+    }
+  }
   if (
     site.providerId === "university-91job" &&
     !/^\d{5}$/.test(String(site.tenantId || ""))

@@ -19,6 +19,7 @@ import { SiteProbeCard } from "./SiteProbeCard";
 import { sourceDraft, siteHealth, type SourceDraft } from "./source-view";
 import type { SourceSummary, SourceSite, SourceHealth } from "./SiteDialog";
 
+export type SourceSiteFilters = { query: string; page: number };
 export type SourceDetailsProps = {
   api: ApiClient;
   desktop: DesktopAdapter;
@@ -32,6 +33,8 @@ export type SourceDetailsProps = {
   draft?: SourceDraft;
   onDraftChange?(draft: SourceDraft): void;
   onHealth?(siteId: string, health: SourceHealth): void;
+  siteFilters?: SourceSiteFilters;
+  onSiteFiltersChange?(filters: SourceSiteFilters): void;
 };
 export function SourceDetailsSheet({
   api,
@@ -46,9 +49,18 @@ export function SourceDetailsSheet({
   onHealth,
   onClose,
   onChanged,
+  siteFilters,
+  onSiteFiltersChange,
 }: SourceDetailsProps) {
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
+  const [localFilters, setLocalFilters] = useState<SourceSiteFilters>({
+    query: "",
+    page: 1,
+  });
+  const { query, page } = siteFilters || localFilters;
+  function changeFilters(next: SourceSiteFilters) {
+    setLocalFilters(next);
+    onSiteFiltersChange?.(next);
+  }
   const [localDraft, setLocalDraft] = useState(() =>
     source ? sourceDraft(source) : { enabled: false, urls: "", accounts: "" },
   );
@@ -100,10 +112,7 @@ export function SourceDetailsSheet({
             name="source-site-search"
             label="搜索此来源站点"
             value={query}
-            onChange={(value) => {
-              setQuery(value);
-              setPage(1);
-            }}
+            onChange={(value) => changeFilters({ query: value, page: 1 })}
           />
           <p>
             第 {page} 页 · 共 {filtered.length} 个站点，每页 20 个
@@ -130,14 +139,14 @@ export function SourceDetailsSheet({
             <Button
               variant="outline"
               disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => changeFilters({ query, page: page - 1 })}
             >
               上一页站点
             </Button>
             <Button
               variant="outline"
               disabled={page * 20 >= filtered.length}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => changeFilters({ query, page: page + 1 })}
             >
               下一页站点
             </Button>

@@ -36,6 +36,65 @@ const catalog = () => ({
   ],
 });
 
+test("all-target source directory blocks creating shared sites", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/sources?allTargets=true",
+    apiHandler: (p, o) => (p === "/sources" ? catalog() : syntheticApi(p, o)),
+  });
+  await f.screen.findByRole("region", { name: "合成学校来源摘要" });
+  const add = f.screen.getByRole("button", {
+    name: "添加目录站点",
+  }) as HTMLButtonElement;
+  assert.equal(add.disabled, true);
+  await f.user.click(add);
+  assert.equal(f.screen.queryByRole("dialog"), null);
+  assert.ok(f.screen.getByText(/选择一个目标版本后可添加目录站点/));
+  assert.equal(
+    f.apiCalls.some(
+      (c) => c.path === "/sources/sites" && c.options.method === "POST",
+    ),
+    false,
+  );
+});
+test("site filters and page survive closing details but clear on version switch", async (t) => {
+  const data = catalog();
+  data.sites = Array.from({ length: 45 }, (_, i) => ({
+    ...data.sites[0],
+    siteId: "site-" + i,
+    name: "候选目录" + i,
+  }));
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => (p === "/sources" ? data : syntheticApi(p, o)),
+  });
+  await openSource(f, "合成学校");
+  await f.user.type(f.screen.getByLabelText("搜索此来源站点"), "候选目录");
+  await f.user.click(f.screen.getByRole("button", { name: "下一页站点" }));
+  await f.screen.findByText(/第 2 页 · 共 45 个站点/);
+  await f.user.click(f.screen.getByRole("button", { name: "关闭来源详情" }));
+  await openSource(f, "合成学校");
+  assert.equal(
+    (f.screen.getByLabelText("搜索此来源站点") as HTMLInputElement).value,
+    "候选目录",
+  );
+  assert.ok(f.screen.getByText(/第 2 页 · 共 45 个站点/));
+  await act(async () => {
+    window.location.hash = "#/sources?packageId=B&targetRevisionId=t2%401";
+    window.dispatchEvent(new Event("hashchange"));
+  });
+  await waitFor(() =>
+    assert.equal(
+      f.screen.queryByRole("button", { name: "关闭来源详情" }),
+      null,
+    ),
+  );
+  await openSource(f, "合成学校");
+  assert.equal(
+    (f.screen.getByLabelText("搜索此来源站点") as HTMLInputElement).value,
+    "",
+  );
+  assert.ok(f.screen.getByText(/第 1 页 · 共 45 个站点/));
+});
 test("shared probe history is not attributed to the selected target version", async (t) => {
   const data = catalog();
   data.sites[0].health = {
@@ -211,11 +270,8 @@ test("successful source probe updates provider availability count", async (t) =>
     await f.screen.findByRole("button", { name: "检查候选目录" }),
   );
   assert.ok(
-    (
-      await f.screen.findAllByText(
-    /1 个目录站点 · 1 个探针取得有效样本站点/,
-      )
-    ).length,
+    (await f.screen.findAllByText(/1 个目录站点 · 1 个探针取得有效样本站点/))
+      .length,
   );
 });
 

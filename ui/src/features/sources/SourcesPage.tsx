@@ -37,7 +37,10 @@ import {
   type SourceSite,
   type SourceHealth,
 } from "./SiteDialog";
-import { SourceDetailsSheet } from "./SourceDetailsSheet";
+import {
+  SourceDetailsSheet,
+  type SourceSiteFilters,
+} from "./SourceDetailsSheet";
 import {
   sourceRows,
   sourceCategories,
@@ -122,11 +125,16 @@ export function SourcesPage({
     values: Record<string, SourceDraft>;
   }>({ key, values: {} });
   const [filterState, setFilters] = useState({ key, value: initialFilters });
+  const [siteFilterState, setSiteFilters] = useState<{
+    key: string;
+    values: Record<string, SourceSiteFilters>;
+  }>({ key, values: {} });
   const [refresh, setRefresh] = useState(0);
   const catalog = catalogState.key === key ? catalogState.value : null;
   const error = errorState.key === key ? errorState.error : null;
   const filters = filterState.key === key ? filterState.value : initialFilters;
   const drafts = draftState.key === key ? draftState.values : {};
+  const siteFilters = siteFilterState.key === key ? siteFilterState.values : {};
   const opened =
     details?.key === key
       ? catalog?.sources.find((s) => s.sourceId === details.sourceId)
@@ -137,6 +145,7 @@ export function SourcesPage({
       prev.key === key ? prev : { key, value: initialFilters },
     );
     setDetails((prev) => (prev?.key === key ? prev : null));
+    setSiteFilters((prev) => (prev.key === key ? prev : { key, values: {} }));
     setSiteDialog((prev) => (prev === key ? prev : null));
   }, [key]);
   useEffect(() => {
@@ -212,11 +221,19 @@ export function SourcesPage({
           <Button variant="outline" onClick={() => setRefresh((v) => v + 1)}>
             刷新来源
           </Button>
-          <Button disabled={!catalog} onClick={() => setSiteDialog(key)}>
+          <Button
+            disabled={!catalog || !ctx.scope}
+            onClick={() => setSiteDialog(key)}
+          >
             添加目录站点
           </Button>
         </div>
       </header>
+      {!ctx.scope && (
+        <p className="text-muted-foreground">
+          选择一个目标版本后可添加目录站点。
+        </p>
+      )}
       {catalog && (
         <section
           aria-label="来源状态摘要"
@@ -340,8 +357,7 @@ export function SourcesPage({
                 <CardHeader>
                   <CardTitle>{source.name}</CardTitle>
                   <CardDescription>
-                    {owned.length} 个目录站点 · {ready}{" "}
-                    个探针取得有效样本站点
+                    {owned.length} 个目录站点 · {ready} 个探针取得有效样本站点
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
@@ -451,6 +467,17 @@ export function SourcesPage({
           scope={ctx.scope}
           generation={ctx.generation}
           draft={drafts[opened.sourceId] || sourceDraft(opened)}
+          siteFilters={siteFilters[opened.sourceId] || { query: "", page: 1 }}
+          onSiteFiltersChange={(filters) => {
+            if (currentKey.current === key)
+              setSiteFilters((prev) => ({
+                key,
+                values: {
+                  ...(prev.key === key ? prev.values : {}),
+                  [opened.sourceId]: filters,
+                },
+              }));
+          }}
           onDraftChange={(draft) => {
             if (currentKey.current === key)
               setDrafts((prev) => ({
@@ -470,7 +497,7 @@ export function SourcesPage({
           }
         />
       )}
-      {catalog && (
+      {catalog && ctx.scope && (
         <SiteDialog
           key={key}
           api={api}

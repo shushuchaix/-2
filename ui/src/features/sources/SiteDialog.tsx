@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ApiClient } from "../../lib/types";
 import { useOperation } from "../../lib/hooks";
+import { useVersionContext } from "../../app/VersionContext";
 import { validateInput } from "../../../../public/js/validation-rules.js";
 import { TextField } from "../../components/TextField";
 import { FormFeedback } from "../../components/FormFeedback";
@@ -71,6 +72,7 @@ export function SiteDialog({
   onClose(): void;
   onSaved(site: SourceSite): void;
 }) {
+  const version = useVersionContext();
   const [draft, setDraft] = useState({
     providerId: sources[0]?.sourceId || "",
     siteId: "",
@@ -90,7 +92,7 @@ export function SiteDialog({
     op.clear();
   };
   async function save() {
-    if (op.busy) return;
+    if (op.busy || !version.scope) return;
     const input = Object.fromEntries(
       Object.entries(draft).map(([k, v]) => [k, v.trim()]),
     ) as typeof draft;
@@ -209,7 +211,10 @@ export function SiteDialog({
             >
               取消
             </Button>
-            <Button type="submit" disabled={op.busy || !sources.length}>
+            <Button
+              type="submit"
+              disabled={op.busy || !sources.length || !version.scope}
+            >
               {op.busy ? "正在保存候选站点…" : "保存候选站点"}
             </Button>
           </DialogFooter>

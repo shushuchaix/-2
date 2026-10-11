@@ -27,6 +27,45 @@ const paused = {
   },
 };
 
+test("first activity read failure can be retried without changing version or reloading", async (t) => {
+  let reads = 0;
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => {
+      if (p === "/collections") {
+        reads++;
+        if (reads === 1) throw new Error("合成暂时读取失败");
+        return { collections: [] };
+      }
+      return syntheticApi(p, o);
+    },
+  });
+  const retry = await f.screen.findByRole("button", {
+    name: "重新读取采集活动",
+  });
+  assert.equal(
+    (f.screen.getByRole("button", { name: "更新岗位" }) as HTMLButtonElement)
+      .disabled,
+    true,
+  );
+  await f.user.click(retry);
+  await waitFor(() =>
+    assert.equal(
+      (f.screen.getByRole("button", { name: "更新岗位" }) as HTMLButtonElement)
+        .disabled,
+      false,
+    ),
+  );
+  assert.equal(reads, 2);
+  assert.equal(
+    f.screen.queryByRole("button", { name: "重新读取采集活动" }),
+    null,
+  );
+  assert.deepEqual(
+    f.apiCalls.filter((c) => c.path === "/collections").at(-1)?.scope,
+    { packageId: "A", targetRevisionId: "t1@1" },
+  );
+});
 test("header and workbench share the current version root without extra queries", async (t) => {
   const f = await renderApp(t, {
     route: "#/workbench?packageId=A&targetRevisionId=t1%401",

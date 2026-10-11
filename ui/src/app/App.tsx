@@ -32,6 +32,7 @@ import {
   SidebarTrigger,
 } from "../components/ui/sidebar";
 import { TooltipProvider } from "../components/ui/tooltip";
+import { Button } from "../components/ui/button";
 import { Toaster } from "../components/ui/toast";
 import { TargetPicker } from "../components/TargetPicker";
 import { FormFeedback } from "../components/FormFeedback";
@@ -195,6 +196,16 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
                     "）"
                   : ""}
               </span>
+            )}
+            {collection.error && version.scope && (
+              <Button
+                variant="outline"
+                className="ml-3"
+                disabled={collection.loading}
+                onClick={() => void collection.refresh()}
+              >
+                重新读取采集活动
+              </Button>
             )}
           </section>
         </header>

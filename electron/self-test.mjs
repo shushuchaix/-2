@@ -88,6 +88,31 @@ export async function settleDesktopPopups() {
   }
 }
 
+export async function captureDesktopFrame(webContents, { timeoutMs = 3000 } = {}) {
+  if (!webContents.isOffscreen()) throw Error("self_test_offscreen_required");
+  await webContents.executeJavaScript(`(${settleDesktopPopups.toString()})()`, true);
+  let listener, timer;
+  try {
+    return await new Promise((resolve, reject) => {
+      listener = (_event, _dirtyRect, image) => {
+        try {
+          if (!image || image.isEmpty()) return;
+          const { width, height } = image.getSize();
+          if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+          // Electron's paint image contains the whole frame, regardless of dirtyRect.
+          resolve(image);
+        } catch (error) { reject(error); }
+      };
+      timer = setTimeout(() => reject(Error("self_test_paint_timeout")), timeoutMs);
+      webContents.on("paint", listener);
+      webContents.invalidate();
+    });
+  } finally {
+    clearTimeout(timer);
+    if (listener) webContents.removeListener("paint", listener);
+  }
+}
+
 export function validateDesktopMatrix(screenshots, dpr) {
   const issues = [], keys = new Set();
   for (const shot of screenshots.filter(shot => shot.matrix === true)) {
@@ -480,10 +505,10 @@ export async function runWorkspaceSelfTest({
   const trace = async (action,label,details={}) => interactions.push({ action,label,page:lastPage,
     ...(await js("({actualWidth:innerWidth,dpr:devicePixelRatio})")),...details });
   const capture = async (file,extra={}) => {
-    const geometry=await js("({actualWidth:innerWidth,dpr:devicePixelRatio,label:document.querySelector('h1')?.textContent.trim()})");
+    const geometry=await js("({actualWidth:innerWidth,actualHeight:innerHeight,dpr:devicePixelRatio,label:document.querySelector('h1')?.textContent.trim()})");
     const page=desktopPages.find(item=>item.label===geometry.label)?.page || lastPage;
-    fs.writeFileSync(path.join(dataDir,file),(await window.webContents.capturePage()).toPNG());
-    screenshots.push({page,width:requestedWidth,actualWidth:geometry.actualWidth,dpr:geometry.dpr,file,...extra});
+    fs.writeFileSync(path.join(dataDir,file),(await captureDesktopFrame(window.webContents)).toPNG());
+    screenshots.push({page,width:requestedWidth,actualWidth:geometry.actualWidth,actualHeight:geometry.actualHeight,dpr:geometry.dpr,file,...extra});
   };
   const audit = async (label) => {
     const settled=await js(`(${settleDesktopPopups.toString()})()`);

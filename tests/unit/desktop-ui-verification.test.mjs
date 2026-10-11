@@ -124,6 +124,74 @@ test("native response observer filters origin and route, preserves other listene
   assert.equal(calls.length, 4);
 });
 
+test("desktop capture subscribes after settling and before invalidating, and returns only a fresh whole frame", async () => {
+  const contents = new EventEmitter(), calls = [];
+  const unrelated = () => {};
+  contents.on("paint", unrelated);
+  contents.isOffscreen = () => true;
+  contents.executeJavaScript = async (source) => {
+    calls.push("settle");
+    assert.match(source, /settleDesktopPopups/);
+    assert.equal(contents.listenerCount("paint"), 1);
+  };
+  contents.capturePage = () => assert.fail("cached capture must not be used");
+  const fresh = { isEmpty: () => false, getSize: () => ({ width: 750, height: 1800 }) };
+  contents.invalidate = () => {
+    calls.push("invalidate");
+    assert.equal(contents.listenerCount("paint"), 2, "subscribe before requesting paint");
+    contents.emit("paint", {}, {}, { isEmpty: () => true });
+    contents.emit("paint", {}, {}, { isEmpty: () => false, getSize: () => ({ width: 0, height: 0 }) });
+    contents.emit("paint", {}, { width: 10, height: 10 }, fresh);
+  };
+  assert.equal(await desktop.captureDesktopFrame(contents), fresh);
+  assert.deepEqual(calls, ["settle", "invalidate"]);
+  assert.deepEqual(contents.listeners("paint"), [unrelated]);
+});
+
+test("desktop capture timeout, invalidation or settling error, and non-offscreen rejection leave no owned listener", async () => {
+  for (const mode of ["timeout", "throw", "settle-error", "non-offscreen"]) {
+    const contents = new EventEmitter();
+    const unrelated = () => {};
+    contents.on("paint", unrelated);
+    contents.isOffscreen = () => mode !== "non-offscreen";
+    contents.executeJavaScript = async () => {
+      assert.notEqual(mode, "non-offscreen");
+      if (mode === "settle-error") throw Error("synthetic settle failure");
+    };
+    contents.invalidate = () => { if (mode === "throw") throw Error("synthetic paint failure"); };
+    await assert.rejects(desktop.captureDesktopFrame(contents, { timeoutMs: 20 }),
+      mode === "timeout" ? /self_test_paint_timeout/ : mode === "throw" ? /synthetic paint failure/ : mode === "settle-error" ? /synthetic settle failure/ : /self_test_offscreen_required/);
+    assert.deepEqual(contents.listeners("paint"), [unrelated]);
+  }
+});
+
+test("desktop capture writes the fresh frame and records actual renderer width and height", async () => {
+  const source = fs.readFileSync(new URL("../../electron/self-test.mjs", import.meta.url), "utf8");
+  const expression = source.slice(source.indexOf("  const capture = async"), source.indexOf("  const audit = async"));
+  const screenshots = [], writes = [], calls = [], contents = {};
+  const png = Buffer.from("fresh frame");
+  const capture = vm.runInNewContext(`${expression};capture`, {
+    js: async expression => vm.runInNewContext(expression, {
+      innerWidth: 376, innerHeight: 901, devicePixelRatio: 1.5,
+      document: { querySelector: () => ({ textContent: "回收站" }) },
+    }),
+    desktopPages: desktop.desktopPages, lastPage: "workbench", requestedWidth: 375,
+    dataDir: "synthetic", path, screenshots, window: { webContents: contents },
+    captureDesktopFrame: async value => {
+      assert.equal(value, contents); calls.push("fresh");
+      return { toPNG: () => { calls.push("png"); return png; } };
+    },
+    fs: { writeFileSync: (...args) => writes.push(args) },
+  });
+  await capture("trash-expired.png", { matrix: false });
+  assert.deepEqual(calls, ["fresh", "png"]);
+  assert.deepEqual(writes, [[path.join("synthetic", "trash-expired.png"), png]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(screenshots)), [{
+    page: "trash", width: 375, actualWidth: 376, actualHeight: 901, dpr: 1.5,
+    file: "trash-expired.png", matrix: false,
+  }]);
+});
+
 test("popup inspection waits for entering animations and stable frames, and rejects motion that never settles", async () => {
   const run = (neverSettles = false) => {
     let frame = 0;

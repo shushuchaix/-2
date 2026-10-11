@@ -3,6 +3,38 @@ import {
   parseSocialResponse,
 } from "../sources/social-content.mjs";
 import { platformPolicy } from "../../electron/collection/network-policy.mjs";
+import { parseHTML } from "linkedom";
+
+function isWechatCaptchaResponse(response) {
+  if ((response.status ?? 200) !== 200 || !response.url) return false;
+  const finalUrl = new URL(response.url);
+  // Classification of an already received response only. This route is never
+  // admitted for requests, and its query is neither reused nor returned.
+  if (
+    finalUrl.origin !== "https://mp.weixin.qq.com" ||
+    finalUrl.username ||
+    finalUrl.password ||
+    finalUrl.pathname !== "/mp/wappoc_appmsgcaptcha"
+  )
+    return false;
+  const { document } = parseHTML(response.text || response.html || "");
+  if (document.querySelector("#js_content")) return false;
+  for (const node of document.querySelectorAll(
+    "script,style,template,[hidden],[aria-hidden='true']",
+  ))
+    node.remove();
+  for (const node of document.querySelectorAll("[style]"))
+    if (
+      /display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?:\s*;|\s*$)/i.test(
+        node.getAttribute("style"),
+      )
+    )
+      node.remove();
+  return /环境异常|请完成验证|安全验证|验证码|人机验证|访问过于频繁/.test(
+    document.documentElement?.textContent || "",
+  );
+}
+
 export function createContentReadService({
   request: defaultRequest,
   browser,
@@ -28,19 +60,34 @@ export function createContentReadService({
         url = canonicalSocialUrl(input.url, platform),
         request = input.request || defaultRequest;
       signal?.throwIfAborted();
-      const parse = (r) => ({
-        status: r.status ?? 200,
-        channel: r.channel,
-        usage: r.usage,
-        nextDueAt: r.nextDueAt,
-        ...parseSocialResponse({
-          platform,
-          url: r.url || url,
+      const parse = (r) => {
+        const metadata = {
           status: r.status ?? 200,
-          text: r.text || r.html || "",
-        }),
-        checkedAt: new Date(clock.now()).toISOString(),
-      });
+          channel: r.channel,
+          usage: r.usage,
+          nextDueAt: r.nextDueAt,
+          checkedAt: new Date(clock.now()).toISOString(),
+        };
+        if (platform === "wechat" && isWechatCaptchaResponse(r))
+          return {
+            ...metadata,
+            url,
+            bodyStatus: "challenge_required",
+            retryEligible: true,
+            description: null,
+            images: [],
+            externalLinks: [],
+          };
+        return {
+          ...metadata,
+          ...parseSocialResponse({
+            platform,
+            url: r.url || url,
+            status: r.status ?? 200,
+            text: r.text || r.html || "",
+          }),
+        };
+      };
       let result;
       try {
         const response = await request(url, {
@@ -70,6 +117,7 @@ export function createContentReadService({
       }
       if (
         result.bodyStatus === "complete" ||
+        result.bodyStatus === "challenge_required" ||
         result.status === 429 ||
         ((result.status === 403 || result.status === 401) && !input.sessionRef)
       )
@@ -97,6 +145,7 @@ export function createContentReadService({
         }
         if (
           result.bodyStatus === "complete" ||
+          result.bodyStatus === "challenge_required" ||
           result.status === 429 ||
           result.status === 403
         )

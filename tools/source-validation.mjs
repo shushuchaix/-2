@@ -53,6 +53,8 @@ const codes = new Set([
   "collection_diagnostic_replayed",
   "collection_route_forbidden",
   "parse_error",
+  "content_non_json",
+  "risk_blocked",
   "captcha",
   "rate_limited",
   "restricted",
@@ -791,6 +793,7 @@ export async function validateSources({
               [
                 "public_seeds_required",
                 "login_required",
+                "risk_blocked",
                 "boss_login_required",
                 "source_budget_exhausted",
                 "budget_exhausted",
@@ -823,6 +826,7 @@ export async function validateSources({
           "model_budget_exhausted",
           "restricted",
           "login_required",
+          "risk_blocked",
           "collection_probe_unavailable",
         ].includes(code)
       )

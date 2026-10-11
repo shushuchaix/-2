@@ -35,11 +35,11 @@ test("social list transport failures never advance a successful empty page", asy
     );
     assert.equal(requests, 1);
   }
-  for (const text of [
-    '{"data":',
-    '{"ok":0,"msg":"服务异常"}',
-    "<main>服务暂不可用</main>",
-    '{"ok":1,"data":{}}',
+  for (const [text, code] of [
+    ['{"data":', "parse_error"],
+    ['{"ok":0,"msg":"服务异常"}', "parse_error"],
+    ["<main>服务暂不可用</main>", "content_non_json"],
+    ['{"ok":1,"data":{}}', "parse_error"],
   ]) {
     await assert.rejects(
       weiboProvider.collectPage({
@@ -49,7 +49,7 @@ test("social list transport failures never advance a successful empty page", asy
           request: async () => ({ status: 200, text }),
         },
       }),
-      { code: "parse_error" },
+      { code },
     );
   }
   const empty = await weiboProvider.collectPage({

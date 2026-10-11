@@ -100,13 +100,15 @@ function diagnosticFailure(error, metadata, requestId, phase) {
 }
 
 function abortable(promise, signal) {
-  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const abort = () => reject(abortError(signal));
-    signal?.addEventListener("abort", abort, { once: true });
+    // The caller may have created this promise just as its signal expired.
+    // Consume its rejection before checking cancellation to avoid an orphan.
     Promise.resolve(promise)
       .then(resolve, reject)
       .finally(() => signal?.removeEventListener("abort", abort));
+    signal?.throwIfAborted();
+    signal?.addEventListener("abort", abort, { once: true });
   });
 }
 export function createRequestClient({
@@ -305,6 +307,9 @@ export function createRequestClient({
                     : options.kind || "request",
                 { bytesUpperBound: byteLimit },
               );
+              // Persistent reservation writes can outlast the request timeout.
+              // Keep that reservation charged, but do not start new I/O.
+              combined.throwIfAborted();
               phase = "transport";
               const transportStarted = clock.now();
               let result;

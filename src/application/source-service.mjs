@@ -26,6 +26,8 @@ const privateKeys = new Set([
 ]);
 const probeIssueCodes = new Set([
   "parse_error",
+  "content_non_json",
+  "risk_blocked",
   "unavailable",
   "captcha",
   "http_forbidden",
@@ -370,7 +372,13 @@ export function createSourceService({
           site,
           listSample: {
             status: issues.some((i) =>
-              ["restricted", "http_forbidden", "captcha"].includes(i.code),
+              [
+                "restricted",
+                "http_forbidden",
+                "captcha",
+                "login_required",
+                "risk_blocked",
+              ].includes(i.code),
             )
               ? 403
               : 200,
@@ -381,8 +389,9 @@ export function createSourceService({
         });
         const result = {
           ...quality,
-          status:
-            quality.verification === "ready"
+          status: issues.some((i) => i.code === "content_non_json")
+            ? "unavailable"
+            : quality.verification === "ready"
               ? "ready"
               : quality.verification === "restricted"
                 ? "restricted"

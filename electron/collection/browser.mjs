@@ -162,6 +162,13 @@ export function createCollectionBrowser({
     }
     const id = window.webContents.id,
       networkStatus = { status: 200 };
+    const physicalRequests = new Map(),
+      completionSettlements = new Set();
+    const requestKey = (details) =>
+      details.webContentsId === id &&
+      (typeof details.id === "number" || typeof details.id === "string")
+        ? details.id
+        : null;
     const lifetime = new AbortController();
     window.webContents.setWebRTCIPHandlingPolicy?.("disable_non_proxied_udp");
     let manualRequests = 0;
@@ -186,19 +193,48 @@ export function createCollectionBrowser({
           });
           manualQueue = next.catch(() => {});
           await next;
-        } else
+        } else {
+          const reservationId = randomUUID();
           await ledger.reserve({
             ref,
             token,
             operationLease,
-            reservationId: randomUUID(),
+            reservationId,
             kind: details.resourceType === "mainFrame" ? "browser" : "resource",
             requestUpperBound: 1,
           });
+          const key = requestKey(details);
+          // Redirects reuse Electron's id. Each hop keeps its own allowance;
+          // a final completion can prove only the most recent physical request.
+          if (key !== null) physicalRequests.set(key, reservationId);
+        }
         client.grant(details.url);
       },
     });
     const detach = attachNetworkPolicy(ses, "collection-page", policy);
+    ses.webRequest.onCompleted?.({ urls: ["<all_urls>"] }, (details) => {
+      const key = requestKey(details),
+        reservationId = physicalRequests.get(key);
+      if (!reservationId) return;
+      physicalRequests.delete(key);
+      const pending = Promise.resolve().then(() =>
+        ledger.settle?.({
+          ref,
+          token,
+          operationLease,
+          reservationId,
+          verifiedUsage: { requests: 1, bytes: 0 },
+        }),
+      );
+      completionSettlements.add(pending);
+      pending
+        .finally(() => completionSettlements.delete(pending))
+        .catch(() => {});
+    });
+    ses.webRequest.onErrorOccurred?.({ urls: ["<all_urls>"] }, (details) => {
+      // Failed and cancelled requests retain their unresolved upper bound.
+      physicalRequests.delete(requestKey(details));
+    });
     ses.webRequest.onHeadersReceived(
       { urls: ["<all_urls>"] },
       (details, callback) => {
@@ -268,6 +304,10 @@ export function createCollectionBrowser({
             await saveMaterial();
           } finally {
             detach();
+            ses.webRequest.onCompleted?.(null);
+            ses.webRequest.onErrorOccurred?.(null);
+            await Promise.allSettled([...completionSettlements]);
+            physicalRequests.clear();
             if (manual)
               await recordDiagnostic(diagnostics, {
                 operation: "collection.finish",

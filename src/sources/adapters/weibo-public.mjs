@@ -1,10 +1,65 @@
 import { createPagedProvider, baseRecord, jsonResponse } from "./shared.mjs";
+import { parseHTML } from "linkedom";
 import {
   canonicalSocialUrl,
   parseWeiboContent,
   parseWeiboList,
 } from "../social-content.mjs";
 const configFor = (ctx) => ctx.config?.weibo || ctx.config || {};
+function weiboJsonResponse(response) {
+  if (response.status !== 200) return jsonResponse(response);
+  try {
+    return JSON.parse(response.text);
+  } catch {
+    const text = String(response.text || "");
+    const mime = String(response.headers?.["content-type"] || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    const expectsJson =
+      mime === "application/json" ||
+      mime.endsWith("+json") ||
+      /^\s*[\[{]/.test(text);
+    let code = expectsJson ? "parse_error" : "content_non_json";
+    if (!expectsJson && /<[a-z][^>]*>/i.test(text)) {
+      const { document } = parseHTML(text);
+      const title = document.querySelector("title")?.textContent.trim() || "";
+      if (
+        /^(?:(?:新浪)?微博[\s·|_-]*)?(?:安全验证|验证码|人机验证|访问验证)(?:[\s·|_-]*(?:新浪)?微博)?$/.test(
+          title,
+        ) ||
+        document.querySelector("#captcha, #geetest_captcha")
+      )
+        code = "risk_blocked";
+      else if (
+        /^(?:(?:新浪)?微博[\s·|_-]*)?(?:用户)?登录(?:[\s·|_-]*(?:新浪)?微博)?$/.test(
+          title,
+        ) ||
+        /^(?:weibo[\s|_-]*)?(?:log\s*in|sign\s*in)(?:[\s|_-]*weibo)?$/i.test(
+          title,
+        )
+      )
+        code = "login_required";
+    }
+    const messages = {
+      parse_error: "parse_error: invalid JSON",
+      content_non_json: "微博接口返回非JSON内容，尚未验证。",
+      login_required: "微博接口返回明确登录页。",
+      risk_blocked: "微博接口返回已知验证页面。",
+    };
+    throw Object.assign(Error(messages[code]), {
+      code,
+      status: response.status,
+      phase: "parse",
+      requestId: response.requestId,
+      parser: {
+        format: "json",
+        resultType: "unknown",
+        documentLength: text.length,
+      },
+    });
+  }
+}
 const retained = (record) =>
   record.intent === "employer_recruitment" ||
   (record.intent === "unknown" &&
@@ -109,7 +164,7 @@ const provider = createPagedProvider({
         code: response.status === 429 ? "rate_limited" : "login_required",
         nextDueAt: response.nextDueAt,
       });
-    const payload = jsonResponse(response);
+    const payload = weiboJsonResponse(response);
     if (
       payload?.ok !== 1 ||
       !payload.data ||
@@ -148,11 +203,10 @@ const provider = createPagedProvider({
           new URLSearchParams({ id: record.sourceRecordId }),
         { signal: ctx.signal, maxRetries: 0, maxBytes: 6291456 },
       );
-      if (response.status === 200)
-        try {
-          const payload = JSON.parse(response.text);
-          post = payload.data || payload;
-        } catch {}
+      if (response.status === 200) {
+        const payload = weiboJsonResponse(response);
+        post = payload?.data || payload;
+      }
       if (response.status === 429)
         return {
           ...record,
@@ -176,11 +230,10 @@ const provider = createPagedProvider({
           retryAt: response.nextDueAt,
           detailStatus: "unavailable",
         };
-      if (response.status === 200)
-        try {
-          const payload = JSON.parse(response.text);
-          longText = payload.data || payload;
-        } catch {}
+      if (response.status === 200) {
+        const payload = weiboJsonResponse(response);
+        longText = payload?.data || payload;
+      }
     }
     if (post?.text || post?.text_raw)
       parsed = parseWeiboContent({ post, longText, url: record.url });

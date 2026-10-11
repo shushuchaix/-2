@@ -11,6 +11,7 @@ import { evaluateRules } from "../../src/domain/ranking.mjs";
 import { createAttachmentService } from "../../src/attachments/service.mjs";
 import { createRequestClient } from "../../src/infrastructure/http/client.mjs";
 import { createScheduler } from "../../src/infrastructure/http/scheduler.mjs";
+import weibo from "../../src/sources/adapters/weibo-public.mjs";
 
 async function moduleUnderTest() {
   const module = await import("../../tools/source-validation.mjs").catch(
@@ -95,6 +96,65 @@ async function prepared(t, providers, catalog, limits = {}, options = {}) {
       evaluationService,
     },
   });
+}
+
+for (const [text, code, status] of [
+  ['{"data":', "parse_error", "failed"],
+  [
+    "<html><title>微博</title><div id='app'></div></html>",
+    "content_non_json",
+    "failed",
+  ],
+  [
+    "<html><title>微博登录</title><form><input type='password'></form></html>",
+    "login_required",
+    "blocked",
+  ],
+  [
+    "<html><title>安全验证</title><div id='captcha'></div></html>",
+    "risk_blocked",
+    "blocked",
+  ],
+]) {
+  test(
+    "weibo validation preserves the 200 response classification: " + code,
+    async (t) => {
+      const { validateSources } = await moduleUnderTest();
+      const catalog = [
+        site("weibo", "weibo", { origin: "https://m.weibo.cn" }),
+      ];
+      const f = await prepared(
+        t,
+        [weibo],
+        catalog,
+        {},
+        { transport: async () => ({ status: 200, text }) },
+      );
+      const report = await validateSources({
+        context: f.context,
+        ref: f.ref,
+        catalog,
+        sourceConfig: { weibo: { accountIds: ["123"] } },
+        detailsPerSite: 0,
+      });
+      const row = report.rows[0];
+      assert.equal(row.status, status);
+      assert.equal(row.errorCode || row.blockReason, code);
+      assert.equal(row.httpStatus, 200);
+      assert.equal(row.listContractVerified, false);
+      assert.equal(row.pageCommitted, false);
+      assert.equal(row.bodyVerifiedCount, 0);
+      assert.equal(row.validNewUniqueCount, 0);
+      assert.equal(
+        (await f.service.get(f.ref)).collectionProgress.units["public-unit-0"]
+          .committedPages,
+        0,
+      );
+      assert.equal(report.usage.usedRequests, 1);
+      assert.equal(report.usage.usedModelRequests, 0);
+      assert.equal(JSON.stringify(report).includes(text), false);
+    },
+  );
 }
 
 test("validation commits both diagnostic pages and evaluates the owned copy with local rules", async (t) => {

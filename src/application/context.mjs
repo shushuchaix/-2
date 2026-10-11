@@ -488,7 +488,10 @@ export async function createApplicationContext({
       registry,
       activityContext: collectionService
         ? (ref, callback) =>
-            collectionService.withActivityContext(ref, callback)
+            collectionService.withDiagnosticContext(
+              { ref, requestId: "job-verification-" + randomUUID() },
+              callback,
+            )
         : undefined,
     }),
     runService,

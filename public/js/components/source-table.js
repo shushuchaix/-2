@@ -7,9 +7,22 @@ const labels = {
   empty: "未取得有效样本",
   restricted: "受限，需要授权或手工导入",
   parse_error: "页面结构无法解析",
+  content_non_json: "返回内容为非JSON，尚未验证",
+  login_required: "返回登录页，需要登录",
+  risk_blocked: "返回验证页，访问受限",
   unavailable: "暂时不可访问",
   skipped: "未配置或已跳过",
 };
+const responseIssue = (health) =>
+  (health?.issues || []).find((issue) =>
+    ["content_non_json", "login_required", "risk_blocked"].includes(issue.code),
+  );
+const healthLabel = (health, fallback) =>
+  labels[health?.status !== "ready" && responseIssue(health)?.code] ||
+  labels[health?.status || fallback] ||
+  health?.status ||
+  fallback;
+const issueLabel = (issue) => issue.message || labels[issue.code] || issue.code;
 export function sourceTable({ document: d, sources, sites, api, status }) {
   const root = el(d, "div", { className: "source-list" });
   for (const source of sources) {
@@ -116,7 +129,7 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
           d,
           "span",
           { className: "badge" },
-          labels[health?.status || site.status] || site.status,
+          healthLabel(health, site.status),
         ),
         attempt = el(
           d,
@@ -148,17 +161,15 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
               );
               site.health = result;
               updateSummary();
-              state.textContent = labels[result.status] || result.status;
+              state.textContent = healthLabel(result);
               attempt.textContent = "本次尝试：" + formatDate(result.checkedAt);
               if (result.status === "ready")
                 success.textContent =
                   "最近成功：" + formatDate(result.checkedAt);
               status.show(
-                (labels[result.status] || result.status) +
+                healthLabel(result) +
                   "。" +
-                  (result.issues || [])
-                    .map((i) => i.message || i.code)
-                    .join("；"),
+                  (result.issues || []).map(issueLabel).join("；"),
               );
             } catch (e) {
               status.show("检查失败：" + e.message, true);
@@ -196,7 +207,7 @@ export function sourceTable({ document: d, sources, sites, api, status }) {
           "div",
           { className: "prose" },
           (health?.issues || [])
-            .map((i) => i.code + ": " + (i.message || ""))
+            .map((i) => i.code + ": " + issueLabel(i))
             .join("\n"),
         ),
         probe,

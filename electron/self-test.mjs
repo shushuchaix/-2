@@ -118,14 +118,15 @@ export function desktopContrastRatio(first, second) {
 // Executed in Chromium. Colors come from computed styles, including alpha backgrounds;
 // this function never injects a stylesheet or substitutes theme token values.
 export function inspectDesktopUi(contrast) {
+  // A closed Collapsible root still paints its trigger; closed panels/popups do not.
   const shown = el => el.getClientRects().length > 0 &&
-    !el.closest('[data-closed],[inert],[aria-hidden=true]') &&
+    !el.closest('[data-closed]:not([data-slot=collapsible]):not([data-slot=collapsible-trigger]),[hidden],[inert],[aria-hidden=true]') &&
     getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).opacity !== '0';
   const iconShown = el => {
     if (!el.getClientRects().length) return false;
     for (let node=el; node; node=node.parentElement) {
       // Decorative SVGs remain painted even when hidden from the accessibility tree.
-      if (node.matches('[hidden],[data-closed],[inert]') ||
+      if (node.matches('[hidden],[data-closed]:not([data-slot=collapsible]):not([data-slot=collapsible-trigger]),[inert]') ||
           (node!==el && node.getAttribute('aria-hidden')==='true')) return false;
       const style=getComputedStyle(node);
       if (style.display==='none' || ['hidden','collapse'].includes(style.visibility) || style.opacity==='0') return false;
@@ -167,7 +168,7 @@ export function inspectDesktopUi(contrast) {
   for (const el of document.querySelectorAll('main [role=alert],[data-slot=alert]')) { tested.delete(el); text(el,'warning'); }
   for (const el of document.querySelectorAll('input,textarea,[role=combobox]')) if (shown(el) && !el.disabled) { tested.delete(el); text(el,'field'); }
   const boundaries = [];
-  for (const el of document.querySelectorAll('[data-slot=input],[data-slot=textarea],[data-slot=select-trigger],[data-slot=checkbox],[data-slot=radio-group-item],[data-slot=switch],[data-slot=button]')) {
+  for (const el of document.querySelectorAll('[data-slot=input],[data-slot=textarea],[data-slot=select-trigger],[data-slot=checkbox],[data-slot=radio-group-item],[data-slot=switch],[data-slot=button],[data-slot=collapsible-trigger]')) {
     if (!shown(el) || el.disabled) continue;
     const style = getComputedStyle(el), outside = background(el.parentElement), fill = background(el);
     const fillRatio = contrast(fill,outside);
@@ -177,11 +178,11 @@ export function inspectDesktopUi(contrast) {
     if (field || hasBorder) boundaries.push({ label:label(el), fillRatio, borderRatio, required:3, ok:Math.max(fillRatio,borderRatio)+0.001>=3 });
     if (fillRatio>=3) { tested.delete(el); text(el,'primary'); }
   }
-  const icons=[...document.querySelectorAll('[data-slot=button] svg,[data-slot=sidebar-trigger] svg,[data-slot=sheet-close] svg,[data-slot=dialog-close] svg')].filter(el=>iconShown(el)&&!el.closest(':disabled')).map(el=>{
+  const icons=[...document.querySelectorAll('[data-slot=button] svg,[data-slot=sidebar-trigger] svg,[data-slot=sheet-close] svg,[data-slot=dialog-close] svg,[data-slot=collapsible-trigger] svg')].filter(el=>iconShown(el)&&!el.closest(':disabled')).map(el=>{
     const bg=background(el),fg=blend(rgba(getComputedStyle(el).color),bg),ratio=contrast(fg,bg);
     return {label:label(el.closest('button,a')||el),ratio,required:3,ok:ratio+0.001>=3};
   });
-  const hitTargets = [...document.querySelectorAll('[role=tab],[data-slot=button],[data-slot=sidebar-trigger],[data-slot=sidebar-menu-button],[data-slot=select-trigger],[data-slot=sheet-close],[data-slot=dialog-close]')]
+  const hitTargets = [...document.querySelectorAll('[role=tab],[data-slot=button],[data-slot=sidebar-trigger],[data-slot=sidebar-menu-button],[data-slot=select-trigger],[data-slot=sheet-close],[data-slot=dialog-close],[data-slot=collapsible-trigger]')]
     .filter(shown).map(el => ({ label:label(el), ...rectangle(el), ok:el.getBoundingClientRect().width>=43.5 && el.getBoundingClientRect().height>=43.5 }));
   const tables = [...document.querySelectorAll('table')].filter(shown).map(el => {
     let container = el.parentElement;
@@ -506,7 +507,7 @@ export async function runWorkspaceSelfTest({
     }
     throw Error("renderer_wait_timeout: " + source.slice(0, 180));
   };
-  const visible = `el=>el.getClientRects().length>0&&!el.disabled&&!el.closest('[data-closed],[inert],[aria-hidden=true]')`;
+  const visible = `el=>el.getClientRects().length>0&&!el.disabled&&!el.closest('[data-closed]:not([data-slot=collapsible]):not([data-slot=collapsible-trigger]),[hidden],[inert],[aria-hidden=true]')`;
   const locate = (
     name,
     selector = 'button,[role="button"],a,[role="menuitem"],[role="option"]',

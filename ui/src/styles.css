@@ -116,6 +116,7 @@
   [data-slot="dialog-close"],
   [data-slot="collapsible-trigger"],
   [data-slot="select-trigger"],
+  [data-slot="dropdown-menu-trigger"],
   [data-slot="input"],
   [data-slot="sidebar-menu-button"],
   [data-slot="sidebar-trigger"],
@@ -298,6 +299,7 @@
 [data-slot="sheet-close"],
 [data-slot="dialog-close"],
 [data-slot="collapsible-trigger"],
+[data-slot="dropdown-menu-trigger"],
 [data-slot="sidebar-trigger"] {
   min-width: 44px;
 }

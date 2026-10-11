@@ -73,8 +73,10 @@ export async function settleDesktopPopups() {
   for (;;) {
     await new Promise(resolve => requestAnimationFrame(resolve));
     frames++;
-    const popups = [...document.querySelectorAll('[role=dialog],[role=alertdialog],[role=listbox],[role=menu]')]
-      .filter(el => el.getClientRects().length && !el.closest('[data-closed],[inert],[aria-hidden=true]'));
+    // Closed Base UI surfaces stay mounted throughout their exit transition.
+    // Backdrops have no dialog role, but their fade still changes captured pixels.
+    const popups = [...document.querySelectorAll('[role=dialog],[role=alertdialog],[role=listbox],[role=menu],[data-slot=sheet-overlay],[data-slot=dialog-overlay],[data-slot=alert-dialog-overlay]')]
+      .filter(el => el.getClientRects().length);
     const animating = popups.some(el => el.getAnimations({ subtree: true }).some(animation =>
       ['running','pending'].includes(animation.playState) && Number.isFinite(animation.effect?.getComputedTiming().endTime)));
     const geometry = JSON.stringify(popups.map(el => {
@@ -207,7 +209,7 @@ export function inspectDesktopUi(contrast) {
     const bg=background(el),fg=blend(rgba(getComputedStyle(el).color),bg),ratio=contrast(fg,bg);
     return {label:label(el.closest('button,a')||el),ratio,required:3,ok:ratio+0.001>=3};
   });
-  const hitTargets = [...document.querySelectorAll('[role=tab],[data-slot=button],[data-slot=sidebar-trigger],[data-slot=sidebar-menu-button],[data-slot=select-trigger],[data-slot=sheet-close],[data-slot=dialog-close],[data-slot=collapsible-trigger]')]
+  const hitTargets = [...document.querySelectorAll('[role=tab],[data-slot=button],[data-slot=sidebar-trigger],[data-slot=sidebar-menu-button],[data-slot=select-trigger],[data-slot=dropdown-menu-trigger],[data-slot=sheet-close],[data-slot=dialog-close],[data-slot=collapsible-trigger]')]
     .filter(shown).map(el => ({ label:label(el), ...rectangle(el), ok:el.getBoundingClientRect().width>=43.5 && el.getBoundingClientRect().height>=43.5 }));
   const tables = [...document.querySelectorAll('table')].filter(shown).map(el => {
     let container = el.parentElement;
@@ -1284,6 +1286,8 @@ export async function runWorkspaceSelfTest({
         await wait(textHas("已到期，不能读取正文或恢复。"),5000);
         check("到期不保留已展开正文或恢复按钮",!(await js(textHas(body))) && (await js("!document.querySelector('[aria-label=版本内容摘要]')")) && !(await js(`Boolean(${locate("恢复"+candidate.versionName)})`)));
         await trace("expiry","版本到期隐藏正文与恢复入口");
+        await wait("![...document.querySelectorAll('[data-slot=sheet-content],[data-slot=sheet-overlay]')].some(el=>el.getClientRects().length>0)");
+        check("到期截图前关闭 Sheet 且正文与恢复入口仍不可用",!(await js(textHas(body))) && (await js("!document.querySelector('[aria-label=版本内容摘要]')")) && !(await js(`Boolean(${locate("恢复"+candidate.versionName)})`)));
         await capture("trash-expired.png",{scenario:"版本到期"});
         await escaped();
         await context.trashScheduler.sweep();

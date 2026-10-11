@@ -212,6 +212,103 @@ test("popup inspection waits for entering animations and stable frames, and reje
   await assert.rejects(run(true), /self_test_popup_animation_timeout/);
 });
 
+for (const slot of ['sheet-content','sheet-overlay','dialog-overlay','alert-dialog-overlay']) {
+  test(`popup settling waits for the still-painted closed ${slot} finite exit`, async () => {
+    let frame = 0;
+    const closing = {
+      getClientRects: () => frame < 8 ? [{}] : [],
+      closest: () => ({}), // Base UI marks closed/inert while it is still mounted.
+      getAnimations: () => [{ playState: frame < 8 ? 'running' : 'finished', effect: { getComputedTiming: () => ({ endTime: 200 }) } }],
+      getBoundingClientRect: () => ({ left: 90, top: 0, right: 375, bottom: 900 }),
+    };
+    const settled = await vm.runInNewContext(`(${desktop.settleDesktopPopups.toString()})()`, {
+      performance: { now: () => frame * 16 },
+      requestAnimationFrame: callback => { frame++; queueMicrotask(callback); },
+      document: { querySelectorAll: selector => slot === 'sheet-content' || selector.includes(`[data-slot=${slot}]`) ? [closing] : [] },
+    });
+    assert.ok(frame >= 8, `closed ${slot} still paints its finite exit at frame ${frame}`);
+    assert.equal(settled.popupCount, 0);
+  });
+}
+
+test('popup settling ignores an unrelated infinite animation', async () => {
+  let frame = 0;
+  const popup = {
+    getClientRects: () => [{}], closest: () => null,
+    getAnimations: () => [{ playState: 'running', effect: { getComputedTiming: () => ({ endTime: Infinity }) } }],
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 44, bottom: 44 }),
+  };
+  const result = await vm.runInNewContext(`(${desktop.settleDesktopPopups.toString()})()`, {
+    performance: { now: () => frame * 16 },
+    requestAnimationFrame: callback => { frame++; queueMicrotask(callback); },
+    document: { querySelectorAll: () => [popup] },
+  });
+  assert.equal(result.frames, 3);
+});
+
+test('dropdown trigger matches the workspace 44px minimum width and height', async () => {
+  const { JSDOM } = await import('jsdom');
+  const { default: postcss } = await import('postcss');
+  const dom = new JSDOM('<button data-slot="dropdown-menu-trigger">版本</button>');
+  try {
+    const trigger = dom.window.document.querySelector('button');
+    const stylesheet = postcss.parse(fs.readFileSync(new URL('../../ui/src/styles.css', import.meta.url), 'utf8'));
+    for (const property of ['min-height','min-width']) {
+      const values = [];
+      stylesheet.walkRules(rule => {
+        try { if (!trigger.matches(rule.selector)) return; } catch { return; }
+        rule.walkDecls(property, declaration => values.push(declaration.value));
+      });
+      assert.ok(values.includes('44px'), `actual dropdown trigger must match ${property}:44px`);
+    }
+  } finally { dom.window.close(); }
+});
+
+test('desktop inspector rejects a 32px dropdown trigger and accepts its 44px fixed geometry', async () => {
+  const { JSDOM } = await import('jsdom');
+  const { createCanvas } = await import('@napi-rs/canvas');
+  const dom = new JSDOM('<body><button data-slot="dropdown-menu-trigger" aria-label="目标版本">版本</button></body>');
+  try {
+    const { document, NodeFilter } = dom.window;
+    const trigger = document.querySelector('button');
+    let size = 32;
+    trigger.getClientRects = () => [{}];
+    trigger.getBoundingClientRect = () => ({ left:0, top:0, right:size, bottom:size, width:size, height:size });
+    dom.window.HTMLCanvasElement.prototype.getContext = () => createCanvas(1,1).getContext('2d');
+    trigger.style.color = 'black';
+    trigger.style.backgroundColor = 'white';
+    trigger.style.opacity = '1';
+    const inspect = () => vm.runInNewContext(`(${desktop.inspectDesktopUi.toString()})(${desktop.desktopContrastRatio.toString()})`, {
+      document, NodeFilter, getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+      innerWidth:1440, innerHeight:900, devicePixelRatio:1, matchMedia:()=>({ matches:false }),
+    });
+    const small = inspect().hitTargets.find(item => item.label === '目标版本');
+    assert.ok(small, 'actual dropdown trigger participates in desktop hit auditing');
+    assert.equal(small.ok, false);
+    size = 44;
+    assert.equal(inspect().hitTargets.find(item => item.label === '目标版本').ok, true);
+    trigger.setAttribute('aria-hidden','true');
+    assert.equal(inspect().hitTargets.length, 0, 'closed/hidden controls remain outside the interaction audit');
+  } finally { dom.window.close(); }
+});
+
+test('expiry screenshot waits for closed Sheet content and backdrop to stop painting', () => {
+  const source = fs.readFileSync(new URL('../../electron/self-test.mjs',import.meta.url),'utf8');
+  const expiry = source.slice(source.indexOf('await phase("回收站到期'),source.indexOf('await phase("减少动效'));
+  const expression = expiry.match(/await wait\("([^"\n]*data-slot=sheet-content[^"\n]*)"\)/)?.[1];
+  assert.ok(expression, 'expiry capture must wait for both actual Sheet surfaces, not just the transient expired message');
+  assert.ok(expiry.indexOf(expression) < expiry.indexOf('await capture("trash-expired.png"'));
+  let painted = true;
+  const surface = { getClientRects: () => painted ? [{}] : [] };
+  const document = { querySelectorAll: selector => {
+    assert.ok(selector.includes('[data-slot=sheet-content]') && selector.includes('[data-slot=sheet-overlay]'));
+    return [surface];
+  } };
+  assert.equal(vm.runInNewContext(expression,{document}),false,'closed mounted surfaces still need to finish');
+  painted = false;
+  assert.equal(vm.runInNewContext(expression,{document}),true);
+});
+
 function matrix(dpr) {
   return pages.flatMap(page => [1440,1024,768,375].map(width => ({ page, width, actualWidth: width, dpr, file: `${page}-${width}.png`, matrix: true })));
 }

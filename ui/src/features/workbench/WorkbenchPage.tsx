@@ -134,6 +134,9 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
               typeof item.runId === "string" &&
               resumable.has(String(item.status)),
           );
+          // A pending start can commit a root even if its child has already
+          // finished or the response failed. Initial empty reads need no refresh.
+          if (pending || current) void refreshActivity();
           setRecovering(false);
           if (current) {
             setRun(current);
@@ -237,11 +240,14 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
         mode,
         coverageMode,
         ...(mode === "ai" && userKey ? { userApiKey: userKey } : {}),
+      }).finally(() => {
+        // The request may settle after navigation removed this page. The shared
+        // provider guards the captured scope/generation before refreshing it.
+        void refreshActivity();
       });
       if (token !== generation.current) return;
       setUserKey("");
       setRun(created);
-      void refreshActivity();
       void connect(String(created.runId), scope);
     }, "检索任务已创建");
   }

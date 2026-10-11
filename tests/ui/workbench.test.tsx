@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { act, waitFor } from "@testing-library/react";
+import { act, waitFor, within } from "@testing-library/react";
 import { renderApp, syntheticApi } from "../helpers/react-fixture";
 
 test("terminal progress uses real backend counters and explains page limits and monetary fallback", async (t) => {
@@ -556,6 +556,169 @@ test("returning before a delayed start commits waits for that exact pending requ
     { packageId: "A", targetRevisionId: "t1@1" },
   );
 });
+
+for (const recovery of [
+  "running",
+  "paused",
+  "response-error",
+  "paused-away",
+] as const) {
+  test(`delayed start recovered across pages restores ${recovery} root controls`, async (t) => {
+    let commit!: (value: unknown) => void;
+    let created = false,
+      cancelled = false;
+    const delayed = new Promise((resolve) => (commit = resolve));
+    const root = () => ({
+      runId: created ? "new-held-root" : "old-completed-root",
+      collectionRole: "collection_root",
+      ownerPackageId: "A",
+      targetSnapshot: { revisionId: "t1@1" },
+      collectionProgress: {
+        status: created
+          ? cancelled
+            ? "cancelled"
+            : recovery === "running"
+              ? "collecting"
+              : "paused"
+          : "completed",
+        revision: 1,
+        limits: { maxRequests: 400, maxCostCny: 10 },
+        units: {},
+        activeSliceRunId:
+          created && !cancelled && recovery === "running"
+            ? "new-held-slice"
+            : null,
+      },
+    });
+    const f = await renderApp(t, {
+      route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+      apiHandler: (path, options) => {
+        if (path === "/collections") return { collections: [root()] };
+        if (path === "/collections/new-held-root/cancel") {
+          cancelled = true;
+          return root();
+        }
+        if (path === "/collections/new-held-root") return root();
+        if (path === "/runs") {
+          if (options.method === "POST")
+            return delayed.then((value) => {
+              created = true;
+              if (recovery === "response-error")
+                throw Error("合成提交响应丢失");
+              return value;
+            });
+          return {
+            runs: created
+              ? [
+                  {
+                    runId: "new-held-slice",
+                    status: recovery === "running" ? "running" : "completed",
+                  },
+                ]
+              : [],
+          };
+        }
+        if (path === "/runs/new-held-slice/events")
+          return new Promise(() => {});
+        return syntheticApi(path, options);
+      },
+    });
+    await f.screen.findByRole("region", { name: "当前采集活动" });
+    await waitFor(() =>
+      assert.equal(
+        (
+          f.screen.getByRole("button", {
+            name: "更新岗位",
+          }) as HTMLButtonElement
+        ).disabled,
+        false,
+      ),
+    );
+    assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 1);
+    await f.user.click(f.screen.getByRole("button", { name: "更新岗位" }));
+    await waitFor(() =>
+      assert.ok(
+        f.apiCalls.some(
+          (c) => c.path === "/runs" && c.options.method === "POST",
+        ),
+      ),
+    );
+    await f.user.click(f.screen.getByRole("link", { name: "岗位库" }));
+    await f.screen.findByRole("heading", { name: "岗位库" });
+    if (recovery === "paused-away") {
+      await act(async () =>
+        commit({ runId: "new-held-slice", status: "completed" }),
+      );
+      await waitFor(() => assert.equal(created, true));
+    }
+    await f.user.click(f.screen.getByRole("link", { name: "工作台" }));
+    assert.equal(
+      (f.screen.getByRole("button", { name: "更新岗位" }) as HTMLButtonElement)
+        .disabled,
+      true,
+    );
+    if (recovery !== "paused-away")
+      await act(async () =>
+        commit({
+          runId: "new-held-slice",
+          status: recovery === "running" ? "running" : "completed",
+        }),
+      );
+    if (recovery === "running")
+      await waitFor(() =>
+        assert.ok(
+          f.apiCalls.some((c) => c.path === "/runs/new-held-slice/events"),
+        ),
+      );
+    const controls = within(
+      f.screen.getByRole("region", { name: "当前采集活动" }),
+    );
+    await waitFor(() =>
+      assert.equal(
+        (
+          controls.getByRole("button", {
+            name: recovery === "running" ? "暂停采集" : "继续采集",
+          }) as HTMLButtonElement
+        ).disabled,
+        false,
+      ),
+    );
+    assert.equal(
+      (f.screen.getByRole("button", { name: "更新岗位" }) as HTMLButtonElement)
+        .disabled,
+      true,
+    );
+    if (recovery === "response-error")
+      assert.ok(f.screen.getByText(/合成提交响应丢失/));
+    assert.equal(f.screen.queryByRole("button", { name: "取消任务" }), null);
+    await f.user.click(controls.getByRole("button", { name: "取消活动" }));
+    await waitFor(() =>
+      assert.ok(
+        f.apiCalls.some((c) => c.path === "/collections/new-held-root/cancel"),
+      ),
+    );
+    assert.deepEqual(
+      f.apiCalls.find((c) => c.path === "/collections/new-held-root/cancel")
+        ?.scope,
+      {
+        packageId: "A",
+        targetRevisionId: "t1@1",
+      },
+    );
+    assert.equal(
+      f.apiCalls.some(
+        (c) => c.path === "/collections/old-completed-root/cancel",
+      ),
+      false,
+    );
+    assert.equal(
+      f.apiCalls.filter(
+        (c) => c.path === "/runs" && c.options.method === "POST",
+      ).length,
+      1,
+    );
+  });
+}
 
 test("pending start is isolated by exact scope and a failed pending commit can recover and start again", async (t) => {
   let rejectFirst: (reason: unknown) => void = () => {},

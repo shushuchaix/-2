@@ -718,7 +718,9 @@ export async function runWorkspaceSelfTest({
           ),
         );
         releaseStart();
-        await wait(`Boolean(${locate("取消任务")})`);
+        // Root activities expose their own controls; the child cancel button is
+        // intentionally hidden. Pause is enabled only while this root collects.
+        await wait(`Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`);
         check("延迟提交的后台任务已在原版本恢复", true);
       } finally {
         context.runService.startRun = originalStart;
@@ -731,7 +733,7 @@ export async function runWorkspaceSelfTest({
       );
       await navigate("岗位库");
       await navigate("工作台");
-      await wait(`Boolean(${locate("取消任务")})`);
+      await wait(`Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`);
       check(
         "导航回来恢复活跃任务并禁用重复启动",
         (await js(
@@ -903,7 +905,7 @@ export async function runWorkspaceSelfTest({
       controls.hold = true;
       await navigate("工作台");
       await click("更新岗位");
-      await wait(`Boolean(${locate("取消任务")})`);
+      await wait(`Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`);
       try {
         await navigate("招聘来源");
         await input("搜索来源","没有匹配的合成来源");

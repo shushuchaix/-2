@@ -37,6 +37,121 @@ test("application discovery distinguishes explicit public entry, placeholder, lo
   ])
     assert.equal(extractApplicationLinks(html, opts).applyUrl, null);
 });
+for (const extension of ["pdf", "doc", "docx", "xls", "xlsx"]) {
+  test(
+    "application discovery excludes a ." +
+      extension +
+      " download with query and hash",
+    () => {
+      const record = job();
+      const result = extractApplicationLinks(
+        '<a href="/files/registration.' +
+          extension +
+          '?version=1#download">招聘报名表</a>',
+        { baseUrl: record.url, record },
+      );
+      assert.equal(result.applyUrl, null);
+      assert.deepEqual(result.sourceEvidence, []);
+    },
+  );
+}
+test("application discovery excludes an encoded attachment pathname", () => {
+  const record = job();
+  const result = extractApplicationLinks(
+    '<a href="/files/registration%2EDOCX?version=1#download">招聘报名表</a>',
+    { baseUrl: record.url, record },
+  );
+  assert.equal(result.applyUrl, null);
+  assert.deepEqual(result.sourceEvidence, []);
+});
+test("application discovery excludes a registration attachment in a text address", () => {
+  const record = job();
+  const result = extractApplicationLinks(
+    "<p>报名地址：https://jobs.example.com/files/registration.docx?version=1#download</p>",
+    { baseUrl: record.url, record },
+  );
+  assert.equal(result.applyUrl, null);
+  assert.deepEqual(result.sourceEvidence, []);
+});
+test("application discovery excludes an explicit download without a file extension", () => {
+  const record = job();
+  const result = extractApplicationLinks(
+    '<a href="/download/registration" download>招聘报名表</a>',
+    { baseUrl: record.url, record },
+  );
+  assert.equal(result.applyUrl, null);
+  assert.deepEqual(result.sourceEvidence, []);
+});
+test("application discovery excludes a download URL repeated by paragraph text", () => {
+  const record = job();
+  const result = extractApplicationLinks(
+    '<p>报名地址：<a href="/download/registration" download>报名表</a> https://jobs.example.com/download/registration</p>',
+    { baseUrl: record.url, record },
+  );
+  assert.equal(result.applyUrl, null);
+  assert.deepEqual(result.sourceEvidence, []);
+});
+test("application discovery excludes a download resource repeated without its fragment", () => {
+  const record = job();
+  const result = extractApplicationLinks(
+    '<p>报名地址：<a href="/download/registration#download" download>报名表</a> https://jobs.example.com/download/registration</p>',
+    { baseUrl: record.url, record },
+  );
+  assert.equal(result.applyUrl, null);
+  assert.deepEqual(result.sourceEvidence, []);
+});
+test("application discovery keeps a real webpage entry beside a registration attachment", () => {
+  const record = job();
+  const result = extractApplicationLinks(
+    '<a href="/files/registration.docx">招聘报名表</a><a href="/apply">在线报名</a>',
+    { baseUrl: record.url, record },
+  );
+  assert.equal(result.applyUrl, "https://jobs.example.com/apply");
+  assert.deepEqual(
+    result.sourceEvidence.map((entry) => entry.value),
+    ["https://jobs.example.com/apply"],
+  );
+});
+test("application discovery accepts a webpage query that names an attachment", () => {
+  const record = job();
+  const result = extractApplicationLinks(
+    '<a href="/apply?attachment=register.docx">在线报名</a>',
+    { baseUrl: record.url, record },
+  );
+  assert.equal(
+    result.applyUrl,
+    "https://jobs.example.com/apply?attachment=register.docx",
+  );
+  assert.equal(result.sourceEvidence.length, 1);
+});
+test("official notice retains registration attachment without discovering a webpage application", async () => {
+  const result = await announcements.fetchDetail(
+    job({
+      sourceId: "official-announcements",
+      siteId: "s",
+      kind: "recruitment_notice",
+      description: null,
+    }),
+    {
+      sites: [{ siteId: "s", template: { bodyRule: "main" } }],
+      request: async () => ({
+        status: 200,
+        text: '<main><p>公开招聘工程师，负责设备维护与项目实施，要求本科及相关专业经验。</p><a href="/files/registration.docx">招聘报名表</a></main>',
+      }),
+    },
+  );
+  assert.deepEqual(result.attachments, [
+    {
+      url: "https://jobs.example.com/files/registration.docx",
+      title: "招聘报名表",
+      textStatus: "not_extracted",
+    },
+  ]);
+  assert.equal(result.bodyStatus, "complete");
+  assert.match(result.description, /设备维护/);
+  assert.equal(result.applyUrl, null);
+  assert.deepEqual(result.sourceEvidence, []);
+});
 test("public NCSS DOM preserves factual body and does not invent a placeholder application", async () => {
   const html = await fs.readFile(
     new URL(

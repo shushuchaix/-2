@@ -11,6 +11,16 @@ const time = (v) => {
 };
 const literal = (text, value) =>
   typeof value === "string" && !!value && text.includes(value);
+export function isDownloadableApplicationUrl(value) {
+  if (typeof value !== "string") return false;
+  try {
+    return /\.(?:pdf|docx?|xlsx?)$/i.test(
+      decodeURIComponent(new URL(value).pathname),
+    );
+  } catch {
+    return false;
+  }
+}
 export function assessApplicationResponse(response, checkedAt) {
   const text = String(response.text || ""),
     challenge = /验证码|人机验证|访问过于频繁|captcha|验证后访问/i.test(
@@ -129,7 +139,7 @@ const knownCertificates = [
   "英语六级",
   "英语四级",
 ];
-export const CONDITIONS_PARSER_VERSION = "conditions-3";
+export const CONDITIONS_PARSER_VERSION = "conditions-4";
 export function extractRecruitmentConditions(record) {
   const text = String(record.description || ""),
     conditions = [],
@@ -201,20 +211,55 @@ export function extractRecruitmentConditions(record) {
         !/须|必须|要求|应具备|持有|取得|证书|资格|优先/.test(clause)
       )
         continue;
+      const beforeMatch = text.slice(0, match.index),
+        sentenceBefore = beforeMatch.split(/[。；;\n]/).at(-1),
+        linesBefore = beforeMatch.split("\n"),
+        currentLine = linesBefore.pop(),
+        precedingLine = linesBefore.filter((line) => line.trim()).at(-1) || "",
+        materialHeader = /材\s*料[^。；\n]{0,20}(?:包括|包含|如下)/,
+        adjacentMaterials =
+          materialHeader.test(precedingLine) &&
+          /[：:]\s*$/.test(precedingLine) &&
+          !/岗位要求|任职资格|任职要求|资格要求|岗位条件|应聘条件|招聘条件/.test(
+            currentLine,
+          );
+      if (materialHeader.test(sentenceBefore) || adjacentMaterials) {
+        const beforeName = clause.slice(0, match.index - start);
+        const explicitHolding = [
+          ...beforeName.matchAll(/持有|取得|具备|具有|获得/g),
+        ].some((action) => {
+          const qualification = beforeName.slice(
+            action.index + action[0].length,
+          );
+          return (
+            qualification.length <= 80 &&
+            !/身份证|学历|学位|毕业证|登记表|个人简历|荣誉|奖励/.test(
+              qualification,
+            )
+          );
+        });
+        if (!explicitHolding) continue;
+      }
       const commonRegistration =
         text
           .slice(start + clause.length)
           .match(
             /^[，,]\s*注册(?:须|必须|应|需)[^。；\n]{0,35}(?:有效期|有效)[^。；\n]*/,
           )?.[0] || "";
-      certificateClauses.set(start, {
+      const entry = certificateClauses.get(start) || {
         clause: clause + commonRegistration,
         commonRegistration: !!commonRegistration,
-      });
+        names: new Set(),
+      };
+      entry.names.add(name);
+      certificateClauses.set(start, entry);
     }
-  for (const [start, { clause, commonRegistration }] of certificateClauses) {
+  for (const [
+    start,
+    { clause, commonRegistration, names },
+  ] of certificateClauses) {
     const found = knownCertificates
-      .filter((name) => clause.includes(name))
+      .filter((name) => names.has(name))
       .sort((a, b) => clause.indexOf(a) - clause.indexOf(b));
     const options = found.map((name, i) => {
       const at = clause.indexOf(name),
@@ -412,15 +457,38 @@ export function resolveRecruitmentConditions(record) {
 export function prepareRecruitmentRecord(record, now) {
   const r = structuredClone(record),
     text = String(r.description || "");
+  if (isDownloadableApplicationUrl(r.applyUrl)) {
+    const oldApplyUrl = r.applyUrl;
+    r.applyUrl = null;
+    delete r.applicationVerification;
+    r.sourceEvidence = (r.sourceEvidence || []).filter(
+      (e) =>
+        !(
+          e.field === "applyUrl" &&
+          e.value === oldApplyUrl &&
+          ["public_anchor", "public_text_entry"].includes(e.sourceKind) &&
+          !["manual", "structured_source"].includes(e.origin)
+        ),
+    );
+  }
   Object.assign(r, resolveRecruitmentConditions(r));
+  const space = "[ \\t\\u00a0\\u3000]*",
+    datePattern = `(2${space}0${space}\\d${space}\\d)${space}[年./-]${space}(\\d(?:${space}\\d)?)${space}[月./-]${space}(\\d(?:${space}\\d)?)${space}(?:日)?(?:\\s*(\\d{1,2})[:：](\\d{2}))?`;
   const deadline =
     text.match(
-      /(?:报名|投递|申请)?(?:截止(?:时间|日期)?|截至)[：:\s]*(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})(?:日)?(?:\s*(\d{1,2})[:：](\d{2}))?/,
+      new RegExp(
+        `(?:报名|投递|申请)?(?:截止(?:时间|日期)?|截至)[：:\\s]*${datePattern}`,
+      ),
     ) ||
     text.match(
-      /报名时间[^。；\n]{0,55}?(?:至|到|—|－|~|～)\s*(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})(?:日)?(?:\s*(\d{1,2})[:：](\d{2}))?/,
-    );
+      new RegExp(
+        `报名时间[^。；\\n]{0,55}?(?:至|到|—|－|~|～)\\s*${datePattern}`,
+      ),
+    ) ||
+    text.match(new RegExp(`即日起\\s*(?:至|到)\\s*${datePattern}`));
   if (deadline) {
+    for (const index of [1, 2, 3])
+      deadline[index] = deadline[index].replace(/[ \t\u00a0\u3000]/g, "");
     const d = `${deadline[1]}-${deadline[2].padStart(2, "0")}-${deadline[3].padStart(2, "0")}`;
     if (time(d) !== null) {
       if (r.deadlineAt && String(r.deadlineAt).slice(0, 10) !== d)

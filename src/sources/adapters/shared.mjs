@@ -2,6 +2,7 @@ import { assertSourceRecord } from "../../domain/contracts.mjs";
 import { recordDiagnostic } from "../../infrastructure/diagnostics/log.mjs";
 import { parseHTML } from "linkedom";
 import { validatePublicUrl } from "../../infrastructure/http/public-url.mjs";
+import { isDownloadableApplicationUrl } from "../../domain/recruitment-evidence.mjs";
 
 export function extractApplicationLinks(html, { baseUrl, record }) {
   const { document } = parseHTML(String(html || ""));
@@ -9,11 +10,27 @@ export function extractApplicationLinks(html, { baseUrl, record }) {
     'script,style,nav,header,footer,[hidden],[aria-hidden="true"]',
   ))
     node.remove();
+  const downloadResource = (value) => {
+    const url = new URL(value);
+    url.hash = "";
+    return url.href;
+  };
+  const downloadUrls = new Set();
+  for (const anchor of document.querySelectorAll("a[href][download]")) {
+    try {
+      const url = validatePublicUrl(
+        new URL(anchor.getAttribute("href"), baseUrl).href,
+      );
+      downloadUrls.add(downloadResource(url.href));
+    } catch {}
+  }
   const entries = new Map();
   const add = (href, label, sourceKind) => {
     try {
       const url = validatePublicUrl(new URL(href, baseUrl).href);
       if (
+        isDownloadableApplicationUrl(url.href) ||
+        downloadUrls.has(downloadResource(url.href)) ||
         /login|signin|captcha/i.test(url.pathname) ||
         [...url.searchParams.keys()].some((k) =>
           /token|secret|signature|sign$|password|session|cookie|auth|ticket/i.test(

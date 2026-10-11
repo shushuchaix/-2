@@ -274,7 +274,7 @@ test("fatal diagnostics persist before default process termination without priva
     "../../src/infrastructure/diagnostics/log.mjs",
     import.meta.url,
   ).href;
-  const script = `import {createDiagnosticsLog} from ${JSON.stringify(moduleUrl)}; const log=createDiagnosticsLog({dataDir:process.argv[1]}); await log.record({operation:'desktop.start'}); process.on('uncaughtExceptionMonitor', error=>log.recordFatal({operation:'desktop.failure', code:'main_uncaught',outcome:'failed'},error)); setImmediate(()=>{throw Error('private resume password')});`;
+  const script = `import {createDiagnosticsLog} from ${JSON.stringify(moduleUrl)}; const log=createDiagnosticsLog({dataDir:process.argv[1]}); process.on('uncaughtExceptionMonitor', error=>log.recordFatal({operation:'desktop.failure', code:'main_uncaught',outcome:'failed'},error)); setImmediate(()=>{throw Error('private resume password')});`;
   const result = spawnSync(
     process.execPath,
     ["--input-type=module", "-e", script, dataDir],

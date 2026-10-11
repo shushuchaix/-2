@@ -1,6 +1,12 @@
 import { clauseAt, isSoftRequirement } from "../match/requirements.mjs";
 import { termEvidence } from "./skills.mjs";
 import { resolveRecruitmentConditions } from "./recruitment-evidence.mjs";
+const unrestrictedMajors = new Set([
+  "不限",
+  "不限专业",
+  "专业不限",
+  "无专业限制",
+]);
 const degrees = [
   ["博士", 5],
   ["PhD", 5],
@@ -281,12 +287,16 @@ export function evaluateEvidenceQualification({
     if (!status) {
       const values = c.values || [];
       if (c.type === "major") {
-        const own = String(profile.major || "").normalize("NFKC");
-        status = !own
-          ? "unknown"
-          : values.some((v) => own === String(v).normalize("NFKC"))
-            ? "pass"
-            : "fail";
+        const unrestricted =
+            values.length === 1 && unrestrictedMajors.has(values[0]),
+          own = String(profile.major || "").normalize("NFKC");
+        status = unrestricted
+          ? "pass"
+          : !own
+            ? "unknown"
+            : values.some((v) => own === String(v).normalize("NFKC"))
+              ? "pass"
+              : "fail";
       } else if (c.type === "certificate") {
         const certificates = (profile.certificates || []).map((v) =>
             typeof v === "string" ? { name: v } : v,

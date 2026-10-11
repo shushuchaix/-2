@@ -1,6 +1,6 @@
 {
   "date": "2026-10-12",
-  "snapshotUpdatedAt": "2026-10-11T18:28:26.675Z",
+  "snapshotUpdatedAt": "2026-10-11T19:12:10.171Z",
   "scope": "original47_and_bounded_normal_provider_followups",
   "complete": false,
   "privacy": "real_resume_local_rules_only_no_model_calls",
@@ -1030,8 +1030,8 @@
       "applicationVerified": 0,
       "effective": 0,
       "nonRelevantStructuralDetail": false,
-      "cacheReads": 0,
-      "requests": 7
+      "cacheReads": 3,
+      "requests": 0
     },
     {
       "siteId": "yingjiesheng",

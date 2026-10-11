@@ -191,12 +191,14 @@ GST 与西门子的 `entryDiscoveryClassification` 保留初始入口观察；�
 | `desktop_asar_build`          | `passed`  | `node tools/build-desktop.mjs` 实际退出 0，127.2 秒，便携目录约 1288.1 MB；本次重建包含新资格规则及缓存版本修复                                                                      |
 | `packaged_source_match`       | `passed`  | `node tools/verify-package.mjs` 实际退出 0；10441 文件、214 源码精确哈希、52 个生产依赖、32 项 OCR 资源哈希，独立采集运行时验证通过                                                   |
 | `desktop_exe_smoke`           | `passed`  | `tools/verify-desktop-self-test.ps1 -Scales @(1)`：418/418，原 EXE 进程退出 0；DPR 1，九页面 × 四窗口宽度 = 36 张矩阵图，共 62 张截图；合成工作区、外网请求 0、自动下载 0、渲染错误 0 |
-| `git_commit`                  | `pending` | 本轮变更的实际提交证据                                                                                                                                                                |
-| `remote_ci`                   | `pending` | 远端流水线实际结果；未推送或未认证不能记为通过                                                                                                                                        |
+| `git_commit`                  | `passed`  | 候选模板及来源修复提交 `ca32e63`；最终资格修复、19项新增用例及本次缓存重评报告提交 `5097b8ce2cf47856d74a96631d8887939aa6e203`，均已推送现有 PR 1                                      |
+| `remote_ci`                   | `passed`  | 最终生产代码提交 `5097b8ce2cf47856d74a96631d8887939aa6e203` 的 CI `38167595077` 为 completed/success，test job 3分26秒通过，原 watch 实际退出0；公网探针明确跳过                      |
 | `extra_240_requests_approval` | `pending` | 用户对额外请求的答复                                                                                                                                                                  |
 | `online_recheck_after_fixes`  | `pending` | 获得额度后，按实际源码运行的公开来源复验与三项有效岗位计数                                                                                                                            |
 
 最终 `app.asar` SHA256：`7370CDB56949CA0C6BD077CA108D8434A1833BCF0911FDCAC4F720225CA632C8`。原生自检前后相同，发行包校验与最终源码一致。来源详情截图已按原分辨率审阅，列表样本数与正文、投递状态分开显示，没有裁切或重叠。
+
+生产代码的 [实际 CI 回执](https://github.com/shushuchaix/-2/actions/runs/38167595077) 已按 `headSha` 核对。本报告随后保存回执的文档提交不改变生产源码；该文档提交的最终 CI 另由交付消息记录，避免把前一提交结果冒充最终分支结果。现有 [PR 1](https://github.com/shushuchaix/-2/pull/1) 保持打开。
 
 新 EXE 位于 `dist/简历岗位雷达-win32-x64/简历岗位雷达.exe`，使用和复制时保留整个便携目录。此次原生验收仅使用合成数据，没有读取真实简历或日常工作区；真实采集阶段的本地规则评价与上述成品验收分别记录。
 

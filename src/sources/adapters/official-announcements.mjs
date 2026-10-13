@@ -25,6 +25,10 @@ import {
   collectMeituanPublicJobs,
   fetchMeituanPublicJob,
 } from "./meituan-public-career.mjs";
+import {
+  collectXustPublicNotices,
+  fetchXustPublicNotice,
+} from "./xust-public-onlines.mjs";
 function listLocation(site, value) {
   const url = validatePublicUrl(value),
     base = new URL(site.template.listUrl);
@@ -116,6 +120,8 @@ export default createPagedProvider({
       return collectNjuPublicJobs(site, page, ctx);
     if (template?.nativePortal === "meituan-public-career-1")
       return collectMeituanPublicJobs(site, query, page, ctx);
+    if (template?.nativePortal === "xust-public-onlines-1")
+      return collectXustPublicNotices(site, query, page, ctx);
     if (template?.nativePortal)
       throw Object.assign(Error("Unknown native public portal contract"), {
         code: "template_not_configured",
@@ -301,6 +307,14 @@ export default createPagedProvider({
   },
   async detail(record, ctx) {
     const site = ctx.sites.find((s) => s.siteId === record.siteId);
+    if (!site)
+      throw Object.assign(
+        Error("Notice does not belong to the active source"),
+        {
+          code: "detail_identity_mismatch",
+          retryable: false,
+        },
+      );
     if (!site?.template) throw Error("Notice site template missing");
     if (site.template.nativePortal === "hpu-public-notices-1")
       return fetchHpuPublicNotice(site, record, ctx);
@@ -308,6 +322,8 @@ export default createPagedProvider({
       return fetchNjuPublicJob(site, record, ctx);
     if (site.template.nativePortal === "meituan-public-career-1")
       return fetchMeituanPublicJob(site, record, ctx);
+    if (site.template.nativePortal === "xust-public-onlines-1")
+      return fetchXustPublicNotice(site, record, ctx);
     if (site.template.nativePortal)
       throw Object.assign(Error("Unknown native public portal contract"), {
         code: "template_not_configured",

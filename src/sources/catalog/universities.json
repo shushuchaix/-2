@@ -1272,13 +1272,27 @@
     "suggestedAdapter": "pending",
     "identitySource": "学校官网就业导航直接链接此入口；安全学院官网确认消防工程专业",
     "relevanceEvidenceUrl": "https://aqxy.xust.edu.cn/info/1035/1337.htm",
-    "entryRead": "就业入口已读，标注云研科技；招聘数据仍为JS模板占位符",
+    "entryRead": "2026-10-13同根公开采样已读取匿名在线招聘列表与两篇原生详情；列表仅100字摘要，详情保留公告正文及表格，历史公告不证明当前在招。",
     "status": "candidate",
     "verifiedAt": null,
     "siteId": "official-92038145590ecfba",
     "providerId": "official-announcements",
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
+    "template": {
+      "nativePortal": "xust-public-onlines-1",
+      "recordKind": "recruitment_notice",
+      "listUrl": "https://jy.xust.edu.cn/module/getonlines",
+      "paginationVerified": true
+    },
+    "templateEvidence": {
+      "sourceUrl": "https://jy.xust.edu.cn/module/onlines?menu_id=8448",
+      "scriptSampleUrl": "https://jy.xust.edu.cn/js/page/onlines.js",
+      "listSampleUrl": "https://jy.xust.edu.cn/module/getonlines?start_page=1&k=%E6%B6%88%E9%98%B2&recruit_type=&panel_id=&professionals=&work_city=&company_property=&company_industry=&start=1&count=15",
+      "detailSampleUrl": "https://jy.xust.edu.cn/detail/online?id=3378527&menu_id=8448",
+      "method": "anonymous_native_get_and_public_identity_bound_html",
+      "requiresLiveProbe": true
+    },
     "entryUrl": "https://jy.xust.edu.cn/",
     "allowedDomains": ["jy.xust.edu.cn"],
     "capabilities": {

@@ -67,6 +67,7 @@ test("first activity read failure can be retried without changing version or rel
   );
 });
 test("header and workbench share the current version root without extra queries", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
   const f = await renderApp(t, {
     route: "#/workbench?packageId=A&targetRevisionId=t1%401",
     apiHandler: (p, o) =>
@@ -81,6 +82,9 @@ test("header and workbench share the current version root without extra queries"
 });
 
 test("same-version page navigation keeps the shared activity and initial query", async (t) => {
+  // Background polling has a separate clock from navigation; slow rendering
+  // must not be mistaken for a second initial query.
+  t.mock.timers.enable({ apis: ["setInterval"] });
   const f = await renderApp(t, {
     route: "#/workbench?packageId=A&targetRevisionId=t1%401",
     apiHandler: (p, o) =>
@@ -92,6 +96,10 @@ test("same-version page navigation keeps the shared activity and initial query",
   await f.user.click(f.screen.getByRole("link", { name: "工作台" }));
   await f.screen.findByText("持续采集活动");
   assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 1);
+  await act(async () => t.mock.timers.tick(2000));
+  await waitFor(() =>
+    assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 2),
+  );
 });
 
 test("all-target and missing scope never query private collections", async (t) => {

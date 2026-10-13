@@ -132,14 +132,42 @@ export function createCollectionBrowser({
     const ownedSignal = signal
       ? AbortSignal.any([signal, lifetime.signal])
       : lifetime.signal;
-    const publicResolver = !manual ? publicResolverFactory({
-      ledger, ref, token, operationLease, signal: ownedSignal, diagnostics, mode: dnsMode,
-    }) : null;
+    let manualRequests = 0,
+      manualDnsBytes = 0;
+    const claimManualRequest = () => {
+      ownedSignal.throwIfAborted();
+      if (manualRequests >= 60)
+        throw failure(
+          "collection_login_budget_exhausted",
+          "独立登录窗口已达到请求上限，请查看来源问题日志。",
+        );
+      manualRequests++;
+    };
+    const manualLedger = {
+      reserve: async (input) => {
+        claimManualRequest();
+        return input;
+      },
+      settle: async (input) => {
+        manualDnsBytes += input.verifiedUsage?.bytes || 0;
+      },
+    };
+    const publicResolver = publicResolverFactory({
+      ledger: manual ? manualLedger : ledger,
+      ref,
+      token,
+      operationLease,
+      signal: ownedSignal,
+      diagnostics,
+      mode: dnsMode,
+    });
     const client = egressProxy.createClient({
       hosts: routePolicy.hosts,
-      maxBytes: 20971520,
-      signal,
-      ...(publicResolver ? { resolvePublicUrl: publicResolver } : {}),
+      // Each of the at most 60 manual DNS requests reserves 64 KiB. Keep
+      // that allowance inside the existing 20 MiB window ceiling.
+      maxBytes: manual ? 20971520 - 60 * 65536 : 20971520,
+      signal: ownedSignal,
+      resolvePublicUrl: publicResolver,
     });
     let window;
     try {
@@ -183,23 +211,22 @@ export function createCollectionBrowser({
         ? details.id
         : null;
     window.webContents.setWebRTCIPHandlingPolicy?.("disable_non_proxied_udp");
-    let manualRequests = 0;
     let manualQueue = Promise.resolve(),
       lastManualAt = 0;
     const policy = createPagePolicy({
       routePolicy,
       maxRequests: 60,
       manual,
-      signal,
+      signal: ownedSignal,
       offlineAllows,
       webContentsId: id,
       reserve: async (details) => {
         if (manual) {
-          manualRequests++;
+          claimManualRequest();
           const next = manualQueue.then(async () => {
             await cancellableSleep(
               Math.max(0, lastManualAt + 300 - Date.now()),
-              signal,
+              ownedSignal,
             );
             lastManualAt = Date.now();
           });
@@ -328,7 +355,7 @@ export function createCollectionBrowser({
                 outcome: "completed",
                 counts: {
                   manualRequests,
-                  manualBytes: client.snapshot().bytes,
+                  manualBytes: client.snapshot().bytes + manualDnsBytes,
                 },
               });
             ses.webRequest.onHeadersReceived(null);
@@ -618,22 +645,91 @@ export function createCollectionBrowser({
           accountRef,
           remember,
         });
-      const item = await prepare({ ref, routePolicy, manual: true, entry });
+      const generation = generations.get(ref.scope.packageId) || 0;
+      let item, timer, abortLoad;
       try {
+        item = await prepare({ ref, routePolicy, manual: true, entry });
+        await Promise.race([
+          item.window.loadURL(entryUrl),
+          new Promise((_, reject) => {
+            abortLoad = () => reject(item.lifetime.signal.reason);
+            item.lifetime.signal.addEventListener("abort", abortLoad, {
+              once: true,
+            });
+            if (item.lifetime.signal.aborted) abortLoad();
+            timer = setTimeout(
+              () =>
+                reject(
+                  failure(
+                    "collection_login_load_timeout",
+                    "独立登录页面加载超时。",
+                  ),
+                ),
+              45000,
+            );
+          }),
+        ]);
+        item.lifetime.signal.throwIfAborted();
         await rememberSession?.({
           scope: ref.scope,
           platform,
           sessionRef: entry.sessionRef,
         });
       } catch (error) {
-        await item.dispose();
-        await sessionStore.clear({
-          scope: ref.scope,
-          sessionRef: entry.sessionRef,
-        });
-        throw error;
+        const cancelled =
+          error?.code === "collection_cancelled" ||
+          item?.lifetime.signal.aborted;
+        const reported = failure(
+          cancelled ? "collection_cancelled" : "collection_login_load_failed",
+          cancelled
+            ? "采集窗口已关闭。"
+            : "独立登录页面加载失败，请查看来源问题日志。",
+        );
+        await recordDiagnostic(
+          diagnostics,
+          {
+            operation: "collection.finish",
+            phase: "load",
+            outcome: "failed",
+            code: reported.code,
+            ...(Number.isSafeInteger(error.errno)
+              ? { errorNumber: error.errno }
+              : {}),
+          },
+          reported,
+        );
+        let cleanupFailed = false;
+        try {
+          await item?.dispose();
+        } catch {
+          cleanupFailed = true;
+        }
+        try {
+          await sessionStore.clear({
+            scope: ref.scope,
+            sessionRef: entry.sessionRef,
+          });
+        } catch (cleanupError) {
+          const alreadyRevoked =
+            cancelled &&
+            cleanupError?.code === "collection_session_scope" &&
+            (stopping ||
+              generation !== (generations.get(ref.scope.packageId) || 0));
+          if (!alreadyRevoked) cleanupFailed = true;
+        }
+        if (cleanupFailed)
+          await recordDiagnostic(diagnostics, {
+            operation: "collection.finish",
+            phase: "cleanup",
+            outcome: "failed",
+            code: "collection_login_cleanup_failed",
+          });
+        throw reported;
+      } finally {
+        clearTimeout(timer);
+        if (abortLoad)
+          item?.lifetime.signal.removeEventListener("abort", abortLoad);
       }
-      item.window.loadURL(entryUrl).catch(() => {});
       return {
         sessionRef: entry.sessionRef,
         state: "unverified",

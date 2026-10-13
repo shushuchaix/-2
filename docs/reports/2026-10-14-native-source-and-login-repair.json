@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "snapshotUpdatedAt": "2026-10-13T19:23:14.928Z",
+  "overallCollectionComplete": false,
+  "summary": {
+    "originalTemplateGaps": 47,
+    "candidateTemplates": 17,
+    "remainingTemplateGaps": 30,
+    "newUniqueRecords": 12,
+    "newBodyVerifiedRecords": 12,
+    "newEffectiveRecommendations": 0
+  },
+  "quality": {
+    "uniqueRecords": 928,
+    "bodyVerified": 88,
+    "open": 4,
+    "applicationAvailable": 0,
+    "qualificationPass": 48,
+    "qualificationUnknown": 632,
+    "qualificationFail": 248,
+    "historicalOrExpired": 25,
+    "suspectedDuplicates": 241,
+    "validNewUnique": 0,
+    "knownRequests": 1171,
+    "unknownRequestUpperBound": 191,
+    "validPer100KnownRequests": 0
+  },
+  "cumulative": {
+    "requestsUpperBound": 1451,
+    "requestLimit": 1500,
+    "remainingRequests": 49,
+    "knownRequests": 1171,
+    "unknownRequestUpperBound": 191,
+    "details": 119,
+    "detailLimit": 220,
+    "bytes": 245004772,
+    "byteLimit": 314572800,
+    "costUpperBoundCny": 3.98861,
+    "costLimitCny": 9.999184
+  },
+  "validation": [
+    {
+      "siteId": "official-5cf1fdcffbefdbb8",
+      "keyword": "消防",
+      "status": "verified",
+      "parsedRecords": 0,
+      "bodyVerified": 0,
+      "open": 0,
+      "applicationAvailable": 0,
+      "effective": 0,
+      "finishedAt": "2026-10-13T17:54:41.982Z",
+      "usageDelta": {
+        "usedRequests": 4,
+        "knownPhysicalRequests": 4,
+        "unknownRequestUpperBound": 0,
+        "usedDetails": 0,
+        "usedBytes": 955,
+        "usedAttachments": 0,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      }
+    },
+    {
+      "siteId": "official-5cf1fdcffbefdbb8",
+      "keyword": "机场",
+      "status": "verified",
+      "parsedRecords": 0,
+      "bodyVerified": 0,
+      "open": 0,
+      "applicationAvailable": 0,
+      "effective": 0,
+      "finishedAt": "2026-10-13T17:55:11.017Z",
+      "usageDelta": {
+        "usedRequests": 4,
+        "knownPhysicalRequests": 4,
+        "unknownRequestUpperBound": 0,
+        "usedDetails": 0,
+        "usedBytes": 957,
+        "usedAttachments": 0,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      }
+    },
+    {
+      "siteId": "alibaba",
+      "keyword": "消防",
+      "status": "verified",
+      "parsedRecords": 6,
+      "bodyVerified": 6,
+      "open": 0,
+      "applicationAvailable": 0,
+      "effective": 0,
+      "finishedAt": "2026-10-13T18:19:19.949Z",
+      "usageDelta": {
+        "usedRequests": 6,
+        "knownPhysicalRequests": 6,
+        "unknownRequestUpperBound": 0,
+        "usedDetails": 1,
+        "usedBytes": 46682,
+        "usedAttachments": 0,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      }
+    },
+    {
+      "siteId": "alibaba",
+      "keyword": "机场",
+      "status": "verified",
+      "parsedRecords": 0,
+      "bodyVerified": 0,
+      "open": 0,
+      "applicationAvailable": 0,
+      "effective": 0,
+      "finishedAt": "2026-10-13T18:20:07.271Z",
+      "usageDelta": {
+        "usedRequests": 4,
+        "knownPhysicalRequests": 4,
+        "unknownRequestUpperBound": 0,
+        "usedDetails": 0,
+        "usedBytes": 9266,
+        "usedAttachments": 0,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      }
+    },
+    {
+      "siteId": "xiaomi",
+      "keyword": "消防",
+      "status": "verified",
+      "parsedRecords": 6,
+      "bodyVerified": 6,
+      "open": 0,
+      "applicationAvailable": 0,
+      "effective": 0,
+      "finishedAt": "2026-10-13T18:25:52.270Z",
+      "usageDelta": {
+        "usedRequests": 0,
+        "knownPhysicalRequests": 0,
+        "unknownRequestUpperBound": 0,
+        "usedDetails": 1,
+        "usedBytes": 0,
+        "usedAttachments": 0,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      }
+    },
+    {
+      "siteId": "xiaomi",
+      "keyword": "机场",
+      "status": "verified",
+      "parsedRecords": 6,
+      "bodyVerified": 6,
+      "open": 0,
+      "applicationAvailable": 0,
+      "effective": 0,
+      "finishedAt": "2026-10-13T18:26:36.055Z",
+      "usageDelta": {
+        "usedRequests": 0,
+        "knownPhysicalRequests": 0,
+        "unknownRequestUpperBound": 0,
+        "usedDetails": 0,
+        "usedBytes": 0,
+        "usedAttachments": 0,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      }
+    }
+  ],
+  "bossLoginRepair": {
+    "systemDnsFakeIpObserved": true,
+    "priorManualWindowRequests": 1,
+    "priorManualWindowBytes": 0,
+    "anonymousEntryHttpStatus": 200,
+    "observedStaticScriptHttpStatuses": [
+      200,
+      200
+    ],
+    "manualRequestLimit": 60,
+    "manualCombinedByteLimit": 20971520,
+    "loadDeadlineMs": 45000,
+    "perVersionSessionIsolation": true,
+    "sessionReferenceSavedAfterSuccessfulLoad": true,
+    "lateCancelledLoadRejected": true,
+    "staticGetResourcesBounded": true,
+    "cdnQueryAndEncodedPathsRejected": true,
+    "actualHumanLoginVerified": false,
+    "rea": {
+      "mode": "inert_static_analysis",
+      "javascriptFilesParsed": 2,
+      "bytesRead": 459199,
+      "parseFailures": 0,
+      "executedScripts": 0,
+      "limitation": "静态模块和依赖关系不能证明二维码或登录实际成功；人工扫码与当前版本会话核验仍未完成。"
+    }
+  },
+  "verification": {
+    "offlineBusinessTests": 1879,
+    "offlineUiTests": 173,
+    "passedSuites": 18,
+    "explicitSkippedSuites": 7,
+    "failures": 0,
+    "typescriptExit": 0,
+    "diffCheckExit": 0,
+    "packageFiles": 10454,
+    "exactSourceHashes": 227,
+    "productionDependencies": 52,
+    "ocrHashes": 32,
+    "asarSha256": "DE3BECBD472CE4AE0CDC83A12720F4B16530EEC7E4BC1080332939BC0EBF2A00",
+    "native": [
+      {
+        "scale": 1,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      },
+      {
+        "scale": 1.25,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      },
+      {
+        "scale": 1.5,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      }
+    ],
+    "review": {
+      "critical": 0,
+      "important": 2,
+      "importantFixed": 2,
+      "minor": 0,
+      "boundaryTests": 10,
+      "cleanupTests": 6
+    },
+    "representativeScreenshotsInspected": 3
+  },
+  "privacy": {
+    "realResumeLocalOnly": true,
+    "newModelCalls": 0,
+    "newModelCostCny": 0,
+    "personalInformationIncluded": false,
+    "privatePathsIncluded": false,
+    "researchActivityCreated": false,
+    "originalCheckpointsPreserved": true
+  },
+  "limitations": [
+    "17个仅为候选模板，不能视作17个就绪或仍在招来源。",
+    "小米6条为整篇公告，不拆作具体岗位；深圳机场尚无正样本。",
+    "当前928条保留记录、88条正文已核验；4条具备在招证据，0条具备已核验可用投递入口，有效推荐仍为0。",
+    "部分剩余来源的证书或访问限制为先前诊断；本次日期逐行标注，未伪装成全部重新实测。",
+    "Boss还需当前版本人工扫码及会话核验；公众号和微博仍需公开文章种子或独立登录。"
+  ],
+  "shutdown": {
+    "requestedAfterTaskCompletion": true,
+    "performed": false,
+    "reason": "扩源与实际登录验收仍有待完成工作。"
+  },
+  "applicationEntryProbes": [
+    {
+      "siteId": "meituan",
+      "publicUrl": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4670145100&jobShareType=1",
+      "httpStatus": 200,
+      "formVerified": false,
+      "observedAt": "2026-10-13T19:21:24.168Z",
+      "requestUpperBound": 3
+    },
+    {
+      "siteId": "meituan",
+      "publicUrl": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4794843097&jobShareType=1",
+      "httpStatus": 200,
+      "formVerified": false,
+      "observedAt": "2026-10-13T19:21:53.506Z",
+      "requestUpperBound": 3
+    },
+    {
+      "siteId": "alibaba",
+      "publicUrl": "https://talent.alibaba.com/off-campus/position-detail?positionId=100038200003",
+      "httpStatus": 200,
+      "formVerified": false,
+      "observedAt": "2026-10-13T19:22:29.410Z",
+      "requestUpperBound": 5
+    },
+    {
+      "siteId": "alibaba",
+      "publicUrl": "https://talent.alibaba.com/off-campus/position-detail?positionId=100008240009",
+      "httpStatus": 200,
+      "formVerified": false,
+      "observedAt": "2026-10-13T19:23:04.899Z",
+      "requestUpperBound": 5
+    }
+  ]
+}

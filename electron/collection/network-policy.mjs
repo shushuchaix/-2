@@ -25,23 +25,74 @@ const hostAllowed = (host, list) =>
       ? host.endsWith(v.slice(1)) && host !== v.slice(2)
       : host === v,
   );
+function bossStaticAsset(url, resourceType) {
+  try {
+    publicCollectionUrl(url.href);
+  } catch {
+    return false;
+  }
+  if (
+    url.search ||
+    !/^\/[A-Za-z0-9._/-]+$/.test(url.pathname) ||
+    url.pathname
+      .split("/")
+      .slice(1)
+      .some((part) => !part || part === "." || part === "..")
+  )
+    return false;
+  const kind = /\.js$/.test(url.pathname)
+    ? "script"
+    : /\.css$/.test(url.pathname)
+      ? "stylesheet"
+      : /\.(?:woff2?|ttf|otf)$/.test(url.pathname)
+        ? "font"
+        : /\.(?:png|jpe?g|gif|svg|webp|ico)$/.test(url.pathname)
+          ? "image"
+          : null;
+  if (!kind || kind !== resourceType) return false;
+  if (url.hostname === "img.bosszhipin.com")
+    return url.pathname === "/static/zhipin/geek/sdk/browser-check-v2.js";
+  if (url.hostname !== "static.zhipin.com") return false;
+  return (
+    /^\/zhipin-geek-spa\/web\/v\d+\/static\/(?:js|css|fonts|img)\//.test(
+      url.pathname,
+    ) ||
+    [
+      "/library/js/lib/jquery-1.12.2.min.js",
+      "/library/js/lib/vue-core-v1.0.0.min.js",
+      "/library/js/utils/lottie_light-v5.9.4.min.js",
+      "/assets/zhipin/geek/boss-ui/bossui.min.js",
+      "/assets/zhipin/geek/boss-ui/ui-business.min.js",
+      "/assets/zhipin/geek/boss-ui/bossui.css",
+      "/v2/web/geek/css/prop-mall.css",
+      "/assets/sdk/apm/patas.2.3.3.min.js",
+      "/assets/sdk/warlock/warlockdata.min.2.2.15.js",
+    ].includes(url.pathname)
+  );
+}
 export function platformPolicy(platform) {
   if (platform === "boss")
     return {
       platform,
       entryUrl: "https://www.zhipin.com/web/geek/jobs",
-      hosts: ["www.zhipin.com", "zhipin.com"],
+      hosts: [
+        "www.zhipin.com",
+        "zhipin.com",
+        "static.zhipin.com",
+        "img.bosszhipin.com",
+      ],
       strictPath: true,
-      publicPath: (url) =>
-        url.hostname === "www.zhipin.com" &&
-        (/^\/web\/geek\/jobs\/?$|^\/job_detail\/[A-Za-z0-9_~.-]+\.html$|^\/(?:assets|static)\//.test(
-          url.pathname,
-        ) ||
-          [
-            new URL(BOSS_SEARCH_URL).pathname,
-            new URL(BOSS_DETAIL_URL).pathname,
-            "/favicon.ico",
-          ].includes(url.pathname)),
+      publicPath: (url, { resourceType = "mainFrame" } = {}) =>
+        bossStaticAsset(url, resourceType) ||
+        (url.hostname === "www.zhipin.com" &&
+          (/^\/web\/geek\/jobs\/?$|^\/job_detail\/[A-Za-z0-9_~.-]+\.html$|^\/(?:assets|static)\//.test(
+            url.pathname,
+          ) ||
+            [
+              new URL(BOSS_SEARCH_URL).pathname,
+              new URL(BOSS_DETAIL_URL).pathname,
+              "/favicon.ico",
+            ].includes(url.pathname))),
       manualPath: (url) =>
         url.hostname === "www.zhipin.com" &&
         /^\/web\/user(?:\/|$)|^\/wapi\/zppassport\//.test(url.pathname),
@@ -109,7 +160,7 @@ export function allowsRoute(
       (!isNativePublicSearchPolicy(routePolicy) ||
         allowsNativePublicPage(value, routePolicy)) &&
       (routePolicy.strictPath
-        ? routePolicy.publicPath(url) ||
+        ? routePolicy.publicPath(url, { resourceType }) ||
           (manual && routePolicy.manualPath?.(url))
         : !["mainFrame", "xhr"].includes(resourceType) ||
           manual ||
@@ -186,6 +237,11 @@ export function createPagePolicy({
         } catch {
           return { cancel: true };
         }
+        if (
+          ["static.zhipin.com", "img.bosszhipin.com"].includes(url.hostname) &&
+          !["GET", "HEAD"].includes(details.method || "GET")
+        )
+          return { cancel: true };
         if (url.pathname.startsWith("/wapi/")) {
           const op = routePolicy.bossOperation;
           const expected = op && new URL(op.url);

@@ -5,6 +5,75 @@ import {
   platformPolicy,
   classifyBrowserBody,
 } from "../../electron/collection/network-policy.mjs";
+
+test("Boss login bootstrap permits observed CDN assets only as static GET resources", async () => {
+  for (const manual of [false, true]) {
+    const policy = createPagePolicy({
+      routePolicy: platformPolicy("boss"),
+      manual,
+    });
+    for (const [url, resourceType] of [
+      [
+        "https://static.zhipin.com/library/js/lib/jquery-1.12.2.min.js",
+        "script",
+      ],
+      [
+        "https://static.zhipin.com/zhipin-geek-spa/web/v6763/static/js/boss-login-332c3023.bf146895.js",
+        "script",
+      ],
+      [
+        "https://static.zhipin.com/zhipin-geek-spa/web/v6763/static/css/boss-login-1.1fee6651.css",
+        "stylesheet",
+      ],
+      [
+        "https://static.zhipin.com/assets/zhipin/geek/boss-ui/bossui.css",
+        "stylesheet",
+      ],
+      [
+        "https://img.bosszhipin.com/static/zhipin/geek/sdk/browser-check-v2.js",
+        "script",
+      ],
+    ]) {
+      assert.equal(
+        (await policy.authorize({ url, resourceType, method: "GET" })).cancel,
+        false,
+      );
+      assert.equal(
+        (await policy.authorize({ url, resourceType, method: "POST" })).cancel,
+        true,
+      );
+      assert.equal(
+        (
+          await policy.authorize({
+            url,
+            resourceType: "mainFrame",
+            method: "GET",
+          })
+        ).cancel,
+        true,
+      );
+    }
+    for (const url of [
+      "https://static.zhipin.com/private/user.js",
+      "https://static.zhipin.com/wapi/zpgeek/friend/add.json",
+      "https://static.zhipin.com/library/js/lib/jquery-1.12.2.min.js?token=secret",
+      "https://static.zhipin.com/library/js/lib/jquery-1.12.2.min.js?securityId=synthetic-secret",
+      "https://static.zhipin.com/library/js/lib/jquery-1.12.2.min.js?lid=synthetic-secret",
+      "https://static.zhipin.com/library/js/lib/jquery-1.12.2.min.js?session=synthetic-secret",
+      "https://static.zhipin.com/library/js/lib/jquery-1.12.2.min.js?csrf=synthetic-secret",
+      "https://static.zhipin.com/library/js/lib/jquery-1.12.2.min.js?v=unobserved",
+      "https://static.zhipin.com/zhipin-geek-spa/web/v6763/static/js/%2e%2e%2fprivate.js",
+      "https://static.zhipin.com/zhipin-geek-spa/web/v6763/static/js/private%2f..%2fsecret.js",
+      "https://static.zhipin.com/zhipin-geek-spa/web/v6763/static/js//secret.js",
+      "https://different.example.org/library/js/lib/jquery-1.12.2.min.js",
+    ])
+      assert.equal(
+        (await policy.authorize({ url, resourceType: "script", method: "GET" }))
+          .cancel,
+        true,
+      );
+  }
+});
 test("Boss only permits the selected fixed API operation for every resource type", async () => {
   const routePolicy = {
     ...platformPolicy("boss"),

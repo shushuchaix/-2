@@ -142,6 +142,21 @@
       "url": "https://hr.xiaomi.com/website/campus.html",
       "kind": "official_entry",
       "checkedAt": null
+    },
+    "adapterVerification": "native_public_notice_body_observed",
+    "template": {
+      "nativePortal": "xiaomi-public-notices-1",
+      "recordKind": "recruitment_notice",
+      "listUrl": "https://hr.xiaomi.com/website/cli/api/hrportal/domestic/campusNews/list"
+    },
+    "templateEvidence": {
+      "url": "https://hr.xiaomi.com/website/assets/js/api.js",
+      "kind": "observed_native_public_notice_config",
+      "observedAt": "2026-10-14",
+      "list": "官网原生api.js明确匿名GET campusNews/list与数字id公告视图；实测7行，其中6条投递须知、1条FAQ。",
+      "body": "只保留启用、未删除的招聘公告完整body及独立id，不把FAQ或整份计划变成单一具体岗位。",
+      "date": "后台createTime/updateTime不等于招聘发布日期或截止，不据此推断仍在招。",
+      "application": "具体岗位与投递需另验；官方programs/list指出小米独立ATS入口，尚未取得具体岗位正样本。"
     }
   },
   {
@@ -169,6 +184,20 @@
       "url": "https://talent.alibaba.com/",
       "kind": "official_entry",
       "checkedAt": null
+    },
+    "adapterVerification": "native_public_body_observed",
+    "template": {
+      "nativePortal": "alibaba-public-career-1",
+      "listUrl": "https://talent.alibaba.com/position/search"
+    },
+    "templateEvidence": {
+      "url": "https://talent.alibaba.com/off-campus/position-list",
+      "kind": "observed_native_public_list",
+      "observedAt": "2026-10-14",
+      "list": "官网vendor静态AST确认POST /position/search及key/pageIndex/pageSize/channel/language；实测消防6条，机场0条。",
+      "body": "消防6条原生独立id行含完整description/requirement；仅保留岗位字段，剔除tracking及匿名请求材料。",
+      "date": "publishTime只作发布日期；无截止或明确当前在招状态，不据此推断仍在招。",
+      "application": "仅保留带positionId的公开详情候选；未验证投递表单或账户授权。"
     }
   },
   {
@@ -666,22 +695,31 @@
     "evidenceUrl": "https://gzw.sz.gov.cn/gzrc/shzp/content/post_11317305.html",
     "origin": "https://szairport.hotjob.cn",
     "category": "employer",
-    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
-    "regions": ["广东"],
-    "suggestedAdapter": "pending",
+    "jobFamilies": [
+      "机场消防",
+      "安全管理",
+      "工程运维"
+    ],
+    "regions": [
+      "广东"
+    ],
+    "suggestedAdapter": "official-announcements",
     "identitySource": "深圳市国资委官方招聘公告确认主体及招聘入口",
-    "entryRead": "入口已打开，实际跳转到wecruit.hotjob.cn租户页面；仅JS兼容提示，列表未验证",
+    "entryRead": "2026-10-14 实测入口跳转至深圳机场独立wecruit租户；校招/社招默认首屏和消防查询均为原生有效空列表，未取得实际岗位正文。",
     "status": "candidate",
     "verifiedAt": null,
     "siteId": "official-5cf1fdcffbefdbb8",
     "providerId": "official-announcements",
     "adapter": "official-announcements",
-    "adapterVerification": "unverified",
+    "adapterVerification": "native_empty_list_observed",
     "entryUrl": "https://szairport.hotjob.cn/",
-    "allowedDomains": ["szairport.hotjob.cn", "wecruit.hotjob.cn"],
+    "allowedDomains": [
+      "szairport.hotjob.cn",
+      "wecruit.hotjob.cn"
+    ],
     "industry": "aviation",
     "capabilities": {
-      "list": "unverified",
+      "list": "observed_native_empty",
       "body": "unverified",
       "date": "unverified",
       "attachments": "unverified",
@@ -692,6 +730,20 @@
       "kind": "official_identity",
       "description": "深圳市国资委官方招聘公告确认主体及招聘入口",
       "checkedAt": "2026-10-09T07:00:00Z"
+    },
+    "template": {
+      "nativePortal": "shenzhen-airport-wecruit-1",
+      "tenantKey": "60b79f9bbef57c1189691f8b",
+      "listUrl": "https://wecruit.hotjob.cn/wecruit/positionInfo/listPosition/SU60b79f9bbef57c1189691f8b?iSaJAx=isAjax&request_locale=zh_CN"
+    },
+    "templateEvidence": {
+      "url": "https://wecruit.hotjob.cn/SU60b79f9bbef57c1189691f8b/pb/index.html",
+      "kind": "observed_native_public_empty_list",
+      "observedAt": "2026-10-14",
+      "identity": "原生租户config的companyName与suiteKey核实深圳市机场（集团）有限公司。",
+      "list": "原生social/school脚本POST读取listPosition；2种招聘和消防/默认首屏四次HTTP200/state200，positonNum及分页全零。",
+      "body": "原生vendor源码提供workContent/serviceCondition与详情POST；当前无实际岗位，正样本正文质量未测。",
+      "application": "未验证登录或投递表单，不将公开详情候选视为可投递。"
     }
   },
   {

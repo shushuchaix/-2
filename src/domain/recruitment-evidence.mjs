@@ -24,6 +24,15 @@ export function isDownloadableApplicationUrl(value) {
 }
 export function assessApplicationResponse(response, checkedAt) {
   const { document } = parseHTML(String(response.text || ""));
+  // Some public pages return HTTP200 with only a bot-cookie script. Inspect
+  // the structure passively; never execute a solver or retain its arguments.
+  const botCookieGate = [...document.querySelectorAll("script:not([src])")].some(
+    (node) =>
+      node.textContent.includes("EO-Bot-Js-Token") &&
+      /\bsolveChallenge\s*\(/.test(node.textContent) &&
+      /document\.cookie\s*=/.test(node.textContent) &&
+      /location\.href\s*=/.test(node.textContent),
+  );
   for (const node of document.querySelectorAll(
     "head,script,style,template,noscript,[hidden],[aria-hidden],[style],input",
   )) {
@@ -53,6 +62,9 @@ export function assessApplicationResponse(response, checkedAt) {
         ),
     ),
     challenge =
+      (botCookieGate &&
+        !visibleText.trim() &&
+        !document.querySelector("form,main,article,h1,input")) ||
       challengeControl ||
       // Keep inline fragments in their sentence so quoted job requirements are not prompts.
       [

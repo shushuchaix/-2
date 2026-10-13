@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createRequestClient } from "../infrastructure/http/client.mjs";
+import { assessApplicationResponse } from "../domain/recruitment-evidence.mjs";
 const contexts = new AsyncLocalStorage();
 export function withSourceContext(context, fn) {
   return contexts.run(context, fn);
@@ -18,9 +19,9 @@ export async function sourceFetch(url, options = {}) {
   const result = await request(String(url), { ...options, signal });
   if (
     result.status === 200 &&
-    /captcha|人机验证|安全验证|访问过于频繁|验证码/.test(
+    (/captcha|人机验证|安全验证|访问过于频繁|验证码/.test(
       result.text?.slice(0, 2000) || "",
-    )
+    ) || assessApplicationResponse(result, null).challenge)
   ) {
     const e = Error("captcha: source challenge");
     e.code = "captcha";

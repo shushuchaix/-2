@@ -8,7 +8,7 @@ import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
 import { canonicalizeSourceUrl } from "../../domain/identity.mjs";
 import { validatePublicUrl } from "../../infrastructure/http/public-url.mjs";
-import { readJobPostingEvidence } from "../../domain/recruitment-evidence.mjs";
+import { readJobPostingEvidence, assessApplicationResponse } from "../../domain/recruitment-evidence.mjs";
 import {
   collectInlineOfficialJobs,
   fetchInlineOfficialJob,
@@ -29,6 +29,9 @@ import {
   collectXustPublicNotices,
   fetchXustPublicNotice,
 } from "./xust-public-onlines.mjs";
+import { collectShenzhenAirportJobs, fetchShenzhenAirportJob } from "./shenzhen-airport-wecruit.mjs";
+import { collectAlibabaPublicJobs, fetchAlibabaPublicJob } from "./alibaba-public-career.mjs";
+import { collectXiaomiPublicNotices, fetchXiaomiPublicNotice } from "./xiaomi-public-notices.mjs";
 import {
   readZhejiangNoticePage,
   zhejiangNoticeCursor,
@@ -60,6 +63,7 @@ export function noticeDocument(response) {
   }
   if (response.status !== 200) throw Error("HTTP " + response.status);
   if (
+    assessApplicationResponse(response, null).challenge ||
     /人机验证|访问过于频繁|<title>[^<]*(?:captcha|验证码|安全验证)/i.test(
       response.text.slice(0, 2000),
     )
@@ -129,6 +133,12 @@ export default createPagedProvider({
       return collectMeituanPublicJobs(site, query, page, ctx);
     if (template?.nativePortal === "xust-public-onlines-1")
       return collectXustPublicNotices(site, query, page, ctx);
+    if (template?.nativePortal === "shenzhen-airport-wecruit-1")
+      return collectShenzhenAirportJobs(site, query, page, ctx);
+    if (template?.nativePortal === "alibaba-public-career-1")
+      return collectAlibabaPublicJobs(site, query, page, ctx);
+    if (template?.nativePortal === "xiaomi-public-notices-1")
+      return collectXiaomiPublicNotices(site, query, page, ctx);
     if (template?.nativePortal)
       throw Object.assign(Error("Unknown native public portal contract"), {
         code: "template_not_configured",
@@ -339,6 +349,12 @@ export default createPagedProvider({
       return fetchMeituanPublicJob(site, record, ctx);
     if (site.template.nativePortal === "xust-public-onlines-1")
       return fetchXustPublicNotice(site, record, ctx);
+    if (site.template.nativePortal === "shenzhen-airport-wecruit-1")
+      return fetchShenzhenAirportJob(site, record, ctx);
+    if (site.template.nativePortal === "alibaba-public-career-1")
+      return fetchAlibabaPublicJob(site, record, ctx);
+    if (site.template.nativePortal === "xiaomi-public-notices-1")
+      return fetchXiaomiPublicNotice(site, record, ctx);
     if (site.template.nativePortal)
       throw Object.assign(Error("Unknown native public portal contract"), {
         code: "template_not_configured",

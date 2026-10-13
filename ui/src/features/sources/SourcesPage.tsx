@@ -368,6 +368,12 @@ export function SourcesPage({
                     ))}
                   </div>
                   <p>最近探针：{formatDate(checkedAt)}</p>
+                  {source.sourceId === "boss" && (
+                    <p className="text-sm text-muted-foreground">
+                      登录入口：查看来源配置 → Boss直聘独立登录 →
+                      打开独立采集窗口。
+                    </p>
+                  )}
                   {unmatchedHistory && (
                     <p className="text-sm text-muted-foreground">
                       来源历史探针（未关联目录站点）

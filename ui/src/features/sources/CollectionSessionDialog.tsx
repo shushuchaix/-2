@@ -114,13 +114,24 @@ export function CollectionSessionDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>独立采集会话</DialogTitle>
+          <DialogTitle>
+            {boss ? "Boss直聘独立登录" : "独立采集会话"}
+          </DialogTitle>
           <DialogDescription>
             {boss
               ? "此窗口仅供本目标版本使用。核验读取列表与正文，计入已有活动累计额度。"
               : "此窗口仅供本版本采集使用。未登录仍可读取公开内容；关闭窗口不会自动通过核验。"}
           </DialogDescription>
         </DialogHeader>
+        {boss && (
+          <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-muted-foreground">
+            <li>点击下方“打开独立采集窗口”。</li>
+            <li>在新窗口的 Boss 网页点击“登录/注册”，选择扫码登录。</li>
+            <li>
+              登录完成后回到这里核验列表与正文；关闭窗口不会自动通过核验。
+            </li>
+          </ol>
+        )}
         {!boss && (
           <TextField
             name="collection-test-url"

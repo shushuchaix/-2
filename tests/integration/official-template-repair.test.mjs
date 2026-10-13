@@ -16,7 +16,7 @@ const cases = [
     listUrl: "https://www.zjairports.com/newRecruitment.html",
     detailUrl: "https://www.zjairports.com/newRecruitmentInfo.html?id=132",
     title: "公开招聘岗位公告",
-    publishedAt: null,
+    publishedAt: "2026-08-26T00:00:00.000Z",
     attachments: 2,
   },
   {
@@ -73,7 +73,7 @@ for (const row of cases) {
     assert.equal(record.url, row.detailUrl);
     assert.equal(record.title, row.title);
     assert.equal(record.kind, "recruitment_notice");
-    assert.equal(page.coverageScope, "limited");
+    assert.equal(page.coverageScope, row.fixture === "zhejiang" ? undefined : "limited");
     assert.equal(page.nextCursor, null);
     assert.equal(fixture.site.status, "candidate");
     assert.equal(fixture.site.verifiedAt, null);

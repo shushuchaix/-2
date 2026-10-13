@@ -15,6 +15,8 @@ import {
 import type { ApiClient, DesktopAdapter } from "../lib/types";
 import { VersionProvider, useVersionContext } from "./VersionContext";
 import { CollectionProvider, useCollectionActivity } from "./CollectionContext";
+import { JobUpdateProvider, useJobUpdate } from "./JobUpdateContext";
+import { OperationFeedback } from "../components/OperationFeedback";
 import { deriveActivityView } from "../features/workbench/activity-view";
 import { parseRoute, buildHash, type Page } from "./router";
 import {
@@ -76,6 +78,7 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
   const version = useVersionContext();
   const collection = useCollectionActivity();
+  const jobUpdate = useJobUpdate();
   const activityView = deriveActivityView(collection.activity, null);
   useEffect(() => {
     const sync = () => setRoute(parseRoute(window.location.hash));
@@ -217,6 +220,10 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
             <h1>{title}</h1>
           )}
           <FormFeedback error={version.error} />
+          <OperationFeedback
+            result={jobUpdate.message}
+            error={jobUpdate.error}
+          />
           {["workbench", "jobs", "applications"].includes(route.page) && (
             <ScopeNotice />
           )}
@@ -238,13 +245,22 @@ function Shell({ api, desktop }: { api: ApiClient; desktop: DesktopAdapter }) {
     </SidebarProvider>
   );
 }
-export function App(props: { api: ApiClient; desktop: DesktopAdapter }) {
+export function App(props: {
+  api: ApiClient;
+  desktop: DesktopAdapter;
+  startupUpdate?: boolean;
+}) {
   return (
     <CSPProvider disableStyleElements>
       <TooltipProvider>
         <VersionProvider api={props.api}>
           <CollectionProvider api={props.api}>
-            <Shell {...props} />
+            <JobUpdateProvider
+              api={props.api}
+              startupEnabled={props.startupUpdate ?? true}
+            >
+              <Shell {...props} />
+            </JobUpdateProvider>
           </CollectionProvider>
         </VersionProvider>
         <Toaster />

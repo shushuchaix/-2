@@ -73,6 +73,11 @@ export function createCollectionService({
 }) {
   const active = new Map();
   const at = () => new Date(clock.now()).toISOString();
+  const automaticBlocked = (p) =>
+    !p.refreshReady ||
+    p.manualPaused ||
+    p.status !== "paused" ||
+    p.replanRequired;
   const enrichRecord = createRecordEnrichment({
     clock,
     diagnostics,
@@ -346,6 +351,8 @@ export function createCollectionService({
       if (
         !idValid(requestId) ||
         typeof replan !== "boolean" ||
+        typeof automatic !== "boolean" ||
+        (automatic && mode !== undefined && mode !== "rules") ||
         (mode !== undefined && !["rules", "ai", "auto"].includes(mode))
       )
         throw packageError("validation_failed", "续采参数无效。", 400);
@@ -366,13 +373,7 @@ export function createCollectionService({
         };
       if (old.resumeRequests?.[requestId])
         return { ...old.resumeRequests[requestId], joined: true };
-      if (
-        automatic &&
-        (!old.refreshReady ||
-          old.manualPaused ||
-          old.status === "waiting_for_auth" ||
-          old.status === "budget_exhausted")
-      )
+      if (automatic && automaticBlocked(old))
         return {
           activityId: ref.activityId,
           status: old.status,
@@ -440,6 +441,14 @@ export function createCollectionService({
                 };
               if (p.resumeRequests?.[requestId])
                 return { ...p.resumeRequests[requestId], joined: true };
+              // Planning and lease acquisition can yield to a user's pause.
+              // Recheck within the write lock before creating an automatic slice.
+              if (automatic && automaticBlocked(p))
+                return {
+                  activityId: ref.activityId,
+                  status: p.status,
+                  skipped: true,
+                };
               if (replan) {
                 const units = {};
                 for (const u of plan.units) {
@@ -466,8 +475,8 @@ export function createCollectionService({
                 p.replanRequired = false;
                 p.epoch++;
               }
+              if (mode) root.collectionMode = mode;
               if (!automatic) {
-                if (mode) root.collectionMode = mode;
                 p.manualPaused = false;
                 p.refreshReady = true;
                 for (const u of Object.values(p.units))
@@ -530,7 +539,7 @@ export function createCollectionService({
         permit?.release?.();
         throw e;
       }
-      if (claim.joined) {
+      if (claim.joined || claim.skipped) {
         await lease.release();
         permit?.release?.();
         return claim;

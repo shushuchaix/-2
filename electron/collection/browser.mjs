@@ -7,6 +7,7 @@ import {
   validateBossOperation,
 } from "./boss-page.mjs";
 import { recordDiagnostic } from "../../src/infrastructure/diagnostics/log.mjs";
+import { createCollectionPublicResolver } from "./public-dns.mjs";
 import {
   publicCollectionUrl,
   platformPolicy,
@@ -30,6 +31,8 @@ export function createCollectionBrowser({
   assertScope,
   rememberSession,
   diagnostics,
+  dnsMode = "auto",
+  publicResolverFactory = createCollectionPublicResolver,
 } = {}) {
   const windows = new Map(),
     sessions = new Map(),
@@ -125,10 +128,18 @@ export function createCollectionBrowser({
     ses.setPermissionRequestHandler((_, __, callback) => callback(false));
     ses.setPermissionCheckHandler(() => false);
     const proxy = await egressProxy.start();
+    const lifetime = new AbortController();
+    const ownedSignal = signal
+      ? AbortSignal.any([signal, lifetime.signal])
+      : lifetime.signal;
+    const publicResolver = !manual ? publicResolverFactory({
+      ledger, ref, token, operationLease, signal: ownedSignal, diagnostics, mode: dnsMode,
+    }) : null;
     const client = egressProxy.createClient({
       hosts: routePolicy.hosts,
       maxBytes: 20971520,
       signal,
+      ...(publicResolver ? { resolvePublicUrl: publicResolver } : {}),
     });
     let window;
     try {
@@ -157,7 +168,9 @@ export function createCollectionBrowser({
         },
       });
     } catch (error) {
+      lifetime.abort(error);
       client.revoke();
+      await publicResolver?.close();
       throw error;
     }
     const id = window.webContents.id,
@@ -169,7 +182,6 @@ export function createCollectionBrowser({
       (typeof details.id === "number" || typeof details.id === "string")
         ? details.id
         : null;
-    const lifetime = new AbortController();
     window.webContents.setWebRTCIPHandlingPolicy?.("disable_non_proxied_udp");
     let manualRequests = 0;
     let manualQueue = Promise.resolve(),
@@ -295,6 +307,7 @@ export function createCollectionBrowser({
           policy.close();
           client.revoke();
           try {
+            await publicResolver?.close();
             if (manual && entry)
               await sessionStore.setState({
                 scope: ref.scope,

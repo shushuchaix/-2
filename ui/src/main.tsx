@@ -11,5 +11,12 @@ const api = createApiClient({
     bridge?.reportDiagnostic?.(event) ?? Promise.resolve(undefined),
 });
 createRoot(document.getElementById("root")!).render(
-  <App api={api} desktop={createDesktopAdapter(bridge)} />,
+  <App
+    api={api}
+    desktop={createDesktopAdapter(bridge)}
+    startupUpdate={
+      new URLSearchParams(window.location.search).get("fixtureStartup") !==
+      "disabled"
+    }
+  />,
 );

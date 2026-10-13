@@ -13,6 +13,7 @@ export async function collectionFixture(
     clock,
     modelFactory,
     evaluationService,
+    planner,
   } = {},
 ) {
   let f;
@@ -43,21 +44,24 @@ export async function collectionFixture(
       modelFactory,
       evaluationService,
       ledger: f.ledger,
-      planner: async () => ({
-        units,
-        hashes: {
-          planHash: "p1",
-          catalogHash: "c1",
-          queryHash: "q1",
-          parserVersion: "v1",
-        },
-        limits: {
-          maxRequests: 400,
-          maxDetails: 100,
-          maxCostCny: 10,
-          ...limits,
-        },
-      }),
+      planner: async (input) => {
+        const plan = {
+          units,
+          hashes: {
+            planHash: "p1",
+            catalogHash: "c1",
+            queryHash: "q1",
+            parserVersion: "v1",
+          },
+          limits: {
+            maxRequests: 400,
+            maxDetails: 100,
+            maxCostCny: 10,
+            ...limits,
+          },
+        };
+        return planner ? planner(input, plan) : plan;
+      },
       requestFactory:
         ({ budget, signal }) =>
         async (...args) => {

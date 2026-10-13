@@ -75,8 +75,11 @@ export function createDnsLookup({
         return structuredClone(cached.addresses);
       }
       resolver = "doh";
-      const responses = await Promise.all(
-        ["A", "AAAA"].map(async (type) => {
+      const families = new AbortController();
+      const familySignal = requestSignal
+        ? AbortSignal.any([requestSignal, families.signal])
+        : families.signal;
+      const queries = ["A", "AAAA"].map(async (type) => {
           requestSignal?.throwIfAborted();
           const reservation = await budget.claimRequest("dns", {
             bytesUpperBound: 65536,
@@ -85,9 +88,7 @@ export function createDnsLookup({
           const url = new URL("https://cloudflare-dns.com/dns-query");
           url.searchParams.set("name", host);
           url.searchParams.set("type", type);
-          const combined = requestSignal
-            ? AbortSignal.any([requestSignal, AbortSignal.timeout(5000)])
-            : AbortSignal.timeout(5000);
+          const combined = AbortSignal.any([familySignal, AbortSignal.timeout(5000)]);
           const response = await transport({
             url,
             addresses: [{ address: "1.1.1.1", family: 4 }],
@@ -136,8 +137,17 @@ export function createDnsLookup({
           )
             throw publicDnsError("public_dns_invalid_response");
           return data.Answer || [];
-        }),
-      );
+        });
+      let responses;
+      try {
+        responses = await Promise.all(queries);
+      } catch (error) {
+        // A rejection must not leave the other family sending or settling
+        // after the owning collection releases its operation lease.
+        families.abort(error);
+        await Promise.allSettled(queries);
+        throw error;
+      }
       const answers = responses.flat().filter((a) => [1, 28].includes(a.type));
       if (!answers.length) throw publicDnsError("public_dns_no_answer");
       if (answers.some((a) => !isPublicAddress(a.data)))

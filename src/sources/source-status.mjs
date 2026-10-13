@@ -38,6 +38,7 @@ const issueCodes = new Set([
   "pagination_cycle",
   "empty_evidence_unverified",
   "template_not_configured",
+  "native_transport_contract_mismatch",
   "http_redirect_limit",
   "response_size_exceeded",
   "response_decode_failed",

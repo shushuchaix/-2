@@ -47,8 +47,10 @@ export async function handleCollectionRequest(req, res, context) {
     return true;
   }
   if (!["POST", "PUT"].includes(req.method)) return false;
-  const input = await context.http.readJson(req),
-    ref = { scope: businessScope(input), activityId };
+  const input = await context.http.readJson(req);
+  if (input.automatic !== undefined && typeof input.automatic !== "boolean")
+    throw packageError("validation_failed", "自动更新标识必须为布尔值。", 400);
+  const ref = { scope: businessScope(input), activityId };
   if (req.method === "POST" && ["pause", "cancel"].includes(match[2]))
     send(200, await service[match[2]](ref));
   else if (req.method === "POST" && match[2] === "resume")
@@ -58,6 +60,7 @@ export async function handleCollectionRequest(req, res, context) {
         ref,
         requestId: input.requestId,
         replan: input.replan === true,
+        automatic: input.automatic === true,
         mode: input.mode || (input.useAI ? "ai" : undefined),
         credentials:
           input.useAI || ["ai", "auto"].includes(input.mode)

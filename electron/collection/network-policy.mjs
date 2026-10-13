@@ -3,6 +3,12 @@ import {
   BOSS_SEARCH_URL,
   BOSS_DETAIL_URL,
 } from "../../src/sources/boss/protocol.mjs";
+import {
+  isNativePublicSearchPolicy,
+  allowsNativePublicSearchUrl,
+  allowsNativePublicPage,
+  isNativePublicSearchRequest,
+} from "./native-public-search.mjs";
 const material =
   /^(?:.*token|api_?key|key|uin|pass_ticket|wx_header|auth(?:orization)?|cookie|ticket|signature|x-amz-signature|code|password|secret)$/i;
 export function publicCollectionUrl(value) {
@@ -91,13 +97,17 @@ export function allowsRoute(
 ) {
   try {
     const url =
-      manual || routePolicy.platform === "boss"
+      manual ||
+      routePolicy.platform === "boss" ||
+      allowsNativePublicSearchUrl(value, routePolicy)
         ? validatePublicUrl(value)
         : publicCollectionUrl(value);
     return (
       url.protocol === "https:" &&
       (!url.port || url.port === "443") &&
       hostAllowed(url.hostname, routePolicy.hosts) &&
+      (!isNativePublicSearchPolicy(routePolicy) ||
+        allowsNativePublicPage(value, routePolicy)) &&
       (routePolicy.strictPath
         ? routePolicy.publicPath(url) ||
           (manual && routePolicy.manualPath?.(url))
@@ -145,9 +155,30 @@ export function createPagePolicy({
 } = {}) {
   let requests = 0,
     closed = false,
-    bossSent = false;
+    bossSent = false,
+    nativePublicSent = false;
   return {
     async authorize(details) {
+      const nativePublicPost = isNativePublicSearchRequest(
+        details,
+        routePolicy,
+      );
+      if (isNativePublicSearchPolicy(routePolicy)) {
+        let url;
+        try {
+          url = validatePublicUrl(details.url);
+        } catch {
+          return { cancel: true };
+        }
+        if (
+          url.hostname === "jobs.bytedance.com" &&
+          url.pathname.startsWith("/api/") &&
+          url.pathname !== "/api/v1/csrf/token"
+        ) {
+          if (!nativePublicPost || nativePublicSent) return { cancel: true };
+          nativePublicSent = true;
+        }
+      }
       if (routePolicy.platform === "boss") {
         let url;
         try {
@@ -213,6 +244,7 @@ export function createPagePolicy({
           "GET",
           "HEAD",
           ...(manual ||
+          nativePublicPost ||
           (routePolicy.platform === "boss" &&
             routePolicy.bossOperation?.kind === "boss.search" &&
             details.url.split("?")[0] === BOSS_SEARCH_URL)

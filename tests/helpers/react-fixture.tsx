@@ -1,5 +1,6 @@
 import { act, render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import type { TestContext } from "node:test";
 import { App } from "../../ui/src/app/App";
 import { createDesktopAdapter } from "../../ui/src/lib/desktop";
@@ -79,10 +80,14 @@ export async function renderApp(
     apiHandler = syntheticApi,
     route = "#/workbench",
     desktopBridge,
+    startupUpdate = false,
+    strictMode = false,
   }: {
     apiHandler?: ApiHandler;
     route?: string;
     desktopBridge?: DesktopBridge;
+    startupUpdate?: boolean;
+    strictMode?: boolean;
   } = {},
 ) {
   window.history.replaceState(null, "", "http://localhost/" + route);
@@ -118,9 +123,14 @@ export async function renderApp(
   };
   let view: ReturnType<typeof render>;
   await act(async () => {
-    view = render(
-      <App api={api} desktop={createDesktopAdapter(desktopBridge)} />,
+    const app = (
+      <App
+        api={api}
+        desktop={createDesktopAdapter(desktopBridge)}
+        startupUpdate={startupUpdate}
+      />
     );
+    view = render(strictMode ? <StrictMode>{app}</StrictMode> : app);
   });
   t.after(() => {
     view.unmount();
@@ -133,6 +143,19 @@ export async function renderApp(
     apiCalls,
     api,
     unmount: () => view.unmount(),
+    async remount() {
+      view.unmount();
+      await act(async () => {
+        const app = (
+          <App
+            api={api}
+            desktop={createDesktopAdapter(desktopBridge)}
+            startupUpdate={startupUpdate}
+          />
+        );
+        view = render(strictMode ? <StrictMode>{app}</StrictMode> : app);
+      });
+    },
     async selectTarget(scope: Scope) {
       const target = syntheticTargets.find(
         (x) => x.packageId === scope.packageId,

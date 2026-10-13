@@ -69,7 +69,7 @@ export function createEgressProxy({
       (url.port && url.port !== String(url.protocol === "https:" ? 443 : 80))
     )
       throw Error("Egress route denied");
-    const result = await resolvePublicUrl(url.href);
+    const result = await (client.resolvePublicUrl || resolvePublicUrl)(url.href);
     if (
       client.closed ||
       result.url?.href !== url.href ||
@@ -328,8 +328,9 @@ export function createEgressProxy({
         starting = null;
       }
     },
-    createClient({ hosts, maxBytes = 20971520, signal }) {
+    createClient({ hosts, maxBytes = 20971520, signal, resolvePublicUrl: ownedResolver }) {
       if (
+        (ownedResolver !== undefined && typeof ownedResolver !== "function") ||
         !Array.isArray(hosts) ||
         !hosts.length ||
         hosts.length > 30 ||
@@ -354,6 +355,7 @@ export function createEgressProxy({
           handshakes: new Map(),
           closed: false,
           signal,
+          resolvePublicUrl: ownedResolver,
         };
       clients.set(username, client);
       const revoke = () => close(client);

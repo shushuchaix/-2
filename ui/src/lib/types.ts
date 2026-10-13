@@ -14,6 +14,9 @@ export type CollectionActivity = {
     status: string;
     revision: number;
     activeSliceRunId?: string | null;
+    manualPaused?: boolean;
+    refreshReady?: boolean;
+    updatedAt?: string;
     limits: Record<string, number>;
     metrics?: Record<string, number>;
     lastErrorCode?: string;

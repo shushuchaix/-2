@@ -353,7 +353,10 @@ async function createWindow() {
         });
     });
   }
-  await mainWindow.loadURL(appUrl);
+  // The offline self-test controls task mutations in its synthetic workspace.
+  await mainWindow.loadURL(
+    SELF_TEST ? appUrl + "?fixtureStartup=disabled" : appUrl,
+  );
   if (SELF_TEST)
     await mainWindow.webContents.executeJavaScript(
       "window.__rjrSelfTestIssues=[];window.addEventListener('securitypolicyviolation',e=>window.__rjrSelfTestIssues.push({code:'csp_violation',directive:e.violatedDirective}));window.addEventListener('error',()=>window.__rjrSelfTestIssues.push({code:'renderer_error'}));window.addEventListener('unhandledrejection',()=>window.__rjrSelfTestIssues.push({code:'renderer_rejection'}));",
@@ -561,6 +564,7 @@ async function boot() {
       }),
       sessionStore: collectionSessions,
       diagnostics: applicationContext.diagnostics,
+      dnsMode: cfg.network?.dnsMode || "auto",
       offlineAllows: selfTestNetwork?.allows,
       assertScope: async (scope) =>
         assertScope(

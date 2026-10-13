@@ -472,17 +472,18 @@
       "dateRule": null,
       "attachmentRule": ".detailContent a[href]",
       "pathPrefix": "/newRecruitmentInfo.html",
-      "paginationVerified": false
+      "paginationVerified": true,
+      "nativePagination": "zjairports-options-1"
     },
     "templateEvidence": {
       "mode": "reduced_public_structure_fixture",
       "listUrl": "https://www.zjairports.com/newRecruitment.html",
       "detailUrl": "https://www.zjairports.com/newRecruitmentInfo.html?id=132",
       "observedAt": "2026-10-11T08:46:12.359Z",
-      "publicationDate": "unverified_split_list_date_and_empty_detail_date",
+      "publicationDate": "visible_split_list_year_month_and_day",
       "opening": "expired_historical_sample",
       "application": "unverified_downloadable_registration_attachment",
-      "pagination": "unverified",
+      "pagination": "official_OPTIONS_id31_pageSize10_and_native_GET_page2_page7_observed_2026-10-13",
       "requiresLiveProbe": true
     },
     "allowedDomains": ["www.zjairports.com"],

@@ -114,3 +114,22 @@ test("native errors retain the request upper bound while byte accounting settles
   assert.equal(root.collectionUsage.usedBytes, 0);
   assert.equal(settles, 0);
 });
+
+test("the browser waits for its owned DNS resolver to drain before finishing a read",async(t)=>{
+ const f=await collectionFixture(t),c=await f.openCommit();
+ const fixture=collectionBrowserFixture({executeJavaScript:async()=>({html:'<div class="weibo-text">公开招聘正文</div>',selectorFound:true})});
+ let startDrain,finishDrain,finished=false;
+ const draining=new Promise(resolve=>{startDrain=resolve;}),release=new Promise(resolve=>{finishDrain=resolve;});
+ const browser=createCollectionBrowser({...fixture,ledger:f.ledger,publicResolverFactory:({signal})=>{
+  const resolver=async()=>{throw Error('synthetic resolver not used');};
+  resolver.close=async()=>{assert.equal(signal.aborted,true);startDrain();await release;};
+  return resolver;
+ }});
+ t.after(()=>browser.stop());
+ const read=browser.read({ref:c.ref,token:c.token,operationLease:c.lease,url:'https://m.weibo.cn/detail/123',routePolicy:platformPolicy('weibo')}).finally(()=>{finished=true;});
+ const entered=await Promise.race([draining.then(()=>true),read.then(()=>false)]);
+ assert.equal(entered,true);
+ assert.equal(finished,false);
+ finishDrain();await read;
+ assert.equal(finished,true);
+});

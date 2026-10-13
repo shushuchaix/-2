@@ -1349,6 +1349,58 @@ export async function runWorkspaceSelfTest({
           ),
       );
     });
+    await phase("启动自动更新与来源页手动更新共用隔离任务", async () => {
+      const roots = async () => Object.values((await context.repository.read()).runs)
+        .filter(run => run.ownerPackageId === a.packageId && run.collectionRole === "collection_root");
+      const before = await roots(), beforeIds = new Set(before.map(run => run.runId));
+      const jobCount = countRecords(await context.repository.read(), a.packageId, "jobs");
+      const enabledUrl = new URL(window.webContents.getURL());
+      enabledUrl.searchParams.delete("fixtureStartup");
+      enabledUrl.hash = "#/sources?packageId=" + encodeURIComponent(a.packageId) + "&targetRevisionId=" + encodeURIComponent(a.revisionId);
+      const completedRoots = async (count) => {
+        const deadline = Date.now() + 20000;
+        while (Date.now() < deadline) {
+          const created = (await roots()).filter(run => !beforeIds.has(run.runId));
+          if (created.length === count && created.every(run => run.collectionProgress.status === "completed")) return created;
+          await delay(30);
+        }
+        throw Error("self_test_startup_completion_timeout");
+      };
+      try {
+        await window.loadURL(enabledUrl.href);
+        await wait(textHas("启动自动更新已开始"));
+        const automatic = await completedRoots(1);
+        check("本次启动创建一个本地规则活动", automatic[0].collectionMode === "rules");
+        await navigate("工作台");
+        await navigate("招聘来源");
+        check("导航不重复创建启动活动", (await roots()).length === before.length + 1);
+        await click("手动更新岗位");
+        await wait(textHas("手动岗位更新已开始"));
+        await completedRoots(2);
+        check("来源页手动更新实际执行且按版本去重", countRecords(await context.repository.read(), a.packageId, "jobs") === jobCount);
+        await resizeViewport(1440);
+        await capture("startup-manual-update.png", { scenario: "启动与手动岗位更新" });
+        // Navigating to the same URL may keep the current document. Reload
+        // explicitly to simulate a fresh application client on the next open.
+        const reloaded = new Promise(resolve => window.webContents.once("did-finish-load", resolve));
+        window.webContents.reloadIgnoringCache();
+        await reloaded;
+        await wait(textHas("启动自动更新已开始"));
+        const reopened = await completedRoots(3);
+        const workspace = await context.repository.read();
+        const children = Object.values(workspace.runs).filter(run => reopened.some(root => root.runId === run.collectionActivityId));
+        check("再次打开更新一次且活动和子任务归属正确", reopened.every(run => run.collectionMode === "rules" && run.targetSnapshot.revisionId === a.revisionId)
+          && children.length > 0 && children.every(run => run.mode === "rules" && run.ownerPackageId === a.packageId));
+        const projections = await Promise.all(reopened.map(run => context.collectionService.get({
+          scope: { packageId: a.packageId, targetRevisionId: a.revisionId }, activityId: run.runId,
+        })));
+        check("启动更新没有模型费用", projections.every(run => run.collectionUsage.costUpperBoundCny === 0 && run.collectionUsage.usedModelRequests === 0));
+      } finally {
+        enabledUrl.searchParams.set("fixtureStartup", "disabled");
+        await window.loadURL(enabledUrl.href);
+        await wait("Boolean(document.querySelector('nav'))");
+      }
+    });
     await phase("Boss 固定协议、版本隔离与风险取消排空", async () => {
       const { runBossSelfTest } = await import("./self-test-boss.mjs");
       const validation = await runBossSelfTest({

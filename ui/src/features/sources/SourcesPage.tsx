@@ -3,6 +3,7 @@ import type { ApiClient, DesktopAdapter } from "../../lib/types";
 import { createDesktopAdapter } from "../../lib/desktop";
 import { useVersionContext } from "../../app/VersionContext";
 import { useCollectionActivity } from "../../app/CollectionContext";
+import { JobUpdatePanel } from "../workbench/JobUpdatePanel";
 import { buildHash } from "../../app/router";
 import { TextField } from "../../components/TextField";
 import { OperationFeedback } from "../../components/OperationFeedback";
@@ -237,6 +238,7 @@ export function SourcesPage({
           选择一个目标版本后可添加目录站点。
         </p>
       )}
+      <JobUpdatePanel />
       {catalog && (
         <section
           aria-label="来源状态摘要"

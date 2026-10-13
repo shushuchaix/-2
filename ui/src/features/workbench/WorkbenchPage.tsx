@@ -3,6 +3,7 @@ import type { ApiClient, RunEvent, Scope } from "../../lib/types";
 import { useQuery, useOperation } from "../../lib/hooks";
 import { useVersionContext } from "../../app/VersionContext";
 import { useCollectionActivity } from "../../app/CollectionContext";
+import { useJobUpdate } from "../../app/JobUpdateContext";
 import { buildHash } from "../../app/router";
 import { RunOptions } from "./RunOptions";
 import { RunSummary } from "./RunSummary";
@@ -54,6 +55,7 @@ const stageLabels: Record<string, string> = {
 };
 export function WorkbenchPage({ api }: { api: ApiClient }) {
   const ctx = useVersionContext();
+  const jobUpdate = useJobUpdate();
   const [mode, setMode] = useState<"rules" | "ai">("rules"),
     [userKey, setUserKey] = useState(""),
     [run, setRun] = useState<Record<string, unknown> | null>(null),
@@ -69,6 +71,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
   const op = useOperation(),
     cancel = useOperation();
   const connecting = useRef(false);
+  const observedUpdate = useRef(jobUpdate.latest);
   const {
     activity,
     error: activityError,
@@ -103,6 +106,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
     setStreamError(null);
     setRecoveryError(null);
     setPendingStartError(null);
+    observedUpdate.current = null;
     setRecovering(!!ctx.scope && !ctx.error);
     if (ctx.scope && !ctx.loading && !ctx.error) {
       const scope = ctx.scope;
@@ -155,6 +159,34 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
       connecting.current = false;
     };
   }, [api, ctx.generation, ctx.loading, ctx.error, recoveryAttempt]);
+  useEffect(() => {
+    const latest = jobUpdate.latest;
+    if (
+      recovering ||
+      recoveryError ||
+      !ctx.scope ||
+      !latest?.run ||
+      latest.scope.packageId !== ctx.scope.packageId ||
+      latest.scope.targetRevisionId !== ctx.scope.targetRevisionId ||
+      typeof latest.run.runId !== "string"
+    )
+      return;
+    if (observedUpdate.current === latest) return;
+    observedUpdate.current = latest;
+    // Recovery and the collection's active slice describe the current task.
+    // A cached startup response must not replace a newer manual run or replay
+    // after that run finishes. Each update result is consumed once per page.
+    if (
+      (run &&
+        (run.runId === latest.run.runId ||
+          !terminal.has(String(run.status)))) ||
+      (activity?.collectionProgress.activeSliceRunId &&
+        activity.collectionProgress.activeSliceRunId !== latest.run.runId)
+    )
+      return;
+    setRun(latest.run);
+    void connect(latest.run.runId, ctx.scope);
+  }, [jobUpdate.latest, recovering, recoveryError, ctx.generation, run, activity]);
   async function connect(runId: string, scope: Scope) {
     if (connecting.current) return;
     connecting.current = true;
@@ -212,6 +244,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
       getPendingStart(api, ctx.scope) ||
       (!!run && !terminal.has(String(run.status))) ||
       op.busy ||
+      jobUpdate.busy ||
       activityLoading ||
       activityError ||
       (activity &&
@@ -334,6 +367,7 @@ export function WorkbenchPage({ api }: { api: ApiClient }) {
               !!recoveryError ||
               running ||
               op.busy ||
+              jobUpdate.busy ||
               activityLoading ||
               !!activityError ||
               (!!activity &&

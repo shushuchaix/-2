@@ -29,6 +29,13 @@ import {
   collectXustPublicNotices,
   fetchXustPublicNotice,
 } from "./xust-public-onlines.mjs";
+import {
+  readZhejiangNoticePage,
+  zhejiangNoticeCursor,
+  zhejiangNoticeDate,
+  assertZhejiangNoticeRecord,
+  assertZhejiangNoticeDetail,
+} from "./zhejiang-airports-pagination.mjs";
 function listLocation(site, value) {
   const url = validatePublicUrl(value),
     base = new URL(site.template.listUrl);
@@ -129,8 +136,13 @@ export default createPagedProvider({
     if (template?.inlineJob === true)
       return collectInlineOfficialJobs(site, page, ctx, noticeDocument);
     const jobMode = template?.recordKind === "job";
+    const nativePagination = template?.nativePagination === "zjairports-options-1";
+    if (template?.nativePagination && !nativePagination)
+      throw Object.assign(Error("Unknown native pagination contract"), {
+        code: "template_not_configured",
+      });
     const paginated =
-      template?.paginationVerified === true && !!template.nextPageRule;
+      template?.paginationVerified === true && (nativePagination || !!template.nextPageRule);
     if (page > 1 && !paginated)
       return {
         records: [],
@@ -162,10 +174,11 @@ export default createPagedProvider({
       throw e;
     }
     const idPattern = jobMode ? jobIdPattern(template) : null;
-    const listUrl = listLocation(site, ctx.cursor?.url || template.listUrl);
-    const document = noticeDocument(
-      await ctx.request(listUrl, { signal: ctx.signal }),
-    );
+    const nativePage = nativePagination
+      ? await readZhejiangNoticePage(site, page, ctx)
+      : null;
+    const listUrl = nativePage?.url || listLocation(site, ctx.cursor?.url || template.listUrl);
+    const document = noticeDocument(nativePage?.response || await ctx.request(listUrl, { signal: ctx.signal }));
     const records = [],
       seen = new Set();
     for (const anchor of document.querySelectorAll(template.linkRule)) {
@@ -215,7 +228,7 @@ export default createPagedProvider({
       const nativeId = idPattern ? jobUrlId(url, idPattern) : null;
       if (idPattern && !nativeId) continue;
       seen.add(url);
-      const publishedAt = explicitDate(
+      const publishedAt = nativePagination ? zhejiangNoticeDate(anchor.closest(".newsItem02")) : explicitDate(
         jobMode
           ? template.listDateRule === null
             ? null
@@ -282,7 +295,9 @@ export default createPagedProvider({
       throw e;
     }
     let nextCursor = null;
-    if (paginated) {
+    if (nativePage) {
+      nextCursor = zhejiangNoticeCursor(nativePage, document.querySelectorAll(template.linkRule).length);
+    } else if (paginated) {
       const next = document
         .querySelector(template.nextPageRule)
         ?.getAttribute("href");
@@ -332,6 +347,8 @@ export default createPagedProvider({
       return fetchInlineOfficialJob(site, record, ctx, noticeDocument);
     const template = site.template,
       jobMode = template.recordKind === "job";
+    if (template.nativePagination === "zjairports-options-1")
+      assertZhejiangNoticeRecord(site, record);
     const idPattern = jobMode ? jobIdPattern(template) : null;
     if (idPattern) {
       const nativeId = jobUrlId(record.url, idPattern);
@@ -351,6 +368,8 @@ export default createPagedProvider({
     }
     const response = await ctx.request(record.url, { signal: ctx.signal }),
       document = noticeDocument(response);
+    if (template.nativePagination === "zjairports-options-1")
+      assertZhejiangNoticeDetail(site, record, response, document);
     if (jobMode) {
       if (idPattern) {
         const identityNodes = [

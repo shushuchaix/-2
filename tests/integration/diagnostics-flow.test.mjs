@@ -111,21 +111,37 @@ test("completed collection exports planning, stages, batches and final counters"
 
 test("snapshot failure still exports final status and preserved collection counters", async (t) => {
   const f = await flow(t);
+  let releaseSnapshot;
+  const snapshotGate = new Promise((resolve) => {
+    releaseSnapshot = resolve;
+  });
   f.context.repository.writeRunSnapshot = async () => {
+    await snapshotGate;
     throw Object.assign(Error("private snapshot location"), { code: "EPERM" });
   };
   const { runId } = await f.context.runService.startRun({
     targetRevisionId: f.targetRevisionId,
   });
-  await assert.rejects(f.context.runService.waitForRun(runId), {
+  // Capture the live task before releasing the failure. A fast runner can
+  // otherwise finish before startRun resolves and enter the persisted path.
+  const liveWait = assert.rejects(f.context.runService.waitForRun(runId), {
     code: "EPERM",
+  });
+  releaseSnapshot();
+  await liveWait;
+  await assert.rejects(f.context.runService.waitForRun(runId), {
+    code: "snapshot_failed",
   });
   const entries = (await f.diagnostics.list({ runId })).entries;
   const final = entries.filter((e) => e.operation === "run.finished");
   assert.equal(final.length, 1);
   assert.equal(final[0].outcome, "failed");
   assert.equal(final[0].counts.deduplicated, 1);
-  assert.ok(entries.some((e) => e.operation === "run.snapshot"));
+  assert.ok(
+    entries.some(
+      (e) => e.operation === "run.snapshot" && e.error?.code === "EPERM",
+    ),
+  );
   assert.equal(JSON.stringify(entries).includes("private snapshot"), false);
 });
 

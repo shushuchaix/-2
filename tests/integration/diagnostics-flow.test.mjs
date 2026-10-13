@@ -1,6 +1,7 @@
 import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createApplicationContext } from "../../src/application/context.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
 import { createDiagnosticsLog } from "../../src/infrastructure/diagnostics/log.mjs";
@@ -122,13 +123,29 @@ test("snapshot failure still exports final status and preserved collection count
   const { runId } = await f.context.runService.startRun({
     targetRevisionId: f.targetRevisionId,
   });
-  // Capture the live task before releasing the failure. A fast runner can
-  // otherwise finish before startRun resolves and enter the persisted path.
-  const liveWait = assert.rejects(f.context.runService.waitForRun(runId), {
-    code: "EPERM",
+  // The public API reads the workspace before delegating to the live task.
+  // Its promise existing is not yet proof that routing reached that task.
+  const route = new AsyncLocalStorage();
+  let routingReadFinished;
+  const routed = new Promise((resolve) => {
+    routingReadFinished = resolve;
   });
+  const originalRead = f.context.repository.read.bind(f.context.repository);
+  f.context.repository.read = async (...args) => {
+    const workspace = await originalRead(...args);
+    if (route.getStore() === "live-wait")
+      // Return the routing read, then let its caller capture the active task
+      // before the notified test continuation releases the snapshot failure.
+      queueMicrotask(routingReadFinished);
+    return workspace;
+  };
+  const liveWait = route.run("live-wait", () =>
+    assert.rejects(f.context.runService.waitForRun(runId), { code: "EPERM" }),
+  );
+  await routed;
   releaseSnapshot();
   await liveWait;
+  f.context.repository.read = originalRead;
   await assert.rejects(f.context.runService.waitForRun(runId), {
     code: "snapshot_failed",
   });

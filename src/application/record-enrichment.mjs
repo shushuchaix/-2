@@ -1,7 +1,8 @@
 import {
-  prepareApplicationCheck,
-  assessApplicationResponse,
-} from "../domain/recruitment-evidence.mjs";
+  prepareOwnedApplicationCheck,
+  hasCurrentApplicationCheck,
+  assessOwnedApplicationResponse,
+} from "./application-verification.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 
 /** Complete public record evidence using the caller-owned request and attachments. */
@@ -13,8 +14,19 @@ export function createRecordEnrichment({
 }) {
   const at = () => new Date(clock.now()).toISOString();
   return async function enrichRecord(record, context) {
-    const applicationCheck = prepareApplicationCheck(record, clock.now()),
-      evidence = applicationCheck.evidence;
+    const owned = prepareOwnedApplicationCheck(
+      record,
+      officialSites,
+      clock.now(),
+    );
+    record = owned.record;
+    const applicationCheck = owned.check,
+      evidence = applicationCheck.evidence,
+      checkedInCurrentRun = hasCurrentApplicationCheck(
+        record,
+        context.runId,
+        clock.now(),
+      );
     await recordDiagnostic(diagnostics, {
       operation: "collection.body",
       runId: context.runId,
@@ -26,13 +38,16 @@ export function createRecordEnrichment({
     });
     if (
       record.kind === "job" &&
+      !checkedInCurrentRun &&
       applicationCheck.shouldRequest &&
       evidence.applicationStatus !== "available"
     ) {
       try {
         record = {
           ...record,
-          applicationVerification: assessApplicationResponse(
+          applicationVerification: assessOwnedApplicationResponse(
+            owned.site,
+            record,
             await context.request(record.applyUrl, {
               signal: context.signal,
               maxBytes: 1048576,
@@ -43,6 +58,7 @@ export function createRecordEnrichment({
               },
             }),
             at(),
+            context.runId,
           ),
         };
       } catch (error) {

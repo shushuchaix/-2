@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { parseHTML } from "linkedom";
+import { isHiddenHtmlElement } from "../util/html-visibility.mjs";
 import { clauseAt, isSoftRequirement } from "../match/requirements.mjs";
 const digest = (v) =>
   createHash("sha256")
@@ -22,30 +23,57 @@ export function isDownloadableApplicationUrl(value) {
   }
 }
 export function assessApplicationResponse(response, checkedAt) {
-  const text = String(response.text || ""),
-    challenge = /验证码|人机验证|访问过于频繁|captcha|验证后访问/i.test(
-      text.slice(0, 3000),
-    );
+  const { document } = parseHTML(String(response.text || ""));
+  for (const node of document.querySelectorAll(
+    "head,script,style,template,noscript,[hidden],[aria-hidden],[style],input",
+  )) {
+    if (isHiddenHtmlElement(node)) node.remove();
+  }
+  const visibleText = document.documentElement?.textContent || "",
+    challengeInstruction =
+      /(?:^|[。！？.!?\r\n])\s*(?:请(?:先)?(?:输入|填写)(?:图片|图形)?(?:验证码|校验码)|请(?:先)?(?:完成|通过)(?:人机验证|验证码(?:核验|验证)|安全验证)|(?:验证码|人机验证)(?:核验|验证)?后(?:访问|继续)|(?:验证码|校验码)(?:输入)?(?:错误|不正确|已失效)|访问过于频繁|(?:please\s+)?(?:complete\s+(?:the\s+)?captcha|verify\s+(?:that\s+)?you\s+are\s+(?:a\s+)?human))/i,
+    challengeLabel =
+      /^(?:请(?:输入|填写))?(?:图片|图形)?(?:验证码|校验码|captcha)(?:\s*[:：*])?$/i,
+    labels = [...document.querySelectorAll("label")],
+    challengeControl = [...document.querySelectorAll("input")].some(
+      (input) =>
+        ["id", "name"].some((attribute) =>
+          /^(?:captcha(?:[_-]?code)?|verify[_-]?code|verification[_-]?code)$/i.test(
+            input.getAttribute(attribute) || "",
+          ),
+        ) ||
+        ["placeholder", "aria-label"].some((attribute) =>
+          challengeLabel.test((input.getAttribute(attribute) || "").trim()),
+        ) ||
+        labels.some(
+          (label) =>
+            (label.contains(input) ||
+              (input.id && label.getAttribute("for") === input.id)) &&
+            challengeLabel.test(label.textContent.trim()),
+        ),
+    ),
+    challenge =
+      challengeControl ||
+      // Keep inline fragments in their sentence so quoted job requirements are not prompts.
+      [
+        document.documentElement,
+        ...document.querySelectorAll(
+          'body,main,section,article,aside,div,p,form,fieldset,legend,label,li,td,th,h1,h2,h3,h4,h5,h6,button,[role="alert"],[role="status"]',
+        ),
+      ].some(
+        (node) =>
+          node && challengeInstruction.test((node.textContent || "").trim()),
+      );
   let formVerified = false,
     loginRequired = false;
   if (response.status === 200 && !challenge) {
-    const { document } = parseHTML(text);
-    for (const n of document.querySelectorAll(
-      'script,style,[hidden],[aria-hidden="true"]',
-    ))
-      n.remove();
     loginRequired =
       !!document.querySelector('input[type="password"]') ||
-      /请先登录|登录后(?:报名|投递|申请)/.test(
-        document.documentElement.textContent,
-      );
+      /请先登录|登录后(?:报名|投递|申请)/.test(visibleText);
     formVerified =
       !loginRequired &&
-      [...document.querySelectorAll("form")].some(
-        (form) =>
-          !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(
-            form.getAttribute("style") || "",
-          ) && /投递|报名|应聘|申请职位|提交申请/.test(form.textContent),
+      [...document.querySelectorAll("form")].some((form) =>
+        /投递|报名|应聘|申请职位|提交申请/.test(form.textContent),
       );
   }
   return {
@@ -139,7 +167,7 @@ const knownCertificates = [
   "英语六级",
   "英语四级",
 ];
-export const CONDITIONS_PARSER_VERSION = "conditions-4";
+export const CONDITIONS_PARSER_VERSION = "conditions-5";
 export function extractRecruitmentConditions(record) {
   const text = String(record.description || ""),
     conditions = [],
@@ -454,6 +482,97 @@ export function resolveRecruitmentConditions(record) {
     conditionsParserVersion: CONDITIONS_PARSER_VERSION,
   };
 }
+function nativeRowDeadline(record, text) {
+  if (
+    record.sourceId !== "official-announcements" ||
+    record.kind !== "job" ||
+    record.sourceRecordIdKind !== "authority" ||
+    !record.sourceRecordId ||
+    !record.siteId ||
+    record.identityScope !== record.siteId ||
+    record.rowAmbiguous
+  )
+    return null;
+  const facts = (record.sourceEvidence || []).filter((e) => {
+    if (
+      e.field !== "deadlineDate" ||
+      e.sourceKind !== "visible_native_deadline_date" ||
+      e.status !== "verified" ||
+      e.sourceId !== record.sourceId ||
+      e.ambiguous ||
+      (e.confidence !== undefined &&
+        (!Number.isFinite(e.confidence) || e.confidence < 85)) ||
+      e.appliesTo?.jobRowId !== String(record.sourceRecordId) ||
+      !/^20\d{2}-\d{2}-\d{2}$/.test(e.value || "") ||
+      e.sourceExcerpt !== "招聘截止日期：" + e.value ||
+      !["selector", "labelSelector", "nativeIdSelector"].every(
+        (key) =>
+          typeof e.location?.[key] === "string" &&
+          e.location[key].trim().length > 0 &&
+          e.location[key].length <= 512,
+      )
+    )
+      return false;
+    try {
+      const source = new URL(e.sourceUrl),
+        date = new Date(e.value + "T00:00:00.000Z");
+      return (
+        source.protocol === "https:" &&
+        !source.username &&
+        !source.password &&
+        source.origin === new URL(record.url).origin &&
+        Number.isFinite(date.getTime()) &&
+        date.toISOString().slice(0, 10) === e.value
+      );
+    } catch {
+      return false;
+    }
+  });
+  const dates = [...new Set(facts.map((e) => e.value))];
+  if (!dates.length) return null;
+  if (dates.length !== 1) return { conflict: true, blocked: true };
+  const [year, month, day] = dates[0].split("-"),
+    partials = [
+      ...text.matchAll(
+        /(?:报名|投递|申请)?(?:截止(?:时间|日期)?|截至)[：:\s]*(\d{1,2})\s*月\s*(\d{1,2})\s*日([^。；;\n]{0,60})/g,
+      ),
+    ],
+    deadlines = [];
+  for (const partial of partials) {
+    if (
+      Number(partial[1]) !== Number(month) ||
+      Number(partial[2]) !== Number(day)
+    )
+      return { date: dates[0], conflict: true, blocked: true };
+    const tail = partial[3],
+      clock = tail.match(/^\s*(?:(\d{1,2})[:：](\d{2})(?!\d)|中午\s*(12)点)/);
+    if (!clock && /^\s*(?:\d|上午|下午|早上|晚上|中午|凌晨|傍晚)/.test(tail))
+      return { date: dates[0], blocked: true };
+    if (
+      clock &&
+      /^\s*(?:左右|前后|许|以后|之后|后|起|至|到|[-—])/.test(
+        tail.slice(clock[0].length),
+      )
+    )
+      return { date: dates[0], blocked: true };
+    const hour = clock ? clock[1] || clock[3] : undefined,
+      minute = clock ? clock[2] || "00" : undefined;
+    if (
+      clock &&
+      (Number(hour) > 24 ||
+        Number(minute) > 59 ||
+        (Number(hour) === 24 && Number(minute) !== 0))
+    )
+      return { date: dates[0], blocked: true };
+    deadlines.push([partial[0], year, month, day, hour, minute]);
+  }
+  if (new Set(deadlines.map((d) => JSON.stringify(d.slice(4)))).size > 1)
+    return { date: dates[0], conflict: true, blocked: true };
+  return {
+    date: dates[0],
+    deadline: deadlines[0] || [facts[0].sourceExcerpt, year, month, day],
+  };
+}
 export function prepareRecruitmentRecord(record, now) {
   const r = structuredClone(record),
     text = String(r.description || "");
@@ -472,8 +591,61 @@ export function prepareRecruitmentRecord(record, now) {
     );
   }
   Object.assign(r, resolveRecruitmentConditions(r));
+  const nativeDeadline = nativeRowDeadline(r, text);
+  const markDeadlineConflict = (clearCanonical = true) => {
+    if (clearCanonical) {
+      r.deadlineAt = null;
+      delete r.deadline;
+    }
+    if (
+      !(r.evidenceConflicts || []).some(
+        (c) =>
+          c.field === "deadlineAt" && c.code === "visible_structured_conflict",
+      )
+    )
+      r.evidenceConflicts = [
+        ...(r.evidenceConflicts || []),
+        { field: "deadlineAt", code: "visible_structured_conflict" },
+      ];
+  };
+  if (nativeDeadline?.blocked) {
+    r.deadlineAt = null;
+    delete r.deadline;
+    if (nativeDeadline.conflict) markDeadlineConflict();
+  }
   const space = "[ \\t\\u00a0\\u3000]*",
-    datePattern = `(2${space}0${space}\\d${space}\\d)${space}[年./-]${space}(\\d(?:${space}\\d)?)${space}[月./-]${space}(\\d(?:${space}\\d)?)${space}(?:日)?(?:\\s*(\\d{1,2})[:：](\\d{2}))?`;
+    calendarPattern = `(2${space}0${space}\\d${space}\\d)${space}[年./-]${space}(\\d(?:${space}\\d)?)${space}[月./-]${space}(\\d(?:${space}\\d)?)${space}(?:日)?`,
+    datePattern = `${calendarPattern}(?:\\s*(\\d{1,2})[:：](\\d{2}))?`,
+    actionDatePattern = `${calendarPattern}(?:\\s*(\\d{1,2})(?:[:：](\\d{2})|时))?`;
+  const actionDeadline = [
+    ...text.matchAll(
+      new RegExp(
+        `(?:应聘人员|应聘者|报考人员|报名人员)\\s*(?:须|需|应|请)?\\s*(?:于|在)\\s*(?:北京时间\\s*)?${actionDatePattern}\\s*(?:之前|前)\\s*(?:填写(?:并|后)\\s*)?(?:投递(?:简历|应聘材料)|提交(?:简历|报名材料|应聘材料|报名申请)|(?:完成)?报名)`,
+        "g",
+      ),
+    ),
+  ].find((match) => {
+    // Keep comma-linked history, but associate a negation with this instruction.
+    const contextStart = Math.max(0, match.index - 256),
+      before = text.slice(contextStart, match.index),
+      prefix = before.split(/[。；;\n！？!?]/).at(-1),
+      directPrefix = prefix.split(/[，,]/).at(-1),
+      suffix = text
+        .slice(
+          match.index + match[0].length,
+          match.index + match[0].length + 120,
+        )
+        .split(/[。；;\n，,！？!?]/)[0];
+    if (contextStart > 0 && prefix.length === before.length) return false;
+    return (
+      !/历史(?:记录|回顾)|曾要求|曾规定/.test(prefix) &&
+      !/不(?:再)?要求|未要求|无需|不必|不用/.test(directPrefix) &&
+      !/(?:取消|撤销|废止)\s*$/.test(directPrefix) &&
+      !/^\s*的(?:要求|规定|限制)\s*(?:已经?|现已|已被)?\s*(?:取消|撤销|废止|不再适用)/.test(
+        suffix,
+      )
+    );
+  });
   const deadline =
     text.match(
       new RegExp(
@@ -485,38 +657,70 @@ export function prepareRecruitmentRecord(record, now) {
         `报名时间[^。；\\n]{0,55}?(?:至|到|—|－|~|～)\\s*${datePattern}`,
       ),
     ) ||
-    text.match(new RegExp(`即日起\\s*(?:至|到)\\s*${datePattern}`));
-  if (deadline) {
+    text.match(new RegExp(`即日起\\s*(?:至|到)\\s*${datePattern}`)) ||
+    actionDeadline ||
+    nativeDeadline?.deadline;
+  if (deadline && !nativeDeadline?.blocked) {
     for (const index of [1, 2, 3])
       deadline[index] = deadline[index].replace(/[ \t\u00a0\u3000]/g, "");
     const d = `${deadline[1]}-${deadline[2].padStart(2, "0")}-${deadline[3].padStart(2, "0")}`;
-    if (time(d) !== null) {
-      if (r.deadlineAt && String(r.deadlineAt).slice(0, 10) !== d)
-        r.evidenceConflicts = [
-          ...(r.evidenceConflicts || []),
-          { field: "deadlineAt", code: "visible_structured_conflict" },
-        ];
-      else {
-        const hour = deadline[4] === undefined ? 23 : Number(deadline[4]),
-          minute = deadline[5] === undefined ? 59 : Number(deadline[5]);
-        const value = new Date(
-          Date.UTC(
-            Number(deadline[1]),
-            Number(deadline[2]) - 1,
-            Number(deadline[3]),
-            hour - 8,
-            minute,
-            deadline[4] === undefined ? 59 : 0,
-            deadline[4] === undefined ? 999 : 0,
-          ),
-        );
-        const local = new Date(value.getTime() + 8 * 3600000);
+    const day = new Date(
+      Date.UTC(
+        Number(deadline[1]),
+        Number(deadline[2]) - 1,
+        Number(deadline[3]),
+      ),
+    );
+    if (nativeDeadline?.date && nativeDeadline.date !== d)
+      markDeadlineConflict();
+    else if (
+      nativeDeadline?.deadline?.[4] !== undefined &&
+      deadline[4] !== undefined &&
+      (Number(nativeDeadline.deadline[4]) !== Number(deadline[4]) ||
+        Number(nativeDeadline.deadline[5] ?? 0) !== Number(deadline[5] ?? 0))
+    )
+      markDeadlineConflict();
+    else if (day.toISOString().slice(0, 10) === d) {
+      if (
+        deadline[4] === undefined &&
+        nativeDeadline?.deadline?.[4] !== undefined
+      ) {
+        deadline[4] = nativeDeadline.deadline[4];
+        deadline[5] = nativeDeadline.deadline[5];
+      }
+      const hour = deadline[4] === undefined ? 23 : Number(deadline[4]),
+        minute = deadline[4] === undefined ? 59 : Number(deadline[5] ?? 0);
+      const value = new Date(
+        Date.UTC(
+          Number(deadline[1]),
+          Number(deadline[2]) - 1,
+          Number(deadline[3]),
+          hour - 8,
+          minute,
+          deadline[4] === undefined ? 59 : 0,
+          deadline[4] === undefined ? 999 : 0,
+        ),
+      );
+      const local = new Date(value.getTime() + 8 * 3600000),
+        endDay = new Date(day.getTime() + (hour === 24 ? 86400000 : 0));
+      if (
+        hour <= 24 &&
+        minute <= 59 &&
+        (hour !== 24 || minute === 0) &&
+        local.toISOString().slice(0, 10) === endDay.toISOString().slice(0, 10)
+      ) {
+        const existing = time(r.deadlineAt),
+          existingLocalDay =
+            existing === null
+              ? null
+              : new Date(existing + 8 * 3600000).toISOString().slice(0, 10);
         if (
-          hour <= 23 &&
-          minute <= 59 &&
-          local.toISOString().slice(0, 10) === d
+          r.deadlineAt &&
+          existing !== value.getTime() &&
+          existingLocalDay !== d
         )
-          r.deadlineAt = value.toISOString();
+          markDeadlineConflict(false);
+        else r.deadlineAt = value.toISOString();
       }
     }
   }

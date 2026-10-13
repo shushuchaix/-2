@@ -240,7 +240,7 @@ test("default catalog emits all 98 rows with template, public seed and login blo
   assert.equal(new Set(report.rows.map((row) => row.siteId)).size, 98);
   assert.equal(
     report.rows.filter((row) => row.blockReason === "template_missing").length,
-    41,
+    34,
   );
   for (const siteId of [
     "official-d80ddfbc91795a1f",
@@ -249,6 +249,9 @@ test("default catalog emits all 98 rows with template, public seed and login blo
     "official-a64ede1720adf4fa",
     "official-9b7b3076410fcacc",
     "siemens",
+    "boc",
+    "official-7ac6546c836dc43a",
+    "official-2ea9828ffe1d2682",
   ]) {
     assert.notEqual(
       report.rows.find((row) => row.siteId === siteId).blockReason,
@@ -272,6 +275,143 @@ test("default catalog emits all 98 rows with template, public seed and login blo
     new Set(diagnostics.map((d) => d.siteId)),
     new Set(report.rows.map((r) => r.siteId)),
   );
+});
+
+for (const [
+  siteId,
+  fixtureName,
+  query,
+  details,
+  minimumRecords,
+  expectedBody,
+] of [
+  ["official-c738f71905918585", "hpu-list.html", "消防", 1, 1, 1],
+  ["official-nju", "nju-list.json", "机场", 0, 5, 1],
+]) {
+  test(`normal validation admits the exact native public contract ${siteId} without CSS body selectors`, async (t) => {
+    const { validateSources } = await moduleUnderTest();
+    const catalog = [
+      loadSiteCatalog().find((entry) => entry.siteId === siteId),
+    ];
+    const list = fs.readFileSync(
+      new URL(
+        `../fixtures/official-template-repair/${fixtureName}`,
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const detail =
+      siteId === "official-c738f71905918585"
+        ? fs.readFileSync(
+            new URL(
+              "../fixtures/official-template-repair/hpu-detail.json",
+              import.meta.url,
+            ),
+            "utf8",
+          )
+        : null;
+    const urls = [];
+    const f = await prepared(
+      t,
+      [announcements],
+      catalog,
+      {},
+      {
+        transport: async (url) => {
+          urls.push(String(url));
+          if (String(url) === catalog[0].template.listUrl)
+            return { status: 200, text: list };
+          assert.equal(
+            String(url),
+            "https://hpu.bysjy.com.cn/detail/getnoticedetail?notice_id=1839023",
+          );
+          return { status: 200, text: detail };
+        },
+      },
+    );
+    const report = await validateSources({
+      context: f.context,
+      ref: f.ref,
+      catalog,
+      query,
+      detailsPerSite: details,
+    });
+    assert.equal(report.rows[0].blockReason, null);
+    assert.equal(report.rows[0].pageCommitted, true);
+    assert.ok(report.rows[0].parsedCount >= minimumRecords);
+    assert.equal(report.rows[0].bodyVerifiedCount, expectedBody);
+    assert.equal(report.rows[0].applicationAvailableCount, 0);
+    assert.equal(report.rows[0].validNewUniqueCount, 0);
+    assert.equal(report.usage.usedModelRequests, 0);
+    assert.equal(urls.length, 1 + details);
+  });
+  test(`normal validation rejects a changed native contract ${siteId} before transport`, async (t) => {
+    const { validateSources } = await moduleUnderTest();
+    const entry = structuredClone(
+      loadSiteCatalog().find((row) => row.siteId === siteId),
+    );
+    entry.template = {
+      ...entry.template,
+      nativePortal:
+        siteId === "official-nju"
+          ? "nju-public-career-1"
+          : "hpu-public-notices-1",
+      listUrl: "https://jobs.example.org/changed",
+    };
+    const catalog = [entry],
+      f = await prepared(
+        t,
+        [announcements],
+        catalog,
+        {},
+        {
+          transport: async () => {
+            assert.fail("invalid native contract must not request");
+          },
+        },
+      );
+    const report = await validateSources({
+      context: f.context,
+      ref: f.ref,
+      catalog,
+      detailsPerSite: 0,
+    });
+    assert.equal(report.rows[0].blockReason, "template_missing");
+    assert.equal(report.usage.usedRequests, 0);
+  });
+}
+
+test("normal validation rejects unknown native portals even when generic CSS selectors are supplied", async (t) => {
+  const { validateSources } = await moduleUnderTest();
+  const catalog = [
+    site("unknown-native", "official-announcements", {
+      template: {
+        nativePortal: "unproved-native",
+        listUrl: "https://jobs.example.org/",
+        linkRule: "a[href]",
+        bodyRule: "main",
+      },
+    }),
+  ];
+  const f = await prepared(
+    t,
+    [announcements],
+    catalog,
+    {},
+    {
+      transport: async () => {
+        assert.fail("unproved native contract must not request");
+      },
+    },
+  );
+  const report = await validateSources({
+    context: f.context,
+    ref: f.ref,
+    catalog,
+    detailsPerSite: 0,
+  });
+  assert.equal(report.rows[0].blockReason, "template_missing");
+  assert.equal(report.usage.usedRequests, 0);
 });
 
 function inlineValidationSite() {
@@ -336,6 +476,148 @@ test("source validation accepts a valid explicit inline template without linkRul
   assert.equal(report.usage.usedRequests, 1);
   assert.equal(report.usage.usedModelRequests, 0);
 });
+
+function rowInlineValidationSite() {
+  const entry = structuredClone(
+    loadSiteCatalog().find((row) => row.siteId === "official-7ac6546c836dc43a"),
+  );
+  return {
+    ...entry,
+    siteId: "row-inline-validation-fixture",
+    name: "Public same-row structure fixture",
+    origin: "https://jobs.example.org",
+    allowedDomains: ["jobs.example.org"],
+    template: {
+      ...entry.template,
+      listUrl: "https://jobs.example.org/join.php?cate=1031",
+    },
+  };
+}
+
+test("source validation accepts native href row templates and keeps scoped closing dates separate from publication", async (t) => {
+  const { validateSources } = await moduleUnderTest();
+  const entry = structuredClone(
+    loadSiteCatalog().find((row) => row.siteId === "official-2ea9828ffe1d2682"),
+  );
+  const catalog = [
+    {
+      ...entry,
+      siteId: "href-inline-validation-fixture",
+      name: "Public native href structure fixture",
+      origin: "https://jobs.example.org",
+      allowedDomains: ["jobs.example.org"],
+      template: {
+        ...entry.template,
+        listUrl: "https://jobs.example.org/talent/index.html",
+      },
+    },
+  ];
+  const text = fs.readFileSync(
+    new URL(
+      "../fixtures/official-template-repair/hzairport-inline.html",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const f = await prepared(
+    t,
+    [announcements],
+    catalog,
+    { maxRequests: 1, maxDetails: 0 },
+    {
+      transport: async (url) => {
+        assert.equal(url, "https://jobs.example.org/talent/index.html");
+        return { status: 200, text, headers: {} };
+      },
+    },
+  );
+  const report = await validateSources({
+    context: f.context,
+    ref: f.ref,
+    catalog,
+    detailsPerSite: 0,
+  });
+  assert.equal(report.rows[0].blockReason, null);
+  assert.equal(report.rows[0].status, "parsed");
+  assert.equal(report.rows[0].parsedCount, 2);
+  assert.equal(report.rows[0].bodyVerifiedCount, 2);
+  assert.equal(report.rows[0].applicationAvailableCount, 0);
+  assert.equal(report.rows[0].validNewUniqueCount, 0);
+  assert.equal(report.usage.usedRequests, 1);
+});
+
+test("source validation uses shared strict row-inline preflight and preserves unverified current/app status", async (t) => {
+  const { validateSources } = await moduleUnderTest();
+  const catalog = [rowInlineValidationSite()];
+  const text = fs.readFileSync(
+    new URL(
+      "../fixtures/official-template-repair/vitalong-inline.html",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const f = await prepared(
+    t,
+    [announcements],
+    catalog,
+    { maxRequests: 1, maxDetails: 0 },
+    {
+      transport: async (url) => {
+        assert.equal(url, "https://jobs.example.org/join.php?cate=1031");
+        return { status: 200, text, headers: {} };
+      },
+    },
+  );
+  const report = await validateSources({
+    context: f.context,
+    ref: f.ref,
+    catalog,
+    detailsPerSite: 0,
+  });
+  assert.equal(report.rows[0].blockReason, null);
+  assert.equal(report.rows[0].status, "parsed");
+  assert.equal(report.rows[0].listContractVerified, false);
+  assert.equal(report.rows[0].rawBasis, "accepted_fallback");
+  assert.equal(report.rows[0].rawCount, null);
+  assert.equal(report.rows[0].parsedCount, 2);
+  assert.equal(report.rows[0].bodyVerifiedCount, 2);
+  assert.equal(report.rows[0].applicationAvailableCount, 0);
+  assert.equal(report.rows[0].validNewUniqueCount, 0);
+  assert.equal(report.usage.usedRequests, 1);
+  assert.equal(report.usage.usedModelRequests, 0);
+});
+
+for (const [name, sections] of [
+  ["missing sections", undefined],
+  [
+    "duplicate headings",
+    [
+      { headingRule: "p", headingText: "岗位职责：" },
+      { headingRule: "p", headingText: "岗位职责：" },
+    ],
+  ],
+])
+  test(`source validation rejects row-inline ${name} before network`, async (t) => {
+    const { validateSources } = await moduleUnderTest();
+    const entry = rowInlineValidationSite();
+    entry.template.requiredBodySections = sections;
+    const catalog = [entry];
+    const f = await prepared(t, [announcements], catalog, {
+      maxRequests: 1,
+      maxDetails: 0,
+    });
+    const report = await validateSources({
+      context: f.context,
+      ref: f.ref,
+      catalog,
+      detailsPerSite: 0,
+    });
+    assert.equal(report.rows[0].status, "blocked");
+    assert.equal(report.rows[0].blockReason, "template_missing");
+    assert.equal(report.rows[0].listAttempted, false);
+    assert.equal(f.networkCalls, 0);
+    assert.equal(report.usage.usedRequests, 0);
+  });
 
 for (const [name, mutate] of [
   [
@@ -547,6 +829,45 @@ test("rejects a private query unit before any provider call", async (t) => {
   assert.equal(report.rows[0].blockReason, "public_query_required");
   assert.equal(f.networkCalls, 0);
 });
+
+for (const code of [
+  "public_dns_unavailable",
+  "public_dns_resolution_failed",
+  "public_dns_no_answer",
+  "public_dns_non_public",
+  "public_dns_invalid_response",
+]) {
+  test(`validation preserves the fixed DNS reason ${code} without source secrets`, async (t) => {
+    const { validateSources } = await moduleUnderTest();
+    const provider = createPagedProvider({
+      id: "ncss",
+      name: "DNS failure fixture",
+      capabilities: {},
+      listPage: async () => {
+        throw Object.assign(
+          new Error(
+            "PRIVATE_CANARY_93 C:\\private\\resume.pdf https://private.example.org/?key=secret",
+          ),
+          { code },
+        );
+      },
+    });
+    const catalog = [site("one")];
+    const f = await prepared(t, [provider], catalog);
+    const report = await validateSources({
+      context: f.context,
+      ref: f.ref,
+      catalog,
+    });
+    assert.equal(report.rows[0].status, "failed");
+    assert.equal(report.rows[0].errorCode, code);
+    assert.equal(f.networkCalls, 0);
+    assert.doesNotMatch(
+      JSON.stringify(report),
+      /PRIVATE_CANARY|private|resume\.pdf|secret|https?:/,
+    );
+  });
+}
 
 test("invalid records are rejected before ingest and are not counted as empty or filtered", async (t) => {
   const { validateSources } = await moduleUnderTest();

@@ -106,3 +106,72 @@ test("304_without_matching_parser_evidence_is_pending_and_cannot_cross_scope", a
     { code: "invalid_operation_lease" },
   );
 });
+
+test("declining cached evidence forces a full body before reparse without changing the parser version", async (t) => {
+  const f = await setup(t);
+  let calls = 0,
+    parses = 0;
+  const input = {
+    scope: f.scope,
+    resourceKey: "synthetic-pending-conversion",
+    url: "https://jobs.example.com/pending.doc",
+    operationLease: f.lease,
+    parserVersion: "attachment-v1",
+    request: async (_url, options) => {
+      calls++;
+      if (calls > 1) assert.deepEqual(options.headers, {});
+      return options.headers["If-None-Match"]
+        ? { status: 304, headers: {} }
+        : {
+            status: 200,
+            headers: { etag: '"same-bytes"' },
+            text: "unchanged public bytes",
+          };
+    },
+    parse: async () => ({ status: ++parses === 1 ? "pending" : "extracted" }),
+  };
+  await f.cache.read(input);
+  const retried = await f.cache.read({
+    ...input,
+    canReuseEvidence: async (evidence) => evidence.status === "extracted",
+  });
+  assert.equal(retried.evidence.status, "extracted");
+  assert.equal(retried.reused, false);
+  assert.equal(parses, 2);
+  assert.equal(calls, 2);
+  assert.equal((await f.cache.get(input)).parserVersion, "attachment-v1");
+});
+
+test("an unsolicited 304 cannot restore evidence rejected by a reuse policy", async (t) => {
+  const f = await setup(t);
+  const input = {
+    scope: f.scope,
+    resourceKey: "synthetic-unexpected-304",
+    url: "https://jobs.example.com/pending.doc",
+    operationLease: f.lease,
+    parserVersion: "attachment-v1",
+  };
+  await f.cache.read({
+    ...input,
+    request: async () => ({
+      status: 200,
+      headers: { etag: '"same-bytes"' },
+      text: "public bytes",
+    }),
+    parse: async () => ({ status: "pending" }),
+  });
+  const retry = await f.cache.read({
+    ...input,
+    canReuseEvidence: () => false,
+    request: async (_url, options) => {
+      assert.deepEqual(options.headers, {});
+      return { status: 304, headers: {} };
+    },
+    parse: () => {
+      throw Error("A 304 has no document bytes to parse");
+    },
+  });
+  assert.equal(retry.needsBody, true);
+  assert.equal(retry.reused, false);
+  assert.equal(retry.evidence, undefined);
+});

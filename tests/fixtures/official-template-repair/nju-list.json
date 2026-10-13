@@ -1,0 +1,85 @@
+{
+  "content": [
+    {
+      "id": "620905077799915522",
+      "company": { "id": "620905000000000001", "name": "合成安全技术研究单位" },
+      "theme": "合成秋季高校毕业生招聘公告",
+      "intro": "<p>这是招聘公告共用文字，适用于展示公告，不能借给任何岗位作完整正文。</p><p>报名截止日期：2026年10月15日。</p><p>报名网站：https://apply.example.org/campus</p>",
+      "website": "https://apply.example.org/campus",
+      "deadline": "2026-10-15",
+      "enabled": true,
+      "status": "PUBLISHED",
+      "applyAt": "2026-09-24 11:15:01",
+      "positions": [
+        {
+          "id": "620905077883801602",
+          "position": { "id": "620905077871218689", "name": "合成安全技术研发岗", "intro": "", "education": "博士", "major": "安全工程、消防工程技术", "fullTime": true },
+          "region": { "province": "天津市", "city": "天津市", "district": "合成区" },
+          "count": 3,
+          "salary": "面议",
+          "welfare": "培训",
+          "updatedAt": "2026-10-12 09:00:00"
+        },
+        {
+          "id": "620905077883801603",
+          "position": { "id": "620905077871218689", "name": "合成安全技术研发岗", "intro": "", "education": "博士", "major": "安全工程、消防工程技术", "fullTime": true },
+          "region": { "province": "天津市", "city": "天津市", "district": "合成区" },
+          "count": 3,
+          "salary": "面议",
+          "welfare": "培训",
+          "updatedAt": "2026-10-12 09:00:00"
+        }
+      ]
+    },
+    {
+      "id": "626000000000000001",
+      "company": { "id": "626000000000000002", "name": "合成机场企业" },
+      "theme": "合成机场招聘公告",
+      "intro": "<p>公告介绍本次招聘安排，工作地点与任职条件以各岗位行文字为准。</p>",
+      "website": "https://company.example.org/",
+      "deadline": "2026-10-31",
+      "enabled": true,
+      "status": "PUBLISHED",
+      "applyAt": "2026-10-01 08:00:00",
+      "positions": [
+        {
+          "id": "626000000000000003",
+          "position": { "id": "626000000000000004", "name": "合成机场消防工程师", "intro": "<p>岗位职责：</p><p>负责机场消防设施巡检、维护计划和消防应急演练组织，记录消防设施运行情况。</p><p>任职要求：</p><p>本科及以上学历，消防工程或安全工程专业，具有沟通协调能力，工作经验不限。</p>", "education": "本科", "major": "消防工程或安全工程", "fullTime": true },
+          "region": { "province": "江苏省", "city": "南京市" },
+          "count": 2,
+          "salary": "8K-12K",
+          "welfare": "培训",
+          "updatedAt": "2026-10-12 09:00:00"
+        }
+      ]
+    },
+    {
+      "id": "recruit_recruitdata_parent_synthetic",
+      "company": { "id": "synthetic-company", "name": "合成综合企业" },
+      "theme": "合成多类别岗位招聘公告",
+      "intro": "<p>本公告招聘多个方向，以各方向明确任职条件为准，不能拆分制造岗位条件。</p>",
+      "deadline": null,
+      "enabled": true,
+      "status": "PUBLISHED",
+      "positions": [
+        {
+          "id": "recruit_recruitdata_post_synthetic",
+          "position": { "id": "recruit_position_template_synthetic", "name": "消防工程师、机场运行员", "intro": "岗位职责：\n负责消防检查和机场运行的多类工作，各方向职责尚未逐项对应。\n任职要求：\n不同专业方向采用不同学历和证书要求，具体要求需要分别核实。", "education": "本科", "fullTime": true },
+          "region": { "city": "南京市" },
+          "count": 9
+        }
+      ]
+    },
+    {
+      "id": "synthetic-notice-parent",
+      "company": { "id": "synthetic-notice-company", "name": "合成招聘企业" },
+      "theme": "合成无逐岗正文的招聘公告",
+      "intro": "<p>这是完整的共用公告正文，介绍本次校园招聘的安排、报名流程和联系说明；未提供任何逐岗职责或独立岗位条件。</p>",
+      "deadline": "2026-10-31",
+      "enabled": true,
+      "status": "PUBLISHED",
+      "positions": []
+    }
+  ],
+  "page": { "size": 50, "number": 0, "totalElements": 4, "totalPages": 1 }
+}

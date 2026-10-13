@@ -43,13 +43,16 @@ function run(executable, args, { signal, timeoutMs = 30000 } = {}) {
 }
 export function createDocConverter({ executable, cleanup } = {}) {
   let verified = null;
+  const canAttemptConversion = async () =>
+    Boolean(
+      executable &&
+        path.isAbsolute(executable) &&
+        (await fs.stat(executable).catch(() => null))?.isFile(),
+    );
   return {
+    canAttemptConversion,
     async convert({ bytes, ref, attemptId, signal }) {
-      if (
-        !executable ||
-        !path.isAbsolute(executable) ||
-        !(await fs.stat(executable).catch(() => null))?.isFile()
-      )
+      if (!(await canAttemptConversion()))
         throw Object.assign(Error("DOC converter unavailable"), {
           code: "doc_converter_unavailable",
         });

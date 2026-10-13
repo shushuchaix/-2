@@ -163,13 +163,29 @@ export function createAttachmentService({
       const attemptId = randomUUID();
       let reservation;
       try {
+        const canReuseEvidence = async (evidence) => {
+          const parsed = evidence?.result;
+          const missingConverter =
+            parsed?.status === "pending" &&
+            parsed.format === "doc" &&
+            Array.isArray(parsed.issues) &&
+            parsed.issues.some(
+              (issue) => issue.code === "doc_converter_unavailable",
+            );
+          if (!missingConverter || typeof converter?.convert !== "function")
+            return true;
+          return typeof converter.canAttemptConversion === "function"
+            ? !(await converter.canAttemptConversion())
+            : false;
+        };
         const cached = await cache?.get({
           scope: ref.scope,
           resourceKey: "attachment:" + attachment.url,
         });
         if (
           cached?.parserVersion === parserVersion &&
-          cached.parsedEvidence?.sliceRunId === token.sliceRunId
+          cached.parsedEvidence?.sliceRunId === token.sliceRunId &&
+          (await canReuseEvidence(cached.parsedEvidence))
         )
           return structuredClone(cached.parsedEvidence.result);
         reservation = await ledger.reserve({
@@ -185,6 +201,7 @@ export function createAttachmentService({
             scope: ref.scope,
             resourceKey: "attachment:" + attachment.url,
             parserVersion,
+            canReuseEvidence,
             ref,
             token,
             operationLease,

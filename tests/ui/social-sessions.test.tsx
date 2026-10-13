@@ -24,6 +24,9 @@ const base = {
   copyDataLocation: async () => ({}),
 };
 test("Boss version session supports a paused root and keeps risk recovery an explicit action", async (t) => {
+  // Paused activities intentionally poll every two seconds. Drive that clock
+  // explicitly so elapsed render time cannot masquerade as a second probe.
+  t.mock.timers.enable({ apis: ["setInterval"] });
   const probes: any[] = [];
   const f = await renderApp(t, {
     route: "#/sources?packageId=A&targetRevisionId=t1%401",
@@ -89,6 +92,22 @@ test("Boss version session supports a paused root and keeps risk recovery an exp
     targetRevisionId: "t1@1",
   });
   assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 1);
+  await act(async () => t.mock.timers.tick(2000));
+  await waitFor(() =>
+    assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 2),
+  );
+  assert.equal(
+    probes.length,
+    1,
+    "background state polling cannot re-probe Boss",
+  );
+  assert.deepEqual(
+    f.apiCalls.filter((c) => c.path === "/collections").map((c) => c.scope),
+    [
+      { packageId: "A", targetRevisionId: "t1@1" },
+      { packageId: "A", targetRevisionId: "t1@1" },
+    ],
+  );
 });
 test("dedicated login never treats a closed window as verified and cannot remember without encryption", async (t) => {
   let calls = 0;

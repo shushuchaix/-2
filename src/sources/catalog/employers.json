@@ -35,9 +35,7 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "careers.tencent.com"
-    ],
+    "allowedDomains": ["careers.tencent.com"],
     "jobFamilies": [],
     "adapter": "tencent",
     "identityEvidence": {
@@ -83,9 +81,7 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "api.smartrecruiters.com"
-    ],
+    "allowedDomains": ["api.smartrecruiters.com"],
     "jobFamilies": [],
     "adapter": "smartrecruiters",
     "identityEvidence": {
@@ -112,9 +108,7 @@
     "verifiedAt": null,
     "status": "candidate",
     "industry": "telecom",
-    "allowedDomains": [
-      "career.huawei.com"
-    ],
+    "allowedDomains": ["career.huawei.com"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -141,9 +135,7 @@
     "verifiedAt": null,
     "status": "candidate",
     "industry": "manufacturing",
-    "allowedDomains": [
-      "hr.xiaomi.com"
-    ],
+    "allowedDomains": ["hr.xiaomi.com"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -170,9 +162,7 @@
     "verifiedAt": null,
     "status": "candidate",
     "industry": "internet",
-    "allowedDomains": [
-      "talent.alibaba.com"
-    ],
+    "allowedDomains": ["talent.alibaba.com"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -199,9 +189,7 @@
     "verifiedAt": null,
     "status": "candidate",
     "industry": "internet",
-    "allowedDomains": [
-      "jobs.bytedance.com"
-    ],
+    "allowedDomains": ["jobs.bytedance.com"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -225,12 +213,15 @@
       "detail": true
     },
     "evidenceUrl": "https://zhaopin.meituan.com/web/question/campus",
+    "template": {
+      "nativePortal": "meituan-public-career-1",
+      "listUrl": "https://zhaopin.meituan.com/api/official/job/getJobList",
+      "requiresLiveProbe": true
+    },
     "verifiedAt": null,
     "status": "candidate",
     "industry": "internet",
-    "allowedDomains": [
-      "zhaopin.meituan.com"
-    ],
+    "allowedDomains": ["zhaopin.meituan.com"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "identityEvidence": {
@@ -257,11 +248,31 @@
     "verifiedAt": null,
     "status": "candidate",
     "industry": "finance",
-    "allowedDomains": [
-      "www.boc.cn"
-    ],
+    "allowedDomains": ["www.boc.cn"],
     "jobFamilies": [],
     "adapter": "official-announcements",
+    "adapterVerification": "unverified",
+    "entryRead": "首页原生招聘公告链接与消防安全公告正文已读；该公告截止已过，报考门户仅保留未核验线索",
+    "template": {
+      "listUrl": "https://www.boc.cn/",
+      "linkRule": ".tab_content.clearfix ul.list a[href]",
+      "bodyRule": ".con_area .sub_con .trs_editor_view",
+      "dateRule": ".con_area .con_time",
+      "attachmentRule": ".con_area .sub_con .trs_editor_view a[href]",
+      "pathPrefix": "/aboutboc/bi4/",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "mode": "reduced_public_structure_fixture",
+      "listUrl": "https://www.boc.cn/",
+      "detailUrl": "https://www.boc.cn/aboutboc/bi4/202607/t20260721_25680323.html",
+      "observedAt": "2026-10-11T20:09:13.625Z",
+      "publicationDate": "visible_2026_07_21",
+      "opening": "expired_explicit_public_application_deadline_2026_08_09_24h",
+      "application": "unverified_native_public_recruitment_portal_link",
+      "pagination": "unverified",
+      "requiresLiveProbe": true
+    },
     "identityEvidence": {
       "url": "https://www.boc.cn/aboutboc/bi4/",
       "kind": "official_entry",
@@ -290,9 +301,7 @@
     "verifiedAt": null,
     "status": "candidate",
     "industry": "manufacturing",
-    "allowedDomains": [
-      "jobs.siemens.com"
-    ],
+    "allowedDomains": ["jobs.siemens.com"],
     "jobFamilies": [],
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
@@ -360,11 +369,33 @@
     "verifiedAt": null,
     "status": "candidate",
     "industry": "publishing",
-    "allowedDomains": [
-      "www.pep.com.cn"
-    ],
+    "allowedDomains": ["www.pep.com.cn"],
     "jobFamilies": [],
     "adapter": "official-announcements",
+    "adapterVerification": "unverified",
+    "entryRead": "首页原生招聘公告与应届招聘简章正文已读；这是聚合公告，逐岗资格、完整截止年份与登录后的投递入口仍待核验",
+    "template": {
+      "listUrl": "https://www.pep.com.cn/",
+      "linkRule": ".list_news li a[href]",
+      "bodyRule": ".jn_main .TRS_Editor",
+      "dateRule": ".jn_main .main1_t_tsnw span",
+      "attachmentRule": ".jn_main .TRS_Editor a[href]",
+      "pathPrefix": "/rjdt/jqgg/",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "mode": "reduced_public_structure_fixture",
+      "listUrl": "https://www.pep.com.cn/",
+      "detailUrl": "https://www.pep.com.cn/rjdt/jqgg/202609/t20260929_2008304.shtml",
+      "observedAt": "2026-10-11T20:56:25.013Z",
+      "publicationDate": "visible_2026_09_29",
+      "recordKind": "aggregate_recruitment_notice_not_16_individual_jobs",
+      "opening": "unknown_partial_deadline_10_21_24h_without_explicit_year",
+      "application": "plain_text_public_platform_requires_xuexin_account_login_unverified",
+      "attachments": "none_observed_in_scoped_notice_body",
+      "pagination": "unverified",
+      "requiresLiveProbe": true
+    },
     "identityEvidence": {
       "url": "https://www.pep.com.cn/rjdt/jqgg/202609/t20260929_2008304.shtml",
       "kind": "official_entry",
@@ -379,12 +410,8 @@
     "institutionUrl": "https://canonical.com/careers/all",
     "origin": "https://boards-api.greenhouse.io",
     "tenantId": "canonical",
-    "regions": [
-      "APAC"
-    ],
-    "majorFamilies": [
-      "software"
-    ],
+    "regions": ["APAC"],
+    "majorFamilies": ["software"],
     "capabilities": {
       "list": true,
       "detail": true
@@ -411,12 +438,8 @@
         "hasRequirements": true
       }
     ],
-    "allowedDomains": [
-      "boards-api.greenhouse.io"
-    ],
-    "jobFamilies": [
-      "software"
-    ],
+    "allowedDomains": ["boards-api.greenhouse.io"],
+    "jobFamilies": ["software"],
     "adapter": "greenhouse",
     "identityEvidence": {
       "url": "https://canonical.com/careers/5569916",
@@ -430,14 +453,8 @@
     "evidenceUrl": "https://www.zjairports.com/newRecruitment.html",
     "origin": "https://www.zjairports.com",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "工程运维"
-    ],
-    "regions": [
-      "浙江"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
+    "regions": ["浙江"],
     "suggestedAdapter": "official-announcements",
     "identitySource": "官方招聘页及集团成员页",
     "entryRead": "招聘列表已读，包含2026年公告；历史公告正文已读，附件未验证",
@@ -468,9 +485,7 @@
       "pagination": "unverified",
       "requiresLiveProbe": true
     },
-    "allowedDomains": [
-      "www.zjairports.com"
-    ],
+    "allowedDomains": ["www.zjairports.com"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -492,19 +507,8 @@
     "evidenceUrl": "https://www.cah.com.cn/Information/Recruit/",
     "origin": "https://www.cah.com.cn",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "工程运维"
-    ],
-    "regions": [
-      "北京",
-      "天津",
-      "河北",
-      "江西",
-      "吉林",
-      "黑龙江"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
+    "regions": ["北京", "天津", "河北", "江西", "吉林", "黑龙江"],
     "suggestedAdapter": "official-announcements",
     "identitySource": "官方招聘页及机场运营、机场保障成员名单",
     "entryRead": "招聘列表及详情容器已读；最新样本仅22字DOC附件说明，完整正文待受控附件解析",
@@ -515,9 +519,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.cah.com.cn/Information/Recruit/",
-    "allowedDomains": [
-      "www.cah.com.cn"
-    ],
+    "allowedDomains": ["www.cah.com.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -561,14 +563,8 @@
     "evidenceUrl": "https://www.shairport.com/shzp/index.html",
     "origin": "https://www.shairport.com",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "工程运维"
-    ],
-    "regions": [
-      "上海"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
+    "regions": ["上海"],
     "suggestedAdapter": "official-announcements",
     "identitySource": "官方人才招聘栏目及公司版权备案",
     "entryRead": "社会招聘栏目已读，当前显示敬请期待；校园招聘外链未验证",
@@ -579,9 +575,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.shairport.com/shzp/index.html",
-    "allowedDomains": [
-      "www.shairport.com"
-    ],
+    "allowedDomains": ["www.shairport.com"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -603,14 +597,8 @@
     "evidenceUrl": "https://www.anhuiairport.com/cn/news/info_19.aspx?itemid=2416",
     "origin": "https://www.anhuiairport.com",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全检查",
-      "工程运维"
-    ],
-    "regions": [
-      "安徽"
-    ],
+    "jobFamilies": ["机场消防", "安全检查", "工程运维"],
+    "regions": ["安徽"],
     "suggestedAdapter": "official-announcements",
     "identitySource": "官网2024年招聘公告索引明确集团身份和消防战斗员岗位",
     "entryRead": "官方搜索索引可读；本轮直接打开失败，当前招聘列表未验证",
@@ -621,9 +609,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.anhuiairport.com/",
-    "allowedDomains": [
-      "www.anhuiairport.com"
-    ],
+    "allowedDomains": ["www.anhuiairport.com"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -645,16 +631,8 @@
     "evidenceUrl": "https://www.cwag.com/info/1033/2197.htm",
     "origin": "https://www.cwag.com",
     "category": "employer",
-    "jobFamilies": [
-      "机场安全",
-      "电气自动化",
-      "土建工程"
-    ],
-    "regions": [
-      "陕西",
-      "宁夏",
-      "青海"
-    ],
+    "jobFamilies": ["机场安全", "电气自动化", "土建工程"],
+    "regions": ["陕西", "宁夏", "青海"],
     "suggestedAdapter": "official-announcements",
     "identitySource": "官网集团简介、招聘栏目及历史招聘公告索引",
     "entryRead": "官方索引可读；招聘栏目本轮返回405，未取得实时列表正文",
@@ -665,9 +643,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.cwag.com/rczx/zpxx.htm",
-    "allowedDomains": [
-      "www.cwag.com"
-    ],
+    "allowedDomains": ["www.cwag.com"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -689,14 +665,8 @@
     "evidenceUrl": "https://gzw.sz.gov.cn/gzrc/shzp/content/post_11317305.html",
     "origin": "https://szairport.hotjob.cn",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "工程运维"
-    ],
-    "regions": [
-      "广东"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
+    "regions": ["广东"],
     "suggestedAdapter": "pending",
     "identitySource": "深圳市国资委官方招聘公告确认主体及招聘入口",
     "entryRead": "入口已打开，实际跳转到wecruit.hotjob.cn租户页面；仅JS兼容提示，列表未验证",
@@ -707,10 +677,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://szairport.hotjob.cn/",
-    "allowedDomains": [
-      "szairport.hotjob.cn",
-      "wecruit.hotjob.cn"
-    ],
+    "allowedDomains": ["szairport.hotjob.cn", "wecruit.hotjob.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -732,14 +699,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/01-14/7020019589752819712.html",
     "origin": "http://www.hebeiairport.com",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "设施运维"
-    ],
-    "regions": [
-      "河北"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "设施运维"],
+    "regions": ["河北"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方成员详情直接列出主体和官网链接",
     "entryRead": "成员身份页已读；独立官网招聘入口未读",
@@ -750,9 +711,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "http://www.hebeiairport.com",
-    "allowedDomains": [
-      "www.hebeiairport.com"
-    ],
+    "allowedDomains": ["www.hebeiairport.com"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -774,14 +733,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/02-01/7023493401114841088.html",
     "origin": "http://www.ccairport.cn",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "设施运维"
-    ],
-    "regions": [
-      "吉林"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "设施运维"],
+    "regions": ["吉林"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方成员详情直接列出主体和官网链接",
     "entryRead": "成员身份页已读；独立官网招聘入口未读",
@@ -792,9 +745,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "http://www.ccairport.cn",
-    "allowedDomains": [
-      "www.ccairport.cn"
-    ],
+    "allowedDomains": ["www.ccairport.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -816,14 +767,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/02-01/7023484504232693760.html",
     "origin": "https://www.hljairport.com.cn",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "设施运维"
-    ],
-    "regions": [
-      "黑龙江"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "设施运维"],
+    "regions": ["黑龙江"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方成员详情直接列出主体和官网链接",
     "entryRead": "成员身份页已读；独立官网招聘入口未读",
@@ -834,9 +779,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.hljairport.com.cn/",
-    "allowedDomains": [
-      "www.hljairport.com.cn"
-    ],
+    "allowedDomains": ["www.hljairport.com.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -858,27 +801,19 @@
     "evidenceUrl": "https://www.zjairports.com/newMember.html",
     "origin": "https://www.hzairport.com",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "设施运维"
-    ],
-    "regions": [
-      "浙江"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "设施运维"],
+    "regions": ["浙江"],
     "suggestedAdapter": "pending",
     "identitySource": "浙江机场集团核心成员页直接链接该官网",
-    "entryRead": "集团身份页已读；独立官网打开超时，招聘入口未读",
+    "entryRead": "原生人才列表含两条独立岗位全文及报名链接；发布日期来自各岗位正文，招聘截止日期来自独立列。两个报名页的隐藏岗位ID及只读岗位名与列表一致，但含验证码，投递可用性仍未核验。",
     "status": "candidate",
     "verifiedAt": null,
     "siteId": "official-2ea9828ffe1d2682",
     "providerId": "official-announcements",
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
-    "entryUrl": "https://www.hzairport.com/",
-    "allowedDomains": [
-      "www.hzairport.com"
-    ],
+    "entryUrl": "https://www.hzairport.com/talent/index.html",
+    "allowedDomains": ["www.hzairport.com"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -886,6 +821,37 @@
       "date": "unverified",
       "attachments": "unverified",
       "apply": "unverified"
+    },
+    "template": {
+      "listUrl": "https://www.hzairport.com/talent/index.html",
+      "inlineJob": true,
+      "inlineBodyMode": "row",
+      "recordKind": "job",
+      "rowRule": ".talent_list .inside_item",
+      "titleRule": ".title .name",
+      "nativeIdRule": ".talent_bot a.download[href]",
+      "nativeIdAttribute": "href",
+      "nativeIdPattern": "^/talent/detail/id/([1-9][0-9]*)\\.html$",
+      "bodyRule": ".erify",
+      "dateRule": ".erify > .txt:first-child",
+      "requiredBodySections": [
+        { "headingRule": ".talent_name", "headingText": "岗位要求：" },
+        { "headingRule": ".talent_name", "headingText": "岗位说明：" }
+      ],
+      "deadlineRule": ".title .time",
+      "deadlineLabelRule": ".talent_nav .time",
+      "deadlineLabelText": "招聘截止日期",
+      "applicationFormRule": "form#resume_form",
+      "applicationJobIdRule": "input[name=\"job_id\"]",
+      "applicationJobTitleRule": "input[name=\"job_name\"]",
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "sourceUrl": "https://www.hzairport.com/talent/index.html",
+      "checkedAt": "2026-10-11T20:09:47.964Z",
+      "kind": "observed_native_role_rows",
+      "description": "原生href的37/58岗位ID、同岗位.erify正文和完整招聘截止日期列已观察；公开报名表的隐藏ID和只读岗位名一致但存在验证码。模板保持候选状态，分页及投递可用性不作推断。",
+      "requiresLiveProbe": true
     },
     "identityEvidence": {
       "url": "https://www.zjairports.com/newMember.html",
@@ -900,14 +866,8 @@
     "evidenceUrl": "https://www.zjairports.com/newMember.html",
     "origin": "https://www.nbairport.com",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "设施运维"
-    ],
-    "regions": [
-      "浙江"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "设施运维"],
+    "regions": ["浙江"],
     "suggestedAdapter": "pending",
     "identitySource": "浙江机场集团核心成员页直接链接该官网",
     "entryRead": "集团身份页已读；独立官网打开超时，招聘入口未读",
@@ -918,9 +878,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.nbairport.com/",
-    "allowedDomains": [
-      "www.nbairport.com"
-    ],
+    "allowedDomains": ["www.nbairport.com"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -942,14 +900,8 @@
     "evidenceUrl": "https://www.zjairports.com/newMember.html",
     "origin": "https://www.wzair.cn",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "设施运维"
-    ],
-    "regions": [
-      "浙江"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "设施运维"],
+    "regions": ["浙江"],
     "suggestedAdapter": "official-announcements",
     "identitySource": "浙江机场集团成员链接及温州机场官网版权",
     "entryRead": "官网及人力资源公告入口已打开；公告入口仅11行，岗位列表正文未验证",
@@ -980,9 +932,7 @@
       "pagination": "unverified",
       "requiresLiveProbe": true
     },
-    "allowedDomains": [
-      "www.wzair.cn"
-    ],
+    "allowedDomains": ["www.wzair.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -1004,14 +954,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/01-06/7016666587688079360.html",
     "origin": "https://www.bcia.com.cn",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "工程运维"
-    ],
-    "regions": [
-      "北京"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
+    "regions": ["北京"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方成员详情确认运营主体并直接链接官网",
     "entryRead": "成员身份页已读；独立招聘入口未读",
@@ -1022,9 +966,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.bcia.com.cn",
-    "allowedDomains": [
-      "www.bcia.com.cn"
-    ],
+    "allowedDomains": ["www.bcia.com.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -1046,15 +988,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/01-05/7016665553452404736.html",
     "origin": "https://www.bdia.com.cn",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "工程运维"
-    ],
-    "regions": [
-      "北京",
-      "河北"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
+    "regions": ["北京", "河北"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方成员详情直接链接官网",
     "entryRead": "成员身份页已读；独立招聘入口未读",
@@ -1065,9 +1000,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.bdia.com.cn/",
-    "allowedDomains": [
-      "www.bdia.com.cn"
-    ],
+    "allowedDomains": ["www.bdia.com.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -1089,14 +1022,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/01-05/7016666795473899520.html",
     "origin": "http://www.tbia.cn",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "工程运维"
-    ],
-    "regions": [
-      "天津"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
+    "regions": ["天津"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方成员详情直接链接官网",
     "entryRead": "成员身份页已读；独立招聘入口未读",
@@ -1107,9 +1034,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "http://www.tbia.cn",
-    "allowedDomains": [
-      "www.tbia.cn"
-    ],
+    "allowedDomains": ["www.tbia.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -1131,14 +1056,8 @@
     "evidenceUrl": "https://www.gbiac.net/?_locale=zh_CN",
     "origin": "https://www.gbiac.net",
     "category": "employer",
-    "jobFamilies": [
-      "机场消防",
-      "安全管理",
-      "工程运维"
-    ],
-    "regions": [
-      "广东"
-    ],
+    "jobFamilies": ["机场消防", "安全管理", "工程运维"],
+    "regions": ["广东"],
     "suggestedAdapter": "pending",
     "identitySource": "上海机场官网直接链接该域名；官网索引包含企业全称版权及招聘导航",
     "entryRead": "官网搜索索引可读；直接打开返回空内容，招聘栏目未读",
@@ -1149,9 +1068,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.gbiac.net/?_locale=zh_CN",
-    "allowedDomains": [
-      "www.gbiac.net"
-    ],
+    "allowedDomains": ["www.gbiac.net"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -1173,14 +1090,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/01-26/7020033860255617024.html",
     "origin": "https://www.bj-bowei.com",
     "category": "employer",
-    "jobFamilies": [
-      "机电运维",
-      "设施维护",
-      "安全管理"
-    ],
-    "regions": [
-      "北京"
-    ],
+    "jobFamilies": ["机电运维", "设施维护", "安全管理"],
+    "regions": ["北京"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方保障成员详情确认业务和官网链接",
     "entryRead": "成员身份及业务页已读；独立招聘入口未读",
@@ -1191,9 +1102,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.bj-bowei.com",
-    "allowedDomains": [
-      "www.bj-bowei.com"
-    ],
+    "allowedDomains": ["www.bj-bowei.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1215,14 +1124,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/01-25/7023556094588882944.html",
     "origin": "https://www.bj-cae.com",
     "category": "employer",
-    "jobFamilies": [
-      "机电运维",
-      "特种车辆维保",
-      "安全管理"
-    ],
-    "regions": [
-      "北京"
-    ],
+    "jobFamilies": ["机电运维", "特种车辆维保", "安全管理"],
+    "regions": ["北京"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方保障成员详情确认主体、业务和官网链接",
     "entryRead": "成员身份及业务页已读；独立招聘入口未读",
@@ -1233,9 +1136,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.bj-cae.com",
-    "allowedDomains": [
-      "www.bj-cae.com"
-    ],
+    "allowedDomains": ["www.bj-cae.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1257,14 +1158,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/01-24/7023550375185616896.html",
     "origin": "http://www.airportcape.com",
     "category": "employer",
-    "jobFamilies": [
-      "供电运维",
-      "能源安全",
-      "给排水工程"
-    ],
-    "regions": [
-      "北京"
-    ],
+    "jobFamilies": ["供电运维", "能源安全", "给排水工程"],
+    "regions": ["北京"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方保障成员详情确认能源保障业务和官网链接",
     "entryRead": "成员身份及业务页已读；独立招聘入口未读",
@@ -1275,9 +1170,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "http://www.airportcape.com/",
-    "allowedDomains": [
-      "www.airportcape.com"
-    ],
+    "allowedDomains": ["www.airportcape.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1299,14 +1192,8 @@
     "evidenceUrl": "https://www.cah.com.cn/content/2023/01-21/7023548137310523392.html",
     "origin": "http://www.bgs.com.cn",
     "category": "employer",
-    "jobFamilies": [
-      "航空地面保障",
-      "特种车辆保障",
-      "安全管理"
-    ],
-    "regions": [
-      "北京"
-    ],
+    "jobFamilies": ["航空地面保障", "特种车辆保障", "安全管理"],
+    "regions": ["北京"],
     "suggestedAdapter": "pending",
     "identitySource": "首都机场集团官方保障成员详情确认地服业务和官网链接",
     "entryRead": "成员身份及业务页已读；独立招聘入口未读",
@@ -1317,9 +1204,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "http://www.bgs.com.cn",
-    "allowedDomains": [
-      "www.bgs.com.cn"
-    ],
+    "allowedDomains": ["www.bgs.com.cn"],
     "industry": "aviation",
     "capabilities": {
       "list": "unverified",
@@ -1341,14 +1226,8 @@
     "evidenceUrl": "https://www.cnfsec.com/",
     "origin": "https://www.cnfsec.com",
     "category": "employer",
-    "jobFamilies": [
-      "消防工程设计",
-      "消防工程施工",
-      "消防设施维修"
-    ],
-    "regions": [
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防工程设计", "消防工程施工", "消防设施维修"],
+    "regions": ["中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网搜索索引明确企业全称、消防设计施工维修业务及相关资质",
     "entryRead": "官网直接打开超时；招聘栏目未读",
@@ -1359,9 +1238,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.cnfsec.com/",
-    "allowedDomains": [
-      "www.cnfsec.com"
-    ],
+    "allowedDomains": ["www.cnfsec.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1383,15 +1260,8 @@
     "evidenceUrl": "https://www.cicggroup.com/",
     "origin": "https://www.cicggroup.com",
     "category": "employer",
-    "jobFamilies": [
-      "消防安装施工",
-      "消防检测",
-      "消防维保评估"
-    ],
-    "regions": [
-      "江苏",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防安装施工", "消防检测", "消防维保评估"],
+    "regions": ["江苏", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网搜索索引明确企业全称及消防安装、检测维保业务",
     "entryRead": "官网直接打开返回0行；招聘栏目未读",
@@ -1402,9 +1272,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.cicggroup.com/",
-    "allowedDomains": [
-      "www.cicggroup.com"
-    ],
+    "allowedDomains": ["www.cicggroup.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1426,15 +1294,8 @@
     "evidenceUrl": "https://www.shengan.group/c/sa-1.html",
     "origin": "https://www.shengan.group",
     "category": "employer",
-    "jobFamilies": [
-      "消防系统设计",
-      "消防工程施工",
-      "消防检测维保"
-    ],
-    "regions": [
-      "上海",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防系统设计", "消防工程施工", "消防检测维保"],
+    "regions": ["上海", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网主营业务页及企业全称版权备案",
     "entryRead": "主营业务正文已读，含消防系统设计施工和检测维保；招聘栏目未读",
@@ -1445,9 +1306,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.shengan.group/c/sa-1.html",
-    "allowedDomains": [
-      "www.shengan.group"
-    ],
+    "allowedDomains": ["www.shengan.group"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1469,28 +1328,49 @@
     "evidenceUrl": "https://vitalong.cn/",
     "origin": "https://vitalong.cn",
     "category": "employer",
-    "jobFamilies": [
-      "工业消防设计施工",
-      "消防装备研发",
-      "消防技术服务"
-    ],
-    "regions": [
-      "四川",
-      "中国大陆"
-    ],
-    "suggestedAdapter": "pending",
+    "jobFamilies": ["工业消防设计施工", "消防装备研发", "消防技术服务"],
+    "regions": ["四川", "中国大陆"],
+    "suggestedAdapter": "official-announcements",
     "identitySource": "官网明确企业全称、成都总部及消防设计施工资质",
-    "entryRead": "官网及业务导航已读，可见加入我们菜单；招聘栏目未读",
+    "entryRead": "加入我们页的原生 rel 岗位行与独立正文已读；唯一历史岗位发布于2018年，在招与上传申请均未核验",
     "status": "candidate",
     "verifiedAt": null,
     "siteId": "official-7ac6546c836dc43a",
     "providerId": "official-announcements",
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
-    "entryUrl": "https://vitalong.cn/",
-    "allowedDomains": [
-      "vitalong.cn"
-    ],
+    "entryUrl": "https://vitalong.cn/join.php?cate=1031",
+    "template": {
+      "listUrl": "https://vitalong.cn/join.php?cate=1031",
+      "inlineJob": true,
+      "inlineBodyMode": "row",
+      "recordKind": "job",
+      "rowRule": ".join_bottom .jn_bottom .jn_div",
+      "titleRule": ".jc_thead .wid1",
+      "nativeIdRule": ".jc_thead a.join_btn[rel]",
+      "nativeIdAttribute": "rel",
+      "nativeIdPattern": "^[1-9][0-9]*$",
+      "bodyRule": ".jc_txt .jx_mar",
+      "dateRule": ".jc_thead .wid4",
+      "requiredBodySections": [
+        { "headingRule": "p", "headingText": "岗位职责：" },
+        { "headingRule": "p", "headingText": "任职要求：" }
+      ],
+      "paginationVerified": false
+    },
+    "templateEvidence": {
+      "mode": "reduced_public_structure_fixture",
+      "listUrl": "https://vitalong.cn/join.php?cate=1031",
+      "detailUrl": "https://vitalong.cn/join.php?cate=1031",
+      "nativeJobId": "37",
+      "observedAt": "2026-10-11T20:10:20.038Z",
+      "publicationDate": "visible_2018_11_19",
+      "opening": "unknown_no_closing_or_current_opening_evidence",
+      "application": "unknown_no_href_or_public_form_action",
+      "pagination": "unverified",
+      "requiresLiveProbe": true
+    },
+    "allowedDomains": ["vitalong.cn"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1512,15 +1392,8 @@
     "evidenceUrl": "https://vitalong.cn/",
     "origin": "https://www.wtlscjs.com",
     "category": "employer",
-    "jobFamilies": [
-      "消防设施检测",
-      "消防维保",
-      "消防工程施工"
-    ],
-    "regions": [
-      "四川",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防设施检测", "消防维保", "消防工程施工"],
+    "regions": ["四川", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "威特龙集团官网子公司名单直接列出企业全称并链接该域名",
     "entryRead": "集团身份链接已读；子公司官网打开超时，招聘栏目未读",
@@ -1531,9 +1404,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.wtlscjs.com/",
-    "allowedDomains": [
-      "www.wtlscjs.com"
-    ],
+    "allowedDomains": ["www.wtlscjs.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1555,15 +1426,8 @@
     "evidenceUrl": "https://www.tuna.com.cn/",
     "origin": "https://www.tuna.com.cn",
     "category": "employer",
-    "jobFamilies": [
-      "消防工程设计施工",
-      "消防产品研发制造",
-      "消防实验检测"
-    ],
-    "regions": [
-      "江苏",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防工程设计施工", "消防产品研发制造", "消防实验检测"],
+    "regions": ["江苏", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网搜索索引明确企业全称、南京地址及消防产业链业务",
     "entryRead": "官网直接打开超时；招聘栏目未读",
@@ -1574,9 +1438,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.tuna.com.cn/",
-    "allowedDomains": [
-      "www.tuna.com.cn"
-    ],
+    "allowedDomains": ["www.tuna.com.cn"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1598,14 +1460,8 @@
     "evidenceUrl": "https://www.gad5119.com/page_about.aspx",
     "origin": "https://www.gad5119.com",
     "category": "employer",
-    "jobFamilies": [
-      "自动灭火产品研发",
-      "储能消防",
-      "应急救援装备"
-    ],
-    "regions": [
-      "中国大陆"
-    ],
+    "jobFamilies": ["自动灭火产品研发", "储能消防", "应急救援装备"],
+    "regions": ["中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网公司简介明确企业全称、证券代码300902及消防业务",
     "entryRead": "公司简介正文已读；招聘栏目未读",
@@ -1616,9 +1472,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.gad5119.com/page_about.aspx",
-    "allowedDomains": [
-      "www.gad5119.com"
-    ],
+    "allowedDomains": ["www.gad5119.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1640,15 +1494,8 @@
     "evidenceUrl": "https://www.gst.com.cn/",
     "origin": "https://www.gst.com.cn",
     "category": "employer",
-    "jobFamilies": [
-      "火灾报警产品研发",
-      "消防解决方案",
-      "消防设备技术服务"
-    ],
-    "regions": [
-      "河北",
-      "中国大陆"
-    ],
+    "jobFamilies": ["火灾报警产品研发", "消防解决方案", "消防设备技术服务"],
+    "regions": ["河北", "中国大陆"],
     "suggestedAdapter": "official-announcements",
     "identitySource": "官网搜索索引对应企业全称、秦皇岛地址及消防产品业务",
     "entryRead": "公开联系页招聘区有3个独立data-target岗位身份、内联职责与任职要求及明确发布日期；在招窗口和投递可用性未知",
@@ -1659,9 +1506,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.gst.com.cn/contactus/",
-    "allowedDomains": [
-      "www.gst.com.cn"
-    ],
+    "allowedDomains": ["www.gst.com.cn"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1712,15 +1557,8 @@
     "evidenceUrl": "https://jbufa.com/about.html",
     "origin": "https://jbufa.com",
     "category": "employer",
-    "jobFamilies": [
-      "消防报警产品研发",
-      "消防设备制造",
-      "消防技术服务"
-    ],
-    "regions": [
-      "北京",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防报警产品研发", "消防设备制造", "消防技术服务"],
+    "regions": ["北京", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网简介使用青鸟消防股份有限公司名称及证券代码002960",
     "entryRead": "公司简介正文已读；招聘栏目未读",
@@ -1731,9 +1569,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://jbufa.com/about.html",
-    "allowedDomains": [
-      "jbufa.com"
-    ],
+    "allowedDomains": ["jbufa.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1755,17 +1591,8 @@
     "evidenceUrl": "https://www.tandatech.com/about-us/",
     "origin": "https://www.tandatech.com",
     "category": "employer",
-    "jobFamilies": [
-      "消防报警产品研发",
-      "应急疏散",
-      "智慧消防"
-    ],
-    "regions": [
-      "北京",
-      "广东",
-      "河北",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防报警产品研发", "应急疏散", "智慧消防"],
+    "regions": ["北京", "广东", "河北", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网关于我们页确认集团品牌、消防业务及运营生产基地",
     "entryRead": "官网关于我们正文已读；招聘栏目未读",
@@ -1776,9 +1603,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.tandatech.com/about-us/",
-    "allowedDomains": [
-      "www.tandatech.com"
-    ],
+    "allowedDomains": ["www.tandatech.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1800,15 +1625,8 @@
     "evidenceUrl": "https://jyznxf.com/about/introduction",
     "origin": "https://jyznxf.com",
     "category": "employer",
-    "jobFamilies": [
-      "消防电子产品研发",
-      "消防联动设备制造",
-      "安装售后技术"
-    ],
-    "regions": [
-      "四川",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防电子产品研发", "消防联动设备制造", "安装售后技术"],
+    "regions": ["四川", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网简介确认企业全称、青鸟集团子公司关系及绵阳地址",
     "entryRead": "公司简介正文已读；招聘栏目未读",
@@ -1819,9 +1637,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://jyznxf.com/about/introduction",
-    "allowedDomains": [
-      "jyznxf.com"
-    ],
+    "allowedDomains": ["jyznxf.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1843,15 +1659,8 @@
     "evidenceUrl": "https://www.beijingleader.com.cn/",
     "origin": "https://www.beijingleader.com.cn",
     "category": "employer",
-    "jobFamilies": [
-      "消防报警产品研发",
-      "消防工程",
-      "气体灭火技术"
-    ],
-    "regions": [
-      "北京",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防报警产品研发", "消防工程", "气体灭火技术"],
+    "regions": ["北京", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网名称变更通知明确企业全称，业务包括消防产品及工程承包",
     "entryRead": "官网首页已读，可见招聘信息菜单；招聘栏目未读",
@@ -1862,9 +1671,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.beijingleader.com.cn/",
-    "allowedDomains": [
-      "www.beijingleader.com.cn"
-    ],
+    "allowedDomains": ["www.beijingleader.com.cn"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1886,15 +1693,8 @@
     "evidenceUrl": "https://www.forsafe.cn/m/about.aspx",
     "origin": "https://www.forsafe.cn",
     "category": "employer",
-    "jobFamilies": [
-      "火灾报警产品研发",
-      "消防监控产品制造",
-      "智慧消防"
-    ],
-    "regions": [
-      "广东",
-      "中国大陆"
-    ],
+    "jobFamilies": ["火灾报警产品研发", "消防监控产品制造", "智慧消防"],
+    "regions": ["广东", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网简介搜索索引明确企业全称、深圳总部及消防产品业务",
     "entryRead": "首页和简介页直接打开均超时；招聘栏目未读",
@@ -1905,9 +1705,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.forsafe.cn/m/about.aspx",
-    "allowedDomains": [
-      "www.forsafe.cn"
-    ],
+    "allowedDomains": ["www.forsafe.cn"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -1929,14 +1727,8 @@
     "evidenceUrl": "https://www.cimc-tdholding.com/AboutUs/index.aspx",
     "origin": "https://www.cimc-tdholding.com",
     "category": "employer",
-    "jobFamilies": [
-      "消防救援装备研发",
-      "消防车辆制造",
-      "消防技术服务"
-    ],
-    "regions": [
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防救援装备研发", "消防车辆制造", "消防技术服务"],
+    "regions": ["中国大陆"],
     "suggestedAdapter": "official-announcements",
     "identitySource": "官网关于我们页明确企业全称及消防救援装备业务，列出消防成员企业",
     "entryRead": "公司招聘栏目与最新详情已读；6个独立岗位链接，55字说明与列表摘要相同且职责区为空，正文及投递未验证",
@@ -1947,9 +1739,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://www.cimc-tdholding.com/Job/index_lcid_2.html",
-    "allowedDomains": [
-      "www.cimc-tdholding.com"
-    ],
+    "allowedDomains": ["www.cimc-tdholding.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",
@@ -2001,15 +1791,8 @@
     "evidenceUrl": "https://inco.cscec.com/inco/gyzj/gsjj/",
     "origin": "https://inco.cscec.com",
     "category": "employer",
-    "jobFamilies": [
-      "消防设施工程",
-      "机电安装工程",
-      "HSE安全管理"
-    ],
-    "regions": [
-      "江苏",
-      "中国大陆"
-    ],
+    "jobFamilies": ["消防设施工程", "机电安装工程", "HSE安全管理"],
+    "regions": ["江苏", "中国大陆"],
     "suggestedAdapter": "pending",
     "identitySource": "官网简介确认中国建筑二级专业化集团身份、南京总部及消防工程资质",
     "entryRead": "公司简介已读，可见人才招聘和社会招聘导航；招聘入口未读",
@@ -2020,9 +1803,7 @@
     "adapter": "official-announcements",
     "adapterVerification": "unverified",
     "entryUrl": "https://inco.cscec.com/index.html",
-    "allowedDomains": [
-      "inco.cscec.com"
-    ],
+    "allowedDomains": ["inco.cscec.com"],
     "industry": "fire_safety",
     "capabilities": {
       "list": "unverified",

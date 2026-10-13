@@ -1,8 +1,10 @@
 import dns from "node:dns/promises";
+import { isIP } from "node:net";
 import { socketTransport } from "./transport.mjs";
 import { isPublicAddress } from "./public-url.mjs";
 import { createSourceBudget } from "./budget.mjs";
 import { recordDiagnostic } from "../diagnostics/log.mjs";
+const publicDnsError = (code) => Object.assign(Error(code), { code });
 // Auto only replaces proxy Fake-IP answers. All resulting addresses still pass the public guard.
 export function createDnsLookup({
   mode = "auto",
@@ -99,15 +101,47 @@ export function createDnsLookup({
               response.bytes?.byteLength ??
               Buffer.byteLength(response.text || ""),
           });
-          if (response.status !== 200) throw Error("Public DNS unavailable");
-          const data = JSON.parse(response.text);
-          if (data.Status !== 0) throw Error("Public DNS resolution failed");
+          if (response.status !== 200)
+            throw publicDnsError("public_dns_unavailable");
+          let data;
+          try {
+            data = JSON.parse(response.text);
+          } catch {
+            throw publicDnsError("public_dns_invalid_response");
+          }
+          if (
+            !data ||
+            typeof data !== "object" ||
+            Array.isArray(data) ||
+            !Number.isSafeInteger(data.Status) ||
+            data.Status < 0
+          )
+            throw publicDnsError("public_dns_invalid_response");
+          if (data.Status !== 0)
+            throw publicDnsError("public_dns_resolution_failed");
+          if (
+            Object.hasOwn(data, "Answer") &&
+            (!Array.isArray(data.Answer) ||
+              data.Answer.some(
+                (answer) =>
+                  !answer ||
+                  typeof answer !== "object" ||
+                  Array.isArray(answer) ||
+                  !Number.isSafeInteger(answer.type) ||
+                  answer.type < 0 ||
+                  typeof answer.data !== "string" ||
+                  ([1, 28].includes(answer.type) &&
+                    isIP(answer.data) !== (answer.type === 1 ? 4 : 6)),
+              ))
+          )
+            throw publicDnsError("public_dns_invalid_response");
           return data.Answer || [];
         }),
       );
       const answers = responses.flat().filter((a) => [1, 28].includes(a.type));
-      if (!answers.length || answers.some((a) => !isPublicAddress(a.data)))
-        throw Error("Non-public DNS address forbidden");
+      if (!answers.length) throw publicDnsError("public_dns_no_answer");
+      if (answers.some((a) => !isPublicAddress(a.data)))
+        throw publicDnsError("public_dns_non_public");
       const addresses = answers.map((a) => ({
         address: a.data,
         family: a.type === 1 ? 4 : 6,

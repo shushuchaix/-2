@@ -13,6 +13,18 @@ import {
   collectInlineOfficialJobs,
   fetchInlineOfficialJob,
 } from "./inline-official-jobs.mjs";
+import {
+  collectHpuPublicNotices,
+  fetchHpuPublicNotice,
+} from "./hpu-public-notices.mjs";
+import {
+  collectNjuPublicJobs,
+  fetchNjuPublicJob,
+} from "./nju-public-career.mjs";
+import {
+  collectMeituanPublicJobs,
+  fetchMeituanPublicJob,
+} from "./meituan-public-career.mjs";
 function listLocation(site, value) {
   const url = validatePublicUrl(value),
     base = new URL(site.template.listUrl);
@@ -98,6 +110,16 @@ export default createPagedProvider({
   },
   async listPage(site, query, page, ctx) {
     const template = site.template;
+    if (template?.nativePortal === "hpu-public-notices-1")
+      return collectHpuPublicNotices(site, page, ctx);
+    if (template?.nativePortal === "nju-public-career-1")
+      return collectNjuPublicJobs(site, page, ctx);
+    if (template?.nativePortal === "meituan-public-career-1")
+      return collectMeituanPublicJobs(site, query, page, ctx);
+    if (template?.nativePortal)
+      throw Object.assign(Error("Unknown native public portal contract"), {
+        code: "template_not_configured",
+      });
     if (template?.inlineJob === true)
       return collectInlineOfficialJobs(site, page, ctx, noticeDocument);
     const jobMode = template?.recordKind === "job";
@@ -280,6 +302,16 @@ export default createPagedProvider({
   async detail(record, ctx) {
     const site = ctx.sites.find((s) => s.siteId === record.siteId);
     if (!site?.template) throw Error("Notice site template missing");
+    if (site.template.nativePortal === "hpu-public-notices-1")
+      return fetchHpuPublicNotice(site, record, ctx);
+    if (site.template.nativePortal === "nju-public-career-1")
+      return fetchNjuPublicJob(site, record, ctx);
+    if (site.template.nativePortal === "meituan-public-career-1")
+      return fetchMeituanPublicJob(site, record, ctx);
+    if (site.template.nativePortal)
+      throw Object.assign(Error("Unknown native public portal contract"), {
+        code: "template_not_configured",
+      });
     if (site.template.inlineJob === true)
       return fetchInlineOfficialJob(site, record, ctx, noticeDocument);
     const template = site.template,

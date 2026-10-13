@@ -288,7 +288,7 @@ test("old derived document-list conditions are rebuilt while manual and structur
     prepared.sourceEvidence.map((e) => e.evidenceId),
     ["manual", "structured"],
   );
-  assert.equal(prepared.conditionsParserVersion, "conditions-4");
+  assert.equal(prepared.conditionsParserVersion, CONDITIONS_PARSER_VERSION);
 });
 
 test("known file application candidates are cleared only on the prepared clone and preserve attachments", () => {
@@ -348,8 +348,7 @@ test("webpage application parameters that mention files stay valid candidates", 
   assert.equal(prepareApplicationCheck(record, now).shouldRequest, true);
 });
 
-test("parser version four makes old version-three caches and matching evaluations stale", () => {
-  assert.equal(CONDITIONS_PARSER_VERSION, "conditions-4");
+test("the current parser makes old version-three caches and matching evaluations stale", () => {
   const input = {
     jdHash: "same-fact",
     profileRevisionId: "p",

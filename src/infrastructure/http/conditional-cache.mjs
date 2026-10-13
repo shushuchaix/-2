@@ -124,7 +124,10 @@ export function createConditionalCache({
         parse,
       } = input;
       const previous = await cache.get({ scope, resourceKey }),
-        matching = previous?.parserVersion === parserVersion;
+        matching =
+          previous?.parserVersion === parserVersion &&
+          (typeof input.canReuseEvidence !== "function" ||
+            (await input.canReuseEvidence(previous.parsedEvidence)) !== false);
       const headers = {};
       if (matching && previous.etag) headers["If-None-Match"] = previous.etag;
       if (matching && previous.lastModified)

@@ -3,6 +3,9 @@ import { loadSiteCatalog } from "../src/sources/catalog.mjs";
 import { readProviderPage } from "../src/sources/collection-page.mjs";
 import { canonicalSocialUrl } from "../src/sources/social-content.mjs";
 import { validateInlineOfficialJobTemplate } from "../src/sources/adapters/inline-official-jobs.mjs";
+import { isHpuPublicTemplateConfigured } from "../src/sources/adapters/hpu-public-notices.mjs";
+import { isNjuPublicTemplateConfigured } from "../src/sources/adapters/nju-public-career.mjs";
+import { isMeituanPublicTemplateConfigured } from "../src/sources/adapters/meituan-public-career.mjs";
 import { assertSourceRecord } from "../src/domain/contracts.mjs";
 import { assertCollectionWrite } from "../src/domain/collection.mjs";
 import { evaluateRules } from "../src/domain/ranking.mjs";
@@ -76,6 +79,11 @@ const codes = new Set([
   "source_origin_invalid",
   "version_fact_unavailable",
   "account_history_limited",
+  "public_dns_unavailable",
+  "public_dns_resolution_failed",
+  "public_dns_no_answer",
+  "public_dns_non_public",
+  "public_dns_invalid_response",
   "ENOTFOUND",
   "EAI_AGAIN",
   "ECONNRESET",
@@ -184,7 +192,14 @@ function publicConfig(sourceId, supplied) {
 
 function prerequisite(site, cfg, scoped, context) {
   if (site.providerId === "official-announcements") {
-    if (site.template?.inlineJob === true) {
+    if (site.template?.nativePortal) {
+      if (
+        !isHpuPublicTemplateConfigured(site) &&
+        !isNjuPublicTemplateConfigured(site) &&
+        !isMeituanPublicTemplateConfigured(site)
+      )
+        return "template_missing";
+    } else if (site.template?.inlineJob === true) {
       try {
         validateInlineOfficialJobTemplate(site);
       } catch {

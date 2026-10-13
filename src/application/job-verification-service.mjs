@@ -2,11 +2,12 @@ import { assertScope, assertOwned, packageError } from "../domain/packages.mjs";
 import { assertCollectionWrite } from "../domain/collection.mjs";
 import { selectVersionJobFact } from "../domain/job-facts.mjs";
 import { ingestRecordsDraft } from "../domain/ingest-records.mjs";
+import { prepareRecruitmentRecord } from "../domain/recruitment-evidence.mjs";
 import {
-  prepareRecruitmentRecord,
-  assessApplicationResponse,
-  prepareApplicationCheck,
-} from "../domain/recruitment-evidence.mjs";
+  prepareOwnedApplicationCheck,
+  hasCurrentApplicationCheck,
+  assessOwnedApplicationResponse,
+} from "./application-verification.mjs";
 import { validatePublicUrl } from "../infrastructure/http/public-url.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
 import { randomUUID } from "node:crypto";
@@ -47,7 +48,8 @@ export function createJobVerificationService({
         let record = fact.record;
         const provider = registry.get(record.sourceId),
           sites = loadSiteCatalog({ customSites: before.settings.customSites });
-        if (provider?.fetchDetail)
+        const didFetchDetail = typeof provider?.fetchDetail === "function";
+        if (didFetchDetail)
           record = await provider.fetchDetail(record, {
             ...ctx,
             scope,
@@ -61,9 +63,14 @@ export function createJobVerificationService({
             sessionRefs: pkg.collectionSettings?.sessionRefs || {},
           });
         const checkedAt = new Date(clock.now()).toISOString();
-        const check = prepareApplicationCheck(record, clock.now());
-        if (check.shouldRequest) {
-          const url = validatePublicUrl(check.applyUrl).href,
+        const owned = prepareOwnedApplicationCheck(record, sites, clock.now());
+        record = owned.record;
+        const alreadyChecked =
+          owned.site &&
+          didFetchDetail &&
+          hasCurrentApplicationCheck(record, ctx.token.sliceRunId, clock.now());
+        if (!alreadyChecked && owned.check.shouldRequest) {
+          const url = validatePublicUrl(owned.check.applyUrl).href,
             response = await ctx.request(url, {
               signal: ctx.signal,
               maxBytes: 1048576,
@@ -73,11 +80,14 @@ export function createJobVerificationService({
                 endpointKind: "application",
               },
             });
-          record.applicationVerification = assessApplicationResponse(
+          record.applicationVerification = assessOwnedApplicationResponse(
+            owned.site,
+            record,
             response,
             checkedAt,
+            ctx.token.sliceRunId,
           );
-        } else
+        } else if (!alreadyChecked)
           record.applicationVerification = {
             status: "unknown",
             checkedAt,

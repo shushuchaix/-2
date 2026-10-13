@@ -44,6 +44,11 @@ const issueCodes = new Set([
   "unsupported_content_encoding",
   "detail_identity_mismatch",
   "detail_title_mismatch",
+  "public_dns_unavailable",
+  "public_dns_resolution_failed",
+  "public_dns_no_answer",
+  "public_dns_non_public",
+  "public_dns_invalid_response",
 ]);
 export function isVersionPrivateSource(provider) {
   return (

@@ -1,0 +1,21 @@
+{
+  "pep-list.html": {
+    "siteId": "pep",
+    "sourceUrl": "https://www.pep.com.cn/",
+    "capturedAt": "2026-10-11T17:34:51.552Z",
+    "purpose": "Reduced observed .list_news ul li a[href] ancestry and exact native notice URL. Titles, prose, navigation, duplicate and negative controls are synthetic; no full page or contact data retained.",
+    "identityEvidence": "Homepage has four native recruitment anchors among sixteen list_news anchors. Relative notice 2008304 is resolved against the observed homepage and remains an announcement URL, not a per-job authority ID.",
+    "paginationEvidence": "Homepage first-page recruitment links only; pagination and full-source coverage remain unverified."
+  },
+  "pep-detail.html": {
+    "siteId": "pep",
+    "sourceUrl": "https://www.pep.com.cn/rjdt/jqgg/202609/t20260929_2008304.shtml",
+    "capturedAt": "2026-10-11T20:56:25.013Z",
+    "purpose": "Reduced observed .jn_main h1, .main1_t_tsnw span and .TRS_Editor ancestry. Publication date, partial closing date, platform URL and aggregate count are preserved; other titles and prose are synthetic. Contacts and full article omitted.",
+    "recordScope": "Single 16-person aggregate graduate recruitment announcement. No individual role requirements are present in the actual notice; never manufacture sixteen job records or fire/airport profession facts.",
+    "publicationEvidence": "Independent visible time label 2026-09-29; not inferred from native URL.",
+    "openingEvidence": "Actual notice only says 10月21日24:00. No explicit deadline year, native full-date column or verified external platform response exists; opening remains unknown.",
+    "applicationEvidence": "Education Ministry recruitment platform https://jybzp.chsi.com.cn appears as plain text; the notice requires a Xuexin account login. No application form was checked and no external request is made by the fixture.",
+    "attachmentEvidence": "No native attachment anchors or images were observed in the scoped actual editor. The XLSX test variant is synthetic and proves extraction scope only, not a real attachment."
+  }
+}

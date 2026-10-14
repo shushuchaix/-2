@@ -8,7 +8,10 @@ const scope = {
   packageId: "synthetic-login",
   targetRevisionId: "synthetic-target",
 };
-function fixture(t, { failLoad = false, delayLoad = false } = {}) {
+function fixture(
+  t,
+  { failLoad = false, delayLoad = false, failDns = false } = {},
+) {
   const base = collectionBrowserFixture(),
     entries = new Map(),
     events = [],
@@ -58,7 +61,15 @@ function fixture(t, { failLoad = false, delayLoad = false } = {}) {
           code: "ERR_TUNNEL_CONNECTION_FAILED",
           errno: -111,
         });
-      const result = await clientOptions.resolvePublicUrl(url);
+      let result;
+      try {
+        result = await clientOptions.resolvePublicUrl(url);
+      } catch {
+        throw Object.assign(Error("private URL and account"), {
+          code: "ERR_TUNNEL_CONNECTION_FAILED",
+          errno: -111,
+        });
+      }
       assert.deepEqual(result.addresses, [{ address: "8.8.8.8", family: 4 }]);
       reachedLoad();
       if (delayLoad) await release;
@@ -80,6 +91,7 @@ function fixture(t, { failLoad = false, delayLoad = false } = {}) {
     diagnostics: {
       record: async (event, error) => {
         events.push({ event, error });
+        return { diagnosticId: "d-11111111-1111-1111-1111-111111111111" };
       },
     },
     publicResolverFactory(input) {
@@ -88,6 +100,13 @@ function fixture(t, { failLoad = false, delayLoad = false } = {}) {
         lookup: async () => [{ address: "198.18.0.1", family: 4 }],
         transport: async (request) => {
           dnsReads++;
+          if (failDns)
+            throw Object.assign(Error("private resolver message"), {
+              code: "ABORT_ERR",
+              cause: Object.assign(Error("private timeout"), {
+                name: "TimeoutError",
+              }),
+            });
           return {
             status: 200,
             text: JSON.stringify({
@@ -221,4 +240,32 @@ test("closing a loading login window cannot save a late successful session refer
   await rejected;
   assert.equal(f.saved.length, 0);
   assert.equal(f.entries.size, 0);
+});
+
+test("a failed login DNS connection reports a safe cause, scope and error number in user feedback", async (t) => {
+  const f = fixture(t, { failDns: true });
+  const error = await f.browser
+    .openLogin({ ref: { scope }, platform: "boss", accountRef: "boss" })
+    .then(
+      () => assert.fail("must reject"),
+      (e) => e,
+    );
+  assert.equal(error.code, "collection_login_load_failed");
+  assert.match(error.message, /域名解析超时/);
+  assert.match(error.message, /d-11111111-1111-1111-1111-111111111111/);
+  const e = f.events.find(
+    (v) => v.event.code === "collection_login_load_failed",
+  );
+  assert.equal(e.event.failurePhase, "dns");
+  assert.equal(e.event.sourceId, "boss");
+  assert.equal(e.event.siteId, "boss");
+  assert.equal(e.event.errorNumber, -111);
+  assert.equal(e.error.cause.code, "request_timeout");
+  assert.equal(f.saved.length, 0);
+  assert.equal(f.entries.size, 0);
+  assert.equal(f.resolverClosed(), true);
+  assert.doesNotMatch(
+    JSON.stringify(e),
+    /private URL|account|private timeout|private resolver/,
+  );
 });

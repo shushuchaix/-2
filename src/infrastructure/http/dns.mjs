@@ -5,6 +5,15 @@ import { isPublicAddress } from "./public-url.mjs";
 import { createSourceBudget } from "./budget.mjs";
 import { recordDiagnostic } from "../diagnostics/log.mjs";
 const publicDnsError = (code) => Object.assign(Error(code), { code });
+const transientConnectionCodes = new Set([
+  "request_timeout",
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "EPIPE",
+]);
 // Auto only replaces proxy Fake-IP answers. All resulting addresses still pass the public guard.
 export function createDnsLookup({
   mode = "auto",
@@ -80,64 +89,101 @@ export function createDnsLookup({
         ? AbortSignal.any([requestSignal, families.signal])
         : families.signal;
       const queries = ["A", "AAAA"].map(async (type) => {
-          requestSignal?.throwIfAborted();
-          const reservation = await budget.claimRequest("dns", {
+        const url = new URL("https://cloudflare-dns.com/dns-query");
+        url.searchParams.set("name", host);
+        url.searchParams.set("type", type);
+        let response, reservation;
+        // Both fixed endpoints belong to the same HTTPS resolver. Fail over
+        // only connection faults; never DNS refusal, certificates or budgets.
+        for (const [attempt, address] of ["1.1.1.1", "1.0.0.1"].entries()) {
+          familySignal.throwIfAborted();
+          reservation = await budget.claimRequest("dns", {
             bytesUpperBound: 65536,
           });
-          requestSignal?.throwIfAborted();
-          const url = new URL("https://cloudflare-dns.com/dns-query");
-          url.searchParams.set("name", host);
-          url.searchParams.set("type", type);
-          const combined = AbortSignal.any([familySignal, AbortSignal.timeout(5000)]);
-          const response = await transport({
-            url,
-            addresses: [{ address: "1.1.1.1", family: 4 }],
-            headers: { accept: "application/dns-json" },
-            signal: combined,
-            maxBytes: 65536,
-          });
-          combined.throwIfAborted();
-          await budget.settleRequest?.(reservation, {
-            bytes:
-              response.bytes?.byteLength ??
-              Buffer.byteLength(response.text || ""),
-          });
-          if (response.status !== 200)
-            throw publicDnsError("public_dns_unavailable");
-          let data;
+          familySignal.throwIfAborted();
+          const timeout = AbortSignal.timeout(5000);
+          const combined = AbortSignal.any([familySignal, timeout]);
           try {
-            data = JSON.parse(response.text);
-          } catch {
-            throw publicDnsError("public_dns_invalid_response");
+            response = await transport({
+              url,
+              addresses: [{ address, family: 4 }],
+              headers: { accept: "application/dns-json" },
+              signal: combined,
+              maxBytes: 65536,
+            });
+            combined.throwIfAborted();
+            break;
+          } catch (error) {
+            familySignal.throwIfAborted();
+            // Node's HTTPS transport wraps signal timeouts in ABORT_ERR.
+            const timedOut =
+              (timeout.aborted &&
+                (error?.code === "ABORT_ERR" ||
+                  error?.name === "AbortError")) ||
+              error?.name === "TimeoutError" ||
+              error?.cause?.name === "TimeoutError";
+            const classified = timedOut
+              ? Object.assign(Error("request_timeout"), {
+                  name: "TimeoutError",
+                  code: "request_timeout",
+                })
+              : error;
+            if (
+              attempt !== 0 ||
+              !transientConnectionCodes.has(classified?.code)
+            )
+              throw classified;
+            emit({ outcome: "retrying", retryCount: 1, code: classified.code });
           }
-          if (
-            !data ||
-            typeof data !== "object" ||
-            Array.isArray(data) ||
-            !Number.isSafeInteger(data.Status) ||
-            data.Status < 0
-          )
-            throw publicDnsError("public_dns_invalid_response");
-          if (data.Status !== 0)
-            throw publicDnsError("public_dns_resolution_failed");
-          if (
-            Object.hasOwn(data, "Answer") &&
-            (!Array.isArray(data.Answer) ||
-              data.Answer.some(
-                (answer) =>
-                  !answer ||
-                  typeof answer !== "object" ||
-                  Array.isArray(answer) ||
-                  !Number.isSafeInteger(answer.type) ||
-                  answer.type < 0 ||
-                  typeof answer.data !== "string" ||
-                  ([1, 28].includes(answer.type) &&
-                    isIP(answer.data) !== (answer.type === 1 ? 4 : 6)),
-              ))
-          )
-            throw publicDnsError("public_dns_invalid_response");
-          return data.Answer || [];
+        }
+        await budget.settleRequest?.(reservation, {
+          bytes:
+            response.wireByteLength ??
+            response.bytes?.byteLength ??
+            Buffer.byteLength(response.text || ""),
         });
+        if (response.status !== 200)
+          throw publicDnsError("public_dns_unavailable");
+        let data;
+        try {
+          data = JSON.parse(response.text);
+        } catch {
+          throw publicDnsError("public_dns_invalid_response");
+        }
+        if (
+          !data ||
+          typeof data !== "object" ||
+          Array.isArray(data) ||
+          !Number.isSafeInteger(data.Status) ||
+          data.Status < 0
+        )
+          throw publicDnsError("public_dns_invalid_response");
+        if (data.Status !== 0)
+          throw publicDnsError("public_dns_resolution_failed");
+        if (
+          Object.hasOwn(data, "Answer") &&
+          (!Array.isArray(data.Answer) ||
+            data.Answer.some(
+              (answer) =>
+                !answer ||
+                typeof answer !== "object" ||
+                Array.isArray(answer) ||
+                !Number.isSafeInteger(answer.type) ||
+                answer.type < 0 ||
+                typeof answer.data !== "string" ||
+                ([1, 28].includes(answer.type) &&
+                  isIP(answer.data) !== (answer.type === 1 ? 4 : 6)),
+            ))
+        )
+          throw publicDnsError("public_dns_invalid_response");
+        if (
+          (data.Answer || []).some(
+            (a) => [1, 28].includes(a.type) && !isPublicAddress(a.data),
+          )
+        )
+          throw publicDnsError("public_dns_non_public");
+        return data.Answer || [];
+      });
       let responses;
       try {
         responses = await Promise.all(queries);

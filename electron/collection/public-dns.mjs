@@ -16,6 +16,8 @@ export function createCollectionPublicResolver({
 }) {
   const lifetime = new AbortController(),
     pending = new Set();
+  const failures = new Map();
+  let lastFailureHost = null;
   const ownedSignal = signal
     ? AbortSignal.any([signal, lifetime.signal])
     : lifetime.signal;
@@ -59,14 +61,69 @@ export function createCollectionPublicResolver({
   };
   const resolver = (value) => {
     const task = (async () => {
-      ownedSignal.throwIfAborted();
-      const result = await resolvePublicUrl(value, { dnsLookup: sharedLookup });
-      ownedSignal.throwIfAborted();
-      return result;
+      let host;
+      try {
+        host = new URL(value).hostname;
+      } catch {}
+      try {
+        ownedSignal.throwIfAborted();
+        const result = await resolvePublicUrl(value, {
+          dnsLookup: sharedLookup,
+        });
+        ownedSignal.throwIfAborted();
+        failures.delete(host);
+        if (lastFailureHost === host) lastFailureHost = null;
+        return result;
+      } catch (error) {
+        const codes = [
+          "request_timeout",
+          "request_cancelled",
+          "source_budget_exhausted",
+          "collection_login_budget_exhausted",
+          "public_dns_unavailable",
+          "public_dns_resolution_failed",
+          "public_dns_no_answer",
+          "public_dns_non_public",
+          "public_dns_invalid_response",
+          "ENOTFOUND",
+          "ETIMEDOUT",
+          "ECONNRESET",
+          "ECONNREFUSED",
+          "ENETUNREACH",
+          "EHOSTUNREACH",
+          "EPIPE",
+          "CERT_HAS_EXPIRED",
+          "ERR_TLS_CERT_ALTNAME_INVALID",
+        ];
+        const lastFailure = {
+          code: codes.includes(error?.code)
+            ? error.code
+            : "public_dns_unavailable",
+          name: ["TimeoutError", "AbortError"].includes(error?.name)
+            ? error.name
+            : "Error",
+        };
+        if (host) {
+          failures.set(host, lastFailure);
+          lastFailureHost = host;
+        }
+        throw error;
+      }
     })();
     pending.add(task);
     task.finally(() => pending.delete(task)).catch(() => {});
     return task;
+  };
+  resolver.lastFailure = (value) => {
+    let host = lastFailureHost;
+    if (value !== undefined)
+      try {
+        host = new URL(value).hostname;
+      } catch {
+        return null;
+      }
+    const failure = failures.get(host);
+    return failure ? { ...failure } : null;
   };
   resolver.close = async () => {
     lifetime.abort(

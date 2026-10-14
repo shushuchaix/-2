@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-14T11:59:56.061Z",
+  "scope": "independent_login_page_dns_repair",
+  "observedFailures": [
+    {
+      "at": "2026-10-14T11:15:39.927Z",
+      "code": "collection_login_load_failed",
+      "errorNumber": -111,
+      "precedingDns": "system_fake_ip_fallback_then_doh_abort"
+    },
+    {
+      "at": "2026-10-14T11:15:55.396Z",
+      "code": "collection_login_load_failed",
+      "errorNumber": -111,
+      "precedingDns": "system_fake_ip_fallback_then_doh_abort"
+    }
+  ],
+  "diagnosis": "Intermittent DNS transport failure preceded Chromium tunnel failure. Original DNS implementation used one fixed endpoint; Node HTTPS wrapped timeout in ABORT_ERR. Later bounded checks succeeded, so failure is intermittent rather than a continuously reproducible outage.",
+  "changes": [
+    "Fixed same-provider secondary endpoint once per failed address family, only for transient connection faults; each send claims the existing budget first.",
+    "Caller cancellation, certificate faults, DNS refusal, invalid or private answers and exhausted budgets do not fail over; sibling work is drained.",
+    "Timeout retains typed cause; login feedback includes a safe error number and error ID, source/site and DNS failure phase. Host-scoped memory prevents unrelated assets erasing or replacing the main-page cause."
+  ],
+  "review": {
+    "critical": 0,
+    "important": 2,
+    "minor": 1,
+    "allFindingsFixed": true,
+    "reReviewed": false,
+    "validRed": {
+      "tests": 19,
+      "pass": 16,
+      "fail": 3
+    },
+    "focusedGreen": {
+      "tests": 58,
+      "pass": 58,
+      "fail": 0
+    }
+  },
+  "verification": {
+    "business": {
+      "tests": 1933,
+      "pass": 1933,
+      "fail": 0
+    },
+    "ui": {
+      "tests": 174,
+      "pass": 174,
+      "fail": 0
+    },
+    "offlineSuites": {
+      "total": 25,
+      "pass": 18,
+      "fail": 0,
+      "explicitSkip": 7
+    },
+    "package": {
+      "files": 10455,
+      "jsAssets": 3,
+      "cssAssets": 1,
+      "prodDependencies": 52,
+      "exactSourceHashes": 228,
+      "ocrHashes": 32,
+      "runtimeVerified": true
+    },
+    "native": {
+      "nativeExit": 0,
+      "asarUnchanged": true,
+      "nativeProcessExited": true,
+      "nativeReport": ".cache/actual-campaign/rjr-self-test-boss-login-dns-scale1-20261014T1151296017874Z-data/desktop-self-test.json",
+      "visualAudits": 39,
+      "observedAt": "2026-10-14T11:53:19.9975634Z",
+      "rendererErrors": 0,
+      "scale": 1,
+      "deadlineExceeded": false,
+      "externalRequests": 0,
+      "originalHandleHeld": true,
+      "asarSha256": "0C95786D9767288592266605BB7D0A0A995A2D576CA7F7CB8EC0F4FD6FDE524C",
+      "failed": 0,
+      "passed": 424,
+      "screenshots": 63
+    }
+  },
+  "live": {
+    "dnsProbe": {
+      "at": "2026-10-14T11:29:36.463Z",
+      "attempts": [
+        {
+          "provider": "cloudflare-primary",
+          "type": "A",
+          "elapsedMs": 2317,
+          "httpStatus": 200,
+          "dnsStatus": 0,
+          "publicAnswers": true,
+          "answerCount": 7
+        },
+        {
+          "provider": "cloudflare-primary",
+          "type": "AAAA",
+          "elapsedMs": 2040,
+          "httpStatus": 200,
+          "dnsStatus": 0,
+          "publicAnswers": true,
+          "answerCount": 3
+        },
+        {
+          "provider": "cloudflare-secondary",
+          "type": "A",
+          "elapsedMs": 2878,
+          "httpStatus": 200,
+          "dnsStatus": 0,
+          "publicAnswers": true,
+          "answerCount": 7
+        },
+        {
+          "provider": "cloudflare-secondary",
+          "type": "AAAA",
+          "elapsedMs": 2664,
+          "httpStatus": 200,
+          "dnsStatus": 0,
+          "publicAnswers": true,
+          "answerCount": 3
+        }
+      ],
+      "requests": 4
+    },
+    "anonymousLogin": {
+      "at": "2026-10-14T11:45:20.214Z",
+      "page": {
+        "readyState": "complete",
+        "bodyTextLength": 237,
+        "scriptCount": 12,
+        "challengeVisible": false,
+        "loginUiVisible": true
+      },
+      "manualRequests": 21,
+      "manualBytes": 493636,
+      "chargedRequestUpperBound": 60,
+      "accounting": "conservative_unknown_upper_bound_retained",
+      "closedWindows": 0,
+      "authenticationInteraction": false,
+      "existingUserSessionsRead": false,
+      "qrCaptured": false,
+      "jobApiCalls": 0
+    }
+  },
+  "cumulative": {
+    "requests": 2239,
+    "maxRequests": 2340,
+    "details": 119,
+    "maxDetails": 220,
+    "bytes": 260790560,
+    "maxBytes": 314572800,
+    "costUpperBoundCny": 3.98861,
+    "maxCostUpperBoundCny": 9.999184
+  },
+  "delivered": {
+    "exe": "dist/简历岗位雷达-win32-x64/简历岗位雷达.exe",
+    "asarSha256": "0C95786D9767288592266605BB7D0A0A995A2D576CA7F7CB8EC0F4FD6FDE524C",
+    "previousPackagePreserved": true
+  },
+  "limits": [
+    "Anonymous page loading and synthetic failover tests do not establish human authentication or authenticated list/JD retrieval.",
+    "This batch has no new model call or new job. Last source expansion snapshot remains 17 of the original 47 gaps configured as candidates,30 unresolved,effective recommendations0; not freshly retested by this login batch.",
+    "Two earlier anonymous test-launch attempts failed on diagnostic-script syntax before network use; corrected attempt exited0. An initial positional package-verifier argument selected the older package; corrected --archive invocation verified the candidate.",
+    "Tasks remain open; shutdown condition has not been met."
+  ],
+  "references": [
+    {
+      "title": "Cloudflare official resolver addresses",
+      "url": "https://developers.cloudflare.com/1.1.1.1/ip-addresses/"
+    },
+    {
+      "title": "Cloudflare official DoH documentation",
+      "url": "https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/"
+    }
+  ]
+}

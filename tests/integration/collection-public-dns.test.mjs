@@ -255,3 +255,73 @@ test("closing concurrent DNS subscribers drains the shared families and rejects 
   assert.equal(f.active(), 0);
   assert.equal(f.reservations.length, 2);
 });
+
+test("an owned resolver retains only safe failure classification and clears it after successful resolution", async () => {
+  let failed = true;
+  const resolver = createCollectionPublicResolver({
+    mode: "doh",
+    ledger: { reserve: async (input) => input, settle: async () => {} },
+    ref: { scope: {} },
+    transport: async (r) => {
+      if (failed)
+        throw Object.assign(Error("private host and token"), {
+          code: "ECONNRESET",
+        });
+      return {
+        status: 200,
+        text: JSON.stringify({
+          Status: 0,
+          Answer:
+            r.url.searchParams.get("type") === "A"
+              ? [{ type: 1, data: "8.8.8.8" }]
+              : [],
+        }),
+      };
+    },
+  });
+  await assert.rejects(resolver("https://jobs.example.org/private-token"));
+  assert.deepEqual(resolver.lastFailure(), {
+    code: "ECONNRESET",
+    name: "Error",
+  });
+  assert.doesNotMatch(
+    JSON.stringify(resolver.lastFailure()),
+    /private|jobs.example/,
+  );
+  failed = false;
+  await resolver("https://jobs.example.org/");
+  assert.equal(resolver.lastFailure(), null);
+  await resolver.close();
+});
+
+test("a different host succeeding cannot erase the login host failure classification", async () => {
+  const resolver = createCollectionPublicResolver({
+    mode: "doh",
+    ledger: { reserve: async (input) => input, settle: async () => {} },
+    ref: { scope: {} },
+    transport: async (r) => {
+      if (r.url.searchParams.get("name") === "failed.example.org")
+        throw Object.assign(Error("private connection"), {
+          code: "ECONNRESET",
+        });
+      return {
+        status: 200,
+        text: JSON.stringify({
+          Status: 0,
+          Answer:
+            r.url.searchParams.get("type") === "A"
+              ? [{ type: 1, data: "8.8.8.8" }]
+              : [],
+        }),
+      };
+    },
+  });
+  await assert.rejects(resolver("https://failed.example.org/private-token"));
+  await resolver("https://other.example.org/");
+  assert.deepEqual(resolver.lastFailure("https://failed.example.org/"), {
+    code: "ECONNRESET",
+    name: "Error",
+  });
+  assert.equal(resolver.lastFailure("https://other.example.org/"), null);
+  await resolver.close();
+});

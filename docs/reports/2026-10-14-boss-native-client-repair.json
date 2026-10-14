@@ -199,7 +199,7 @@
   },
   "remaining": [
     "New packaged authenticated one-page/one-JD check remains required.",
-    "Current unremembered login is held by the prior running process; replacing the process requires a fresh human login.",
+    "The prior application process exited before delivery; its unremembered login was not retained. Fresh human authentication remains required.",
     "The prior official-source snapshot retains 17 candidate templates and 30 unresolved source gaps. This batch does not retest them or add jobs.",
     "Task completion and shutdown remain pending."
   ]

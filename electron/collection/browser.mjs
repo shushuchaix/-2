@@ -329,6 +329,7 @@ export function createCollectionBrowser({
       client,
       policy,
       manual,
+      dnsFailure: (url) => publicResolver?.lastFailure?.(url) || null,
       networkStatus,
       lifetime,
       dispose() {
@@ -712,25 +713,44 @@ export function createCollectionBrowser({
         const cancelled =
           error?.code === "collection_cancelled" ||
           item?.lifetime.signal.aborted;
+        const dnsFailure = !cancelled && item?.dnsFailure(entryUrl);
         const reported = failure(
           cancelled ? "collection_cancelled" : "collection_login_load_failed",
           cancelled
             ? "采集窗口已关闭。"
-            : "独立登录页面加载失败，请查看来源问题日志。",
+            : dnsFailure?.code === "request_timeout"
+              ? "独立登录页域名解析超时，备用解析节点也未连接成功。请稍后重试并查看来源问题日志。"
+              : dnsFailure
+                ? "独立登录页域名解析失败，请查看来源问题日志中的具体原因。"
+                : "独立登录页面加载失败，请查看来源问题日志。",
         );
-        await recordDiagnostic(
+        if (dnsFailure)
+          reported.cause = Object.assign(Error(dnsFailure.code), {
+            ...dnsFailure,
+            phase: "dns",
+          });
+        const diagnostic = await recordDiagnostic(
           diagnostics,
           {
             operation: "collection.finish",
             phase: "load",
             outcome: "failed",
             code: reported.code,
+            ...(platform === "boss"
+              ? { sourceId: "boss", siteId: "boss" }
+              : {}),
+            ...(dnsFailure ? { failurePhase: "dns" } : {}),
             ...(Number.isSafeInteger(error.errno)
               ? { errorNumber: error.errno }
               : {}),
           },
           reported,
         );
+        if (/^d-[a-f0-9-]{36}$/.test(diagnostic?.diagnosticId || "")) {
+          reported.diagnosticId = diagnostic.diagnosticId;
+          // Electron serializes invoke errors as messages, discarding fields.
+          reported.message += "\n错误编号：" + diagnostic.diagnosticId;
+        }
         let cleanupFailed = false;
         try {
           await item?.dispose();

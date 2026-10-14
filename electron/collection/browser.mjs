@@ -9,6 +9,7 @@ import {
 } from "./boss-page.mjs";
 import { recordDiagnostic } from "../../src/infrastructure/diagnostics/log.mjs";
 import { createCollectionPublicResolver } from "./public-dns.mjs";
+import { createBossLoginDiagnostics } from "./boss-login-diagnostics.mjs";
 import {
   publicCollectionUrl,
   platformPolicy,
@@ -252,13 +253,19 @@ export function createCollectionBrowser({
     const ownedSignal = signal
       ? AbortSignal.any([signal, lifetime.signal])
       : lifetime.signal;
+    let window, loginDiagnostics;
     const claimManualRequest = () => {
       ownedSignal.throwIfAborted();
-      if (manualAllowance.requests >= 60)
+      if (manualAllowance.requests >= 60) {
+        loginDiagnostics?.denied(
+          { webContentsId: window.webContents.id },
+          "collection_login_budget_exhausted",
+        );
         throw failure(
           "collection_login_budget_exhausted",
           "独立登录窗口已达到请求上限，请查看来源问题日志。",
         );
+      }
       manualAllowance.requests++;
     };
     const manualLedger = {
@@ -281,6 +288,25 @@ export function createCollectionBrowser({
     });
     const client = egressProxy.createClient({
       hosts: routePolicy.hosts,
+      // Native Boss QR status requests can wait 100 seconds without traffic.
+      // Keep the connection handshake bounded independently in the proxy.
+      idleTimeoutMs: manual && routePolicy.platform === "boss" ? 120000 : 45000,
+      onLimitExceeded: () =>
+        loginDiagnostics?.denied(
+          { webContentsId: window.webContents.id },
+          "collection_login_byte_limit",
+        ),
+      onTimeout: ({ phase, timeoutMs }) =>
+        recordDiagnostic(diagnostics, {
+          operation: "network.request",
+          sourceId: routePolicy.platform,
+          siteId: routePolicy.platform,
+          phase: "transport",
+          outcome: "failed",
+          code: "collection_browser_timeout",
+          parser: { version: "egress-" + phase },
+          durationMs: timeoutMs,
+        }),
       // Each of the at most 60 manual DNS requests reserves 64 KiB. Keep
       // that allowance inside the existing 20 MiB window ceiling.
       maxBytes: manual
@@ -289,7 +315,6 @@ export function createCollectionBrowser({
       signal: ownedSignal,
       resolvePublicUrl: publicResolver,
     });
-    let window;
     try {
       await ses.setProxy({
         mode: "fixed_servers",
@@ -335,6 +360,26 @@ export function createCollectionBrowser({
         ? details.id
         : null;
     window.webContents.setWebRTCIPHandlingPolicy?.("disable_non_proxied_udp");
+    loginDiagnostics =
+      manual && routePolicy.platform === "boss"
+        ? createBossLoginDiagnostics({
+            diagnostics,
+            webContentsId: id,
+            counts: () => ({
+              manualRequests: manualAllowance.requests,
+              manualBytes:
+                manualAllowance.wireBytes +
+                manualAllowance.dnsBytes +
+                client.snapshot().bytes,
+            }),
+            onBudgetExhausted: (code) =>
+              window.setTitle?.(
+                code === "collection_login_byte_limit"
+                  ? "登录窗口已达到数据上限，请关闭后重新打开"
+                  : "登录窗口已达到请求上限，请关闭后重新打开",
+              ),
+          })
+        : null;
     let manualQueue = Promise.resolve();
     const policy = createPagePolicy({
       routePolicy,
@@ -343,6 +388,7 @@ export function createCollectionBrowser({
       signal: ownedSignal,
       offlineAllows,
       webContentsId: id,
+      onDenied: (details, code) => loginDiagnostics?.denied(details, code),
       reserve: async (details) => {
         if (manual) {
           claimManualRequest();
@@ -372,6 +418,7 @@ export function createCollectionBrowser({
             physicalRequests.set(key, reservation.reservationId);
         }
         client.grant(details.url);
+        loginDiagnostics?.started(details);
       },
     });
     const denyDownload = (event) => event.preventDefault();
@@ -386,7 +433,14 @@ export function createCollectionBrowser({
       }
     };
     const navigation = (event, url) => {
-      if (!allowsRoute(url, routePolicy, { manual })) event.preventDefault();
+      if (!allowsRoute(url, routePolicy, { manual })) {
+        event.preventDefault();
+        loginDiagnostics?.denied(
+          { url, webContentsId: id },
+          "collection_route_forbidden",
+          "redirect",
+        );
+      }
     };
     let detach,
       policyAttached = false;
@@ -394,6 +448,7 @@ export function createCollectionBrowser({
       detach = attachNetworkPolicy(ses, "collection-page", policy);
       policyAttached = true;
       ses.webRequest.onCompleted?.({ urls: ["<all_urls>"] }, (details) => {
+        loginDiagnostics?.completed(details);
         const key = requestKey(details),
           reservationId = physicalRequests.get(key);
         if (!reservationId) return;
@@ -413,6 +468,7 @@ export function createCollectionBrowser({
           .catch(() => {});
       });
       ses.webRequest.onErrorOccurred?.({ urls: ["<all_urls>"] }, (details) => {
+        loginDiagnostics?.failed(details);
         // Failed and cancelled requests retain their unresolved upper bound.
         physicalRequests.delete(requestKey(details));
       });
@@ -487,6 +543,7 @@ export function createCollectionBrowser({
               ses.webRequest.onCompleted?.(null);
               ses.webRequest.onErrorOccurred?.(null);
               await Promise.allSettled([...completionSettlements]);
+              await loginDiagnostics?.close();
               physicalRequests.clear();
               if (manual) manualAllowance.wireBytes += client.snapshot().bytes;
               if (manual && !keepWindow)
@@ -528,6 +585,7 @@ export function createCollectionBrowser({
       policy.close();
       client.revoke();
       await publicResolver?.close();
+      await loginDiagnostics?.close();
       if (policyAttached) {
         detach?.();
         for (const hook of [

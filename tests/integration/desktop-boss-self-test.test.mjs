@@ -28,6 +28,10 @@ test("packaged Boss contracts exercise isolated persisted pages, risk and cancel
   assert.equal(result.summary.ownedPageWindowCount, 1);
   assert.equal(result.summary.ownedPageReloads, 0);
   assert.equal(result.summary.ownedPageRetained, true);
+  assert.equal(result.summary.qrIdleTimeoutMs, 120000);
+  assert.equal(result.summary.automaticIdleTimeoutMs, 45000);
+  assert.equal(result.summary.qrConfirmationTransportObserved, true);
+  assert.equal(result.summary.qrDiagnosticPrivateFieldsAbsent, true);
   const w = await f.repository.read();
   const roots = Object.values(w.runs).filter(
     (r) => r.collectionRole === "collection_root",

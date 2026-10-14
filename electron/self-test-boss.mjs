@@ -23,6 +23,7 @@ function syntheticBossWindows() {
     late: null,
     started: null,
     aborts: 0,
+    proxyIdleLimits: [],
   };
   const session = {
     fromPartition(partition) {
@@ -36,6 +37,12 @@ function syntheticBossWindows() {
             },
             onHeadersReceived: (filter, cb) => {
               ses.headers = filter === null ? null : cb;
+            },
+            onCompleted: (filter, cb) => {
+              ses.completed = filter === null ? null : cb;
+            },
+            onErrorOccurred: (filter, cb) => {
+              ses.errored = filter === null ? null : cb;
             },
           },
           setPermissionRequestHandler() {},
@@ -173,13 +180,16 @@ function syntheticBossWindows() {
   }
   const egressProxy = {
     start: async () => ({ proxyUrl: "http://127.0.0.1:12345" }),
-    createClient: () => ({
-      username: "synthetic",
-      password: "synthetic",
-      grant() {},
-      revoke() {},
-      snapshot: () => ({ bytes: 0 }),
-    }),
+    createClient: (input) => {
+      controls.proxyIdleLimits.push(input.idleTimeoutMs);
+      return {
+        username: "synthetic",
+        password: "synthetic",
+        grant() {},
+        revoke() {},
+        snapshot: () => ({ bytes: 0 }),
+      };
+    },
     stop: async () => {},
   };
   return { session, BrowserWindow, egressProxy, controls, windows, methods };
@@ -222,11 +232,15 @@ export async function runBossSelfTest({ context, targets, dataDir }) {
   };
   const sessionStore = createCollectionSessions(storeOptions),
     ledger = createCollectionLedger({ repository });
-  const h = syntheticBossWindows();
+  const h = syntheticBossWindows(),
+    loginEvents = [];
   const browser = createCollectionBrowser({
     ...h,
     sessionStore,
     ledger,
+    diagnostics: (event) => {
+      loginEvents.push(event);
+    },
     assertScope: async (scope) =>
       assertScope(await repository.read(), scope, clock.now()),
   });
@@ -446,6 +460,46 @@ export async function runBossSelfTest({ context, targets, dataDir }) {
     });
     const ownedWindow = h.windows.at(-1),
       ownedLoadCount = ownedWindow.loadCount;
+    summary.qrIdleTimeoutMs = h.controls.proxyIdleLimits.at(-1);
+    const qrRequest = {
+      id: "synthetic-qr-confirm",
+      webContentsId: ownedWindow.webContents.id,
+      resourceType: "xhr",
+      method: "GET",
+      url: "https://www.zhipin.com/wapi/zppassport/qrcode/scanLogin?qrId=synthetic-private-qr",
+    };
+    const qrDecision = await new Promise((resolve) =>
+      ownedWindow.webContents.session.before(qrRequest, resolve),
+    );
+    ownedWindow.webContents.session.completed({
+      ...qrRequest,
+      statusCode: 200,
+    });
+    summary.qrConfirmationTransportObserved =
+      !qrDecision.cancel &&
+      loginEvents.some(
+        (event) =>
+          event.phase === "response" &&
+          event.parser?.version === "boss-qr-confirm-wait" &&
+          event.httpStatus === 200,
+      );
+    summary.qrDiagnosticPrivateFieldsAbsent =
+      !/synthetic-private-qr|qrId|https:|cookie|fingerprint/i.test(
+        JSON.stringify(loginEvents),
+      );
+    check(
+      "Boss 人工扫码等待覆盖官方100秒轮询",
+      summary.qrIdleTimeoutMs === 120000,
+    );
+    check(
+      "Boss 手机确认阶段传输可诊断",
+      summary.qrConfirmationTransportObserved,
+    );
+    check(
+      "Boss 扫码日志不含二维码或认证材料",
+      summary.qrDiagnosticPrivateFieldsAbsent,
+    );
+    const beforeAutomaticLease = h.controls.proxyIdleLimits.length;
     ownedWindow.url = "https://www.zhipin.com/web/geek/jobs";
     await service.withDiagnosticContext(
       { ref: riskRef, requestId: "offline-owned-page" },
@@ -460,6 +514,13 @@ export async function runBossSelfTest({ context, targets, dataDir }) {
     summary.ownedPageWindowCount = h.windows.length - beforeOwnedPage;
     summary.ownedPageReloads = ownedWindow.loadCount - ownedLoadCount;
     summary.ownedPageRetained = !ownedWindow.isDestroyed();
+    summary.automaticIdleTimeoutMs = h.controls.proxyIdleLimits
+      .slice(beforeAutomaticLease)
+      .find((value) => value === 45000);
+    check(
+      "Boss 自动读取仍使用45秒空闲上限",
+      summary.automaticIdleTimeoutMs === 45000,
+    );
     check("Boss 核验使用原人工登录窗口", summary.ownedPageWindowCount === 1);
     check("Boss 已就绪岗位页核验不重载", summary.ownedPageReloads === 0);
     check(

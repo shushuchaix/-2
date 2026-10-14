@@ -53,8 +53,18 @@ export function createEgressProxy({
     clients.delete(client.username);
   }
   function consume(client, bytes) {
+    if (client.closed) return false;
     client.bytes += bytes;
     if (client.bytes > client.maxBytes) {
+      try {
+        Promise.resolve(
+          client.onLimitExceeded?.({
+            kind: "bytes",
+            limit: client.maxBytes,
+            used: client.bytes,
+          }),
+        ).catch(() => {});
+      } catch {}
       close(client);
       return false;
     }
@@ -69,7 +79,9 @@ export function createEgressProxy({
       (url.port && url.port !== String(url.protocol === "https:" ? 443 : 80))
     )
       throw Error("Egress route denied");
-    const result = await (client.resolvePublicUrl || resolvePublicUrl)(url.href);
+    const result = await (client.resolvePublicUrl || resolvePublicUrl)(
+      url.href,
+    );
     if (
       client.closed ||
       result.url?.href !== url.href ||
@@ -93,7 +105,8 @@ export function createEgressProxy({
             (resolved.url.protocol === "https:" ? 443 : 80),
           family: selected.family,
         });
-      let connected = false;
+      let connected = false,
+        timedOut = false;
       const cancel = () => {
         socket.destroy();
         reject(Error("Egress connection closed"));
@@ -101,7 +114,20 @@ export function createEgressProxy({
       resolved.client.sockets.add(socket);
       sockets.add(socket);
       signal?.addEventListener("abort", cancel, { once: true });
-      socket.setTimeout?.(45000, () => socket.destroy());
+      socket.setTimeout?.(45000, () => {
+        if (timedOut || socket.destroyed || resolved.client.closed) return;
+        timedOut = true;
+        // Observers receive only timing metadata, never destinations or credentials.
+        try {
+          Promise.resolve(
+            resolved.client.onTimeout?.({
+              phase: connected ? "idle" : "connect",
+              timeoutMs: connected ? resolved.client.idleTimeoutMs : 45000,
+            }),
+          ).catch(() => {});
+        } catch {}
+        socket.destroy();
+      });
       socket.on("error", (error) => {
         socket.destroy();
         reject(error);
@@ -127,6 +153,7 @@ export function createEgressProxy({
           return;
         }
         connected = true;
+        socket.setTimeout?.(resolved.client.idleTimeoutMs);
         resolve(socket);
       });
       if (signal?.aborted) cancel();
@@ -328,7 +355,15 @@ export function createEgressProxy({
         starting = null;
       }
     },
-    createClient({ hosts, maxBytes = 20971520, signal, resolvePublicUrl: ownedResolver }) {
+    createClient({
+      hosts,
+      maxBytes = 20971520,
+      idleTimeoutMs = 45000,
+      onTimeout,
+      onLimitExceeded,
+      signal,
+      resolvePublicUrl: ownedResolver,
+    }) {
       if (
         (ownedResolver !== undefined && typeof ownedResolver !== "function") ||
         !Array.isArray(hosts) ||
@@ -339,7 +374,12 @@ export function createEgressProxy({
         ) ||
         !Number.isSafeInteger(maxBytes) ||
         maxBytes < 1 ||
-        maxBytes > 20971520
+        maxBytes > 20971520 ||
+        !Number.isSafeInteger(idleTimeoutMs) ||
+        idleTimeoutMs < 1000 ||
+        idleTimeoutMs > 120000 ||
+        (onTimeout !== undefined && typeof onTimeout !== "function") ||
+        (onLimitExceeded !== undefined && typeof onLimitExceeded !== "function")
       )
         throw Error("Egress client limits invalid");
       const username = randomBytes(16).toString("hex"),
@@ -349,6 +389,9 @@ export function createEgressProxy({
           password,
           hosts: [...hosts],
           maxBytes,
+          idleTimeoutMs,
+          onTimeout,
+          onLimitExceeded,
           bytes: 0,
           grantedHosts: new Set(),
           sockets: new Set(),

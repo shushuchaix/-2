@@ -205,6 +205,7 @@ export function classifyBrowserBody({
 export function createPagePolicy({
   routePolicy,
   reserve,
+  onDenied,
   maxRequests = 60,
   manual = false,
   offlineAllows,
@@ -215,6 +216,12 @@ export function createPagePolicy({
     closed = false,
     bossSent = false,
     nativePublicSent = false;
+  const deny = (details, code = "collection_route_forbidden") => {
+    try {
+      Promise.resolve(onDenied?.(details, code)).catch(() => {});
+    } catch {}
+    return { cancel: true };
+  };
   return {
     async authorize(details) {
       const nativePublicPost = isNativePublicSearchRequest(
@@ -226,14 +233,14 @@ export function createPagePolicy({
         try {
           url = validatePublicUrl(details.url);
         } catch {
-          return { cancel: true };
+          return deny(details);
         }
         if (
           url.hostname === "jobs.bytedance.com" &&
           url.pathname.startsWith("/api/") &&
           url.pathname !== "/api/v1/csrf/token"
         ) {
-          if (!nativePublicPost || nativePublicSent) return { cancel: true };
+          if (!nativePublicPost || nativePublicSent) return deny(details);
           nativePublicSent = true;
         }
       }
@@ -242,13 +249,13 @@ export function createPagePolicy({
         try {
           url = validatePublicUrl(details.url);
         } catch {
-          return { cancel: true };
+          return deny(details);
         }
         if (
           ["static.zhipin.com", "img.bosszhipin.com"].includes(url.hostname) &&
           !["GET", "HEAD"].includes(details.method || "GET")
         )
-          return { cancel: true };
+          return deny(details);
         if (url.pathname.startsWith("/wapi/")) {
           const op = routePolicy.bossOperation;
           const expected = op && new URL(op.url);
@@ -264,23 +271,23 @@ export function createPagePolicy({
                 op.url === BOSS_DETAIL_URL &&
                 op.method === "GET"));
           if (!sameOperation && !(manual && routePolicy.manualPath?.(url)))
-            return { cancel: true };
+            return deny(details);
           if (sameOperation && !manual) {
-            if (bossSent || !op.parameters) return { cancel: true };
+            if (bossSent || !op.parameters) return deny(details);
             let values;
             if (op.method === "POST") {
               if (
                 !Array.isArray(details.uploadData) ||
                 details.uploadData.some((v) => !v.bytes || v.file)
               )
-                return { cancel: true };
+                return deny(details);
               const body = Buffer.concat(
                 details.uploadData.map((v) => Buffer.from(v.bytes)),
               );
-              if (body.length > 16384) return { cancel: true };
+              if (body.length > 16384) return deny(details);
               values = new URLSearchParams(body.toString("utf8"));
               if ([...url.searchParams.keys()].some((k) => k !== "_"))
-                return { cancel: true };
+                return deny(details);
             } else {
               values = new URLSearchParams(url.searchParams);
               values.delete("_");
@@ -292,7 +299,7 @@ export function createPagePolicy({
                   values.getAll(k).length !== 1 || values.get(k) !== String(v),
               )
             )
-              return { cancel: true };
+              return deny(details);
             bossSent = true;
           }
         }
@@ -319,15 +326,33 @@ export function createPagePolicy({
           resourceType: details.resourceType,
         })
       )
-        return { cancel: true };
-      if (requests >= maxRequests) return { cancel: true };
+        return deny(
+          details,
+          closed || signal?.aborted
+            ? "collection_cancelled"
+            : "collection_route_forbidden",
+        );
+      if (requests >= maxRequests)
+        return deny(
+          details,
+          manual
+            ? "collection_login_budget_exhausted"
+            : "collection_browser_budget_exhausted",
+        );
       requests++;
       try {
         await reserve?.(details);
         signal?.throwIfAborted();
         return { cancel: closed };
-      } catch {
-        return { cancel: true };
+      } catch (error) {
+        return deny(
+          details,
+          signal?.aborted
+            ? "collection_cancelled"
+            : error?.code === "collection_login_budget_exhausted"
+              ? error.code
+              : "collection_request_failed",
+        );
       }
     },
     snapshot: () => ({ requests, manual }),

@@ -499,6 +499,63 @@ export async function runBossSelfTest({ context, targets, dataDir }) {
       "Boss 扫码日志不含二维码或认证材料",
       summary.qrDiagnosticPrivateFieldsAbsent,
     );
+    const landingRequest = {
+      id: "synthetic-landing",
+      webContentsId: ownedWindow.webContents.id,
+      method: "GET",
+      resourceType: "mainFrame",
+      url: "https://www.zhipin.com/",
+    };
+    const landingDecision = await new Promise((resolve) =>
+      ownedWindow.webContents.session.before(landingRequest, resolve),
+    );
+    ownedWindow.webContents.session.completed({
+      ...landingRequest,
+      statusCode: 200,
+    });
+    summary.manualDefaultLandingAllowed =
+      !landingDecision.cancel &&
+      loginEvents.some(
+        (event) =>
+          event.phase === "response" &&
+          event.parser?.version === "boss-login-landing",
+      );
+    check(
+      "Boss 人工登录默认首页可导航并留下过程记录",
+      summary.manualDefaultLandingAllowed,
+    );
+    await new Promise((resolve) =>
+      ownedWindow.webContents.session.before(
+        {
+          ...landingRequest,
+          id: "synthetic-denied-image",
+          url: "https://static.zhipin.com/unapproved.png",
+          resourceType: "image",
+        },
+        resolve,
+      ),
+    );
+    let blockedRedirect = false;
+    ownedWindow.webContents.emit(
+      "will-navigate",
+      {
+        preventDefault: () => {
+          blockedRedirect = true;
+        },
+      },
+      "https://www.zhipin.com/web/common/403.html?code=31",
+    );
+    summary.blockedLoginRedirectObserved =
+      blockedRedirect &&
+      loginEvents.some(
+        (event) =>
+          event.phase === "redirect" &&
+          event.parser?.version === "boss-login-restricted-landing",
+      );
+    check(
+      "Boss 限制页跳转仍拒绝且不被资源错误日志压掉",
+      summary.blockedLoginRedirectObserved,
+    );
     const beforeAutomaticLease = h.controls.proxyIdleLimits.length;
     ownedWindow.url = "https://www.zhipin.com/web/geek/jobs";
     await service.withDiagnosticContext(

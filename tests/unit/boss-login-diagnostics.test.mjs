@@ -6,6 +6,81 @@ import {
   platformPolicy,
 } from "../../electron/collection/network-policy.mjs";
 
+test("an earlier unknown resource denial cannot hide a subsequent blocked login redirect", async () => {
+  const events = [];
+  const monitor = createBossLoginDiagnostics({
+    diagnostics: (e) => events.push(e),
+    webContentsId: 1,
+    counts: () => ({ manualRequests: 31, manualBytes: 500248 }),
+  });
+  monitor.denied(
+    { webContentsId: 1, url: "https://static.zhipin.com/unapproved.png" },
+    "collection_route_forbidden",
+    "validation",
+  );
+  for (let i = 0; i < 3; i++)
+    monitor.denied(
+      {
+        webContentsId: 1,
+        url: "https://www.zhipin.com/web/common/403.html?code=31&token=synthetic-private",
+      },
+      "collection_route_forbidden",
+      "redirect",
+    );
+  await monitor.close();
+  assert.deepEqual(
+    events.map((e) => e.phase),
+    ["validation", "redirect"],
+  );
+  assert.doesNotMatch(
+    JSON.stringify(events),
+    /synthetic-private|https:|token|unapproved|403.html/,
+  );
+});
+
+test("public landing and restricted landing are distinct metadata stages without exposing their URL or parameters", async () => {
+  const events = [];
+  const monitor = createBossLoginDiagnostics({
+    diagnostics: (e) => events.push(e),
+    webContentsId: 1,
+    counts: () => ({ manualRequests: 31, manualBytes: 500248 }),
+  });
+  const landing = {
+    id: 11,
+    webContentsId: 1,
+    url: "https://www.zhipin.com/",
+    method: "GET",
+  };
+  monitor.started(landing);
+  monitor.completed({ ...landing, statusCode: 200 });
+  monitor.denied(
+    {
+      webContentsId: 1,
+      url: "https://www.zhipin.com/web/common/403.html?code=31&token=synthetic-private",
+    },
+    "collection_route_forbidden",
+    "redirect",
+  );
+  await monitor.close();
+  assert.ok(
+    events.some(
+      (e) =>
+        e.phase === "response" && e.parser.version === "boss-login-landing",
+    ),
+  );
+  assert.ok(
+    events.some(
+      (e) =>
+        e.phase === "redirect" &&
+        e.parser.version === "boss-login-restricted-landing",
+    ),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(events),
+    /synthetic-private|https:|token|403.html/,
+  );
+});
+
 test("all disallowed login resources are observable while the route and credential boundaries stay closed", async () => {
   const events = [];
   const monitor = createBossLoginDiagnostics({

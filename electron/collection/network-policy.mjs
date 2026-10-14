@@ -92,9 +92,14 @@ export function platformPolicy(platform) {
       publicPath: (url, { resourceType = "mainFrame", manual = false } = {}) =>
         bossStaticAsset(url, resourceType, manual) ||
         (url.hostname === "www.zhipin.com" &&
-          (/^\/web\/geek\/jobs\/?$|^\/job_detail\/[A-Za-z0-9_~.-]+\.html$|^\/(?:assets|static)\//.test(
-            url.pathname,
-          ) ||
+          ((manual &&
+            resourceType === "mainFrame" &&
+            url.pathname === "/" &&
+            !url.search &&
+            !url.hash) ||
+            /^\/web\/geek\/jobs\/?$|^\/job_detail\/[A-Za-z0-9_~.-]+\.html$|^\/(?:assets|static)\//.test(
+              url.pathname,
+            ) ||
             [
               new URL(BOSS_SEARCH_URL).pathname,
               new URL(BOSS_DETAIL_URL).pathname,
@@ -251,6 +256,12 @@ export function createPagePolicy({
         } catch {
           return deny(details);
         }
+        if (
+          url.hostname === "www.zhipin.com" &&
+          url.pathname === "/" &&
+          !["GET", "HEAD"].includes(details.method || "GET")
+        )
+          return deny(details);
         if (
           ["static.zhipin.com", "img.bosszhipin.com"].includes(url.hostname) &&
           !["GET", "HEAD"].includes(details.method || "GET")

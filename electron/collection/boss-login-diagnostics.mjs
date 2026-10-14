@@ -15,6 +15,10 @@ function loginStage(value) {
   try {
     const url = new URL(value);
     if (url.origin !== "https://www.zhipin.com") return;
+    if (url.pathname === "/" && !url.search && !url.hash)
+      return "boss-login-landing";
+    if (url.pathname === "/web/common/403.html")
+      return "boss-login-restricted-landing";
     if (/^\/web\/user\/?$/.test(url.pathname)) return "boss-login-page";
     const match = /^\/wapi\/zppassport\/(?:qrcode|captcha)\/([A-Za-z]+)$/.exec(
       url.pathname,
@@ -94,7 +98,7 @@ export function createBossLoginDiagnostics({
         "collection_login_budget_exhausted",
         "collection_login_byte_limit",
       ].includes(code);
-      const key = budget ? code : code + ":" + stage;
+      const key = budget ? code : code + ":" + phase + ":" + stage;
       if (denied.has(key)) return;
       denied.add(key);
       if (budget) {

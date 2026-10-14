@@ -364,6 +364,30 @@ test("a denied login redirect gets a diagnostic but cannot open an unapproved ro
   assert.doesNotMatch(JSON.stringify(events), /unapproved|private-|token/);
 });
 
+test("the manual owned page can follow the official default landing without granting login or risk recovery", async (t) => {
+  const { window, ses, states } = await loginFixture(t);
+  let blocked = false;
+  window.webContents.emit(
+    "will-navigate",
+    {
+      preventDefault: () => {
+        blocked = true;
+      },
+    },
+    "https://www.zhipin.com/",
+  );
+  assert.equal(blocked, false);
+  const result = await request(ses, {
+    id: 301,
+    webContentsId: window.webContents.id,
+    method: "GET",
+    resourceType: "mainFrame",
+    url: "https://www.zhipin.com/",
+  });
+  assert.equal(result.cancel, false);
+  assert.ok(states.every((state) => state === "unverified"));
+});
+
 test("DNS allowance exhaustion has the same immediate visible feedback as a page request", async (t) => {
   let dnsLedger;
   const { window, events } = await loginFixture(t, {
@@ -400,6 +424,36 @@ test("the proxy byte ceiling is classified and shown without revealing any reque
     1,
   );
   assert.match(window.title, /数据上限/);
+});
+
+test("an idle tunnel release is diagnostic cleanup and does not claim a failed login request", async (t) => {
+  const { events, clientOptions } = await loginFixture(t);
+  await clientOptions[0].onTimeout({ phase: "idle", timeoutMs: 120000 });
+  assert.ok(
+    events.some(
+      (e) =>
+        e.phase === "cleanup" &&
+        e.code === "collection_idle_tunnel_closed" &&
+        e.outcome === "completed",
+    ),
+  );
+  assert.equal(
+    events.some((e) => e.outcome === "failed"),
+    false,
+  );
+});
+
+test("a connection handshake deadline remains a classified transport failure", async (t) => {
+  const { events, clientOptions } = await loginFixture(t);
+  await clientOptions[0].onTimeout({ phase: "connect", timeoutMs: 45000 });
+  assert.ok(
+    events.some(
+      (e) =>
+        e.phase === "transport" &&
+        e.code === "collection_browser_timeout" &&
+        e.outcome === "failed",
+    ),
+  );
 });
 
 test("a real bounded tunnel revokes on bytes even with an extended idle wait and a failing observer", async (t) => {

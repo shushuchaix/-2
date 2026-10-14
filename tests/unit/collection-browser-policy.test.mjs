@@ -6,6 +6,56 @@ import {
   classifyBrowserBody,
 } from "../../electron/collection/network-policy.mjs";
 
+test("manual Boss successful-login default landing is allowed only as a clean top-level GET or HEAD", async () => {
+  for (const manual of [true, false]) {
+    const policy = createPagePolicy({
+      routePolicy: platformPolicy("boss"),
+      manual,
+    });
+    for (const method of ["GET", "HEAD", "POST"]) {
+      assert.equal(
+        (
+          await policy.authorize({
+            url: "https://www.zhipin.com/",
+            method,
+            resourceType: "mainFrame",
+          })
+        ).cancel,
+        !(manual && method !== "POST"),
+      );
+    }
+    for (const url of [
+      "https://www.zhipin.com/?token=synthetic-private",
+      "https://www.zhipin.com/#synthetic-private",
+      "https://zhipin.com/",
+      "https://www.zhipin.com/web/common/403.html?code=31",
+    ]) {
+      assert.equal(
+        (
+          await policy.authorize({
+            url,
+            method: "GET",
+            resourceType: "mainFrame",
+          })
+        ).cancel,
+        true,
+      );
+    }
+    for (const resourceType of ["xhr", "image", "script", "subFrame"]) {
+      assert.equal(
+        (
+          await policy.authorize({
+            url: "https://www.zhipin.com/",
+            method: "GET",
+            resourceType,
+          })
+        ).cancel,
+        true,
+      );
+    }
+  }
+});
+
 test("Boss login bootstrap permits observed CDN assets only as static GET resources", async () => {
   for (const manual of [false, true]) {
     const policy = createPagePolicy({
@@ -156,7 +206,9 @@ test("Boss scan image is allowed only for manual login as a bounded numeric PNG"
     const policy = createPagePolicy({
       routePolicy: platformPolicy("boss"),
       manual,
-      reserve: async () => { claims++; },
+      reserve: async () => {
+        claims++;
+      },
     });
     for (const method of ["GET", "HEAD"])
       assert.equal(
@@ -169,7 +221,8 @@ test("Boss scan image is allowed only for manual login as a bounded numeric PNG"
         true,
       );
     assert.equal(
-      (await policy.authorize({ url, resourceType: "image", method: "POST" })).cancel,
+      (await policy.authorize({ url, resourceType: "image", method: "POST" }))
+        .cancel,
       true,
     );
     for (const denied of [
@@ -184,7 +237,13 @@ test("Boss scan image is allowed only for manual login as a bounded numeric PNG"
       "https://different.example.org/assets/sdk/bzl-qrcode/123.png",
     ])
       assert.equal(
-        (await policy.authorize({ url: denied, resourceType: "image", method: "GET" })).cancel,
+        (
+          await policy.authorize({
+            url: denied,
+            resourceType: "image",
+            method: "GET",
+          })
+        ).cancel,
         true,
       );
     assert.equal(claims, manual ? 2 : 0);

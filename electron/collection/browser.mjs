@@ -301,9 +301,14 @@ export function createCollectionBrowser({
           operation: "network.request",
           sourceId: routePolicy.platform,
           siteId: routePolicy.platform,
-          phase: "transport",
-          outcome: "failed",
-          code: "collection_browser_timeout",
+          // An idle tunnel can outlive already completed HTTP requests.
+          // Only request/connection errors should imply a failed request.
+          phase: phase === "idle" ? "cleanup" : "transport",
+          outcome: phase === "idle" ? "completed" : "failed",
+          code:
+            phase === "idle"
+              ? "collection_idle_tunnel_closed"
+              : "collection_browser_timeout",
           parser: { version: "egress-" + phase },
           durationMs: timeoutMs,
         }),

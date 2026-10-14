@@ -8,3 +8,13 @@ export async function awaitDesktopContext(ready, { selfTest = false } = {}) {
     return null;
   }
 }
+
+// Focusing a hidden BrowserWindow does not reveal it. Use the same presentation
+// path after loading and when Windows forwards a second launch to this instance.
+export function presentDesktopWindow(window, { selfTest = false } = {}) {
+  if (selfTest || !window || window.isDestroyed()) return false;
+  if (window.isMinimized()) window.restore();
+  if (!window.isVisible()) window.show();
+  window.focus();
+  return window.isVisible();
+}

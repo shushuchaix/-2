@@ -33,7 +33,7 @@ import { createResourceShutdown } from "../src/infrastructure/lifecycle/resource
 import { assertScope } from "../src/domain/packages.mjs";
 import { resolveDataLayout } from "../src/infrastructure/storage/layout.mjs";
 import { registerDirectoryIpc } from "./directories.mjs";
-import { awaitDesktopContext } from "./startup.mjs";
+import { awaitDesktopContext, presentDesktopWindow } from "./startup.mjs";
 import os from "node:os";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -327,8 +327,11 @@ async function createWindow() {
     );
   });
 
+  let startupWindowPresented = false;
   mainWindow.once("ready-to-show", () => {
-    if (!SELF_TEST) mainWindow.show();
+    startupWindowPresented = presentDesktopWindow(mainWindow, {
+      selfTest: SELF_TEST,
+    });
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -357,6 +360,10 @@ async function createWindow() {
   await mainWindow.loadURL(
     SELF_TEST ? appUrl + "?fixtureStartup=disabled" : appUrl,
   );
+  // A launcher may keep the first window hidden without a ready-to-show event.
+  // Successful local-page loading is also a safe point to present the workspace.
+  if (!startupWindowPresented)
+    presentDesktopWindow(mainWindow, { selfTest: SELF_TEST });
   if (SELF_TEST)
     await mainWindow.webContents.executeJavaScript(
       "window.__rjrSelfTestIssues=[];window.addEventListener('securitypolicyviolation',e=>window.__rjrSelfTestIssues.push({code:'csp_violation',directive:e.violatedDirective}));window.addEventListener('error',()=>window.__rjrSelfTestIssues.push({code:'renderer_error'}));window.addEventListener('unhandledrejection',()=>window.__rjrSelfTestIssues.push({code:'renderer_rejection'}));",
@@ -661,10 +668,7 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    presentDesktopWindow(mainWindow, { selfTest: SELF_TEST });
   });
 
   app.setAppUserModelId("com.resumejobradar.desktop");
@@ -701,6 +705,7 @@ if (!gotLock) {
               error,
             ),
           );
+        else presentDesktopWindow(mainWindow, { selfTest: SELF_TEST });
       });
     } catch (e) {
       diagnostics ||= createDiagnosticsLog({

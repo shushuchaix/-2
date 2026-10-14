@@ -26,6 +26,14 @@ test("Boss login bootstrap permits observed CDN assets only as static GET resour
         "stylesheet",
       ],
       [
+        "https://static.zhipin.com/zhipin-geek-spa/web/v6763/static/js/app~0.0bbb1e58.js",
+        "script",
+      ],
+      [
+        "https://static.zhipin.com/zhipin-geek-spa/web/v6763/static/css/app~c0d85c3d.9a1b81f1.css",
+        "stylesheet",
+      ],
+      [
         "https://static.zhipin.com/assets/zhipin/geek/boss-ui/bossui.css",
         "stylesheet",
       ],
@@ -74,6 +82,115 @@ test("Boss login bootstrap permits observed CDN assets only as static GET resour
       );
   }
 });
+test("Boss manual login permits its observed sign-page resources without enabling them for collection", async () => {
+  for (const manual of [false, true]) {
+    const policy = createPagePolicy({
+      routePolicy: platformPolicy("boss"),
+      manual,
+    });
+    for (const [url, resourceType] of [
+      [
+        "https://static.zhipin.com/zhipin-sign/v5330/static/js/iframe-core.a35c6000.js",
+        "script",
+      ],
+      [
+        "https://static.zhipin.com/zhipin-sign/v5330/static/js/vendors.c30ef7fa.js",
+        "script",
+      ],
+      [
+        "https://static.zhipin.com/zhipin-sign/v5330/static/js/app.8b190f81.js",
+        "script",
+      ],
+      [
+        "https://static.zhipin.com/zhipin-sign/v5330/static/css/app.a427210e.css",
+        "stylesheet",
+      ],
+      ["https://static.zhipin.com/assets/sdk/apm/patas.2.3.0.min.js", "script"],
+    ]) {
+      assert.equal(
+        (await policy.authorize({ url, resourceType, method: "GET" })).cancel,
+        !manual,
+      );
+      assert.equal(
+        (await policy.authorize({ url, resourceType, method: "POST" })).cancel,
+        true,
+      );
+      assert.equal(
+        (
+          await policy.authorize({
+            url: url + "?session=secret",
+            resourceType,
+            method: "GET",
+          })
+        ).cancel,
+        true,
+      );
+      assert.equal(
+        (
+          await policy.authorize({
+            url,
+            resourceType: "mainFrame",
+            method: "GET",
+          })
+        ).cancel,
+        true,
+      );
+    }
+    assert.equal(
+      (
+        await policy.authorize({
+          url: "https://static.zhipin.com/zhipin-sign/v5330/static/js/%2e%2e%2fprivate.js",
+          resourceType: "script",
+          method: "GET",
+        })
+      ).cancel,
+      true,
+    );
+  }
+});
+
+test("Boss scan image is allowed only for manual login as a bounded numeric PNG", async () => {
+  const url = "https://static.zhipin.com/assets/sdk/bzl-qrcode/123456789.png";
+  for (const manual of [false, true]) {
+    let claims = 0;
+    const policy = createPagePolicy({
+      routePolicy: platformPolicy("boss"),
+      manual,
+      reserve: async () => { claims++; },
+    });
+    for (const method of ["GET", "HEAD"])
+      assert.equal(
+        (await policy.authorize({ url, resourceType: "image", method })).cancel,
+        !manual,
+      );
+    for (const resourceType of ["script", "mainFrame", "stylesheet", "xhr"])
+      assert.equal(
+        (await policy.authorize({ url, resourceType, method: "GET" })).cancel,
+        true,
+      );
+    assert.equal(
+      (await policy.authorize({ url, resourceType: "image", method: "POST" })).cancel,
+      true,
+    );
+    for (const denied of [
+      url + "?token=synthetic",
+      url + "?v=1",
+      url + "#synthetic",
+      "https://static.zhipin.com/assets/sdk/bzl-qrcode/abc.png",
+      "https://static.zhipin.com/assets/sdk/bzl-qrcode/123.svg",
+      "https://static.zhipin.com/assets/sdk/bzl-qrcode/sub/123.png",
+      "https://static.zhipin.com/assets/sdk/bzl-qrcode/%2f123.png",
+      "https://img.bosszhipin.com/assets/sdk/bzl-qrcode/123.png",
+      "https://different.example.org/assets/sdk/bzl-qrcode/123.png",
+    ])
+      assert.equal(
+        (await policy.authorize({ url: denied, resourceType: "image", method: "GET" })).cancel,
+        true,
+      );
+    assert.equal(claims, manual ? 2 : 0);
+  }
+});
+
 test("Boss only permits the selected fixed API operation for every resource type", async () => {
   const routePolicy = {
     ...platformPolicy("boss"),

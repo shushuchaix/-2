@@ -25,7 +25,7 @@ const hostAllowed = (host, list) =>
       ? host.endsWith(v.slice(1)) && host !== v.slice(2)
       : host === v,
   );
-function bossStaticAsset(url, resourceType) {
+function bossStaticAsset(url, resourceType, manual = false) {
   try {
     publicCollectionUrl(url.href);
   } catch {
@@ -33,7 +33,7 @@ function bossStaticAsset(url, resourceType) {
   }
   if (
     url.search ||
-    !/^\/[A-Za-z0-9._/-]+$/.test(url.pathname) ||
+    !/^\/[A-Za-z0-9._~/-]+$/.test(url.pathname) ||
     url.pathname
       .split("/")
       .slice(1)
@@ -54,6 +54,12 @@ function bossStaticAsset(url, resourceType) {
     return url.pathname === "/static/zhipin/geek/sdk/browser-check-v2.js";
   if (url.hostname !== "static.zhipin.com") return false;
   return (
+    (manual &&
+      (/^\/zhipin-sign\/v\d+\/static\/(?:js|css|fonts|images|img)\//.test(
+        url.pathname,
+      ) ||
+        url.pathname === "/assets/sdk/apm/patas.2.3.0.min.js" ||
+        /^\/assets\/sdk\/bzl-qrcode\/\d+\.png$/.test(url.pathname))) ||
     /^\/zhipin-geek-spa\/web\/v\d+\/static\/(?:js|css|fonts|img)\//.test(
       url.pathname,
     ) ||
@@ -75,6 +81,7 @@ export function platformPolicy(platform) {
     return {
       platform,
       entryUrl: "https://www.zhipin.com/web/geek/jobs",
+      loginEntryUrl: "https://www.zhipin.com/web/user/",
       hosts: [
         "www.zhipin.com",
         "zhipin.com",
@@ -82,8 +89,8 @@ export function platformPolicy(platform) {
         "img.bosszhipin.com",
       ],
       strictPath: true,
-      publicPath: (url, { resourceType = "mainFrame" } = {}) =>
-        bossStaticAsset(url, resourceType) ||
+      publicPath: (url, { resourceType = "mainFrame", manual = false } = {}) =>
+        bossStaticAsset(url, resourceType, manual) ||
         (url.hostname === "www.zhipin.com" &&
           (/^\/web\/geek\/jobs\/?$|^\/job_detail\/[A-Za-z0-9_~.-]+\.html$|^\/(?:assets|static)\//.test(
             url.pathname,
@@ -160,7 +167,7 @@ export function allowsRoute(
       (!isNativePublicSearchPolicy(routePolicy) ||
         allowsNativePublicPage(value, routePolicy)) &&
       (routePolicy.strictPath
-        ? routePolicy.publicPath(url, { resourceType }) ||
+        ? routePolicy.publicPath(url, { resourceType, manual }) ||
           (manual && routePolicy.manualPath?.(url))
         : !["mainFrame", "xhr"].includes(resourceType) ||
           manual ||

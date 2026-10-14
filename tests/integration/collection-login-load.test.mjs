@@ -131,6 +131,7 @@ test("manual login corrects system Fake-IP in its own bounded resolver and drain
     accountRef: "boss",
   });
   assert.equal(result.state, "unverified");
+  assert.equal(f.base.windows[0].url, "https://www.zhipin.com/web/user/");
   assert.equal(f.dnsReads(), 2);
   assert.equal(f.saved.length, 1);
   await f.browser.stop();

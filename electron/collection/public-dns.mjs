@@ -3,31 +3,64 @@ import { resolvePublicUrl } from "../../src/infrastructure/http/public-url.mjs";
 import { randomUUID } from "node:crypto";
 
 export function createCollectionPublicResolver({
-  ledger, ref, token, operationLease, signal, diagnostics, mode = "auto",
-  lookup, transport, clock,
+  ledger,
+  ref,
+  token,
+  operationLease,
+  signal,
+  diagnostics,
+  mode = "auto",
+  lookup,
+  transport,
+  clock,
 }) {
-  const lifetime = new AbortController(), pending = new Set();
+  const lifetime = new AbortController(),
+    pending = new Set();
   const ownedSignal = signal
     ? AbortSignal.any([signal, lifetime.signal])
     : lifetime.signal;
   const dnsLookup = createDnsLookup({
-    mode, lookup, transport, signal: ownedSignal, diagnostics, clock,
+    mode,
+    lookup,
+    transport,
+    signal: ownedSignal,
+    diagnostics,
+    clock,
     diagnosticContext: { runId: token?.sliceRunId },
     budget: {
-      claimRequest: (_kind, { bytesUpperBound }) => ledger.reserve({
-        ref, token, operationLease, reservationId: randomUUID(), kind: "dns",
-        requestUpperBound: 1, bytesUpperBound,
-      }),
-      settleRequest: (reservation, { bytes }) => ledger.settle({
-        ref, operationLease, reservationId: reservation.reservationId,
-        verifiedUsage: { requests: 1, bytes },
-      }),
+      claimRequest: (_kind, { bytesUpperBound }) =>
+        ledger.reserve({
+          ref,
+          token,
+          operationLease,
+          reservationId: randomUUID(),
+          kind: "dns",
+          requestUpperBound: 1,
+          bytesUpperBound,
+        }),
+      settleRequest: (reservation, { bytes }) =>
+        ledger.settle({
+          ref,
+          operationLease,
+          reservationId: reservation.reservationId,
+          verifiedUsage: { requests: 1, bytes },
+        }),
     },
   });
-  const resolver = value => {
+  // Assets in this owned window share a DNS lookup while it is in flight.
+  // Keep this map local so sessions and their lifetime/budget never mix.
+  const lookups = new Map();
+  const sharedLookup = (host, options) => {
+    if (lookups.has(host)) return lookups.get(host);
+    const task = dnsLookup(host, options);
+    lookups.set(host, task);
+    task.finally(() => lookups.delete(host)).catch(() => {});
+    return task;
+  };
+  const resolver = (value) => {
     const task = (async () => {
       ownedSignal.throwIfAborted();
-      const result = await resolvePublicUrl(value, { dnsLookup });
+      const result = await resolvePublicUrl(value, { dnsLookup: sharedLookup });
       ownedSignal.throwIfAborted();
       return result;
     })();
@@ -36,7 +69,11 @@ export function createCollectionPublicResolver({
     return task;
   };
   resolver.close = async () => {
-    lifetime.abort(Object.assign(Error("collection_cancelled"), { code: "collection_cancelled" }));
+    lifetime.abort(
+      Object.assign(Error("collection_cancelled"), {
+        code: "collection_cancelled",
+      }),
+    );
     await Promise.allSettled([...pending]);
   };
   return resolver;

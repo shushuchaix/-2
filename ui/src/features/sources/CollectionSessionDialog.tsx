@@ -126,7 +126,7 @@ export function CollectionSessionDialog({
         {boss && (
           <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-muted-foreground">
             <li>点击下方“打开独立采集窗口”。</li>
-            <li>在新窗口的 Boss 网页点击“登录/注册”，选择扫码登录。</li>
+            <li>新窗口直接打开官网登录页，选择“微信扫码”或“BOSS APP扫码”登录。</li>
             <li>
               登录完成后回到这里核验列表与正文；关闭窗口不会自动通过核验。
             </li>

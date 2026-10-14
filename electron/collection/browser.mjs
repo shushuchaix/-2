@@ -638,7 +638,10 @@ export function createCollectionBrowser({
           "collection_article_required",
           "请提供要验证的公开公众号文章地址。",
         );
-      const entryUrl = platform === "wechat" ? testUrl : routePolicy.entryUrl,
+      const entryUrl =
+          platform === "wechat"
+            ? testUrl
+            : routePolicy.loginEntryUrl || routePolicy.entryUrl,
         entry = await sessionStore.create({
           scope: ref.scope,
           platform,

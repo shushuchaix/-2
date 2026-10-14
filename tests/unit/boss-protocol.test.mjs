@@ -10,6 +10,21 @@ import {
 } from "../../src/sources/boss/records.mjs";
 const checkedAt = "2026-10-10T00:00:00.000Z";
 
+for (const code of [7, 1011, 120, 121, 122, 200404])
+  test(`Boss native authentication response ${code} is classified without refresh`, () => {
+    const result = parseBossResponse({
+      kind: "boss.search",
+      status: 200,
+      payload: { code },
+      checkedAt,
+    });
+    assert.equal(result.status, "login_required");
+    assert.equal(
+      result.code,
+      code === 200404 ? "boss_login_required" : "boss_auth_expired",
+    );
+  });
+
 test("Boss page failures retain known causes without trusting arbitrary upstream codes", () => {
   for (const code of [
     "boss_ajax_unavailable",

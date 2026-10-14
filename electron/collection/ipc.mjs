@@ -60,10 +60,13 @@ export function registerCollectionIpc({
         ),
         page: 1,
       });
-      let diagnosticSignal;
+      let diagnosticSignal,
+        diagnosticGuard,
+        probeAttempted = false;
       return context.collectionService
         .withDiagnosticContext({ ref, requestId }, async (ctx) => {
           diagnosticSignal = ctx.signal;
+          diagnosticGuard = ctx.token && { ref, token: { ...ctx.token } };
           if (input.clearRisk === true) {
             await browser.recoverBossSession({
               ...ctx,
@@ -73,6 +76,7 @@ export function registerCollectionIpc({
             });
             await context.collectionService.resolveBossRisk({ ...ctx, ref });
           }
+          probeAttempted = true;
           const result = await context.sourceService.probeScopedSource({
             scope: ref.scope,
             sourceId: "boss",
@@ -83,6 +87,7 @@ export function registerCollectionIpc({
             scope: ref.scope,
             sessionRef,
           });
+          diagnosticSignal?.throwIfAborted();
           if (result.status === "ready" && !status.riskBlocked)
             await context.collectionService.resolveBossRisk({ ...ctx, ref });
           return {
@@ -102,6 +107,12 @@ export function registerCollectionIpc({
               "boss_risk_blocked",
               "boss_auth_expired",
               "boss_login_required",
+              "boss_ajax_unavailable",
+              "boss_transport_failed",
+              "boss_response_invalid",
+              "boss_rate_limited",
+              "collection_browser_timeout",
+              "collection_browser_output_limit",
             ].includes(error?.code)
           )
             throw error;
@@ -130,9 +141,28 @@ export function registerCollectionIpc({
                     error,
                   )
                 )?.diagnosticId;
+          diagnosticSignal?.throwIfAborted();
+          if (!probeAttempted)
+            await context.sourceService.recordScopedBossProbeFailure?.({
+              scope: ref.scope,
+              sessionRef,
+              code: error.code,
+              diagnosticId,
+              signal: diagnosticSignal,
+              collectionGuard: diagnosticGuard,
+            });
+          diagnosticSignal?.throwIfAborted();
           return {
             ...status,
-            sourceStatus: "restricted",
+            sourceStatus: [
+              "boss_account_risk",
+              "boss_environment_risk",
+              "boss_risk_blocked",
+              "boss_auth_expired",
+              "boss_login_required",
+            ].includes(error.code)
+              ? "restricted"
+              : "unavailable",
             issues: safeSourceIssues(
               [{ code: error.code, diagnosticId }],
               "boss",

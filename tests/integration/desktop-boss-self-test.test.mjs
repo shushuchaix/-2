@@ -25,6 +25,9 @@ test("packaged Boss contracts exercise isolated persisted pages, risk and cancel
   assert.equal(result.summary.riskCode, "boss_risk_blocked");
   assert.equal(result.summary.revokedCode, "collection_session_scope");
   assert.equal(result.summary.riskAfterLoginClear, true);
+  assert.equal(result.summary.ownedPageWindowCount, 1);
+  assert.equal(result.summary.ownedPageReloads, 0);
+  assert.equal(result.summary.ownedPageRetained, true);
   const w = await f.repository.read();
   const roots = Object.values(w.runs).filter(
     (r) => r.collectionRole === "collection_root",

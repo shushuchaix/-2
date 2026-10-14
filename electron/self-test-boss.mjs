@@ -141,6 +141,7 @@ function syntheticBossWindows() {
       windows.push(this);
     }
     async loadURL(url) {
+      this.loadCount = (this.loadCount || 0) + 1;
       this.url = url;
       const ses = this.webContents.session;
       const decision = await new Promise((resolve) =>
@@ -436,6 +437,41 @@ export async function runBossSelfTest({ context, targets, dataDir }) {
         ).riskBlocked,
     );
     h.controls.risk = false;
+    const beforeOwnedPage = h.windows.length;
+    await browser.openLogin({
+      ref: riskRef,
+      platform: "boss",
+      accountRef: "synthetic",
+      sessionRef: rebound.sessionRef,
+    });
+    const ownedWindow = h.windows.at(-1),
+      ownedLoadCount = ownedWindow.loadCount;
+    ownedWindow.url = "https://www.zhipin.com/web/geek/jobs";
+    await service.withDiagnosticContext(
+      { ref: riskRef, requestId: "offline-owned-page" },
+      (ctx) =>
+        browser.readBoss({
+          ...ctx,
+          ref: riskRef,
+          sessionRef: rebound.sessionRef,
+          operation: buildBossOperation({ kind: "boss.search", query: "消防" }),
+        }),
+    );
+    summary.ownedPageWindowCount = h.windows.length - beforeOwnedPage;
+    summary.ownedPageReloads = ownedWindow.loadCount - ownedLoadCount;
+    summary.ownedPageRetained = !ownedWindow.isDestroyed();
+    check("Boss 核验使用原人工登录窗口", summary.ownedPageWindowCount === 1);
+    check("Boss 已就绪岗位页核验不重载", summary.ownedPageReloads === 0);
+    check(
+      "Boss 核验后保留页面与单份监听器",
+      summary.ownedPageRetained &&
+        ownedWindow.listenerCount("closed") === 1 &&
+        ownedWindow.webContents.listenerCount("login") === 1,
+    );
+    ownedWindow.destroy();
+    for (let i = 0; browser.snapshot().windows && i < 100; i++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    check("Boss 原页面关闭排空租约", browser.snapshot().windows === 0);
     h.controls.hold = true;
     let held;
     const started = new Promise((resolve) => {

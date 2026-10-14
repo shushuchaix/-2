@@ -6,6 +6,7 @@
 //   本脚本改用自研解压器（1.6 秒完成同一压缩包），其余步骤（asar、图标、版本信息）
 //   都用纯 JS 的 @electron/asar 与 resedit 完成，无子进程依赖。
 import fs from "node:fs";
+import { drainArchiveWrite } from "./lib/archive-write.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractZip } from "./lib/unzip.mjs";
@@ -232,9 +233,11 @@ stage("打包应用代码为 app.asar");
 
   const asarPath = path.join(OUT_DIR, "resources", "app.asar");
   fs.mkdirSync(path.dirname(asarPath), { recursive: true });
-  await asar.createPackageWithOptions(appStage, asarPath, {
-    unpackDir: "node_modules",
-  });
+  await drainArchiveWrite(
+    asar.createPackageWithOptions(appStage, asarPath, {
+      unpackDir: "node_modules",
+    }),
+  );
   const resources = await copyBundledResources({
     project: ROOT,
     resourcesRoot: path.dirname(asarPath),

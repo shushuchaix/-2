@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-14T17:30:20.002Z",
+  "scope": "boss_owned_page_and_recovery_failure_chain",
+  "baseCommit": "2788f937c8cef707569c7b333aebf2181a650199",
+  "confirmedCauses": [
+    "Probe disposed the human login page and allocated a hidden page.",
+    "Recovery reparsed without the original typed page error code.",
+    "IPC normalization omitted transport/render/schema failures, leaving old health.",
+    "ASAR 3 creation resolved before its ending Writable necessarily finished."
+  ],
+  "unknowns": [
+    "The old failed live slice retained only boss_response_invalid; its original wire cause cannot be reconstructed.",
+    "No new environment-risk response was proven by the unchanged persisted risk fingerprint.",
+    "Live Boss list/body collection remains for one human acceptance test."
+  ],
+  "changes": [
+    "Borrow the same version-owned page and hand off a drained network lease; do not reload an already ready jobs page.",
+    "Keep manual quotas cumulative across reads; on lease failure or exhaustion retain a network-disabled page.",
+    "Preserve typed failure, phase and safe diagnostic ID; persist early failure health only for the current owned session and activity epoch.",
+    "Poll only local native client initialization for at most five seconds, with cancellation; issue one fixed operation.",
+    "Classify official native expired/login response codes without copying refresh or replay branches.",
+    "Drain the ASAR output before verifying or releasing its archive."
+  ],
+  "review": {
+    "rounds": 1,
+    "critical": 0,
+    "important": 3,
+    "minor": 0,
+    "allAddressed": true,
+    "reReviewed": false
+  },
+  "verification": {
+    "business": {
+      "passed": 2013,
+      "failed": 0
+    },
+    "ui": {
+      "passed": 179,
+      "failed": 0
+    },
+    "suites": {
+      "total": 25,
+      "passed": 18,
+      "explicitSkip": 7,
+      "failed": 0
+    },
+    "typecheckExit": 0,
+    "package": {
+      "files": 10455,
+      "exactSourceHashes": 228,
+      "dependencies": 52,
+      "ocrHashes": 32,
+      "runtimeVerified": true
+    },
+    "native": {
+      "originalHandleHeld": true,
+      "nativeExit": 0,
+      "rendererErrors": 0,
+      "asarUnchanged": true,
+      "externalRequests": 0,
+      "screenshots": 63,
+      "failed": 0,
+      "passed": 429,
+      "nativeReport": ".cache/actual-campaign/rjr-self-test-boss-chain-scale1-20261014T1723046597669Z-data/desktop-self-test.json",
+      "asarSha256": "A9ACB308CEB804E1BADCA9209EC5C999EFE391D31E540E7388EA4F17113C287F",
+      "scale": 1,
+      "visualAudits": 39,
+      "nativeProcessExited": true,
+      "observedAt": "2026-10-14T17:25:04.1770123Z",
+      "deadlineExceeded": false
+    },
+    "inspectedScreenshots": [
+      "matrix-sources-768-1.png",
+      "matrix-sources-375-1.png"
+    ],
+    "actualMainWindowObserved": true,
+    "originalTargetObserved": true
+  },
+  "delivery": {
+    "backupDirectory": ".cache/desktop-before-boss-chain-20261014T1725436012476Z",
+    "formalExecutable": "dist/简历岗位雷达-win32-x64/简历岗位雷达.exe",
+    "observedAt": "2026-10-14T17:25:44.1372118Z",
+    "asarSha256": "A9ACB308CEB804E1BADCA9209EC5C999EFE391D31E540E7388EA4F17113C287F",
+    "noUserProcessTerminated": true,
+    "delivered": true,
+    "previousHash": "9104C66CECAC3E23BD3B6B6EF8192133E8E7FC539BF2AC6454C07B2AA2DEE40A"
+  },
+  "activity": {
+    "sameRoot": true,
+    "rootPaused": true,
+    "activeRunCount": 0,
+    "requests": 2333,
+    "requestCap": 2460,
+    "details": 119,
+    "detailCap": 220,
+    "bytes": 263803711,
+    "byteCap": 314572800,
+    "costCny": 3.98861,
+    "costCapCny": 9.999184,
+    "newSourceRequests": 0,
+    "newModelCalls": 0,
+    "sessionAndRiskFingerprintsUnchanged": true,
+    "boundOwnedMaterialPresent": true,
+    "ownedMaterialCount": 4
+  },
+  "acceptance": {
+    "status": "pending_human_live_check",
+    "target": "消防机场实测20261010",
+    "ordinaryButton": "核验Boss列表与正文",
+    "riskButton": "明确解除风险并重新核验",
+    "oneAttempt": true,
+    "expected": "Keep original login window; show a verified source or a typed reason with diagnostic ID. Do not repeatedly resend on risk."
+  },
+  "broaderWork": {
+    "sourceExpansionGapsRemaining": 30,
+    "effectiveRecommendations": 0,
+    "allTasksComplete": false,
+    "shutdownTriggered": false
+  }
+}

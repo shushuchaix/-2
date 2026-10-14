@@ -64,8 +64,96 @@ async function sourceFixture(t, code, { detail = false, mixed = false } = {}) {
           ref: c.ref,
         }),
     );
-  return { f, c, probe, error, detailCalls: () => detailCalls };
+  return { f, c, probe, service, error, detailCalls: () => detailCalls };
 }
+
+test("early Boss recovery failure persists current owned health while preserving historical capability", async (t) => {
+  const h = await sourceFixture(t, "boss_transport_failed");
+  await h.f.repository.mutateWorkspace((w) => {
+    const pkg = w.packages[h.f.scope.packageId];
+    pkg.collectionSettings ||= {
+      sessionRefs: {},
+      sourceOverrides: {},
+      refreshEnabled: false,
+    };
+    pkg.collectionSettings.sessionRefs.boss = "owned-session";
+    pkg.collectionSettings.sourceVerification = {
+      "boss/boss": {
+        sourceId: "boss",
+        siteId: "boss",
+        status: "ready",
+        sampleCount: 1,
+        checkedAt: "2026-10-04T00:00:00Z",
+        capabilities: { list: "verified", body: "verified" },
+      },
+    };
+  });
+  await h.service.recordScopedBossProbeFailure({
+    scope: h.f.scope,
+    sessionRef: "owned-session",
+    code: "boss_transport_failed",
+    diagnosticId,
+  });
+  const w = await h.f.repository.read(),
+    saved =
+      w.packages[h.f.scope.packageId].collectionSettings.sourceVerification[
+        "boss/boss"
+      ];
+  assert.equal(saved.status, "unavailable");
+  assert.equal(saved.sampleCount, 0);
+  assert.deepEqual(saved.issues, [
+    {
+      code: "boss_transport_failed",
+      sourceId: "boss",
+      siteId: "boss",
+      diagnosticId,
+    },
+  ]);
+  assert.equal(saved.capabilities.body, "verified");
+  assert.equal(Date.parse(saved.checkedAt), Number(h.f.clock.now()));
+  assert.equal(w.sourceHealth["boss/boss"], undefined);
+  await assert.rejects(
+    h.service.recordScopedBossProbeFailure({
+      scope: h.f.scope,
+      sessionRef: "revoked",
+      code: "boss_transport_failed",
+      diagnosticId,
+    }),
+    { code: "collection_session_scope" },
+  );
+  assert.deepEqual(
+    (await h.f.repository.read()).packages[h.f.scope.packageId]
+      .collectionSettings.sourceVerification["boss/boss"],
+    saved,
+  );
+  const controller = new AbortController();
+  controller.abort(Object.assign(Error("cancel"), { name: "AbortError" }));
+  await assert.rejects(
+    h.service.recordScopedBossProbeFailure({
+      scope: h.f.scope,
+      sessionRef: "owned-session",
+      code: "boss_transport_failed",
+      diagnosticId,
+      signal: controller.signal,
+    }),
+    { name: "AbortError" },
+  );
+  await assert.rejects(
+    h.service.recordScopedBossProbeFailure({
+      scope: h.f.scope,
+      sessionRef: "owned-session",
+      code: "boss_transport_failed",
+      diagnosticId,
+      collectionGuard: { ref: h.c.ref, token: { epoch: -1 } },
+    }),
+    { code: "collection_stale_epoch" },
+  );
+  assert.deepEqual(
+    (await h.f.repository.read()).packages[h.f.scope.packageId]
+      .collectionSettings.sourceVerification["boss/boss"],
+    saved,
+  );
+});
 
 test("a successful first body cannot hide a later typed Boss read failure as ready", async (t) => {
   const h = await sourceFixture(t, "boss_ajax_unavailable", {
@@ -89,6 +177,60 @@ test("a successful first body cannot hide a later typed Boss read failure as rea
   );
   assert.equal(saved.lastSuccessAt, null);
   assert.equal(h.detailCalls(), 2);
+});
+
+test("real diagnostic teardown retains the epoch guard for an early recovery health update", async (t) => {
+  const h = await sourceFixture(t, "boss_transport_failed");
+  await h.f.repository.mutateWorkspace((w) => {
+    const pkg = w.packages[h.f.scope.packageId];
+    pkg.collectionSettings ||= {
+      sourceOverrides: {},
+      sessionRefs: {},
+      refreshEnabled: false,
+    };
+    pkg.collectionSettings.sessionRefs.boss = "owned-session";
+  });
+  const handlers = new Map(),
+    mainFrame = { url: "http://127.0.0.1:31000/" },
+    sender = { mainFrame };
+  registerCollectionIpc({
+    ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
+    getWindow: () => ({ webContents: sender }),
+    getOrigin: () => mainFrame.url,
+    browser: {
+      recoverBossSession: async () => {
+        throw Object.assign(Error("typed failure"), {
+          code: "boss_transport_failed",
+          diagnosticId,
+        });
+      },
+    },
+    sessionStore: {
+      get: async () => ({ platform: "boss" }),
+      getStatus: async () => ({ state: "unverified", riskBlocked: true }),
+    },
+    context: { collectionService: h.f.service, sourceService: h.service },
+  });
+  const result = await handlers.get("collection:boss-probe")(
+    { sender, senderFrame: mainFrame },
+    {
+      scope: h.f.scope,
+      activityId: h.c.ref.activityId,
+      sessionRef: "owned-session",
+      requestId: "real-guard",
+      clearRisk: true,
+    },
+  );
+  const w = await h.f.repository.read();
+  assert.equal(result.sourceStatus, "unavailable");
+  assert.equal(
+    w.packages[h.f.scope.packageId].collectionSettings.sourceVerification[
+      "boss/boss"
+    ].issues[0].diagnosticId,
+    diagnosticId,
+  );
+  assert.equal(w.runs[h.c.ref.activityId].collectionProgress.status, "paused");
+  assert.equal(h.f.networkCalls, 0);
 });
 
 test("risk recovery failure gets a diagnostic ID without probing again or clearing the latch", async (t) => {
@@ -374,6 +516,10 @@ for (const [code, riskBlocked, state] of [
         context: {
           collectionService: f.service,
           sourceService: {
+            recordScopedBossProbeFailure: async () =>
+              assert.fail(
+                "the completed source probe already saved its partial capability health",
+              ),
             probeScopedSource: async () => {
               throw Object.assign(Error("private upstream response"), {
                 code,

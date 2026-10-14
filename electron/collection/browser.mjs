@@ -99,6 +99,82 @@ export function createCollectionBrowser({
     }
     return stored.ses;
   }
+  async function holdOwnedWindow(
+    { window, ses, entry, scope, manualAllowance },
+    code,
+  ) {
+    if (window.isDestroyed())
+      throw failure("collection_cancelled", "采集窗口已关闭。");
+    const id = window.webContents.id,
+      lifetime = new AbortController();
+    const policy = {
+      authorize: async () => ({ cancel: true }),
+      close() {},
+      snapshot: () => ({ requests: 0, manual: true }),
+    };
+    const detach = attachNetworkPolicy(ses, "collection-page", policy);
+    let closing;
+    const onClosed = () => {
+      item.dispose().catch(() => {});
+    };
+    const item = {
+      id,
+      window,
+      ses,
+      entry,
+      scope,
+      manualAllowance,
+      lifetime,
+      policy,
+      manual: true,
+      heldCode: code,
+      client: { revoke() {}, snapshot: () => ({ bytes: 0 }) },
+      dispose({ keepWindow = false } = {}) {
+        if (closing) {
+          if (!keepWindow && !window.isDestroyed()) window.destroy();
+          return closing;
+        }
+        closing = Promise.resolve().then(async () => {
+          lifetime.abort(failure("collection_cancelled", "采集窗口已关闭。"));
+          try {
+            await ses.closeAllConnections();
+            if (!keepWindow)
+              await sessionStore.setState({
+                scope,
+                sessionRef: entry.sessionRef,
+                state: "unverified",
+              });
+            await sessionStore.saveMaterial({
+              scope,
+              sessionRef: entry.sessionRef,
+              cookies: await ses.cookies.get({}),
+            });
+          } finally {
+            detach();
+            window.removeListener("closed", onClosed);
+            if (!keepWindow && !window.isDestroyed()) window.destroy();
+            if (windows.get(id) === item) windows.delete(id);
+          }
+        });
+        return closing;
+      },
+    };
+    windows.set(id, item);
+    window.once("closed", onClosed);
+    await recordDiagnostic(diagnostics, {
+      operation: "collection.finish",
+      sourceId: "boss",
+      siteId: "boss",
+      phase: "cleanup",
+      outcome: "failed",
+      code,
+      counts: {
+        manualRequests: manualAllowance.requests,
+        manualBytes: manualAllowance.wireBytes + manualAllowance.dnsBytes,
+      },
+    });
+    return item;
+  }
   function prepare(input) {
     const packageId = input.ref.scope.packageId,
       generation = generations.get(packageId) || 0,
@@ -141,15 +217,34 @@ export function createCollectionBrowser({
     ensure,
     accountingLedger = ledger,
     maxWireBytes = 20971520,
+    existingWindow,
+    manualAllowance = { requests: 0, dnsBytes: 0, wireBytes: 0, lastAt: 0 },
   }) {
     const partition = entry?.partition || "collection-" + randomUUID();
     const ses = entry
       ? await sessionFor(entry)
       : session.fromPartition(partition, { cache: false });
     ensure();
-    await ses.clearStorageData({
-      storages: ["serviceworkers", "cachestorage"],
-    });
+    if (
+      manual &&
+      existingWindow &&
+      (manualAllowance.requests >= 60 ||
+        manualAllowance.wireBytes >= 20971520 - 60 * 65536)
+    )
+      return holdOwnedWindow(
+        {
+          window: existingWindow,
+          ses,
+          entry,
+          scope: ref.scope,
+          manualAllowance,
+        },
+        "collection_login_budget_exhausted",
+      );
+    if (!existingWindow)
+      await ses.clearStorageData({
+        storages: ["serviceworkers", "cachestorage"],
+      });
     ses.setPermissionRequestHandler((_, __, callback) => callback(false));
     ses.setPermissionCheckHandler(() => false);
     const proxy = await egressProxy.start();
@@ -157,16 +252,14 @@ export function createCollectionBrowser({
     const ownedSignal = signal
       ? AbortSignal.any([signal, lifetime.signal])
       : lifetime.signal;
-    let manualRequests = 0,
-      manualDnsBytes = 0;
     const claimManualRequest = () => {
       ownedSignal.throwIfAborted();
-      if (manualRequests >= 60)
+      if (manualAllowance.requests >= 60)
         throw failure(
           "collection_login_budget_exhausted",
           "独立登录窗口已达到请求上限，请查看来源问题日志。",
         );
-      manualRequests++;
+      manualAllowance.requests++;
     };
     const manualLedger = {
       reserve: async (input) => {
@@ -174,7 +267,7 @@ export function createCollectionBrowser({
         return input;
       },
       settle: async (input) => {
-        manualDnsBytes += input.verifiedUsage?.bytes || 0;
+        manualAllowance.dnsBytes += input.verifiedUsage?.bytes || 0;
       },
     };
     const publicResolver = publicResolverFactory({
@@ -190,7 +283,9 @@ export function createCollectionBrowser({
       hosts: routePolicy.hosts,
       // Each of the at most 60 manual DNS requests reserves 64 KiB. Keep
       // that allowance inside the existing 20 MiB window ceiling.
-      maxBytes: manual ? 20971520 - 60 * 65536 : maxWireBytes,
+      maxBytes: manual
+        ? Math.max(0, 20971520 - 60 * 65536 - manualAllowance.wireBytes)
+        : maxWireBytes,
       signal: ownedSignal,
       resolvePublicUrl: publicResolver,
     });
@@ -205,21 +300,25 @@ export function createCollectionBrowser({
       ensure();
       await assertScope?.(ref.scope);
       ensure();
-      window = new BrowserWindow({
-        width: 1040,
-        height: 800,
-        show: manual,
-        title: "招聘来源独立采集窗口",
-        webPreferences: {
-          partition,
-          contextIsolation: true,
-          nodeIntegration: false,
-          sandbox: true,
-          webSecurity: true,
-          spellcheck: false,
-          disableBlinkFeatures: "ServiceWorker",
-        },
-      });
+      if (existingWindow?.isDestroyed())
+        throw failure("collection_cancelled", "采集窗口已关闭。");
+      window =
+        existingWindow ||
+        new BrowserWindow({
+          width: 1040,
+          height: 800,
+          show: manual,
+          title: "招聘来源独立采集窗口",
+          webPreferences: {
+            partition,
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            webSecurity: true,
+            spellcheck: false,
+            disableBlinkFeatures: "ServiceWorker",
+          },
+        });
     } catch (error) {
       lifetime.abort(error);
       client.revoke();
@@ -236,8 +335,7 @@ export function createCollectionBrowser({
         ? details.id
         : null;
     window.webContents.setWebRTCIPHandlingPolicy?.("disable_non_proxied_udp");
-    let manualQueue = Promise.resolve(),
-      lastManualAt = 0;
+    let manualQueue = Promise.resolve();
     const policy = createPagePolicy({
       routePolicy,
       maxRequests: 60,
@@ -250,10 +348,10 @@ export function createCollectionBrowser({
           claimManualRequest();
           const next = manualQueue.then(async () => {
             await cancellableSleep(
-              Math.max(0, lastManualAt + 300 - Date.now()),
+              Math.max(0, manualAllowance.lastAt + 300 - Date.now()),
               ownedSignal,
             );
-            lastManualAt = Date.now();
+            manualAllowance.lastAt = Date.now();
           });
           manualQueue = next.catch(() => {});
           await next;
@@ -277,6 +375,19 @@ export function createCollectionBrowser({
       },
     });
     const denyDownload = (event) => event.preventDefault();
+    const proxyLogin = (event, details, authInfo, callback) => {
+      if (
+        authInfo.isProxy &&
+        authInfo.host === "127.0.0.1" &&
+        authInfo.port === Number(new URL(proxy.proxyUrl).port)
+      ) {
+        event.preventDefault();
+        callback(client.username, client.password);
+      }
+    };
+    const navigation = (event, url) => {
+      if (!allowsRoute(url, routePolicy, { manual })) event.preventDefault();
+    };
     let detach,
       policyAttached = false;
     try {
@@ -323,20 +434,9 @@ export function createCollectionBrowser({
         },
       );
       ses.on("will-download", denyDownload);
-      window.webContents.on("login", (event, details, authInfo, callback) => {
-        if (
-          authInfo.isProxy &&
-          authInfo.host === "127.0.0.1" &&
-          authInfo.port === Number(new URL(proxy.proxyUrl).port)
-        ) {
-          event.preventDefault();
-          callback(client.username, client.password);
-        }
-      });
+      window.webContents.on("login", proxyLogin);
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-      window.webContents.on("will-navigate", (event, url) => {
-        if (!allowsRoute(url, routePolicy, { manual })) event.preventDefault();
-      });
+      window.webContents.on("will-navigate", navigation);
       let disposing;
       const saveMaterial = async () => {
         if (entry)
@@ -345,6 +445,9 @@ export function createCollectionBrowser({
             sessionRef: entry.sessionRef,
             cookies: await ses.cookies.get({}),
           });
+      };
+      const onClosed = () => {
+        item.dispose().catch(() => {});
       };
       const item = {
         id,
@@ -355,19 +458,24 @@ export function createCollectionBrowser({
         client,
         policy,
         manual,
+        manualAllowance,
         dnsFailure: (url) => publicResolver?.lastFailure?.(url) || null,
         networkStatus,
         lifetime,
         preserveMaterial: false,
-        dispose() {
-          if (disposing) return disposing;
+        dispose({ keepWindow = false } = {}) {
+          if (disposing) {
+            // A concurrent clear/stop must win over a pending lease handoff.
+            if (!keepWindow && !window.isDestroyed()) window.destroy();
+            return disposing;
+          }
           disposing = Promise.resolve().then(async () => {
             lifetime.abort(failure("collection_cancelled", "采集窗口已关闭。"));
             policy.close();
             client.revoke();
             try {
               await publicResolver?.close();
-              if (manual && entry)
+              if (manual && entry && !keepWindow)
                 await sessionStore.setState({
                   scope: ref.scope,
                   sessionRef: entry.sessionRef,
@@ -380,19 +488,24 @@ export function createCollectionBrowser({
               ses.webRequest.onErrorOccurred?.(null);
               await Promise.allSettled([...completionSettlements]);
               physicalRequests.clear();
-              if (manual)
+              if (manual) manualAllowance.wireBytes += client.snapshot().bytes;
+              if (manual && !keepWindow)
                 await recordDiagnostic(diagnostics, {
                   operation: "collection.finish",
                   activityId: ref.activityId,
                   outcome: "completed",
                   counts: {
-                    manualRequests,
-                    manualBytes: client.snapshot().bytes + manualDnsBytes,
+                    manualRequests: manualAllowance.requests,
+                    manualBytes:
+                      manualAllowance.wireBytes + manualAllowance.dnsBytes,
                   },
                 });
               ses.webRequest.onHeadersReceived(null);
               ses.removeListener("will-download", denyDownload);
-              if (!window.isDestroyed()) window.destroy();
+              window.webContents.removeListener("login", proxyLogin);
+              window.webContents.removeListener("will-navigate", navigation);
+              window.removeListener("closed", onClosed);
+              if (!keepWindow && !window.isDestroyed()) window.destroy();
               try {
                 await ses.closeAllConnections();
                 if (!entry) {
@@ -400,7 +513,7 @@ export function createCollectionBrowser({
                   await ses.clearCache();
                 }
               } finally {
-                windows.delete(id);
+                if (windows.get(id) === item) windows.delete(id);
               }
             }
           });
@@ -408,9 +521,7 @@ export function createCollectionBrowser({
         },
       };
       windows.set(id, item);
-      window.once("closed", () => {
-        item.dispose().catch(() => {});
-      });
+      window.once("closed", onClosed);
       return item;
     } catch (error) {
       lifetime.abort(error);
@@ -432,7 +543,9 @@ export function createCollectionBrowser({
         } catch {}
       }
       ses.removeListener("will-download", denyDownload);
-      if (!window.isDestroyed()) window.destroy();
+      window.webContents.removeListener("login", proxyLogin);
+      window.webContents.removeListener("will-navigate", navigation);
+      if (!existingWindow && !window.isDestroyed()) window.destroy();
       windows.delete(id);
       throw error;
     }
@@ -464,15 +577,17 @@ export function createCollectionBrowser({
       const result = await service.readBoss({ ...input, [riskRecovery]: true });
       const verification = parseBossResponse({
         kind: input.operation.kind,
-        status: result.status,
-        payload: result.payload,
-        checkedAt: result.checkedAt,
+        ...result,
       });
-      if (verification.status !== "success")
-        throw failure(
+      if (verification.status !== "success") {
+        const error = failure(
           verification.code || "boss_risk_recovery_required",
           "会话核验未通过，风险阻塞保留。",
         );
+        error.phase = verification.phase || "response";
+        if (result.diagnosticId) error.diagnosticId = result.diagnosticId;
+        throw error;
+      }
       return sessionStore.clearRisk({
         scope: input.ref.scope,
         sessionRef: input.sessionRef,
@@ -517,9 +632,21 @@ export function createCollectionBrowser({
       reads++;
       if (sessionRef) busySessions.add(sessionRef);
       let item,
+        borrowed,
         byteReservation,
         windowBudget,
         phase = "budget";
+      const packageGeneration = generations.get(ref.scope.packageId) || 0,
+        sessionGeneration = sessionGenerations.get(sessionRef) || 0;
+      const ensureReadOwner = () => {
+        if (
+          stopping ||
+          closingLoginScopes.has(scopeKey(ref.scope)) ||
+          packageGeneration !== (generations.get(ref.scope.packageId) || 0) ||
+          sessionGeneration !== (sessionGenerations.get(sessionRef) || 0)
+        )
+          throw failure("collection_cancelled", "采集窗口已关闭。");
+      };
       try {
         if (operation) {
           validateBossOperation(operation);
@@ -553,7 +680,11 @@ export function createCollectionBrowser({
         const existing = [...windows.values()].find(
           (w) => w.manual && w.entry?.sessionRef === sessionRef,
         );
-        if (existing) await existing.dispose();
+        if (existing) {
+          borrowed = operation ? existing : undefined;
+          await existing.dispose({ keepWindow: Boolean(borrowed) });
+        }
+        ensureReadOwner();
         item = await prepare({
           ref,
           token,
@@ -563,7 +694,9 @@ export function createCollectionBrowser({
           entry,
           accountingLedger: windowBudget?.ledger || ledger,
           maxWireBytes: windowBudget?.maxWireBytes || 20971520,
+          existingWindow: borrowed?.window,
         });
+        ensureReadOwner();
         let rejectAbort;
         const aborted = new Promise((_, reject) => {
           rejectAbort = reject;
@@ -591,7 +724,8 @@ export function createCollectionBrowser({
             } catch {
             } finally {
               clearTimeout(timeout);
-              if (!item.window.isDestroyed()) item.window.destroy();
+              if (!borrowed && !item.window.isDestroyed())
+                item.window.destroy();
             }
           });
         };
@@ -606,7 +740,15 @@ export function createCollectionBrowser({
           }, 45000);
         });
         try {
-          await Promise.race([item.window.loadURL(url), aborted, deadline]);
+          const currentUrl = item.window.webContents.getURL();
+          const readyOwnedPage =
+            borrowed &&
+            allowsRoute(currentUrl, platformPolicy("boss")) &&
+            /^\/web\/geek\/jobs\/?$|^\/job_detail\//.test(
+              new URL(currentUrl).pathname,
+            );
+          if (!readyOwnedPage)
+            await Promise.race([item.window.loadURL(url), aborted, deadline]);
           signal?.throwIfAborted();
           phase = "render";
           const document = await Promise.race([
@@ -644,8 +786,33 @@ export function createCollectionBrowser({
                 sessionRef,
                 state: parsed.status === "success" ? "verified" : "expired",
               });
+            const diagnostic =
+              parsed.status !== "success" &&
+              (await recordDiagnostic(diagnostics, {
+                operation: "network.request",
+                sourceId: "boss",
+                siteId: "boss",
+                engine: "browser",
+                phase: parsed.phase || "response",
+                outcome: "failed",
+                code: parsed.code,
+                httpStatus: result.status >= 100 ? result.status : undefined,
+                errorNumber: Number.isSafeInteger(result.payload?.code)
+                  ? result.payload.code
+                  : undefined,
+                endpointKind:
+                  operation.kind === "boss.search" ? "list" : "detail",
+                method: operation.method,
+                parser: {
+                  resultType: result.payload ? "object" : "null",
+                  format: "json",
+                },
+              }));
             return {
               ...result,
+              ...(diagnostic?.diagnosticId
+                ? { diagnosticId: diagnostic.diagnosticId }
+                : {}),
               checkedAt,
               channel: "authorized_browser",
               usage: {
@@ -692,7 +859,7 @@ export function createCollectionBrowser({
       } finally {
         try {
           try {
-            await item?.dispose();
+            await item?.dispose({ keepWindow: Boolean(borrowed) });
           } finally {
             await windowBudget?.close({
               bytes: item?.client.snapshot().bytes ?? 0,
@@ -710,6 +877,50 @@ export function createCollectionBrowser({
               },
             });
         } finally {
+          if (borrowed && !borrowed.window.isDestroyed()) {
+            try {
+              ensureReadOwner();
+              const owned = await sessionStore.get({
+                scope: ref.scope,
+                sessionRef,
+              });
+              ensureReadOwner();
+              await prepare({
+                ref: { scope: ref.scope },
+                routePolicy: platformPolicy("boss"),
+                manual: true,
+                entry: owned,
+                existingWindow: borrowed.window,
+                manualAllowance: borrowed.manualAllowance,
+              });
+              ensureReadOwner();
+            } catch (error) {
+              try {
+                ensureReadOwner();
+                await sessionStore.get({ scope: ref.scope, sessionRef });
+                ensureReadOwner();
+                await holdOwnedWindow(
+                  borrowed,
+                  "collection_login_cleanup_failed",
+                );
+              } catch {
+                // Explicit clear/stop or revoked ownership is allowed to close.
+                if (!borrowed.window.isDestroyed()) borrowed.window.destroy();
+              }
+              await recordDiagnostic(
+                diagnostics,
+                {
+                  operation: "collection.finish",
+                  sourceId: "boss",
+                  siteId: "boss",
+                  phase: "cleanup",
+                  outcome: "failed",
+                  code: error.code || "collection_login_cleanup_failed",
+                },
+                error,
+              );
+            }
+          }
           reads--;
           if (sessionRef) busySessions.delete(sessionRef);
         }
@@ -799,6 +1010,13 @@ export function createCollectionBrowser({
           if (existing.window.isMinimized()) existing.window.restore();
           existing.window.show();
           existing.window.focus();
+          if (existing.heldCode)
+            throw failure(
+              existing.heldCode,
+              existing.heldCode === "collection_login_budget_exhausted"
+                ? "独立窗口人工浏览额度已用完，页面和登录已保留。可关闭此窗口后重新打开。"
+                : "独立窗口读取权限暂不可用，页面和登录已保留，请查看来源问题日志。",
+            );
           await ensureOwned();
           await rememberSession?.({
             scope: ref.scope,
@@ -858,14 +1076,26 @@ export function createCollectionBrowser({
           item?.lifetime.signal.aborted;
         const dnsFailure = !cancelled && item?.dnsFailure(entryUrl);
         const reported = failure(
-          cancelled ? "collection_cancelled" : "collection_login_load_failed",
+          cancelled
+            ? "collection_cancelled"
+            : [
+                  "collection_login_budget_exhausted",
+                  "collection_login_cleanup_failed",
+                ].includes(error.code)
+              ? error.code
+              : "collection_login_load_failed",
           cancelled
             ? "采集窗口已关闭。"
-            : dnsFailure?.code === "request_timeout"
-              ? "独立登录页域名解析超时，备用解析节点也未连接成功。请稍后重试并查看来源问题日志。"
-              : dnsFailure
-                ? "独立登录页域名解析失败，请查看来源问题日志中的具体原因。"
-                : "独立登录页面加载失败，请查看来源问题日志。",
+            : [
+                  "collection_login_budget_exhausted",
+                  "collection_login_cleanup_failed",
+                ].includes(error.code)
+              ? error.message
+              : dnsFailure?.code === "request_timeout"
+                ? "独立登录页域名解析超时，备用解析节点也未连接成功。请稍后重试并查看来源问题日志。"
+                : dnsFailure
+                  ? "独立登录页域名解析失败，请查看来源问题日志中的具体原因。"
+                  : "独立登录页面加载失败，请查看来源问题日志。",
         );
         if (dnsFailure)
           reported.cause = Object.assign(Error(dnsFailure.code), {

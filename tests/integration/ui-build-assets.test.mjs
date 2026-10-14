@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import * as asar from "@electron/asar";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 import { createTempDir } from "../helpers/fixtures.mjs";
+import { drainArchiveWrite } from "../../tools/lib/archive-write.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const runtime = [
@@ -112,7 +113,7 @@ async function packageFixture(t) {
   );
   await write("public/app/assets/chunk.js", "export const shared = 1;");
   await write("public/app/assets/index.css", 'body {font-family: "Synthetic"}');
-  const pack = () => asar.createPackage(stage, archive);
+  const pack = () => drainArchiveWrite(asar.createPackage(stage, archive));
   const verify = () =>
     spawnSync(
       process.execPath,

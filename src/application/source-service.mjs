@@ -250,6 +250,56 @@ export function createSourceService({
         })
       ).result;
     },
+    async recordScopedBossProbeFailure({
+      scope,
+      sessionRef,
+      code,
+      diagnosticId,
+      signal,
+      collectionGuard,
+    }) {
+      signal?.throwIfAborted();
+      await repository.mutateWorkspace((w) => {
+        signal?.throwIfAborted();
+        const pkg = assertScope(w, scope, clock.now());
+        if (collectionGuard) {
+          const { ref, token } = collectionGuard,
+            root = w.runs[ref.activityId],
+            child = w.runs[token.sliceRunId];
+          if (
+            root?.ownerPackageId !== scope.packageId ||
+            root.targetSnapshot?.revisionId !== scope.targetRevisionId ||
+            root.collectionProgress?.epoch !== token.epoch ||
+            child?.ownerPackageId !== scope.packageId ||
+            child?.collectionActivityId !== ref.activityId ||
+            ["cancelled", "superseded"].includes(
+              root.collectionProgress?.status,
+            )
+          )
+            throw packageError(
+              "collection_stale_epoch",
+              "活动已停止，旧核验结果未保存。",
+            );
+        }
+        if (pkg.collectionSettings?.sessionRefs?.boss !== sessionRef)
+          throw packageError(
+            "collection_session_scope",
+            "Boss会话已更换，旧核验结果未保存。",
+          );
+        pkg.collectionSettings.sourceVerification ||= {};
+        recordSourceHealth(
+          { sourceHealth: pkg.collectionSettings.sourceVerification },
+          {
+            sourceId: "boss",
+            siteId: "boss",
+            sampleCount: 0,
+            status: bossBlockingCodes.has(code) ? "restricted" : "unavailable",
+            issues: safeSourceIssues([{ code, diagnosticId }], "boss", "boss"),
+          },
+          clock.now(),
+        );
+      });
+    },
     async probeScopedSource({ scope, sourceId, siteId, ref }) {
       const w = await repository.read(),
         pkg = assertScope(w, scope, clock.now()),

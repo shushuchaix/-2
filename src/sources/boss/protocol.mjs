@@ -78,6 +78,12 @@ export function parseBossResponse({ kind, status, payload, checkedAt, code }) {
   }
   if (status === 429 || payload?.code === 9)
     return out("rate_limited", "boss_rate_limited");
+  // Codes handled as expired credentials/login by the official native client.
+  // Classify locally; never copy its token refresh or request resend branch.
+  if ([7, 1011, 120, 121, 122].includes(payload?.code))
+    return out("login_required", "boss_auth_expired");
+  if (payload?.code === 200404)
+    return out("login_required", "boss_login_required");
   if ([401, 403].includes(status))
     return out("login_required", "boss_login_required");
   if (

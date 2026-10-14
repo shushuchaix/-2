@@ -30,6 +30,21 @@ const privateKeys = new Set([
   "queries",
   "keywords",
 ]);
+const bossBlockingCodes = new Set([
+  "boss_account_risk",
+  "boss_environment_risk",
+  "boss_risk_blocked",
+  "boss_auth_expired",
+  "boss_login_required",
+]);
+const fatalProbeError = (error) =>
+  error?.runFatal ||
+  [
+    "workspace_write_failed",
+    "collection_stale_epoch",
+    "collection_cancelled",
+  ].includes(error?.code) ||
+  error?.name === "AbortError";
 function safeProbeResult(result, sourceId, siteId) {
   return {
     ...result,
@@ -318,24 +333,31 @@ export function createSourceService({
               error,
             ),
         };
-        let list;
+        let list, terminalError;
         try {
           list = await provider.collect({ ...context, onBatch: undefined });
         } catch (error) {
           signal?.throwIfAborted();
-          if (
-            error.runFatal ||
-            error.code === "workspace_write_failed" ||
-            error.code === "collection_stale_epoch" ||
-            error.name === "AbortError" ||
-            /^boss_/.test(error.code || "")
-          )
-            throw error;
+          if (fatalProbeError(error)) throw error;
+          if (/^boss_/.test(error.code || "")) terminalError = error;
           const entry = await recordDiagnostic(
             diagnostics,
-            { operation: "source.probe", sourceId, siteId: site.siteId },
+            {
+              operation: "source.probe",
+              sourceId,
+              siteId: site.siteId,
+              phase: error.phase || "response",
+              outcome: "failed",
+              code: error.code,
+            },
             error,
           );
+          if (
+            terminalError &&
+            entry?.diagnosticId &&
+            Object.isExtensible(terminalError)
+          )
+            terminalError.diagnosticId = entry.diagnosticId;
           list = {
             records: [],
             issues: [
@@ -353,17 +375,9 @@ export function createSourceService({
             details.push(await provider.fetchDetail(record, context));
           } catch (e) {
             signal?.throwIfAborted();
-            if (
-              sourceId === "boss" &&
-              [
-                "boss_account_risk",
-                "boss_environment_risk",
-                "boss_risk_blocked",
-                "boss_auth_expired",
-                "boss_login_required",
-              ].includes(e.code)
-            )
-              throw e;
+            if (fatalProbeError(e)) throw e;
+            if (sourceId === "boss" && /^boss_/.test(e.code || ""))
+              terminalError = e;
             const entry = await context.reportError(e, {
               phase: "response",
               endpointKind: "detail",
@@ -372,18 +386,24 @@ export function createSourceService({
               code: e.code || "detail_unavailable",
               ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
             });
+            if (terminalError) {
+              if (entry?.diagnosticId && Object.isExtensible(terminalError))
+                terminalError.diagnosticId = entry.diagnosticId;
+              break;
+            }
           }
         const quality = assessSourceProbe({
           site,
           listSample: {
-            status: issues.some((i) =>
-              [
-                "restricted",
-                "http_forbidden",
-                "captcha",
-                "login_required",
-                "risk_blocked",
-              ].includes(i.code),
+            status: issues.some(
+              (i) =>
+                [
+                  "restricted",
+                  "http_forbidden",
+                  "captcha",
+                  "login_required",
+                  "risk_blocked",
+                ].includes(i.code) || bossBlockingCodes.has(i.code),
             )
               ? 403
               : 200,
@@ -407,6 +427,10 @@ export function createSourceService({
           issues: [...issues, ...quality.issues],
           budget: budget.snapshot(),
         };
+        if (terminalError)
+          result.status = bossBlockingCodes.has(terminalError.code)
+            ? "restricted"
+            : "unavailable";
         result.status = normalizeSourceStatus(result);
         await repository.mutateWorkspace(
           (d) => {
@@ -465,6 +489,9 @@ export function createSourceService({
           },
           { operationLease },
         );
+        // Persist the scoped failure before propagating it to the activity,
+        // so failed diagnostics keep their typed cause and the card stays current.
+        if (terminalError) throw terminalError;
         return safeProbeResult(result, sourceId, site.siteId);
       };
       if (ref) {

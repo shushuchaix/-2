@@ -6,6 +6,7 @@ import { buildBossOperation } from "../../src/sources/boss/protocol.mjs";
 import { bossCityCode } from "../../src/sources/boss/cities.mjs";
 import { assertScope } from "../../src/domain/packages.mjs";
 import { safeSourceIssues } from "../../src/sources/source-status.mjs";
+import { recordDiagnostic } from "../../src/infrastructure/diagnostics/log.mjs";
 export function registerCollectionIpc({
   ipcMain,
   browser,
@@ -59,9 +60,10 @@ export function registerCollectionIpc({
         ),
         page: 1,
       });
-      return context.collectionService.withDiagnosticContext(
-        { ref, requestId },
-        async (ctx) => {
+      let diagnosticSignal;
+      return context.collectionService
+        .withDiagnosticContext({ ref, requestId }, async (ctx) => {
+          diagnosticSignal = ctx.signal;
           if (input.clearRisk === true) {
             await browser.recoverBossSession({
               ...ctx,
@@ -89,8 +91,56 @@ export function registerCollectionIpc({
             issues: safeSourceIssues(result.issues, "boss", "boss"),
             state: result.status === "ready" ? "verified" : "unverified",
           };
-        },
-      );
+        })
+        .catch(async (error) => {
+          diagnosticSignal?.throwIfAborted();
+          if (error?.runFatal || error?.name === "AbortError") throw error;
+          if (
+            ![
+              "boss_account_risk",
+              "boss_environment_risk",
+              "boss_risk_blocked",
+              "boss_auth_expired",
+              "boss_login_required",
+            ].includes(error?.code)
+          )
+            throw error;
+          // The diagnostic has already drained and failed. Return its safe
+          // owned-session state so the UI can render the latched risk immediately.
+          const status = await sessionStore.getStatus({
+            scope: ref.scope,
+            sessionRef,
+          });
+          const diagnosticId =
+            /^d-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+              error.diagnosticId || "",
+            )
+              ? error.diagnosticId
+              : (
+                  await recordDiagnostic(
+                    context.diagnostics,
+                    {
+                      operation: "source.probe",
+                      sourceId: "boss",
+                      siteId: "boss",
+                      phase: error.phase || "response",
+                      outcome: "failed",
+                      code: error.code,
+                    },
+                    error,
+                  )
+                )?.diagnosticId;
+          return {
+            ...status,
+            sourceStatus: "restricted",
+            issues: safeSourceIssues(
+              [{ code: error.code, diagnosticId }],
+              "boss",
+              "boss",
+            ),
+            state: status.state === "expired" ? "expired" : "unverified",
+          };
+        });
     }),
   );
   ipcMain.handle(

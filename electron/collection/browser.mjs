@@ -383,6 +383,8 @@ export function createCollectionBrowser({
                   ? "登录窗口已达到数据上限，请关闭后重新打开"
                   : "登录窗口已达到请求上限，请关闭后重新打开",
               ),
+            onNavigationDenied: () =>
+              window.setTitle?.("来源页面跳转被限制，请查看来源问题日志"),
           })
         : null;
     let manualQueue = Promise.resolve();

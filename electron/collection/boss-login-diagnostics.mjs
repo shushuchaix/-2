@@ -27,12 +27,37 @@ function loginStage(value) {
   } catch {}
 }
 
+// Fixed categories only: unknown paths, query keys and all values stay private.
+function navigationStage(value) {
+  try {
+    const url = new URL(value);
+    if (url.origin !== "https://www.zhipin.com")
+      return "boss-login-external-destination";
+    if (url.pathname === "/") {
+      if (url.search) return "boss-login-landing-query";
+      if (url.hash) return "boss-login-landing-fragment";
+    }
+    if (/^\/web\/geek\/guide\/?$/.test(url.pathname))
+      return "boss-login-profile-setup";
+    if (/^\/web\/chat\/recommend\/?$/.test(url.pathname))
+      return "boss-login-chat-landing";
+    if (url.pathname === "/web/boss/complete/index")
+      return "boss-login-employer-setup";
+    if (url.pathname === "/web/boss/complete/job")
+      return "boss-login-employer-job-setup";
+    return loginStage(value) || "boss-login-route";
+  } catch {
+    return "boss-login-invalid-destination";
+  }
+}
+
 /** Observe transport stages, never QR payloads, response bodies or login success. */
 export function createBossLoginDiagnostics({
   diagnostics,
   webContentsId,
   counts,
   onBudgetExhausted,
+  onNavigationDenied,
 }) {
   const requests = new Map(),
     writes = new Set(),
@@ -93,7 +118,10 @@ export function createBossLoginDiagnostics({
     failed: (details) => finish(details, true),
     denied(details, code, phase = "validation") {
       if (!owned(details)) return;
-      const stage = loginStage(details.url) || "boss-login-route";
+      const stage =
+        phase === "redirect"
+          ? navigationStage(details.url)
+          : loginStage(details.url) || "boss-login-route";
       const budget = [
         "collection_login_budget_exhausted",
         "collection_login_byte_limit",
@@ -106,6 +134,11 @@ export function createBossLoginDiagnostics({
           onBudgetExhausted?.(code);
         } catch {}
         phase = "budget";
+      }
+      if (phase === "redirect") {
+        try {
+          Promise.resolve(onNavigationDenied?.(stage)).catch(() => {});
+        } catch {}
       }
       write({ phase, outcome: "failed", code, parser: { version: stage } });
     },

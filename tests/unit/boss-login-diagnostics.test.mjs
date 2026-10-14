@@ -6,6 +6,78 @@ import {
   platformPolicy,
 } from "../../electron/collection/network-policy.mjs";
 
+test("blocked official destinations retain distinct fixed categories without recording addresses or query data", async () => {
+  const events = [],
+    notices = [];
+  const monitor = createBossLoginDiagnostics({
+    diagnostics: (e) => events.push(e),
+    webContentsId: 1,
+    counts: () => ({ manualRequests: 30, manualBytes: 492792 }),
+    onNavigationDenied: (stage) => notices.push(stage),
+  });
+  const cases = [
+    [
+      "https://www.zhipin.com/?token=synthetic-private",
+      "boss-login-landing-query",
+    ],
+    [
+      "https://www.zhipin.com/#synthetic-private",
+      "boss-login-landing-fragment",
+    ],
+    [
+      "https://www.zhipin.com/web/geek/guide/?token=synthetic-private",
+      "boss-login-profile-setup",
+    ],
+    [
+      "https://www.zhipin.com/web/chat/recommend?token=synthetic-private",
+      "boss-login-chat-landing",
+    ],
+    [
+      "https://www.zhipin.com/web/boss/complete/index",
+      "boss-login-employer-setup",
+    ],
+    [
+      "https://www.zhipin.com/web/boss/complete/job",
+      "boss-login-employer-job-setup",
+    ],
+    [
+      "https://unrecognized.example/synthetic-private?token=synthetic-private",
+      "boss-login-external-destination",
+    ],
+    ["not a synthetic url", "boss-login-invalid-destination"],
+  ];
+  for (const [url] of cases) {
+    monitor.denied(
+      { webContentsId: 1, url },
+      "collection_route_forbidden",
+      "redirect",
+    );
+    monitor.denied(
+      { webContentsId: 1, url },
+      "collection_route_forbidden",
+      "redirect",
+    );
+  }
+  monitor.denied(
+    { webContentsId: 2, url: cases[0][0] },
+    "collection_route_forbidden",
+    "redirect",
+  );
+  await monitor.close();
+  assert.deepEqual(
+    events.map((e) => e.parser.version),
+    cases.map(([, stage]) => stage),
+  );
+  assert.deepEqual(
+    notices,
+    cases.map(([, stage]) => stage),
+  );
+  assert.doesNotMatch(
+    JSON.stringify({ events, notices }),
+    /https:|synthetic-private|unrecognized|token|guide\/|complete\/|recommend|not a synthetic/,
+  );
+});
+
 test("an earlier unknown resource denial cannot hide a subsequent blocked login redirect", async () => {
   const events = [];
   const monitor = createBossLoginDiagnostics({

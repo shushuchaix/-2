@@ -66,7 +66,9 @@ if (!process.versions.electron) {
     phase("app ready");
     try {
       const patched = new Set(),
-        options = [];
+        options = [],
+        windows = [],
+        loginEvents = [];
       let mode = "challenge",
         requests = 0;
       const safeSession = {
@@ -94,6 +96,7 @@ if (!process.versions.electron) {
         constructor(input) {
           options.push(input);
           super({ ...input, show: false });
+          windows.push(this);
         }
       }
       const store = createCollectionSessions({ dataDir: temp, safeStorage });
@@ -101,13 +104,14 @@ if (!process.versions.electron) {
         BrowserWindow: HiddenWindow,
         session: safeSession,
         sessionStore: store,
+        diagnostics: (event) => loginEvents.push(event),
         egressProxy: createEgressProxy({
           resolvePublicUrl: async () => {
             throw Error("synthetic_external_transport_forbidden");
           },
         }),
         offlineAllows: (url) =>
-          /^https:\/\/(?:weibo.com\/login.php|m.weibo.cn\/detail\/123)$/.test(
+          /^https:\/\/(?:weibo.com\/login.php|m.weibo.cn\/detail\/123|www.zhipin.com\/(?:web\/user\/)?)$/.test(
             url,
           ),
         ledger: {
@@ -163,6 +167,52 @@ if (!process.versions.electron) {
         "unverified",
       );
       checks.push("package cleanup preserves the other package");
+      phase("boss native navigation");
+      await browser.openLogin({
+        ref: {
+          scope: { packageId: "synthetic-c", targetRevisionId: "synthetic-tc" },
+        },
+        platform: "boss",
+        accountRef: "synthetic",
+      });
+      const bossWindow = windows.at(-1);
+      const waitFor = async (predicate) => {
+        const deadline = Date.now() + 3000;
+        while (!predicate() && Date.now() < deadline)
+          await new Promise((resolve) => setTimeout(resolve, 10));
+      };
+      await bossWindow.webContents.executeJavaScript(
+        "location.replace('https://www.zhipin.com/'); undefined;",
+      );
+      await waitFor(
+        () => bossWindow.webContents.getURL() === "https://www.zhipin.com/",
+      );
+      assert.equal(bossWindow.webContents.getURL(), "https://www.zhipin.com/");
+      checks.push("real renderer login landing reaches the allowed root");
+      await bossWindow.webContents.executeJavaScript(
+        "location.replace('https://www.zhipin.com/web/geek/guide/?token=synthetic-private'); undefined;",
+      );
+      await waitFor(() =>
+        loginEvents.some(
+          (event) => event.parser?.version === "boss-login-profile-setup",
+        ),
+      );
+      assert.equal(bossWindow.webContents.getURL(), "https://www.zhipin.com/");
+      assert.ok(
+        loginEvents.some(
+          (event) =>
+            event.phase === "redirect" &&
+            event.parser?.version === "boss-login-profile-setup",
+        ),
+      );
+      assert.match(bossWindow.getTitle(), /跳转.*限制/);
+      assert.doesNotMatch(
+        JSON.stringify(loginEvents),
+        /synthetic-private|https:|token=/,
+      );
+      checks.push(
+        "real denied post-login navigation reports its category and visible notice without private URL data",
+      );
       assert.equal(browser.snapshot().activeReads, 0);
       await browser.stop();
       assert.equal(browser.snapshot().windows, 0);

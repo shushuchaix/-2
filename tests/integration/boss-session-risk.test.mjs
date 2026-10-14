@@ -115,6 +115,9 @@ test("Boss risk survives restart, state changes cannot clear it, and status is c
     scope: a,
     sessionRef: entry.sessionRef,
     verification: {
+      expectedRiskStamp: (
+        await restarted.get({ scope: a, sessionRef: entry.sessionRef })
+      ).riskStamp,
       status: "success",
       sessionRef: entry.sessionRef,
       checkedAt: new Date(h.now).toISOString(),

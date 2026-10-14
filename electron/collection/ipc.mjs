@@ -172,7 +172,11 @@ export function registerCollectionIpc({
         ref,
         platform: input.platform,
         accountRef: input.accountRef,
-        remember: input.remember ?? false,
+        remember:
+          input.platform === "boss"
+            ? input.remember
+            : (input.remember ?? false),
+        sessionRef: input.sessionRef ? identifier(input.sessionRef) : undefined,
         testUrl: input.testUrl
           ? publicCollectionUrl(input.testUrl).href
           : undefined,

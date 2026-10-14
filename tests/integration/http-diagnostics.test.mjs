@@ -441,7 +441,7 @@ test("DNS diagnostics distinguish system, fallback, DoH, and cache safely", asyn
   assert.equal(budget.snapshot().requests, 2);
   assert.deepEqual(
     operation(events, "network.dns").map((e) => e.dnsResolver),
-    ["system", "fallback", "doh", "fallback", "cache"],
+    ["system", "fallback", "doh", "cache"],
   );
   assertSafe(events);
 });

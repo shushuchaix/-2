@@ -164,8 +164,14 @@ export interface DesktopBridge {
     platform: "wechat" | "weibo" | "boss";
     accountRef: string;
     remember?: boolean;
+    sessionRef?: string;
     testUrl?: string;
-  }): Promise<{ sessionRef: string; state: string; remembered: boolean }>;
+  }): Promise<{
+    sessionRef: string;
+    state: string;
+    remembered: boolean;
+    riskBlocked?: boolean;
+  }>;
   verifyCollectionSession?(input: {
     scope: Scope;
     activityId: string;
@@ -175,13 +181,14 @@ export interface DesktopBridge {
   clearCollectionSession?(input: {
     scope: Scope;
     sessionRef: string;
-  }): Promise<{ status: string }>;
+  }): Promise<{ status: string; riskBlocked?: boolean }>;
   getCollectionSessionStatus?(input: {
     scope: Scope;
     sessionRef: string;
   }): Promise<{
     state: string;
     riskBlocked: boolean;
+    remembered?: boolean;
     code?: string;
     checkedAt?: string;
   }>;

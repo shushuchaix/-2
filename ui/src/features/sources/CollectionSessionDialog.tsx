@@ -50,6 +50,9 @@ export function CollectionSessionDialog({
   const version = useVersionContext();
   const generation = useRef(version.generation);
   const live = useRef(true);
+  const rememberTouched = useRef(false);
+  const rememberLoaded = useRef(false);
+  const statusGeneration = useRef(0);
   useEffect(() => {
     live.current = true;
     return () => {
@@ -85,17 +88,22 @@ export function CollectionSessionDialog({
   }, [desktop]);
   useEffect(() => {
     let live = true;
+    const revision = statusGeneration.current;
     if (boss && sessionRef && desktop.getCollectionSessionStatus)
       void desktop
         .getCollectionSessionStatus({ scope, sessionRef })
         .then((s) => {
-          if (live) {
+          if (live && revision === statusGeneration.current) {
             setState(s.state);
             setRisk(s.riskBlocked);
+            rememberLoaded.current = true;
+            if (!rememberTouched.current && typeof s.remembered === "boolean")
+              setRemember(s.remembered);
           }
         })
         .catch(() => {
-          if (live) setState("unverified");
+          if (live && revision === statusGeneration.current)
+            setState("unverified");
         });
     return () => {
       live = false;
@@ -103,6 +111,7 @@ export function CollectionSessionDialog({
   }, [boss, desktop, scope.packageId, scope.targetRevisionId, sessionRef]);
   const probeBoss = (clearRisk: boolean) =>
     op.run(async () => {
+      statusGeneration.current++;
       const result = await desktop.probeBossSession!({
         scope,
         activityId: active!.runId,
@@ -178,7 +187,10 @@ export function CollectionSessionDialog({
             aria-label="记住此版本登录"
             disabled={!caps.canRemember || op.busy}
             checked={remember}
-            onChange={(e) => setRemember(e.target.checked)}
+            onChange={(e) => {
+              rememberTouched.current = true;
+              setRemember(e.target.checked);
+            }}
           />
           记住此版本登录
         </label>
@@ -191,7 +203,9 @@ export function CollectionSessionDialog({
         {state && (
           <p role="status">
             {riskBlocked
-              ? "风险阻塞：普通继续和重新打开窗口不会解除"
+              ? state === "cleared"
+                ? "登录材料已清除，风险阻塞仍保留；重新打开窗口后可明确核验。"
+                : "风险阻塞：普通继续和重新打开窗口不会解除"
               : boss && state === "verified"
                 ? bodyVerified
                   ? "Boss来源正文已核验"
@@ -216,15 +230,23 @@ export function CollectionSessionDialog({
             disabled={op.busy || !caps.available || (!boss && !url)}
             onClick={() =>
               void op.run(async () => {
+                statusGeneration.current++;
                 const result = await desktop.openCollectionLogin!({
                   scope,
                   platform,
                   accountRef: platform,
-                  remember,
+                  remember:
+                    !boss || rememberTouched.current || rememberLoaded.current
+                      ? remember
+                      : undefined,
+                  ...(boss && sessionRef ? { sessionRef } : {}),
                   ...(!boss ? { testUrl: url } : {}),
                 });
                 setRef(result.sessionRef);
                 setState(result.state);
+                if (typeof result.riskBlocked === "boolean")
+                  setRisk(result.riskBlocked);
+                setRemember(result.remembered);
                 setBodyVerified(false);
               }, "独立采集窗口已打开，请自行完成登录")
             }
@@ -270,6 +292,7 @@ export function CollectionSessionDialog({
             disabled={op.busy || !sessionRef}
             onClick={() =>
               void op.run(async () => {
+                statusGeneration.current++;
                 const r = await desktop.clearCollectionSession!({
                   scope,
                   sessionRef,
@@ -278,8 +301,11 @@ export function CollectionSessionDialog({
                   throw Error("窗口清理待重试，请再次清除");
                 setRef("");
                 setState("cleared");
-                setRisk(false);
+                setRisk(r.riskBlocked ?? riskBlocked);
                 setBodyVerified(false);
+                rememberTouched.current = false;
+                rememberLoaded.current = false;
+                setRemember(false);
               }, "登录材料与专用窗口已清除")
             }
           >

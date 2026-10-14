@@ -215,7 +215,9 @@ export async function runBossSelfTest({ context, targets, dataDir }) {
   const storeOptions = {
     dataDir: path.join(dataDir, "boss-contracts"),
     safeStorage: { isEncryptionAvailable: () => false },
-    clock,
+    // Browser response timestamps use wall time; session freshness uses the
+    // same clock while business fixtures keep their fixed recruitment dates.
+    clock: { now: Date.now },
   };
   const sessionStore = createCollectionSessions(storeOptions),
     ledger = createCollectionLedger({ repository });
@@ -407,7 +409,32 @@ export async function runBossSelfTest({ context, targets, dataDir }) {
       "Boss 清理后立即撤销旧会话",
       summary.revokedCode === "collection_session_scope",
     );
-    await bind(scopes[0]);
+    const rebound = await bind(scopes[0]);
+    const riskSnapshot = await sessionStore.get({
+      scope: scopes[0],
+      sessionRef: rebound.sessionRef,
+    });
+    summary.riskAfterLoginClear = Boolean(riskSnapshot.risk);
+    await sessionStore.clearRisk({
+      scope: scopes[0],
+      sessionRef: rebound.sessionRef,
+      verification: {
+        status: "success",
+        sessionRef: rebound.sessionRef,
+        checkedAt: new Date().toISOString(),
+        expectedRiskStamp: riskSnapshot.riskStamp,
+      },
+    });
+    check(
+      "Boss 清登录后仍保留风险且只在显式核验成功后恢复",
+      summary.riskAfterLoginClear &&
+        !(
+          await sessionStore.getStatus({
+            scope: scopes[0],
+            sessionRef: rebound.sessionRef,
+          })
+        ).riskBlocked,
+    );
     h.controls.risk = false;
     h.controls.hold = true;
     let held;

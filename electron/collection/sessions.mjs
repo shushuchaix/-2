@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { withWorkspaceLock } from "../../src/infrastructure/storage/lock.mjs";
 import { writeAtomicJson } from "../../src/infrastructure/storage/atomic.mjs";
 const fail = () =>
@@ -83,6 +83,40 @@ export function createCollectionSessions({
   const matches = (entry, intent) =>
     entry.packageId === intent.packageId &&
     (!intent.sessionRef || entry.sessionRef === intent.sessionRef);
+  const sameBossVersion = (entry, owner) =>
+    entry.platform === "boss" &&
+    entry.packageId === owner.packageId &&
+    entry.targetRevisionId === owner.targetRevisionId;
+  const bossRisks = (data, owner) =>
+    Object.values(data.entries).filter(
+      (e) => sameBossVersion(e, owner) && e.risk,
+    );
+  const bossRiskStamp = (data, owner) =>
+    createHash("sha256")
+      .update(
+        JSON.stringify(
+          bossRisks(data, owner)
+            .map((e) => [
+              e.sessionRef,
+              e.risk.code,
+              e.risk.checkedAt,
+              e.risk.generation || "legacy",
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0])),
+        ),
+      )
+      .digest("hex");
+  const encryptedEntry = (entry, material) => ({
+    sessionRef: entry.sessionRef,
+    packageId: entry.packageId,
+    targetRevisionId: entry.targetRevisionId,
+    platform: entry.platform,
+    accountRef: entry.accountRef,
+    state: entry.state,
+    encrypted: safeStorage
+      .encryptString(JSON.stringify(material))
+      .toString("base64"),
+  });
   async function cleanup(intent) {
     for (const [id, e] of memory)
       if (matches(e, intent)) {
@@ -107,7 +141,7 @@ export function createCollectionSessions({
         await writeAtomicJson(filename, data, { fsAdapter });
         const risks = await loadRisks();
         for (const [id, e] of Object.entries(risks.entries))
-          if (matches(e, intent)) delete risks.entries[id];
+          if (matches(e, intent) && !intent.keepRisk) delete risks.entries[id];
         await writeAtomicJson(riskFile, risks, { fsAdapter });
         pending.entries = pending.entries.filter(
           (e) =>
@@ -125,16 +159,94 @@ export function createCollectionSessions({
   }
   const service = {
     available,
-    async create({ scope, platform, accountRef, remember = false }) {
+    async create({
+      scope,
+      platform,
+      accountRef,
+      remember,
+      sessionRef: preferredRef,
+    }) {
       if (
         !["wechat", "weibo", "boss"].includes(platform) ||
         !scope?.packageId ||
         !scope?.targetRevisionId ||
         typeof accountRef !== "string" ||
         accountRef.length > 200 ||
-        typeof remember !== "boolean"
+        (remember !== undefined && typeof remember !== "boolean") ||
+        (preferredRef !== undefined &&
+          (typeof preferredRef !== "string" || preferredRef.length > 200))
       )
         throw fail();
+      if (platform === "boss") {
+        const persisted = (await load()).entries;
+        const riskEntries = (await loadRisks()).entries;
+        let preferred =
+          memory.get(preferredRef) ||
+          persisted[preferredRef] ||
+          riskEntries[preferredRef];
+        if (preferred) {
+          if (
+            !sameBossVersion(preferred, scope) ||
+            (preferred.accountRef !== undefined &&
+              preferred.accountRef !== accountRef)
+          )
+            throw fail();
+          if (revoked.has(preferredRef)) preferred = null;
+          else owned(preferred, scope);
+        }
+        const candidates = [...memory.values(), ...Object.values(persisted)];
+        const selected =
+          preferred ||
+          candidates.find(
+            (e) =>
+              !revoked.has(e.sessionRef) &&
+              e.status !== "cleanup_pending" &&
+              sameBossVersion(e, scope) &&
+              e.accountRef === accountRef,
+          );
+        if (selected) {
+          const entry = await service.get({
+            scope,
+            sessionRef: selected.sessionRef,
+          });
+          memory.get(entry.sessionRef).accountRef = accountRef;
+          if (
+            remember !== undefined &&
+            entry.remember !== (remember && available())
+          ) {
+            const material = available()
+              ? await service.readMaterial({
+                  scope,
+                  sessionRef: entry.sessionRef,
+                })
+              : memory.get(entry.sessionRef).material || { cookies: [] };
+            const desired = remember && available();
+            await withWorkspaceLock(dir, async () => {
+              owned(memory.get(entry.sessionRef), scope);
+              if ((await intents()).entries.some((i) => matches(entry, i)))
+                throw fail();
+              const data = await load();
+              if (desired)
+                data.entries[entry.sessionRef] = encryptedEntry(
+                  entry,
+                  material,
+                );
+              else delete data.entries[entry.sessionRef];
+              await writeAtomicJson(filename, data, { fsAdapter });
+              memory.get(entry.sessionRef).remember = desired;
+              memory.get(entry.sessionRef).material = material;
+            });
+          }
+          return {
+            ...(await service.get({ scope, sessionRef: entry.sessionRef })),
+            reused: true,
+          };
+        }
+        if (
+          (await intents()).entries.some((i) => i.packageId === scope.packageId)
+        )
+          throw fail();
+      }
       const sessionRef = "session-" + randomUUID(),
         entry = {
           sessionRef,
@@ -143,7 +255,7 @@ export function createCollectionSessions({
           platform,
           accountRef,
           partition: "collection-" + randomUUID(),
-          remember: remember && available(),
+          remember: Boolean(remember && available()),
           state: "unverified",
         };
       memory.set(sessionRef, entry);
@@ -173,8 +285,17 @@ export function createCollectionSessions({
         delete entry.encrypted;
         memory.set(sessionRef, entry);
       }
-      const risk = (await loadRisks()).entries[sessionRef]?.risk;
+      const risks = await loadRisks();
+      const risk =
+        entry.platform === "boss"
+          ? bossRisks(risks, entry).sort(
+              (a, b) =>
+                Date.parse(b.risk.checkedAt) - Date.parse(a.risk.checkedAt),
+            )[0]?.risk
+          : risks.entries[sessionRef]?.risk;
       entry.risk = risk || null;
+      if (entry.platform === "boss")
+        entry.riskStamp = bossRiskStamp(risks, entry);
       return { ...owned(entry, scope) };
     },
     async saveMaterial({ scope, sessionRef, cookies = [] }) {
@@ -192,17 +313,7 @@ export function createCollectionSessions({
         if ((await intents()).entries.some((i) => matches(entry, i)))
           throw fail();
         const data = await load();
-        data.entries[sessionRef] = {
-          sessionRef,
-          packageId: entry.packageId,
-          targetRevisionId: entry.targetRevisionId,
-          platform: entry.platform,
-          accountRef: entry.accountRef,
-          state: entry.state,
-          encrypted: safeStorage
-            .encryptString(JSON.stringify(entry.material))
-            .toString("base64"),
-        };
+        data.entries[sessionRef] = encryptedEntry(entry, entry.material);
         await writeAtomicJson(filename, data, { fsAdapter });
       });
       return { persisted: true };
@@ -235,6 +346,7 @@ export function createCollectionSessions({
       return {
         state: entry.state,
         riskBlocked: Boolean(entry.risk),
+        remembered: Boolean(entry.remember),
         ...(entry.risk
           ? { code: entry.risk.code, checkedAt: entry.risk.checkedAt }
           : {}),
@@ -261,7 +373,7 @@ export function createCollectionSessions({
           targetRevisionId: entry.targetRevisionId,
           platform: "boss",
           state: entry.state,
-          risk: { code, checkedAt },
+          risk: { code, checkedAt, generation: randomUUID() },
         };
         await writeAtomicJson(riskFile, risks, { fsAdapter });
         memory.get(sessionRef).risk = { code, checkedAt };
@@ -276,6 +388,7 @@ export function createCollectionSessions({
         entry.platform !== "boss" ||
         verification?.status !== "success" ||
         verification?.sessionRef !== sessionRef ||
+        verification?.expectedRiskStamp !== entry.riskStamp ||
         !Number.isFinite(time) ||
         time > now + 5000 ||
         now - time > 300000 ||
@@ -290,12 +403,15 @@ export function createCollectionSessions({
         if ((await intents()).entries.some((i) => matches(entry, i)))
           throw fail();
         const risks = await loadRisks();
-        const current = risks.entries[sessionRef];
-        if (current?.risk && time < Date.parse(current.risk.checkedAt))
+        const current = bossRisks(risks, entry);
+        if (
+          verification.expectedRiskStamp !== bossRiskStamp(risks, entry) ||
+          current.some((e) => time < Date.parse(e.risk.checkedAt))
+        )
           throw Object.assign(Error("风险发生后需要新的核验。"), {
             code: "boss_risk_recovery_required",
           });
-        delete risks.entries[sessionRef];
+        for (const e of current) delete risks.entries[e.sessionRef];
         await writeAtomicJson(riskFile, risks, { fsAdapter });
         memory.get(sessionRef).risk = null;
       });
@@ -305,8 +421,18 @@ export function createCollectionSessions({
       return cleanup({ packageId });
     },
     async clear({ scope, sessionRef }) {
-      await service.get({ scope, sessionRef });
-      return cleanup({ packageId: scope.packageId, sessionRef });
+      const entry = await service.get({ scope, sessionRef });
+      const result = await cleanup({
+        packageId: scope.packageId,
+        sessionRef,
+        ...(entry.platform === "boss" ? { keepRisk: true } : {}),
+      });
+      return {
+        ...result,
+        ...(entry.platform === "boss"
+          ? { riskBlocked: bossRisks(await loadRisks(), entry).length > 0 }
+          : {}),
+      };
     },
     async resumePending() {
       const pending = (await intents()).entries;

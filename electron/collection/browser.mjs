@@ -39,7 +39,14 @@ export function createCollectionBrowser({
     sessions = new Map(),
     busySessions = new Set(),
     generations = new Map(),
-    prepares = new Map();
+    prepares = new Map(),
+    loginOpenings = new Map(),
+    sessionPrepares = new Map(),
+    sessionGenerations = new Map(),
+    closingLoginScopes = new Set(),
+    pendingReads = new Set();
+  const scopeKey = (scope) =>
+    JSON.stringify([scope.packageId, scope.targetRevisionId]);
   let reads = 0,
     stopping = false;
   const riskRecovery = Symbol("owned-risk-recovery");
@@ -94,17 +101,32 @@ export function createCollectionBrowser({
   }
   function prepare(input) {
     const packageId = input.ref.scope.packageId,
-      generation = generations.get(packageId) || 0;
+      generation = generations.get(packageId) || 0,
+      sessionRef = input.entry?.sessionRef,
+      sessionGeneration = sessionGenerations.get(sessionRef) || 0;
     const ensure = () => {
-      if (stopping || generation !== (generations.get(packageId) || 0))
+      if (
+        stopping ||
+        generation !== (generations.get(packageId) || 0) ||
+        (sessionRef &&
+          sessionGeneration !== (sessionGenerations.get(sessionRef) || 0))
+      )
         throw failure("collection_cancelled", "采集窗口已关闭。");
       input.signal?.throwIfAborted();
     };
     const pending = prepareInternal({ ...input, ensure });
     if (!prepares.has(packageId)) prepares.set(packageId, new Set());
     prepares.get(packageId).add(pending);
+    if (sessionRef) {
+      if (!sessionPrepares.has(sessionRef))
+        sessionPrepares.set(sessionRef, new Set());
+      sessionPrepares.get(sessionRef).add(pending);
+    }
     pending
-      .finally(() => prepares.get(packageId)?.delete(pending))
+      .finally(() => {
+        prepares.get(packageId)?.delete(pending);
+        sessionPrepares.get(sessionRef)?.delete(pending);
+      })
       .catch(() => {});
     return pending;
   }
@@ -254,137 +276,166 @@ export function createCollectionBrowser({
         client.grant(details.url);
       },
     });
-    const detach = attachNetworkPolicy(ses, "collection-page", policy);
-    ses.webRequest.onCompleted?.({ urls: ["<all_urls>"] }, (details) => {
-      const key = requestKey(details),
-        reservationId = physicalRequests.get(key);
-      if (!reservationId) return;
-      physicalRequests.delete(key);
-      const pending = Promise.resolve().then(() =>
-        accountingLedger.settle?.({
-          ref,
-          token,
-          operationLease,
-          reservationId,
-          verifiedUsage: { requests: 1, bytes: 0 },
-        }),
-      );
-      completionSettlements.add(pending);
-      pending
-        .finally(() => completionSettlements.delete(pending))
-        .catch(() => {});
-    });
-    ses.webRequest.onErrorOccurred?.({ urls: ["<all_urls>"] }, (details) => {
-      // Failed and cancelled requests retain their unresolved upper bound.
-      physicalRequests.delete(requestKey(details));
-    });
-    ses.webRequest.onHeadersReceived(
-      { urls: ["<all_urls>"] },
-      (details, callback) => {
-        if (details.resourceType === "mainFrame")
-          networkStatus.status = details.statusCode;
-        const responseHeaders = { ...details.responseHeaders };
-        const key =
-          Object.keys(responseHeaders).find(
-            (k) => k.toLowerCase() === "content-security-policy",
-          ) || "Content-Security-Policy";
-        responseHeaders[key] = [
-          ...(responseHeaders[key] || []),
-          "worker-src 'none'; object-src 'none'; media-src 'none'",
-        ];
-        callback({ responseHeaders });
-      },
-    );
     const denyDownload = (event) => event.preventDefault();
-    ses.on("will-download", denyDownload);
-    window.webContents.on("login", (event, details, authInfo, callback) => {
-      if (
-        authInfo.isProxy &&
-        authInfo.host === "127.0.0.1" &&
-        authInfo.port === Number(new URL(proxy.proxyUrl).port)
-      ) {
-        event.preventDefault();
-        callback(client.username, client.password);
-      }
-    });
-    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    window.webContents.on("will-navigate", (event, url) => {
-      if (!allowsRoute(url, routePolicy, { manual })) event.preventDefault();
-    });
-    let disposing;
-    const saveMaterial = async () => {
-      if (entry)
-        await sessionStore.saveMaterial({
-          scope: ref.scope,
-          sessionRef: entry.sessionRef,
-          cookies: await ses.cookies.get({}),
-        });
-    };
-    const item = {
-      id,
-      window,
-      ses,
-      entry,
-      scope: ref.scope,
-      client,
-      policy,
-      manual,
-      dnsFailure: (url) => publicResolver?.lastFailure?.(url) || null,
-      networkStatus,
-      lifetime,
-      dispose() {
-        if (disposing) return disposing;
-        disposing = Promise.resolve().then(async () => {
-          lifetime.abort(failure("collection_cancelled", "采集窗口已关闭。"));
-          policy.close();
-          client.revoke();
-          try {
-            await publicResolver?.close();
-            if (manual && entry)
-              await sessionStore.setState({
-                scope: ref.scope,
-                sessionRef: entry.sessionRef,
-                state: "unverified",
-              });
-            await saveMaterial();
-          } finally {
-            detach();
-            ses.webRequest.onCompleted?.(null);
-            ses.webRequest.onErrorOccurred?.(null);
-            await Promise.allSettled([...completionSettlements]);
-            physicalRequests.clear();
-            if (manual)
-              await recordDiagnostic(diagnostics, {
-                operation: "collection.finish",
-                activityId: ref.activityId,
-                outcome: "completed",
-                counts: {
-                  manualRequests,
-                  manualBytes: client.snapshot().bytes + manualDnsBytes,
-                },
-              });
-            ses.webRequest.onHeadersReceived(null);
-            ses.removeListener("will-download", denyDownload);
-            if (!window.isDestroyed()) window.destroy();
+    let detach,
+      policyAttached = false;
+    try {
+      detach = attachNetworkPolicy(ses, "collection-page", policy);
+      policyAttached = true;
+      ses.webRequest.onCompleted?.({ urls: ["<all_urls>"] }, (details) => {
+        const key = requestKey(details),
+          reservationId = physicalRequests.get(key);
+        if (!reservationId) return;
+        physicalRequests.delete(key);
+        const pending = Promise.resolve().then(() =>
+          accountingLedger.settle?.({
+            ref,
+            token,
+            operationLease,
+            reservationId,
+            verifiedUsage: { requests: 1, bytes: 0 },
+          }),
+        );
+        completionSettlements.add(pending);
+        pending
+          .finally(() => completionSettlements.delete(pending))
+          .catch(() => {});
+      });
+      ses.webRequest.onErrorOccurred?.({ urls: ["<all_urls>"] }, (details) => {
+        // Failed and cancelled requests retain their unresolved upper bound.
+        physicalRequests.delete(requestKey(details));
+      });
+      ses.webRequest.onHeadersReceived(
+        { urls: ["<all_urls>"] },
+        (details, callback) => {
+          if (details.resourceType === "mainFrame")
+            networkStatus.status = details.statusCode;
+          const responseHeaders = { ...details.responseHeaders };
+          const key =
+            Object.keys(responseHeaders).find(
+              (k) => k.toLowerCase() === "content-security-policy",
+            ) || "Content-Security-Policy";
+          responseHeaders[key] = [
+            ...(responseHeaders[key] || []),
+            "worker-src 'none'; object-src 'none'; media-src 'none'",
+          ];
+          callback({ responseHeaders });
+        },
+      );
+      ses.on("will-download", denyDownload);
+      window.webContents.on("login", (event, details, authInfo, callback) => {
+        if (
+          authInfo.isProxy &&
+          authInfo.host === "127.0.0.1" &&
+          authInfo.port === Number(new URL(proxy.proxyUrl).port)
+        ) {
+          event.preventDefault();
+          callback(client.username, client.password);
+        }
+      });
+      window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      window.webContents.on("will-navigate", (event, url) => {
+        if (!allowsRoute(url, routePolicy, { manual })) event.preventDefault();
+      });
+      let disposing;
+      const saveMaterial = async () => {
+        if (entry)
+          await sessionStore.saveMaterial({
+            scope: ref.scope,
+            sessionRef: entry.sessionRef,
+            cookies: await ses.cookies.get({}),
+          });
+      };
+      const item = {
+        id,
+        window,
+        ses,
+        entry,
+        scope: ref.scope,
+        client,
+        policy,
+        manual,
+        dnsFailure: (url) => publicResolver?.lastFailure?.(url) || null,
+        networkStatus,
+        lifetime,
+        preserveMaterial: false,
+        dispose() {
+          if (disposing) return disposing;
+          disposing = Promise.resolve().then(async () => {
+            lifetime.abort(failure("collection_cancelled", "采集窗口已关闭。"));
+            policy.close();
+            client.revoke();
             try {
-              await ses.closeAllConnections();
-              if (!entry) {
-                await ses.clearStorageData();
-                await ses.clearCache();
-              }
+              await publicResolver?.close();
+              if (manual && entry)
+                await sessionStore.setState({
+                  scope: ref.scope,
+                  sessionRef: entry.sessionRef,
+                  state: "unverified",
+                });
+              if (!item.preserveMaterial) await saveMaterial();
             } finally {
-              windows.delete(id);
+              detach();
+              ses.webRequest.onCompleted?.(null);
+              ses.webRequest.onErrorOccurred?.(null);
+              await Promise.allSettled([...completionSettlements]);
+              physicalRequests.clear();
+              if (manual)
+                await recordDiagnostic(diagnostics, {
+                  operation: "collection.finish",
+                  activityId: ref.activityId,
+                  outcome: "completed",
+                  counts: {
+                    manualRequests,
+                    manualBytes: client.snapshot().bytes + manualDnsBytes,
+                  },
+                });
+              ses.webRequest.onHeadersReceived(null);
+              ses.removeListener("will-download", denyDownload);
+              if (!window.isDestroyed()) window.destroy();
+              try {
+                await ses.closeAllConnections();
+                if (!entry) {
+                  await ses.clearStorageData();
+                  await ses.clearCache();
+                }
+              } finally {
+                windows.delete(id);
+              }
             }
-          }
-        });
-        return disposing;
-      },
-    };
-    windows.set(id, item);
-    window.once("closed", () => {
-      item.dispose().catch(() => {});
-    });
-    return item;
+          });
+          return disposing;
+        },
+      };
+      windows.set(id, item);
+      window.once("closed", () => {
+        item.dispose().catch(() => {});
+      });
+      return item;
+    } catch (error) {
+      lifetime.abort(error);
+      policy.close();
+      client.revoke();
+      await publicResolver?.close();
+      if (policyAttached) {
+        detach?.();
+        for (const hook of [
+          "onCompleted",
+          "onErrorOccurred",
+          "onHeadersReceived",
+        ])
+          try {
+            ses.webRequest[hook]?.(null);
+          } catch {}
+        try {
+          await ses.closeAllConnections();
+        } catch {}
+      }
+      ses.removeListener("will-download", denyDownload);
+      if (!window.isDestroyed()) window.destroy();
+      windows.delete(id);
+      throw error;
+    }
   }
   const service = {
     async readBoss(input) {
@@ -425,7 +476,11 @@ export function createCollectionBrowser({
       return sessionStore.clearRisk({
         scope: input.ref.scope,
         sessionRef: input.sessionRef,
-        verification: { ...verification, sessionRef: input.sessionRef },
+        verification: {
+          ...verification,
+          sessionRef: input.sessionRef,
+          expectedRiskStamp: entry.riskStamp,
+        },
       });
     },
     async read({
@@ -440,6 +495,15 @@ export function createCollectionBrowser({
       [riskRecovery]: recovering,
     }) {
       publicCollectionUrl(url);
+      if (
+        sessionRef &&
+        (closingLoginScopes.has(scopeKey(ref.scope)) ||
+          (operation && loginOpenings.has(scopeKey(ref.scope))))
+      )
+        throw failure(
+          "collection_session_busy",
+          "本版本会话正在打开或清理，请稍后核验。",
+        );
       await assertScope?.(ref.scope);
       if (stopping)
         throw failure("collection_browser_unavailable", "采集窗口已关闭。");
@@ -651,12 +715,30 @@ export function createCollectionBrowser({
         }
       }
     },
-    async openLogin({ ref, platform, accountRef, remember = false, testUrl }) {
+    async openLogin({
+      ref,
+      platform,
+      accountRef,
+      remember,
+      testUrl,
+      sessionRef,
+    }) {
+      const generation = generations.get(ref.scope.packageId) || 0,
+        initialSessionGeneration = sessionGenerations.get(sessionRef) || 0;
       await assertScope?.(ref.scope);
-      if (stopping || windows.size >= 20)
+      if (stopping)
         throw failure(
           "collection_browser_unavailable",
           "请先关闭其他采集窗口。",
+        );
+      if (
+        platform === "boss" &&
+        (closingLoginScopes.has(scopeKey(ref.scope)) ||
+          (sessionRef && busySessions.has(sessionRef)))
+      )
+        throw failure(
+          "collection_session_busy",
+          "本版本来源正在读取或清理，请稍后打开。",
         );
       const routePolicy = platformPolicy(platform);
       if (
@@ -678,11 +760,69 @@ export function createCollectionBrowser({
           platform,
           accountRef,
           remember,
+          sessionRef,
         });
-      const generation = generations.get(ref.scope.packageId) || 0;
       let item, timer, abortLoad;
+      const entryGeneration =
+        sessionRef === entry.sessionRef
+          ? initialSessionGeneration
+          : sessionGenerations.get(entry.sessionRef) || 0;
+      const ensureOwned = async () => {
+        if (
+          stopping ||
+          generation !== (generations.get(ref.scope.packageId) || 0) ||
+          entryGeneration !== (sessionGenerations.get(entry.sessionRef) || 0)
+        )
+          throw failure("collection_cancelled", "采集窗口已关闭。");
+        await sessionStore.get?.({
+          scope: ref.scope,
+          sessionRef: entry.sessionRef,
+        });
+      };
       try {
+        await ensureOwned();
+        if (platform === "boss" && busySessions.has(entry.sessionRef))
+          throw failure(
+            "collection_session_busy",
+            "本版本来源正在读取，请稍后打开。",
+          );
+        const existing =
+          platform === "boss" &&
+          [...windows.values()].find(
+            (w) =>
+              w.manual &&
+              w.entry?.sessionRef === entry.sessionRef &&
+              !w.lifetime.signal.aborted &&
+              !w.window.isDestroyed(),
+          );
+        if (existing) {
+          if (existing.window.isMinimized()) existing.window.restore();
+          existing.window.show();
+          existing.window.focus();
+          await ensureOwned();
+          await rememberSession?.({
+            scope: ref.scope,
+            platform,
+            sessionRef: entry.sessionRef,
+          });
+          await ensureOwned();
+          return {
+            ...(await sessionStore.getStatus?.({
+              scope: ref.scope,
+              sessionRef: entry.sessionRef,
+            })),
+            sessionRef: entry.sessionRef,
+            state: entry.state,
+            remembered: Boolean(entry.remember),
+          };
+        }
+        if (windows.size >= 20)
+          throw failure(
+            "collection_browser_unavailable",
+            "请先关闭其他采集窗口。",
+          );
         item = await prepare({ ref, routePolicy, manual: true, entry });
+        item.preserveMaterial = Boolean(entry.reused);
         await Promise.race([
           item.window.loadURL(entryUrl),
           new Promise((_, reject) => {
@@ -704,11 +844,14 @@ export function createCollectionBrowser({
           }),
         ]);
         item.lifetime.signal.throwIfAborted();
+        await ensureOwned();
         await rememberSession?.({
           scope: ref.scope,
           platform,
           sessionRef: entry.sessionRef,
         });
+        await ensureOwned();
+        item.preserveMaterial = false;
       } catch (error) {
         const cancelled =
           error?.code === "collection_cancelled" ||
@@ -758,16 +901,19 @@ export function createCollectionBrowser({
           cleanupFailed = true;
         }
         try {
-          await sessionStore.clear({
-            scope: ref.scope,
-            sessionRef: entry.sessionRef,
-          });
+          if (!entry.reused)
+            await sessionStore.clear({
+              scope: ref.scope,
+              sessionRef: entry.sessionRef,
+            });
         } catch (cleanupError) {
           const alreadyRevoked =
             cancelled &&
             cleanupError?.code === "collection_session_scope" &&
             (stopping ||
-              generation !== (generations.get(ref.scope.packageId) || 0));
+              generation !== (generations.get(ref.scope.packageId) || 0) ||
+              entryGeneration !==
+                (sessionGenerations.get(entry.sessionRef) || 0));
           if (!alreadyRevoked) cleanupFailed = true;
         }
         if (cleanupFailed)
@@ -784,9 +930,13 @@ export function createCollectionBrowser({
           item?.lifetime.signal.removeEventListener("abort", abortLoad);
       }
       return {
+        ...(await sessionStore.getStatus?.({
+          scope: ref.scope,
+          sessionRef: entry.sessionRef,
+        })),
         sessionRef: entry.sessionRef,
         state: "unverified",
-        remembered: entry.remember,
+        remembered: Boolean(entry.remember),
       };
     },
     async verifySession(input) {
@@ -815,16 +965,33 @@ export function createCollectionBrowser({
     async clearSession({ scope, sessionRef }) {
       await assertScope?.(scope);
       await sessionStore.get({ scope, sessionRef });
-      for (const item of [...windows.values()])
-        if (item.entry?.sessionRef === sessionRef) await item.dispose();
-      const stored = sessions.get(sessionRef);
-      if (stored) {
-        await stored.ses.closeAllConnections();
-        await stored.ses.clearStorageData();
-        await stored.ses.clearCache();
-        sessions.delete(sessionRef);
+      const key = scopeKey(scope);
+      closingLoginScopes.add(key);
+      sessionGenerations.set(
+        sessionRef,
+        (sessionGenerations.get(sessionRef) || 0) + 1,
+      );
+      try {
+        await Promise.allSettled([...(sessionPrepares.get(sessionRef) || [])]);
+        for (const item of [...windows.values()])
+          if (item.entry?.sessionRef === sessionRef) await item.dispose();
+        await Promise.allSettled([
+          ...(loginOpenings.has(key) ? [loginOpenings.get(key)] : []),
+          ...[...pendingReads]
+            .filter((r) => r.sessionRef === sessionRef)
+            .map((r) => r.task),
+        ]);
+        const stored = sessions.get(sessionRef);
+        if (stored) {
+          await stored.ses.closeAllConnections();
+          await stored.ses.clearStorageData();
+          await stored.ses.clearCache();
+          sessions.delete(sessionRef);
+        }
+        return sessionStore.clear({ scope, sessionRef });
+      } finally {
+        closingLoginScopes.delete(key);
       }
-      return sessionStore.clear({ scope, sessionRef });
     },
     async closePackage(packageId) {
       generations.set(packageId, (generations.get(packageId) || 0) + 1);
@@ -837,6 +1004,14 @@ export function createCollectionBrowser({
           } catch {
             cleanupFailed = true;
           }
+      await Promise.allSettled([
+        ...[...loginOpenings]
+          .filter(([key]) => JSON.parse(key)[0] === packageId)
+          .map(([, task]) => task),
+        ...[...pendingReads]
+          .filter((r) => r.scope.packageId === packageId)
+          .map((r) => r.task),
+      ]);
       for (const [id, stored] of [...sessions])
         if (stored.packageId === packageId) {
           try {
@@ -857,6 +1032,10 @@ export function createCollectionBrowser({
       await Promise.allSettled(
         [...windows.values()].map((item) => item.dispose()),
       );
+      await Promise.allSettled([
+        ...loginOpenings.values(),
+        ...[...pendingReads].map((r) => r.task),
+      ]);
       for (const { ses } of sessions.values()) {
         try {
           await ses.closeAllConnections();
@@ -870,9 +1049,49 @@ export function createCollectionBrowser({
     snapshot: () => ({ activeReads: reads, windows: windows.size }),
   };
   const read = service.read;
-  service.read = (input) =>
-    sharedSocialScheduler.run(new URL(input.url).origin, () => read(input), {
-      signal: input.signal,
-    });
+  service.read = (input) => {
+    const task = sharedSocialScheduler.run(
+      new URL(input.url).origin,
+      () => read(input),
+      {
+        signal: input.signal,
+      },
+    );
+    const pending = {
+      scope: input.ref.scope,
+      sessionRef: input.sessionRef,
+      task,
+    };
+    pendingReads.add(pending);
+    task.finally(() => pendingReads.delete(pending)).catch(() => {});
+    return task;
+  };
+  const openLogin = service.openLogin;
+  service.openLogin = (input) => {
+    if (input.platform !== "boss") return openLogin(input);
+    const key = scopeKey(input.ref.scope);
+    if (closingLoginScopes.has(key))
+      return Promise.reject(
+        failure("collection_session_busy", "本版本会话正在清理，请稍后打开。"),
+      );
+    const generation = generations.get(input.ref.scope.packageId) || 0;
+    const pending = (loginOpenings.get(key) || Promise.resolve())
+      .catch(() => {})
+      .then(() => {
+        if (
+          stopping ||
+          generation !== (generations.get(input.ref.scope.packageId) || 0)
+        )
+          throw failure("collection_cancelled", "采集窗口已关闭。");
+        return openLogin(input);
+      });
+    loginOpenings.set(key, pending);
+    pending
+      .finally(() => {
+        if (loginOpenings.get(key) === pending) loginOpenings.delete(key);
+      })
+      .catch(() => {});
+    return pending;
+  };
   return service;
 }

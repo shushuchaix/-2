@@ -63,6 +63,12 @@ export function createDnsLookup({
       );
     try {
       requestSignal?.throwIfAborted();
+      const cached = cache.get(host);
+      if (cached && cached.expires > clock.now()) {
+        resolver = "cache";
+        emit({ outcome: "cached", cacheHit: true });
+        return structuredClone(cached.addresses);
+      }
       if (mode !== "doh") {
         const system = await lookup(host, { all: true, verbatim: true });
         requestSignal?.throwIfAborted();
@@ -76,12 +82,6 @@ export function createDnsLookup({
         }
         resolver = "fallback";
         emit({ outcome: "partial" });
-      }
-      const cached = cache.get(host);
-      if (cached && cached.expires > clock.now()) {
-        resolver = "cache";
-        emit({ outcome: "cached", cacheHit: true });
-        return structuredClone(cached.addresses);
       }
       resolver = "doh";
       const families = new AbortController();

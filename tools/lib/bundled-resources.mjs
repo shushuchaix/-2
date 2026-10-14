@@ -21,10 +21,10 @@ export async function verifyBundledOcr({ appRoot, resourceDir }) {
       item.path.split("/").some((s) => !s || s === "." || s === "..")
     )
       throw Error("OCR path invalid");
-    const base = item.root === "app" ? appRoot : resourceDir,
+    const base = path.resolve(item.root === "app" ? appRoot : resourceDir),
       filename = path.join(base, item.path);
     let current = filename;
-    while (current !== path.resolve(base)) {
+    while (current !== base) {
       if ((await fs.lstat(current)).isSymbolicLink())
         throw Error("OCR symlink forbidden");
       current = path.dirname(current);

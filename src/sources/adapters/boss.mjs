@@ -44,7 +44,9 @@ export function createBossProvider() {
         new Date(ctx.clock?.now?.() || Date.now()).toISOString(),
     });
     if (parsed.status !== "success")
-      throw fail(parsed.code, parsed.status === "rate_limited");
+      throw Object.assign(fail(parsed.code, parsed.status === "rate_limited"), {
+        phase: parsed.phase || "response",
+      });
     return parsed;
   }
   async function listPage(site, query, page, ctx) {

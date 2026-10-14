@@ -4,7 +4,7 @@ const blank = (v) => v == null || v === "";
 const plain = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 export const COLLECTION_LIMIT_CAPS = Object.freeze({
   maxSites: 50,
-  maxRequests: 2000,
+  maxRequests: 10000,
   maxPagesPerQuery: 20,
   maxDetails: 600,
   maxQueryGroups: 12,

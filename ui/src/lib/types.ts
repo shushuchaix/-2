@@ -195,6 +195,7 @@ export interface DesktopBridge {
     state: string;
     riskBlocked: boolean;
     sourceStatus?: string;
+    issues?: { code: string; diagnosticId?: string }[];
     code?: string;
   }>;
   isAvailable(): Promise<unknown>;

@@ -23,6 +23,64 @@ const base = {
   openDataLocation: async () => ({}),
   copyDataLocation: async () => ({}),
 };
+test("failed Boss verification shows its cause and diagnostic instead of a success notice", async (t) => {
+  const diagnosticId = "d-12345678-1234-1234-1234-123456789abc";
+  const f = await renderApp(t, {
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    desktopBridge: {
+      ...base,
+      getCollectionCapabilities: async () => ({
+        available: true,
+        canRemember: true,
+      }),
+      getCollectionSessionStatus: async () => ({
+        state: "unverified",
+        riskBlocked: false,
+      }),
+      probeBossSession: async () => ({
+        state: "unverified",
+        riskBlocked: false,
+        sourceStatus: "unavailable",
+        issues: [{ code: "boss_ajax_unavailable", diagnosticId }],
+      }),
+    },
+    apiHandler: (p, o) =>
+      p === "/sources"
+        ? {
+            sources: [
+              {
+                sourceId: "boss",
+                name: "Boss直聘",
+                sessionRef: "session-A",
+                config: { enabled: true },
+              },
+            ],
+            sites: [],
+          }
+        : p === "/collections"
+          ? {
+              collections: [
+                {
+                  runId: "owned-root",
+                  collectionProgress: { status: "paused" },
+                },
+              ],
+            }
+          : syntheticApi(p, o),
+  });
+  await openSource(f, "Boss直聘");
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "Boss直聘独立登录" }),
+  );
+  await f.user.click(
+    f.screen.getByRole("button", { name: "核验Boss列表与正文" }),
+  );
+  const error = await f.screen.findByRole("alert");
+  assert.match(error.textContent || "", /页面读取组件未就绪/);
+  const link = within(error).getByRole("link", { name: "查看错误诊断" });
+  assert.ok(link.getAttribute("href")?.includes(diagnosticId));
+  assert.equal(f.screen.queryByText("Boss来源核验已结束，请查看状态"), null);
+});
 test("Boss version session supports a paused root and keeps risk recovery an explicit action", async (t) => {
   // Paused activities intentionally poll every two seconds. Drive that clock
   // explicitly so elapsed render time cannot masquerade as a second probe.

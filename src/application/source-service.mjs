@@ -304,6 +304,19 @@ export function createSourceService({
           readService,
           operationLease,
           sessionRefs: pkg.collectionSettings?.sessionRefs || {},
+          diagnostics,
+          reportError: (error, location = {}) =>
+            recordDiagnostic(
+              diagnostics,
+              {
+                ...location,
+                operation: "source.probe",
+                sourceId,
+                siteId: site.siteId,
+                phase: error.phase || location.phase,
+              },
+              error,
+            ),
         };
         let list;
         try {
@@ -351,7 +364,14 @@ export function createSourceService({
               ].includes(e.code)
             )
               throw e;
-            issues.push({ code: e.code || "detail_unavailable" });
+            const entry = await context.reportError(e, {
+              phase: "response",
+              endpointKind: "detail",
+            });
+            issues.push({
+              code: e.code || "detail_unavailable",
+              ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
+            });
           }
         const quality = assessSourceProbe({
           site,

@@ -6,6 +6,59 @@ import { createPagedProvider } from "../../src/sources/adapters/shared.mjs";
 import { registerCollectionIpc } from "../../electron/collection/ipc.mjs";
 
 const site = { siteId: "boss", providerId: "boss" };
+
+test("Boss desktop probe forwards only safe failure metadata to the interface", async (t) => {
+  const f = await collectionFixture(t),
+    c = await f.openCommit();
+  await c.lease.release();
+  await f.service.pause(c.ref);
+  const handlers = new Map(),
+    mainFrame = { url: "http://127.0.0.1:31000/" },
+    sender = { mainFrame };
+  const diagnosticId = "d-12345678-1234-1234-1234-123456789abc";
+  registerCollectionIpc({
+    ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
+    getWindow: () => ({ webContents: sender }),
+    getOrigin: () => mainFrame.url,
+    browser: {},
+    sessionStore: {
+      get: async () => ({ platform: "boss" }),
+      getStatus: async () => ({ state: "unverified", riskBlocked: false }),
+    },
+    context: {
+      collectionService: f.service,
+      sourceService: {
+        probeScopedSource: async () => ({
+          status: "unavailable",
+          sampleCount: 0,
+          issues: [
+            {
+              code: "boss_ajax_unavailable",
+              diagnosticId,
+              message: "synthetic private data",
+            },
+          ],
+        }),
+      },
+    },
+  });
+  const result = await handlers.get("collection:boss-probe")(
+    { sender, senderFrame: mainFrame },
+    {
+      scope: f.scope,
+      activityId: c.ref.activityId,
+      sessionRef: "session-A",
+      requestId: "probe-feedback",
+    },
+  );
+  assert.equal(result.sourceStatus, "unavailable");
+  assert.equal(result.issues[0].code, "boss_ajax_unavailable");
+  assert.equal(result.issues[0].diagnosticId, diagnosticId);
+  assert.equal(
+    JSON.stringify(result).includes("synthetic private data"),
+    false,
+  );
+});
 const rawJob = (id = "public-job") => ({
   encryptJobId: id,
   jobName: "消防工程师",

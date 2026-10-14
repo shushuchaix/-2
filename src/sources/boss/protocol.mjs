@@ -57,7 +57,7 @@ export function buildBossOperation(input = {}) {
     parameters: { securityId, lid },
   };
 }
-export function parseBossResponse({ kind, status, payload, checkedAt }) {
+export function parseBossResponse({ kind, status, payload, checkedAt, code }) {
   const out = (state, code) => ({ status: state, code, checkedAt });
   if (!["boss.search", "boss.detail"].includes(kind))
     return out("unavailable", "boss_response_invalid");
@@ -80,6 +80,19 @@ export function parseBossResponse({ kind, status, payload, checkedAt }) {
     return out("rate_limited", "boss_rate_limited");
   if ([401, 403].includes(status))
     return out("login_required", "boss_login_required");
+  if (
+    status === 0 &&
+    !payload &&
+    [
+      "boss_ajax_unavailable",
+      "boss_transport_failed",
+      "collection_cancelled",
+    ].includes(code)
+  )
+    return {
+      ...out("unavailable", code),
+      phase: code === "boss_ajax_unavailable" ? "render" : "transport",
+    };
   if (
     status !== 200 ||
     payload?.code !== 0 ||

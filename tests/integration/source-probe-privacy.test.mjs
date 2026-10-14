@@ -5,6 +5,87 @@ import { packageBusinessFixture } from "../helpers/package-business-fixture.mjs"
 import { fakeProvider } from "../helpers/fake-sources.mjs";
 import { createSourceService } from "../../src/application/source-service.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
+import { collectionFixture } from "../helpers/collection-fixture.mjs";
+import { createBossProvider } from "../../src/sources/adapters/boss.mjs";
+import { createDiagnosticsLog } from "../../src/infrastructure/diagnostics/log.mjs";
+
+for (const code of [
+  "boss_ajax_unavailable",
+  "boss_transport_failed",
+  "collection_browser_timeout",
+])
+  test(`owned Boss probe links ${code} to a private-content-free diagnostic`, async (t) => {
+    const provider = createBossProvider(),
+      f = await collectionFixture(t, { providers: [provider] });
+    const c = await f.openCommit();
+    await c.lease.release();
+    await f.service.pause(c.ref);
+    await f.repository.mutateWorkspace((w) => {
+      w.packages[f.scope.packageId].collectionSettings = {
+        sourceOverrides: {},
+        sessionRefs: { boss: "synthetic-session" },
+        refreshEnabled: false,
+      };
+    });
+    const diagnostics = createDiagnosticsLog({
+      dataDir: f.dataDir,
+      clock: f.clock,
+    });
+    const service = createSourceService({
+      repository: f.repository,
+      operationGate: f.operationGate,
+      clock: f.clock,
+      registry: createSourceRegistry([provider]),
+      diagnostics,
+      catalog: [{ siteId: "boss", providerId: "boss" }],
+      activityContext: (ref, action) =>
+        f.service.withDiagnosticContext(
+          { ref, requestId: "probe-diagnostic" },
+          (ctx) =>
+            action({
+              ...ctx,
+              readService: {
+                readBoss: async () => {
+                  if (code === "collection_browser_timeout")
+                    throw Object.assign(Error(canary), { code, phase: "load" });
+                  return { status: 0, code, message: canary };
+                },
+              },
+            }),
+        ),
+    });
+    const result = await service.probeScopedSource({
+      scope: f.scope,
+      sourceId: "boss",
+      ref: c.ref,
+    });
+    assert.equal(result.status, "unavailable");
+    assert.equal(result.issues[0].code, code);
+    assert.match(result.issues[0].diagnosticId, /^d-[a-f0-9-]{36}$/);
+    const w = await f.repository.read();
+    const saved =
+      w.packages[f.scope.packageId].collectionSettings.sourceVerification[
+        "boss/boss"
+      ];
+    assert.equal(saved.issues[0].diagnosticId, result.issues[0].diagnosticId);
+    assert.equal(
+      w.packages[f.otherScope.packageId].collectionSettings
+        ?.sourceVerification?.["boss/boss"],
+      undefined,
+    );
+    assert.equal(w.sourceHealth["boss/boss"], undefined);
+    assert.equal(w.runs[c.ref.activityId].collectionProgress.status, "paused");
+    const log = await diagnostics.list();
+    const entry = log.entries.find(
+      (e) => e.diagnosticId === result.issues[0].diagnosticId,
+    );
+    assert.equal(entry.operation, "source.probe");
+    assert.equal(entry.error.code, code);
+    if (code === "collection_browser_timeout")
+      assert.equal(entry.phase, "load");
+    assert.equal(JSON.stringify([result, saved, log]).includes(canary), false);
+    assert.equal(f.networkCalls, 0);
+  });
 
 const canary = "synthetic private upstream body and query";
 const issues = () => [

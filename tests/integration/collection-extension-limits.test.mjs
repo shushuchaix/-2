@@ -4,6 +4,41 @@ import { collectionFixture } from "../helpers/collection-fixture.mjs";
 import { contentHash } from "../../src/infrastructure/storage/repository.mjs";
 import { collectionLimitsFor } from "../../public/js/validation-rules.js";
 
+test("continued public requests can cross 2000 while preserving the same ledger and all other limits", async (t) => {
+  const f = await collectionFixture(t, { limits: { maxRequests: 1891 } });
+  const prepared = await f.service.prepare({
+    scope: f.scope,
+    options: { mode: "rules", requestId: "continued-public-prepare" },
+  });
+  const ref = { scope: f.scope, activityId: prepared.activityId };
+  await f.service.withDiagnosticContext({ ref, requestId: "continued-public-use" }, async (ctx) => {
+    await f.ledger.reserve({
+      ref, token: ctx.token, operationLease: ctx.operationLease,
+      reservationId: "existing-uncertain-public", kind: "request", requestUpperBound: 2,
+    });
+  });
+  const before = await f.service.get(ref);
+  await f.service.adjustLimits({
+    ref, limits: { maxRequests: 2011 },
+    expectedRevision: before.collectionProgress.revision,
+  });
+  const after = await f.service.get(ref);
+  assert.equal(after.collectionProgress.limits.maxRequests, 2011);
+  assert.deepEqual(
+    { ...after.collectionProgress.limits, maxRequests: 1891 },
+    before.collectionProgress.limits,
+  );
+  assert.equal(contentHash(after.collectionProgress.ledger), contentHash(before.collectionProgress.ledger));
+  assert.equal(after.collectionUsage.usedRequests, 2);
+  assert.equal(after.collectionUsage.unknownRequestUpperBound, 2);
+  assert.equal(after.collectionUsage.usedModelRequests, 0);
+  assert.equal(after.collectionProgress.status, "paused");
+  await assert.rejects(() => f.service.adjustLimits({
+    ref, limits: { maxRequests: 10001 },
+    expectedRevision: after.collectionProgress.revision,
+  }), { code: "invalid_input" });
+});
+
 test("an authorized 300MiB extension uses normal activity guards and preserves its original ledger", async (t) => {
   const f = await collectionFixture(t, {
     limits: {

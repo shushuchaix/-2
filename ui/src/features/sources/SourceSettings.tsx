@@ -262,6 +262,7 @@ export function SourceSettings({
           activity={activity}
           platform={source.sourceId as "wechat" | "weibo" | "boss"}
           initialSessionRef={source.sessionRef || undefined}
+          onChanged={onChanged}
           onClose={() => setLogin(false)}
         />
       )}

@@ -45,16 +45,16 @@ test("new_activity_defaults_and_explicit_legacy_limits", () => {
 test("collection_limits_enforce_all_resource_and_money_boundaries", () => {
   assert.equal(
     validateCollectionLimits({
-      maxRequests: 2000,
+      maxRequests: 10000,
       maxPagesPerQuery: 20,
       maxDetails: 600,
       maxSites: 50,
       maxCostCny: 10,
     }).maxRequests,
-    2000,
+    10000,
   );
   for (const input of [
-    { maxRequests: 2001 },
+    { maxRequests: 10001 },
     { maxSites: 51 },
     { maxPagesPerQuery: 21 },
     { maxDetails: 601 },

@@ -18,6 +18,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { TextField } from "../../components/TextField";
 import { OperationFeedback } from "../../components/OperationFeedback";
+import { sourceIssueLabel } from "./source-view";
 export function CollectionSessionDialog({
   api,
   desktop,
@@ -26,6 +27,7 @@ export function CollectionSessionDialog({
   platform,
   initialSessionRef,
   onClose,
+  onChanged,
 }: {
   api: ApiClient;
   desktop: DesktopAdapter;
@@ -34,6 +36,7 @@ export function CollectionSessionDialog({
   platform: "wechat" | "weibo" | "boss";
   initialSessionRef?: string;
   onClose(): void;
+  onChanged?(): void;
 }) {
   const [caps, setCaps] = useState({ available: false, canRemember: false }),
     [url, setUrl] = useState(""),
@@ -46,6 +49,13 @@ export function CollectionSessionDialog({
   const op = useOperation();
   const version = useVersionContext();
   const generation = useRef(version.generation);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   const owned =
     generation.current === version.generation &&
     version.scope?.packageId === scope.packageId &&
@@ -103,7 +113,22 @@ export function CollectionSessionDialog({
       setState(result.state);
       setRisk(result.riskBlocked);
       setBodyVerified(result.sourceStatus === "ready");
-    }, "Boss来源核验已结束，请查看状态");
+      if (live.current) onChanged?.();
+      if (result.sourceStatus !== "ready" || result.riskBlocked) {
+        const issue =
+          result.issues?.find(
+            (i) => !["body_unverified", "list_unverified"].includes(i.code),
+          ) || result.issues?.[0];
+        throw Object.assign(
+          Error(
+            issue
+              ? sourceIssueLabel(issue)
+              : "Boss 列表与正文未取得有效样本，请查看来源状态。",
+          ),
+          { code: issue?.code, diagnosticId: issue?.diagnosticId },
+        );
+      }
+    }, "Boss列表与正文已核验");
   if (!owned) return null;
   return (
     <Dialog
@@ -126,7 +151,9 @@ export function CollectionSessionDialog({
         {boss && (
           <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-muted-foreground">
             <li>点击下方“打开独立采集窗口”。</li>
-            <li>新窗口直接打开官网登录页，选择“微信扫码”或“BOSS APP扫码”登录。</li>
+            <li>
+              新窗口直接打开官网登录页，选择“微信扫码”或“BOSS APP扫码”登录。
+            </li>
             <li>
               登录完成后回到这里核验列表与正文；关闭窗口不会自动通过核验。
             </li>

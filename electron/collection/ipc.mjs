@@ -5,6 +5,7 @@ import { publicCollectionUrl } from "./network-policy.mjs";
 import { buildBossOperation } from "../../src/sources/boss/protocol.mjs";
 import { bossCityCode } from "../../src/sources/boss/cities.mjs";
 import { assertScope } from "../../src/domain/packages.mjs";
+import { safeSourceIssues } from "../../src/sources/source-status.mjs";
 export function registerCollectionIpc({
   ipcMain,
   browser,
@@ -85,6 +86,7 @@ export function registerCollectionIpc({
           return {
             ...status,
             sourceStatus: result.status,
+            issues: safeSourceIssues(result.issues, "boss", "boss"),
             state: result.status === "ready" ? "verified" : "unverified",
           };
         },

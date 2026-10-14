@@ -20,6 +20,7 @@ import { assertOperationWriteAllowed } from "./workspace-operations.mjs";
 import {
   createActivityBudgets,
   createCollectionLedger,
+  collectionUsageFromWorkspace,
 } from "./collection-ledger.mjs";
 import { readProviderPage } from "../sources/collection-page.mjs";
 import { runtimeRepository } from "./package-runtime-service.mjs";
@@ -225,6 +226,14 @@ export function createCollectionService({
       )
     ).result;
   }
+  function projectRoot(w, ref) {
+    const root = structuredClone(rootFor(w, ref));
+    root.collectionUsage = collectionUsageFromWorkspace(w, ref, clock);
+    root.quality = projectCollectionQuality(w, { root, now: clock.now() });
+    root.collectionProgress.metrics.validNewUnique =
+      root.quality.validNewUnique;
+    return root;
+  }
   const service = {
     async prepare({ scope, options = {} }) {
       if (!["rules", "ai", "auto"].includes(options.mode || "rules"))
@@ -307,13 +316,7 @@ export function createCollectionService({
       });
     },
     async get(ref) {
-      const w = await repository.read(),
-        root = structuredClone(rootFor(w, ref));
-      root.collectionUsage = await ledger.snapshot(ref);
-      root.quality = projectCollectionQuality(w, { root, now: clock.now() });
-      root.collectionProgress.metrics.validNewUnique =
-        root.quality.validNewUnique;
-      return root;
+      return projectRoot(await repository.read(), ref);
     },
     async list({ scope, allTargets = false }) {
       const w = await repository.read();
@@ -328,16 +331,14 @@ export function createCollectionService({
             r.collectionRole === "collection_root",
         )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      return Promise.all(
-        roots.map((r) =>
-          service.get({
-            activityId: r.runId,
-            scope: {
-              packageId: r.ownerPackageId,
-              targetRevisionId: r.targetSnapshot.revisionId,
-            },
-          }),
-        ),
+      return roots.map((r) =>
+        projectRoot(w, {
+          activityId: r.runId,
+          scope: {
+            packageId: r.ownerPackageId,
+            targetRevisionId: r.targetSnapshot.revisionId,
+          },
+        }),
       );
     },
     async resume({

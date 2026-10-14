@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { parseBossResponse } from "../../src/sources/boss/protocol.mjs";
+import { createBrowserWindowBudget } from "./window-budget.mjs";
 import {
   bossPageScript,
   bossAbortScript,
@@ -116,6 +117,8 @@ export function createCollectionBrowser({
     manual = false,
     entry,
     ensure,
+    accountingLedger = ledger,
+    maxWireBytes = 20971520,
   }) {
     const partition = entry?.partition || "collection-" + randomUUID();
     const ses = entry
@@ -153,7 +156,7 @@ export function createCollectionBrowser({
       },
     };
     const publicResolver = publicResolverFactory({
-      ledger: manual ? manualLedger : ledger,
+      ledger: manual ? manualLedger : accountingLedger,
       ref,
       token,
       operationLease,
@@ -165,7 +168,7 @@ export function createCollectionBrowser({
       hosts: routePolicy.hosts,
       // Each of the at most 60 manual DNS requests reserves 64 KiB. Keep
       // that allowance inside the existing 20 MiB window ceiling.
-      maxBytes: manual ? 20971520 - 60 * 65536 : 20971520,
+      maxBytes: manual ? 20971520 - 60 * 65536 : maxWireBytes,
       signal: ownedSignal,
       resolvePublicUrl: publicResolver,
     });
@@ -234,7 +237,7 @@ export function createCollectionBrowser({
           await next;
         } else {
           const reservationId = randomUUID();
-          await ledger.reserve({
+          const reservation = await accountingLedger.reserve({
             ref,
             token,
             operationLease,
@@ -245,7 +248,8 @@ export function createCollectionBrowser({
           const key = requestKey(details);
           // Redirects reuse Electron's id. Each hop keeps its own allowance;
           // a final completion can prove only the most recent physical request.
-          if (key !== null) physicalRequests.set(key, reservationId);
+          if (key !== null)
+            physicalRequests.set(key, reservation.reservationId);
         }
         client.grant(details.url);
       },
@@ -257,7 +261,7 @@ export function createCollectionBrowser({
       if (!reservationId) return;
       physicalRequests.delete(key);
       const pending = Promise.resolve().then(() =>
-        ledger.settle?.({
+        accountingLedger.settle?.({
           ref,
           token,
           operationLease,
@@ -447,7 +451,10 @@ export function createCollectionBrowser({
       signal?.throwIfAborted();
       reads++;
       if (sessionRef) busySessions.add(sessionRef);
-      let item, byteReservation;
+      let item,
+        byteReservation,
+        windowBudget,
+        phase = "budget";
       try {
         if (operation) {
           validateBossOperation(operation);
@@ -455,15 +462,24 @@ export function createCollectionBrowser({
             throw failure("collection_session_scope", "采集会话与来源不匹配。");
           await assertBossRisk({ ref, sessionRef, [riskRecovery]: recovering });
         }
-        byteReservation = await ledger.reserve({
-          ref,
-          token,
-          operationLease,
-          reservationId: randomUUID(),
-          kind: "browser",
-          requestUpperBound: 0,
-          bytesUpperBound: 20971520,
-        });
+        if (ledger.reserveBatch && ledger.settleBatch)
+          windowBudget = await createBrowserWindowBudget({
+            ledger,
+            ref,
+            token,
+            operationLease,
+            signal,
+          });
+        else
+          byteReservation = await ledger.reserve({
+            ref,
+            token,
+            operationLease,
+            reservationId: randomUUID(),
+            kind: "browser",
+            requestUpperBound: 0,
+            bytesUpperBound: 20971520,
+          });
         const entry = sessionRef
           ? await sessionStore.get({ scope: ref.scope, sessionRef })
           : undefined;
@@ -480,6 +496,8 @@ export function createCollectionBrowser({
           operationLease,
           signal,
           entry,
+          accountingLedger: windowBudget?.ledger || ledger,
+          maxWireBytes: windowBudget?.maxWireBytes || 20971520,
         });
         let rejectAbort;
         const aborted = new Promise((_, reject) => {
@@ -515,6 +533,7 @@ export function createCollectionBrowser({
         signal?.addEventListener("abort", abort, { once: true });
         item.lifetime.signal.addEventListener("abort", abort, { once: true });
         let timer;
+        phase = "load";
         const deadline = new Promise((_, reject) => {
           timer = setTimeout(() => {
             reject(failure("collection_browser_timeout", "页面读取超时。"));
@@ -524,6 +543,7 @@ export function createCollectionBrowser({
         try {
           await Promise.race([item.window.loadURL(url), aborted, deadline]);
           signal?.throwIfAborted();
+          phase = "render";
           const document = await Promise.race([
             item.window.webContents.executeJavaScript(
               operation
@@ -538,12 +558,12 @@ export function createCollectionBrowser({
           if (item.lifetime.signal.aborted)
             throw failure("collection_cancelled", "采集已取消。");
           if (operation) {
+            phase = "response";
             const result = decodeBossPageResult(document),
               checkedAt = new Date().toISOString();
             const parsed = parseBossResponse({
               kind: operation.kind,
-              status: result.status,
-              payload: result.payload,
+              ...result,
               checkedAt,
             });
             if (parsed.status === "risk_blocked")
@@ -600,9 +620,19 @@ export function createCollectionBrowser({
           item.lifetime.signal.removeEventListener("abort", abort);
           await abortDrain;
         }
+      } catch (error) {
+        if (error && typeof error === "object" && !error.phase)
+          error.phase = phase;
+        throw error;
       } finally {
         try {
-          await item?.dispose();
+          try {
+            await item?.dispose();
+          } finally {
+            await windowBudget?.close({
+              bytes: item?.client.snapshot().bytes ?? 0,
+            });
+          }
           if (byteReservation && item)
             await ledger.settle?.({
               ref,

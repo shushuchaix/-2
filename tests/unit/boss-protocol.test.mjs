@@ -10,6 +10,38 @@ import {
 } from "../../src/sources/boss/records.mjs";
 const checkedAt = "2026-10-10T00:00:00.000Z";
 
+test("Boss page failures retain known causes without trusting arbitrary upstream codes", () => {
+  for (const code of [
+    "boss_ajax_unavailable",
+    "boss_transport_failed",
+    "collection_cancelled",
+  ])
+    assert.equal(
+      parseBossResponse({ kind: "boss.search", status: 0, code, checkedAt })
+        .code,
+      code,
+    );
+  assert.equal(
+    parseBossResponse({
+      kind: "boss.search",
+      status: 0,
+      code: "private upstream",
+      checkedAt,
+    }).code,
+    "boss_response_invalid",
+  );
+  assert.equal(
+    parseBossResponse({
+      kind: "boss.search",
+      status: 200,
+      code: "boss_transport_failed",
+      payload: { code: 37, message: "访问环境异常" },
+      checkedAt,
+    }).code,
+    "boss_environment_risk",
+  );
+});
+
 test("Boss search and card operations use only their fixed read contracts", () => {
   assert.deepEqual(
     buildBossOperation({

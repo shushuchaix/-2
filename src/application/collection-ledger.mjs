@@ -148,6 +148,19 @@ function usageOf(p) {
     pricingVersion: p.ledger.pricingVersion || null,
   };
 }
+function assertBrowserBatch(items) {
+  if (
+    !Array.isArray(items) ||
+    !items.length ||
+    items.length > 64 ||
+    items.some((r) => !r || typeof r !== "object" || Array.isArray(r)) ||
+    new Set(items.map((r) => r.reservationId)).size !== items.length
+  )
+    throw invalid();
+}
+export function collectionUsageFromWorkspace(workspace, ref, clock) {
+  return usageOf(activity(workspace, ref, clock));
+}
 export function createCollectionLedger({
   repository,
   clock = repository.clock,
@@ -156,11 +169,9 @@ export function createCollectionLedger({
     repository
       .mutateWorkspace(action, { operationLease })
       .then((r) => r.result);
-  return {
-    async snapshot(ref) {
-      return usageOf(activity(await repository.read(), ref, clock));
-    },
-    async reserve({
+  function reserveInWorkspace(
+    w,
+    {
       ref,
       token,
       reservationId,
@@ -174,172 +185,287 @@ export function createCollectionLedger({
       pricingVersion,
       maxOutputTokens = 4000,
       modelRequestLimit = 1000,
-    }) {
+    },
+  ) {
+    if (
+      typeof reservationId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,160}$/.test(reservationId) ||
+      !kinds.has(kind) ||
+      !integer(requestUpperBound) ||
+      !integer(bytesUpperBound) ||
+      typeof costUpperBoundCny !== "number" ||
+      !Number.isFinite(costUpperBoundCny) ||
+      costUpperBoundCny < 0 ||
+      costUpperBoundCny > 10 ||
+      Math.abs(costUpperBoundCny * 1000000 - micro(costUpperBoundCny)) > 1e-6 ||
+      !integer(maxOutputTokens)
+    )
+      throw invalid();
+    if (!integer(modelRequestLimit) || modelRequestLimit > 1000)
+      throw invalid();
+    const key = resourceKey === null ? null : contentHash(String(resourceKey));
+
+    checkLease(w, ref, operationLease);
+    const p = activity(w, ref, clock);
+    currentToken(p, token);
+    const previous = p.ledger.reservations[reservationId];
+    if (previous) {
       if (
-        typeof reservationId !== "string" ||
-        !/^[A-Za-z0-9_-]{1,160}$/.test(reservationId) ||
-        !kinds.has(kind) ||
-        !integer(requestUpperBound) ||
-        !integer(bytesUpperBound) ||
-        typeof costUpperBoundCny !== "number" ||
-        !Number.isFinite(costUpperBoundCny) ||
-        costUpperBoundCny < 0 ||
-        costUpperBoundCny > 10 ||
-        Math.abs(costUpperBoundCny * 1000000 - micro(costUpperBoundCny)) >
-          1e-6 ||
-        !integer(maxOutputTokens)
+        previous.kind !== kind ||
+        previous.requestUpperBound !== requestUpperBound ||
+        previous.costUpperBoundCny !== costUpperBoundCny ||
+        previous.bytesUpperBound !== bytesUpperBound ||
+        previous.resourceKey !== key
       )
-        throw invalid();
-      if (!integer(modelRequestLimit) || modelRequestLimit > 1000)
-        throw invalid();
-      const key =
-        resourceKey === null ? null : contentHash(String(resourceKey));
+        throw packageError(
+          "collection_reservation_conflict",
+          "预约身份已用于不同请求。",
+        );
+      return { ...previous, duplicate: true, snapshot: usageOf(p) };
+    }
+    if (["detail_credit", "attachment_credit"].includes(kind) && key) {
+      const existing = Object.values(p.ledger.reservations).find(
+        (r) => r.kind === kind && r.resourceKey === key,
+      );
+      if (existing)
+        return { ...existing, duplicate: true, snapshot: usageOf(p) };
+    }
+    const used = usageOf(p),
+      limits = p.limits;
+    if (used.usedRequests + requestUpperBound > (limits.maxRequests ?? 400))
+      throw exhausted("requests");
+    if (
+      kind === "detail_credit" &&
+      used.usedDetails + 1 > (limits.maxDetails ?? 100)
+    )
+      throw exhausted("details");
+    if (
+      kind === "attachment_credit" &&
+      (used.usedAttachments + 1 > (limits.maxAttachments ?? 40) ||
+        bytesUpperBound > (limits.maxAttachmentBytes ?? 20971520) ||
+        used.usedBytes + bytesUpperBound >
+          (limits.maxTotalAttachmentBytes ?? 209715200))
+    )
+      throw exhausted("attachments");
+    if (
+      kind !== "model" &&
+      bytesUpperBound &&
+      (bytesUpperBound > (limits.maxAttachmentBytes ?? 20971520) ||
+        used.usedBytes + bytesUpperBound >
+          (limits.maxTotalAttachmentBytes ?? 209715200))
+    )
+      throw exhausted("attachments");
+    if (
+      kind === "model" &&
+      (micro(used.costUpperBoundCny) + micro(costUpperBoundCny) >
+        micro(limits.maxCostCny ?? 10) ||
+        used.usedModelRequests >=
+          Math.min(
+            limits.maxModelRequests ?? 1000,
+            p.ledger.modelRequestLimit ?? 1000,
+            modelRequestLimit,
+          ))
+    )
+      throw modelError();
+    if (kind !== "model" && costUpperBoundCny) throw invalid();
+    if (modelIdentity) {
+      if (kind !== "model" || !isOfficialDeepSeekFlash(modelIdentity))
+        throw packageError("model_pricing_unsupported", "模型价格尚未核实。");
+      const identity = publicIdentity(modelIdentity);
+      if (
+        p.ledger.modelIdentity &&
+        (contentHash(identity) !== contentHash(p.ledger.modelIdentity) ||
+          p.ledger.pricingVersion !== pricingVersion)
+      )
+        throw packageError(
+          "model_pricing_unsupported",
+          "活动的模型及价格已固定，请新建活动后更改。",
+        );
+      p.ledger.modelIdentity = identity;
+      p.ledger.pricingVersion = pricingVersion;
+    }
+    if (kind === "model")
+      p.ledger.modelRequestLimit = Math.min(
+        p.ledger.modelRequestLimit ?? 1000,
+        modelRequestLimit,
+      );
+    const reservation = {
+      reservationId,
+      kind,
+      requestUpperBound,
+      costUpperBoundCny,
+      bytesUpperBound,
+      resourceKey: key,
+      maxOutputTokens,
+      status: "reserved",
+      epoch: token.epoch,
+      sliceRunId: token.sliceRunId,
+      createdAt: new Date(clock.now()).toISOString(),
+    };
+    p.ledger.reservations[reservationId] = reservation;
+    p.ledger.revision++;
+    return { ...reservation, duplicate: false, snapshot: usageOf(p) };
+  }
+  function settleInWorkspace(
+    w,
+    { ref, reservationId, verifiedUsage, modelUsage, operationLease },
+    validateToken = currentToken,
+  ) {
+    checkLease(w, ref, operationLease);
+    const p = activity(w, ref, clock),
+      r = p.ledger.reservations[reservationId];
+    if (!r) throw invalid();
+    validateToken(p, { epoch: r.epoch, sliceRunId: r.sliceRunId });
+    if (r.status !== "reserved")
+      return { settled: false, snapshot: usageOf(p) };
+    if (r.kind === "model")
+      verifiedUsage = quoteVerifiedModelUsage(modelUsage, {
+        maxOutputTokens: r.maxOutputTokens ?? 4000,
+      });
+    let verified = null;
+    if (verifiedUsage && typeof verifiedUsage === "object") {
+      const requests = verifiedUsage.requests ?? r.requestUpperBound,
+        bytes = verifiedUsage.bytes ?? r.bytesUpperBound,
+        costCny = verifiedUsage.costCny ?? r.costUpperBoundCny;
+      if (
+        integer(requests) &&
+        requests <= r.requestUpperBound &&
+        integer(bytes) &&
+        bytes <= r.bytesUpperBound &&
+        Number.isFinite(costCny) &&
+        costCny >= 0 &&
+        micro(costCny) <= micro(r.costUpperBoundCny)
+      )
+        verified = { requests, bytes, costCny };
+    }
+    r.status = verified ? "settled" : "uncertain";
+    if (verified) r.verifiedUsage = verified;
+    r.settledAt = new Date(clock.now()).toISOString();
+    p.ledger.revision++;
+    return { settled: true, snapshot: usageOf(p) };
+  }
+  return {
+    async snapshot(ref) {
+      return usageOf(activity(await repository.read(), ref, clock));
+    },
+    async reserve(input) {
+      return mutate((w) => reserveInWorkspace(w, input), input.operationLease);
+    },
+    async settle(input) {
+      return mutate((w) => settleInWorkspace(w, input), input.operationLease);
+    },
+    async reserveBatch({ ref, token, operationLease, reservations }) {
+      assertBrowserBatch(reservations);
+      let requests = 0,
+        bytes = 0;
+      for (const r of reservations) {
+        if (
+          Object.keys(r).some(
+            (k) =>
+              ![
+                "reservationId",
+                "kind",
+                "requestUpperBound",
+                "bytesUpperBound",
+              ].includes(k),
+          ) ||
+          r.kind !== "browser" ||
+          !integer(r.requestUpperBound) ||
+          r.requestUpperBound > 1 ||
+          !integer(r.bytesUpperBound ?? 0)
+        )
+          throw invalid();
+        requests += r.requestUpperBound;
+        bytes += r.bytesUpperBound || 0;
+      }
+      if (requests > 60 || bytes > 20971520) throw invalid();
+      return mutate((w) => {
+        const results = reservations.map((r) => {
+          const result = reserveInWorkspace(w, {
+            ...r,
+            ref,
+            token,
+            operationLease,
+          });
+          const stored =
+            w.runs[ref.activityId].collectionProgress.ledger.reservations[
+              result.reservationId
+            ];
+          if (
+            result.duplicate &&
+            stored.browserWindowLeaseId !== operationLease.operationId
+          )
+            throw packageError(
+              "invalid_operation_lease",
+              "窗口预约不属于原采集租约。",
+            );
+          stored.browserWindowLeaseId = operationLease.operationId;
+          return result;
+        });
+        return { reservations: results, snapshot: results.at(-1).snapshot };
+      }, operationLease);
+    },
+    async settleBatch({
+      ref,
+      token,
+      operationLease,
+      settlements,
+      draining = false,
+    }) {
+      assertBrowserBatch(settlements);
+      if (typeof draining !== "boolean") throw invalid();
       return mutate((w) => {
         checkLease(w, ref, operationLease);
         const p = activity(w, ref, clock);
-        currentToken(p, token);
-        const previous = p.ledger.reservations[reservationId];
-        if (previous) {
+        // Only a drained browser may reduce its existing allowance after a
+        // pause/cancel. A new slice, owner deletion or expired lease forbids it.
+        const retired =
+          draining &&
+          Number.isSafeInteger(token?.epoch) &&
+          token.epoch >= 0 &&
+          p.epoch > token.epoch &&
+          !p.activeSliceRunId &&
+          ["paused", "cancelled"].includes(p.status);
+        if (!retired) currentToken(p, token);
+        const results = settlements.map((s) => {
+          const r = p.ledger.reservations[s.reservationId];
           if (
-            previous.kind !== kind ||
-            previous.requestUpperBound !== requestUpperBound ||
-            previous.costUpperBoundCny !== costUpperBoundCny ||
-            previous.bytesUpperBound !== bytesUpperBound ||
-            previous.resourceKey !== key
+            Object.keys(s).some(
+              (k) => !["reservationId", "kind", "verifiedUsage"].includes(k),
+            ) ||
+            !r ||
+            !["browser", "resource", "dns"].includes(r.kind) ||
+            r.costUpperBoundCny ||
+            r.resourceKey ||
+            r.requestUpperBound > 1 ||
+            (s.kind &&
+              (!["browser", "resource", "dns"].includes(s.kind) ||
+                r.requestUpperBound !== 1))
           )
+            throw invalid();
+          if (r.browserWindowLeaseId !== operationLease.operationId)
             throw packageError(
-              "collection_reservation_conflict",
-              "预约身份已用于不同请求。",
+              "invalid_operation_lease",
+              "窗口结算不属于原采集租约。",
             );
-          return { ...previous, duplicate: true, snapshot: usageOf(p) };
-        }
-        if (["detail_credit", "attachment_credit"].includes(kind) && key) {
-          const existing = Object.values(p.ledger.reservations).find(
-            (r) => r.kind === kind && r.resourceKey === key,
+          if (r.epoch !== token.epoch || r.sliceRunId !== token.sliceRunId)
+            throw packageError(
+              "collection_stale_epoch",
+              "窗口结算片段已失效。",
+            );
+          if (r.status === "reserved" && s.kind) r.kind = s.kind;
+          return settleInWorkspace(
+            w,
+            {
+              ref,
+              operationLease,
+              reservationId: s.reservationId,
+              verifiedUsage: s.verifiedUsage,
+            },
+            retired ? () => {} : undefined,
           );
-          if (existing)
-            return { ...existing, duplicate: true, snapshot: usageOf(p) };
-        }
-        const used = usageOf(p),
-          limits = p.limits;
-        if (used.usedRequests + requestUpperBound > (limits.maxRequests ?? 400))
-          throw exhausted("requests");
-        if (
-          kind === "detail_credit" &&
-          used.usedDetails + 1 > (limits.maxDetails ?? 100)
-        )
-          throw exhausted("details");
-        if (
-          kind === "attachment_credit" &&
-          (used.usedAttachments + 1 > (limits.maxAttachments ?? 40) ||
-            bytesUpperBound > (limits.maxAttachmentBytes ?? 20971520) ||
-            used.usedBytes + bytesUpperBound >
-              (limits.maxTotalAttachmentBytes ?? 209715200))
-        )
-          throw exhausted("attachments");
-        if (
-          kind !== "model" &&
-          bytesUpperBound &&
-          (bytesUpperBound > (limits.maxAttachmentBytes ?? 20971520) ||
-            used.usedBytes + bytesUpperBound >
-              (limits.maxTotalAttachmentBytes ?? 209715200))
-        )
-          throw exhausted("attachments");
-        if (
-          kind === "model" &&
-          (micro(used.costUpperBoundCny) + micro(costUpperBoundCny) >
-            micro(limits.maxCostCny ?? 10) ||
-            used.usedModelRequests >=
-              Math.min(
-                limits.maxModelRequests ?? 1000,
-                p.ledger.modelRequestLimit ?? 1000,
-                modelRequestLimit,
-              ))
-        )
-          throw modelError();
-        if (kind !== "model" && costUpperBoundCny) throw invalid();
-        if (modelIdentity) {
-          if (kind !== "model" || !isOfficialDeepSeekFlash(modelIdentity))
-            throw packageError(
-              "model_pricing_unsupported",
-              "模型价格尚未核实。",
-            );
-          const identity = publicIdentity(modelIdentity);
-          if (
-            p.ledger.modelIdentity &&
-            (contentHash(identity) !== contentHash(p.ledger.modelIdentity) ||
-              p.ledger.pricingVersion !== pricingVersion)
-          )
-            throw packageError(
-              "model_pricing_unsupported",
-              "活动的模型及价格已固定，请新建活动后更改。",
-            );
-          p.ledger.modelIdentity = identity;
-          p.ledger.pricingVersion = pricingVersion;
-        }
-        if (kind === "model")
-          p.ledger.modelRequestLimit = Math.min(
-            p.ledger.modelRequestLimit ?? 1000,
-            modelRequestLimit,
-          );
-        const reservation = {
-          reservationId,
-          kind,
-          requestUpperBound,
-          costUpperBoundCny,
-          bytesUpperBound,
-          resourceKey: key,
-          maxOutputTokens,
-          status: "reserved",
-          epoch: token.epoch,
-          sliceRunId: token.sliceRunId,
-          createdAt: new Date(clock.now()).toISOString(),
-        };
-        p.ledger.reservations[reservationId] = reservation;
-        p.ledger.revision++;
-        return { ...reservation, duplicate: false, snapshot: usageOf(p) };
-      }, operationLease);
-    },
-    async settle({
-      ref,
-      reservationId,
-      verifiedUsage,
-      modelUsage,
-      operationLease,
-    }) {
-      return mutate((w) => {
-        checkLease(w, ref, operationLease);
-        const p = activity(w, ref, clock),
-          r = p.ledger.reservations[reservationId];
-        if (!r) throw invalid();
-        currentToken(p, { epoch: r.epoch, sliceRunId: r.sliceRunId });
-        if (r.status !== "reserved")
-          return { settled: false, snapshot: usageOf(p) };
-        if (r.kind === "model")
-          verifiedUsage = quoteVerifiedModelUsage(modelUsage, {
-            maxOutputTokens: r.maxOutputTokens ?? 4000,
-          });
-        let verified = null;
-        if (verifiedUsage && typeof verifiedUsage === "object") {
-          const requests = verifiedUsage.requests ?? r.requestUpperBound,
-            bytes = verifiedUsage.bytes ?? r.bytesUpperBound,
-            costCny = verifiedUsage.costCny ?? r.costUpperBoundCny;
-          if (
-            integer(requests) &&
-            requests <= r.requestUpperBound &&
-            integer(bytes) &&
-            bytes <= r.bytesUpperBound &&
-            Number.isFinite(costCny) &&
-            costCny >= 0 &&
-            micro(costCny) <= micro(r.costUpperBoundCny)
-          )
-            verified = { requests, bytes, costCny };
-        }
-        r.status = verified ? "settled" : "uncertain";
-        if (verified) r.verifiedUsage = verified;
-        r.settledAt = new Date(clock.now()).toISOString();
-        p.ledger.revision++;
-        return { settled: true, snapshot: usageOf(p) };
+        });
+        return { settlements: results, snapshot: results.at(-1).snapshot };
       }, operationLease);
     },
     async adjustLimits({ ref, limits, expectedRevision, operationLease }) {

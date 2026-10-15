@@ -23,7 +23,7 @@ test('Windows transient lock open and release failures retry without executing t
   let opens=0, removals=0, calls=0;
   await withWorkspaceLock(repo.dataDir,()=>{calls++;},{platform:'win32',pollMs:1,fsAdapter:{...fs,
     async open(...args){if(++opens===1)throw Object.assign(Error('busy'),{code:'EPERM'});return fs.open(...args);},
-    async unlink(...args){if(++removals===1)throw Object.assign(Error('busy'),{code:'EACCES'});return fs.unlink(...args);},
+    async unlink(...args){if(String(args[0])===path.join(repo.dataDir,'.workspace.lock')&&++removals===1)throw Object.assign(Error('busy'),{code:'EACCES'});return fs.unlink(...args);},
   }});
   assert.equal(opens,2);assert.equal(removals,2);assert.equal(calls,1);
   await assert.rejects(fs.stat(path.join(repo.dataDir,'.workspace.lock')),{code:'ENOENT'});

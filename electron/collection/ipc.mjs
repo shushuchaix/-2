@@ -5,7 +5,10 @@ import { publicCollectionUrl } from "./network-policy.mjs";
 import { buildBossOperation } from "../../src/sources/boss/protocol.mjs";
 import { bossCityCode } from "../../src/sources/boss/cities.mjs";
 import { assertScope } from "../../src/domain/packages.mjs";
-import { safeSourceIssues } from "../../src/sources/source-status.mjs";
+import {
+  safeSourceIssues,
+  safeSourceDiagnosticRefs,
+} from "../../src/sources/source-status.mjs";
 import { recordDiagnostic } from "../../src/infrastructure/diagnostics/log.mjs";
 export function registerCollectionIpc({
   ipcMain,
@@ -113,6 +116,7 @@ export function registerCollectionIpc({
               "boss_rate_limited",
               "collection_browser_timeout",
               "collection_browser_output_limit",
+              "collection_route_forbidden",
             ].includes(error?.code)
           )
             throw error;
@@ -137,6 +141,7 @@ export function registerCollectionIpc({
                       phase: error.phase || "response",
                       outcome: "failed",
                       code: error.code,
+                      requestId: safeSourceDiagnosticRefs(error).requestId,
                     },
                     error,
                   )
@@ -148,6 +153,7 @@ export function registerCollectionIpc({
               sessionRef,
               code: error.code,
               diagnosticId,
+              ...safeSourceDiagnosticRefs(error),
               signal: diagnosticSignal,
               collectionGuard: diagnosticGuard,
             });
@@ -164,7 +170,13 @@ export function registerCollectionIpc({
               ? "restricted"
               : "unavailable",
             issues: safeSourceIssues(
-              [{ code: error.code, diagnosticId }],
+              [
+                {
+                  code: error.code,
+                  ...safeSourceDiagnosticRefs(error),
+                  diagnosticId,
+                },
+              ],
               "boss",
               "boss",
             ),

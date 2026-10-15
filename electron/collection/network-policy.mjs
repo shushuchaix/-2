@@ -9,6 +9,11 @@ import {
   allowsNativePublicPage,
   isNativePublicSearchRequest,
 } from "./native-public-search.mjs";
+import {
+  bossOperationHeader,
+  stripBossOperationHeader,
+  validBossOperationToken,
+} from "./boss-operation-ownership.mjs";
 const material =
   /^(?:.*token|api_?key|key|uin|pass_ticket|wx_header|auth(?:orization)?|cookie|ticket|signature|x-amz-signature|code|password|secret)$/i;
 export function publicCollectionUrl(value) {
@@ -25,6 +30,20 @@ const hostAllowed = (host, list) =>
       ? host.endsWith(v.slice(1)) && host !== v.slice(2)
       : host === v,
   );
+function bossManualLanding(url) {
+  if (url.pathname !== "/") return false;
+  // Homepage filters and DOM anchors do not grant new routes or authenticated
+  // actions. Unknown redirect/credential keys and SPA routes remain denied.
+  if (url.hash && !["#jobs", "#search", "#home"].includes(url.hash))
+    return false;
+  for (const [key, value] of url.searchParams) {
+    if (url.searchParams.getAll(key).length !== 1) return false;
+    if (key === "ka" && /^[A-Za-z0-9_.-]{1,160}$/.test(value)) continue;
+    if (key === "city" && /^\d{9}$/.test(value)) continue;
+    return false;
+  }
+  return true;
+}
 function bossStaticAsset(url, resourceType, manual = false) {
   try {
     publicCollectionUrl(url.href);
@@ -92,11 +111,7 @@ export function platformPolicy(platform) {
       publicPath: (url, { resourceType = "mainFrame", manual = false } = {}) =>
         bossStaticAsset(url, resourceType, manual) ||
         (url.hostname === "www.zhipin.com" &&
-          ((manual &&
-            resourceType === "mainFrame" &&
-            url.pathname === "/" &&
-            !url.search &&
-            !url.hash) ||
+          ((manual && resourceType === "mainFrame" && bossManualLanding(url)) ||
             /^\/web\/geek\/jobs\/?$|^\/job_detail\/[A-Za-z0-9_~.-]+\.html$|^\/(?:assets|static)\//.test(
               url.pathname,
             ) ||
@@ -210,6 +225,7 @@ export function classifyBrowserBody({
 export function createPagePolicy({
   routePolicy,
   reserve,
+  prepareRequest,
   onDenied,
   maxRequests = 60,
   manual = false,
@@ -221,14 +237,64 @@ export function createPagePolicy({
     closed = false,
     bossSent = false,
     nativePublicSent = false;
+  let ownedToken, ownedDenied, ownedNativeId;
+  const candidates = new Map();
   const deny = (details, code = "collection_route_forbidden") => {
+    if (ownedNativeId !== undefined && details.id === ownedNativeId)
+      ownedDenied = code;
     try {
       Promise.resolve(onDenied?.(details, code)).catch(() => {});
     } catch {}
     return { cancel: true };
   };
+  const admit = async (details, ownership) => {
+    if (closed || signal?.aborted) return deny(details, "collection_cancelled");
+    if (requests >= maxRequests)
+      return deny(
+        details,
+        manual
+          ? "collection_login_budget_exhausted"
+          : "collection_browser_budget_exhausted",
+      );
+    requests++;
+    try {
+      await reserve?.(details, ownership);
+      signal?.throwIfAborted();
+      return { cancel: closed };
+    } catch (error) {
+      return deny(
+        details,
+        signal?.aborted
+          ? "collection_cancelled"
+          : [
+                "collection_login_budget_exhausted",
+                "source_budget_exhausted",
+              ].includes(error?.code)
+            ? error.code
+            : "collection_request_failed",
+      );
+    }
+  };
   return {
+    armBossOperation(token) {
+      if (
+        manual ||
+        routePolicy.platform !== "boss" ||
+        !routePolicy.bossOperation ||
+        ownedToken ||
+        !validBossOperationToken(token)
+      )
+        throw Object.assign(Error("Owned operation unavailable"), {
+          code: "collection_route_forbidden",
+        });
+      ownedToken = token;
+    },
+    bossOperationStatus: () => ({
+      ...(ownedDenied ? { denied: ownedDenied } : {}),
+    }),
     async authorize(details) {
+      let operationCandidate,
+        validParameters = true;
       const nativePublicPost = isNativePublicSearchRequest(
         details,
         routePolicy,
@@ -284,21 +350,24 @@ export function createPagePolicy({
           if (!sameOperation && !(manual && routePolicy.manualPath?.(url)))
             return deny(details);
           if (sameOperation && !manual) {
-            if (bossSent || !op.parameters) return deny(details);
+            if (!ownedToken || !op.parameters) return deny(details);
+            operationCandidate = true;
             let values;
             if (op.method === "POST") {
               if (
                 !Array.isArray(details.uploadData) ||
                 details.uploadData.some((v) => !v.bytes || v.file)
               )
-                return deny(details);
+                validParameters = false;
               const body = Buffer.concat(
-                details.uploadData.map((v) => Buffer.from(v.bytes)),
+                (Array.isArray(details.uploadData) ? details.uploadData : [])
+                  .filter((v) => v.bytes && !v.file)
+                  .map((v) => Buffer.from(v.bytes)),
               );
-              if (body.length > 16384) return deny(details);
+              if (body.length > 16384) validParameters = false;
               values = new URLSearchParams(body.toString("utf8"));
               if ([...url.searchParams.keys()].some((k) => k !== "_"))
-                return deny(details);
+                validParameters = false;
             } else {
               values = new URLSearchParams(url.searchParams);
               values.delete("_");
@@ -310,8 +379,7 @@ export function createPagePolicy({
                   values.getAll(k).length !== 1 || values.get(k) !== String(v),
               )
             )
-              return deny(details);
-            bossSent = true;
+              validParameters = false;
           }
         }
       }
@@ -343,32 +411,62 @@ export function createPagePolicy({
             ? "collection_cancelled"
             : "collection_route_forbidden",
         );
-      if (requests >= maxRequests)
-        return deny(
-          details,
-          manual
-            ? "collection_login_budget_exhausted"
-            : "collection_browser_budget_exhausted",
-        );
-      requests++;
-      try {
-        await reserve?.(details);
-        signal?.throwIfAborted();
-        return { cancel: closed };
-      } catch (error) {
-        return deny(
-          details,
-          signal?.aborted
-            ? "collection_cancelled"
-            : error?.code === "collection_login_budget_exhausted"
-              ? error.code
-              : "collection_request_failed",
-        );
+      if (operationCandidate) {
+        if (
+          (typeof details.id !== "string" && typeof details.id !== "number") ||
+          candidates.size >= 64
+        )
+          return deny(details);
+        candidates.set(details.id, { details, validParameters });
+        await prepareRequest?.(details);
+        return { cancel: false };
       }
+      return admit(details);
+    },
+    async authorizeHeaders(details) {
+      const marker = bossOperationHeader(details.requestHeaders);
+      const requestHeaders = stripBossOperationHeader(details.requestHeaders);
+      const candidate = candidates.get(details.id);
+      candidates.delete(details.id);
+      if (!candidate && !marker.present)
+        return { cancel: false, requestHeaders };
+      if (
+        routePolicy.platform !== "boss" ||
+        manual ||
+        !routePolicy.bossOperation
+      )
+        return { cancel: true, requestHeaders };
+      if (
+        !candidate ||
+        !ownedToken ||
+        marker.value !== ownedToken ||
+        !candidate.validParameters ||
+        bossSent ||
+        ownedDenied ||
+        closed ||
+        signal?.aborted
+      ) {
+        if (marker.present) ownedDenied = "collection_route_forbidden";
+        return { ...deny(details), requestHeaders };
+      }
+      // Claim synchronously before awaiting the ledger: concurrent duplicates
+      // cannot claim the same owned operation or borrow its response identity.
+      bossSent = true;
+      ownedNativeId = details.id;
+      const result = await admit(candidate.details, {
+        ownedBossOperation: true,
+      });
+      if (result.cancel)
+        ownedDenied ||= signal?.aborted
+          ? "collection_cancelled"
+          : "collection_route_forbidden";
+      return { ...result, requestHeaders };
     },
     snapshot: () => ({ requests, manual }),
     close: () => {
       closed = true;
+      ownedToken = undefined;
+      candidates.clear();
     },
   };
 }
@@ -398,6 +496,22 @@ export function attachNetworkPolicy(session, key, policy) {
           .catch(() => done({ cancel: true }));
       },
     );
+    session.webRequest.onBeforeSendHeaders?.(
+      { urls: ["<all_urls>"] },
+      (details, callback) => {
+        Promise.resolve()
+          .then(async () => {
+            for (const p of state.values())
+              if ((await p.authorizeHeaders?.(details))?.cancel)
+                return callback({ cancel: true });
+            callback({
+              cancel: false,
+              requestHeaders: stripBossOperationHeader(details.requestHeaders),
+            });
+          })
+          .catch(() => callback({ cancel: true }));
+      },
+    );
   }
   if (state.has(key)) throw Error("Collection session policy already attached");
   state.set(key, policy);
@@ -405,6 +519,7 @@ export function attachNetworkPolicy(session, key, policy) {
     state.delete(key);
     if (!state.size) {
       session.webRequest.onBeforeRequest(null);
+      session.webRequest.onBeforeSendHeaders?.(null);
       dispatchers.delete(session);
     }
   };

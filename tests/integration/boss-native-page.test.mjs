@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { BOSS_OPERATION_HEADER } from "../../electron/collection/boss-operation-ownership.mjs";
 import vm from "node:vm";
 import {
   bossPageScript,
@@ -168,6 +169,30 @@ test("native page client sends one fixed search with its request hook and captur
     "application/x-www-form-urlencoded",
   );
   assert.equal(Object.hasOwn(h.window, "__rjrBoss_read-a"), false);
+});
+
+test("the owned marker is added after native authentication hooks without modifying their defaults", async () => {
+  const h = nativePage();
+  let observedHooks = 0;
+  h.client.interceptors.request.use((config) => {
+    observedHooks++;
+    assert.equal(config.headers?.[BOSS_OPERATION_HEADER], undefined);
+    return {
+      ...config,
+      headers: { ...config.headers, "X-Native-Auth": "synthetic-auth" },
+    };
+  });
+  const token = "00000000-0000-4000-8000-000000000001";
+  const result = decodeBossPageResult(
+    await vm.runInContext(bossPageScript(search, "owned", token), h.context),
+  );
+  assert.equal(result.status, 200);
+  assert.equal(observedHooks, 1);
+  assert.equal(h.observations.requests.length, 1);
+  const sent = h.observations.requests[0];
+  assert.equal(sent.headers[BOSS_OPERATION_HEADER], token);
+  assert.equal(sent.headers["X-Native-Auth"], "synthetic-auth");
+  assert.equal(h.client.defaults.headers?.[BOSS_OPERATION_HEADER], undefined);
 });
 
 test("native initialization waits for local hooks without sending a premature request", async () => {

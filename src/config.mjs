@@ -180,6 +180,8 @@ export const DEFAULT_CONFIG = {
     host: "127.0.0.1",
     // 部署在 nginx/Caddy 之后时置为 true，否则不要开：否则 X-Forwarded-For 可被伪造绕过限流
     trustProxy: false,
+    // 仅在所有入口都经过可信代理时开启；从 XFF 右侧数的固定可信代理跳数。
+    trustedProxyHops: 1,
     publicUrl: "",
   },
 };
@@ -226,7 +228,7 @@ function isPlaceholderKey(k = "") {
   return /填入|你的|请填|在这里|your[-_ ]?key|placeholder|xxxx|todo/i.test(s);
 }
 
-export function loadConfig({ quiet = false, dataDir } = {}) {
+export function loadConfig({ quiet = false, dataDir, readLocalCredentials = true } = {}) {
   let userCfg = {};
   const configPath = resolveConfigPath(dataDir);
   if (fs.existsSync(configPath)) {
@@ -249,7 +251,8 @@ export function loadConfig({ quiet = false, dataDir } = {}) {
     cfg.deepseek.apiKey = process.env.DEEPSEEK_API_KEY;
     keySources.push("环境变量 DEEPSEEK_API_KEY");
   } else {
-    const fromDsh = deepseekKeyFromDshHome();
+    const fromDsh = readLocalCredentials && process.env.RJR_DISABLE_LOCAL_CREDENTIALS !== "1"
+      ? deepseekKeyFromDshHome() : "";
     if (fromDsh) {
       cfg.deepseek.apiKey = fromDsh;
       keySources.push("DSH 凭据 (.credentials.yaml)");
@@ -276,8 +279,15 @@ export function loadConfig({ quiet = false, dataDir } = {}) {
   if (process.env.PORT)
     cfg.server.port = Number(process.env.PORT) || cfg.server.port;
   if (process.env.PUBLIC_URL) cfg.server.publicUrl = process.env.PUBLIC_URL;
-  if (/^(1|true|yes|on)$/i.test(process.env.TRUST_PROXY || ""))
-    cfg.server.trustProxy = true;
+  if (process.env.TRUST_PROXY !== undefined) {
+    if (!/^(1|true|yes|on|0|false|no|off)$/i.test(process.env.TRUST_PROXY))
+      throw Error("TRUST_PROXY 必须是明确的布尔值");
+    cfg.server.trustProxy = /^(1|true|yes|on)$/i.test(process.env.TRUST_PROXY);
+  }
+  if (process.env.TRUST_PROXY_HOPS !== undefined)
+    cfg.server.trustedProxyHops = Number(process.env.TRUST_PROXY_HOPS);
+  if (!Number.isSafeInteger(cfg.server.trustedProxyHops) || cfg.server.trustedProxyHops < 1 || cfg.server.trustedProxyHops > 10)
+    throw Error("TRUST_PROXY_HOPS / server.trustedProxyHops 必须是1至10的整数");
   if (process.env.AUTH_MODE)
     cfg.auth.mode = String(process.env.AUTH_MODE).toLowerCase();
   if (process.env.AUTH_SECRET) cfg.__authSecret = process.env.AUTH_SECRET;

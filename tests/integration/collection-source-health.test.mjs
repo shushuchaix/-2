@@ -329,12 +329,18 @@ test("the real WeChat capability declaration keeps collection health inside its 
 });
 
 test("Boss failure preserves this version's prior proof without changing another version", async (t) => {
+  const requestId = "q-00000000-0000-4000-8000-000000000001";
+  const diagnosticId = "d-00000000-0000-4000-8000-000000000001";
   const provider = createPagedProvider({
     id: "boss",
     name: "Boss",
     capabilities: { category: "job_board" },
     listPage: async () => {
-      throw Object.assign(Error("risk"), { code: "boss_account_risk" });
+      throw Object.assign(Error("risk"), {
+        code: "boss_account_risk",
+        requestId,
+        diagnosticId,
+      });
     },
   });
   const f = await collectionFixture(t, {
@@ -370,6 +376,8 @@ test("Boss failure preserves this version's prior proof without changing another
   assert.equal(owned.checkedAt, checkedAt);
   assert.equal(owned.lastSuccessAt, previousAt);
   assert.equal(owned.issues[0].code, "boss_account_risk");
+  assert.equal(owned.issues[0].requestId, requestId);
+  assert.equal(owned.issues[0].diagnosticId, diagnosticId);
   assert.equal(
     w.packages[f.otherScope.packageId].collectionSettings.sourceVerification[
       "boss/site-0"

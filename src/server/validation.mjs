@@ -106,6 +106,7 @@ export async function readJsonBody(req, limit = 40 * 1024 * 1024) {
           chunks.length = 0;
           const error = Error("Request body too large");
           error.status = 413;
+          error.code = "payload_too_large";
           reject(error);
         }
         return;
@@ -116,6 +117,7 @@ export async function readJsonBody(req, limit = 40 * 1024 * 1024) {
       if (!overflow) resolve(Buffer.concat(chunks));
     });
     req.on("error", reject);
+    req.on("aborted", () => reject(Object.assign(Error("Request aborted"), { status: 400, code: "request_aborted" })));
   });
   if (!bytes.length) return {};
   let value;

@@ -44,15 +44,29 @@ async function replaceFile(
 export async function writeAtomicJson(
   filename,
   value,
+  options = {},
+) {
+  return writeAtomicJsonText(filename, JSON.stringify(value, null, 2), options);
+}
+
+/** Internal pre-serialized JSON path; durability is identical to writeAtomicJson. */
+export async function writeAtomicJsonText(
+  filename,
+  serialized,
   {
     fsAdapter = fs,
     platform = process.platform,
     sleep = wait,
     onRenameRecovery,
+    captureFileIdentity = false,
   } = {},
 ) {
+  if (typeof serialized !== "string") throw TypeError("Expected serialized JSON");
   const temp = filename + "." + randomUUID() + ".tmp";
   let handle,
+    identityHandle,
+    beforeIdentity,
+    identity,
     failure,
     phase = "mkdir";
   try {
@@ -60,12 +74,21 @@ export async function writeAtomicJson(
     phase = "open";
     handle = await fsAdapter.open(temp, "wx");
     phase = "write";
-    await handle.writeFile(JSON.stringify(value, null, 2), "utf8");
+    await handle.writeFile(serialized, "utf8");
     phase = "sync";
     await handle.sync();
     phase = "close";
     await handle.close();
     handle = null;
+    if (captureFileIdentity) {
+      // The read handle stays attached to this inode even if an outside writer
+      // replaces the destination immediately after rename. The writer is closed
+      // first because Windows may finalize mtime only on close.
+      try {
+        identityHandle = await fsAdapter.open(temp, "r");
+        beforeIdentity = await identityHandle.stat({ bigint: true });
+      } catch {}
+    }
     phase = "rename";
     // Retry only replacement of the already synced file. Never remove the old
     // destination or repeat the business transaction to overcome a sharing lock.
@@ -75,12 +98,21 @@ export async function writeAtomicJson(
       sleep,
       onRenameRecovery,
     });
+    if (beforeIdentity) {
+      try {
+        const after = await identityHandle.stat({ bigint: true });
+        if (["dev", "ino", "size", "mtimeNs"].every((key) =>
+          beforeIdentity[key] !== undefined && beforeIdentity[key] === after[key])) identity = after;
+      } catch {}
+    }
+    return captureFileIdentity ? identity : undefined;
   } catch (error) {
     failure = error;
     error.storageOperation ||= "atomic." + phase;
     throw error;
   } finally {
     if (handle) await handle.close().catch(() => {});
+    if (identityHandle) await identityHandle.close().catch(() => {});
     await fsAdapter.unlink(temp).catch((e) => {
       if (e.code !== "ENOENT" && !failure) {
         e.storageOperation ||= "atomic.cleanup";

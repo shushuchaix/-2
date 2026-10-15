@@ -2,6 +2,7 @@ import { createPagedProvider } from "./shared.mjs";
 import { buildBossOperation, parseBossResponse } from "../boss/protocol.mjs";
 import { mapBossJob } from "../boss/records.mjs";
 import { bossCityCode } from "../boss/cities.mjs";
+import { safeSourceDiagnosticRefs } from "../source-status.mjs";
 
 const fail = (code, retryable = false) =>
   Object.assign(Error("Boss 读取未完成：" + code), { code, retryable });
@@ -46,6 +47,7 @@ export function createBossProvider() {
     if (parsed.status !== "success")
       throw Object.assign(fail(parsed.code, parsed.status === "rate_limited"), {
         phase: parsed.phase || "response",
+        ...safeSourceDiagnosticRefs(response),
       });
     return parsed;
   }
@@ -150,7 +152,11 @@ export function createBossProvider() {
   provider.collect = async (ctx) => {
     const result = await collect(ctx);
     const blocked = result.issues.find((i) => authCodes.has(i.code));
-    if (blocked) throw fail(blocked.code);
+    if (blocked)
+      throw Object.assign(
+        fail(blocked.code),
+        safeSourceDiagnosticRefs(blocked),
+      );
     return result;
   };
   return provider;

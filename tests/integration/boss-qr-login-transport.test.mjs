@@ -72,7 +72,10 @@ for (const idleTimeoutMs of [45000, 120000])
     for (let i = 0; i < 10 && !downstream.destroyed; i++) await turn();
     assert.equal(peer.destroyed, true);
     assert.equal(timeouts.length, 1);
-    assert.deepEqual(timeouts[0], { phase: "idle", timeoutMs: idleTimeoutMs });
+    assert.equal(timeouts[0].phase, "idle");
+    assert.equal(timeouts[0].timeoutMs, idleTimeoutMs);
+    assert.ok(Number.isSafeInteger(timeouts[0].durationMs));
+    assert.ok(timeouts[0].durationMs >= 0 && timeouts[0].durationMs < 10000);
     assert.doesNotMatch(
       JSON.stringify(timeouts),
       /zhipin|8\.8\.8|Authorization|password/,
@@ -428,13 +431,19 @@ test("the proxy byte ceiling is classified and shown without revealing any reque
 
 test("an idle tunnel release is diagnostic cleanup and does not claim a failed login request", async (t) => {
   const { events, clientOptions } = await loginFixture(t);
-  await clientOptions[0].onTimeout({ phase: "idle", timeoutMs: 120000 });
+  await clientOptions[0].onTimeout({
+    phase: "idle",
+    timeoutMs: 120000,
+    durationMs: 17,
+  });
   assert.ok(
     events.some(
       (e) =>
         e.phase === "cleanup" &&
         e.code === "collection_idle_tunnel_closed" &&
-        e.outcome === "completed",
+        e.outcome === "completed" &&
+        e.timeoutMs === 120000 &&
+        e.durationMs === 17,
     ),
   );
   assert.equal(
@@ -454,6 +463,51 @@ test("a connection handshake deadline remains a classified transport failure", a
         e.outcome === "failed",
     ),
   );
+  const timeout = events.find(
+    (event) => event.code === "collection_browser_timeout",
+  );
+  assert.equal(timeout.timeoutMs, 45000);
+  assert.equal(
+    timeout.durationMs,
+    undefined,
+    "unknown elapsed time must not be replaced by the configured deadline",
+  );
+});
+
+test("modern Electron navigation event details keep legitimate redirects and reject unapproved landings", async (t) => {
+  const { window, events } = await loginFixture(t);
+  for (const url of [
+    "https://www.zhipin.com/?ka=header-home#jobs",
+    "https://www.zhipin.com/web/geek/jobs?city=101010100",
+    "https://www.zhipin.com/job_detail/owned-position.html",
+  ]) {
+    let prevented = false;
+    window.webContents.emit("will-redirect", {
+      url,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+    assert.equal(prevented, false, url);
+  }
+  let prevented = false;
+  window.webContents.emit("will-redirect", {
+    url: "https://www.zhipin.com/web/common/403.html?token=private-token",
+    preventDefault: () => {
+      prevented = true;
+    },
+  });
+  await turn();
+  assert.equal(prevented, true);
+  assert.match(window.title, /跳转被限制/);
+  assert.ok(
+    events.some(
+      (event) =>
+        event.phase === "redirect" &&
+        event.parser?.version === "boss-login-restricted-landing",
+    ),
+  );
+  assert.doesNotMatch(JSON.stringify(events), /https:|private-token|403.html/);
 });
 
 test("a real bounded tunnel revokes on bytes even with an extended idle wait and a failing observer", async (t) => {

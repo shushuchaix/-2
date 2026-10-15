@@ -33,6 +33,9 @@ test("detailed diagnostic metadata survives restart while unknown nested payload
       phase: "finished",
       outcome: "partial",
       durationMs: 93,
+      timeoutMs: 120000,
+      resultCategory: "timeout",
+      requestPurpose: "login_poll",
       counts: {
         raw: 12,
         accepted: 10,
@@ -67,6 +70,10 @@ test("detailed diagnostic metadata survives restart while unknown nested payload
   assert.equal(saved.schemaVersion, 2);
   assert.match(saved.sessionId, /^s-[a-f0-9-]{36}$/);
   assert.equal(saved.requestId, requestId);
+  assert.equal(saved.durationMs, 93);
+  assert.equal(saved.timeoutMs, 120000);
+  assert.equal(saved.resultCategory, "timeout");
+  assert.equal(saved.requestPurpose, "login_poll");
   assert.deepEqual(saved.counts, { raw: 12, accepted: 10, rejected: 2 });
   assert.deepEqual(saved.coverage, {
     complete: 2,

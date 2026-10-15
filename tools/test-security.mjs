@@ -138,8 +138,8 @@ const auth = await import('../src/auth.mjs');
     auth.clientIp(fakeReq({ 'x-forwarded-for': '1.1.1.1' }, '10.0.0.5'), false) === '10.0.0.5',
   );
   check(
-    'TRUST_PROXY 开启时采用 X-Forwarded-For 首个地址',
-    auth.clientIp(fakeReq({ 'x-forwarded-for': '1.1.1.1, 2.2.2.2' }, '10.0.0.5'), true) === '1.1.1.1',
+    'TRUST_PROXY 开启时采用受信代理追加的最右地址，忽略伪造前缀',
+    auth.clientIp(fakeReq({ 'x-forwarded-for': '1.1.1.1, 2.2.2.2' }, '10.0.0.5'), true) === '2.2.2.2',
   );
   check(
     'IPv4-mapped IPv6 归一化',
@@ -291,9 +291,14 @@ section('四、HTTP 集成测试（进程内启动，全数据源关闭以便快
 // 这里只需启动服务（config.mjs 会自己读到 TMP_DATA/config.json）。
 let server, started;
 try {
-  const { startServer } = await import('../src/server.mjs');
-  started = startServer();
-  server = started.server;
+  const { createServer } = await import('../src/server.mjs');
+  const { loadConfig } = await import('../src/config.mjs');
+  const cfg = loadConfig({ quiet: true, dataDir: TMP_DATA, readLocalCredentials: false });
+  cfg.deepseek.apiKey = '';
+  const ctx = createServer(cfg, { dataDir: TMP_DATA });
+  started = { ctx };
+  server = ctx.server;
+  server.listen(PORT, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
 
   let cookie = '';
@@ -447,6 +452,14 @@ try {
 
   // --- 未知接口 ---
   cookie = savedCookie;
+  r = await api('/api/runs');
+  check('登出后复制的旧 Cookie 也被服务器拒绝', r.status === 401, `HTTP ${r.status}`);
+  cookie = '';
+  r = await api('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: TEST_PASSWORD }),
+  });
+  cookie = (r.headers.get('set-cookie') || '').split(';')[0];
   r = await api('/api/definitely-not-exist');
   check('未知 API 返回 404 JSON', r.status === 404 && (await r.json()).error);
 } catch (e) {

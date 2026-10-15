@@ -1,4 +1,8 @@
 import { buildBossOperation } from "../../src/sources/boss/protocol.mjs";
+import {
+  BOSS_OPERATION_HEADER,
+  validBossOperationToken,
+} from "./boss-operation-ownership.mjs";
 const failure = (code) =>
   Object.assign(Error("Boss页面读取不可用。"), { code, retryable: false });
 export function validateBossOperation(operation) {
@@ -29,7 +33,7 @@ export function validateBossOperation(operation) {
     throw failure("boss_request_invalid");
   return canonical;
 }
-function pageRead(operation, id) {
+function pageRead(operation, id, ownership) {
   return new Promise((resolve) => {
     const $ = window.$;
     const key = "__rjrBoss_" + id;
@@ -156,7 +160,20 @@ function pageRead(operation, id) {
               if (done || cancelled) throw stopped;
               let response;
               try {
-                response = await adapter(config);
+                // Authentication hooks have finished. This local marker never
+                // reaches the server: Electron validates and strips it first.
+                const marked = ownership
+                  ? {
+                      ...config,
+                      headers: {
+                        ...(typeof config.headers?.toJSON === "function"
+                          ? config.headers.toJSON()
+                          : config.headers || {}),
+                        [ownership.name]: ownership.value,
+                      },
+                    }
+                  : config;
+                response = await adapter(marked);
               } catch (error) {
                 response = error?.response;
                 if (!response) {
@@ -239,6 +256,19 @@ function pageRead(operation, id) {
         data: operation.parameters,
         dataType: "json",
         timeout: 45000,
+        ...(ownership
+          ? {
+              beforeSend(xhr, settings) {
+                const allowed = $.ajaxSettings.beforeSend.call(
+                  this,
+                  xhr,
+                  settings,
+                );
+                if (allowed === false) return false;
+                xhr.setRequestHeader(ownership.name, ownership.value);
+              },
+            }
+          : {}),
         success: (payload, _text, xhr) =>
           finish({ status: xhr?.status || 200, payload }),
         error: (xhr, text) =>
@@ -267,8 +297,10 @@ function pageRead(operation, id) {
 function pageAbort(id) {
   window["__rjrBoss_" + id]?.abort();
 }
-export function bossPageScript(operation, id) {
-  return `(${pageRead.toString()})(${JSON.stringify(validateBossOperation(operation))},${JSON.stringify(id)})`;
+export function bossPageScript(operation, id, token) {
+  if (token !== undefined && !validBossOperationToken(token))
+    throw failure("boss_request_invalid");
+  return `(${pageRead.toString()})(${JSON.stringify(validateBossOperation(operation))},${JSON.stringify(id)},${JSON.stringify(token ? { name: BOSS_OPERATION_HEADER, value: token } : null)})`;
 }
 export function bossAbortScript(id) {
   return `(${pageAbort.toString()})(${JSON.stringify(id)})`;
@@ -299,6 +331,7 @@ export function decodeBossPageResult(raw) {
       "boss_ajax_unavailable",
       "collection_cancelled",
       "boss_transport_failed",
+      "collection_route_forbidden",
     ].includes(result.code)
       ? { code: result.code }
       : {}),

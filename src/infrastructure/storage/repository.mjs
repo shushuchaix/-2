@@ -13,7 +13,7 @@ import {
   assertWorkspace,
   createEmptyWorkspace,
 } from "../../domain/contracts.mjs";
-import { writeAtomicJson } from "./atomic.mjs";
+import { writeAtomicJson, writeAtomicJsonText } from "./atomic.mjs";
 import { withWorkspaceLock } from "./lock.mjs";
 import { recordDiagnostic } from "../diagnostics/log.mjs";
 import { assertOperationWriteAllowed } from "../../application/workspace-operations.mjs";
@@ -32,16 +32,17 @@ export async function openWorkspaceRepository({
   dataDir = path.resolve(dataDir);
   await fsAdapter.mkdir(dataDir, { recursive: true });
   const filename = path.join(dataDir, "workspace.v2.json");
-  const controlStore = openPackageControl({ dataDir, fsAdapter });
+  const controlStore = openPackageControl({ dataDir, fsAdapter, captureFileIdentity: true });
   let legacyAllowed = true;
   const heldLock = new AsyncLocalStorage();
   const inLock = (action) =>
     heldLock.getStore()
       ? action()
       : withWorkspaceLock(dataDir, () => heldLock.run(true, action));
-  const write = (file, value) =>
-    writeAtomicJson(file, value, {
+  const write = (file, value, serialized = false) =>
+    (serialized ? writeAtomicJsonText : writeAtomicJson)(file, value, {
       fsAdapter,
+      captureFileIdentity: serialized,
       onRenameRecovery: diagnostics
         ? (event) =>
             recordDiagnostic(diagnostics, {
@@ -51,6 +52,42 @@ export async function openWorkspaceRepository({
             })
         : undefined,
     });
+  // Cache only repository-owned snapshots. Public readers and transaction callbacks
+  // always receive clones; the lock still coordinates every read and write process.
+  let snapshotCache;
+  const trackedFiles = [
+    filename,
+    path.join(dataDir, "control", "state.json"),
+    path.join(dataDir, "control", "initialized.json"),
+  ];
+  const statSignature = (s) => {
+    if (!s) return null;
+    const parts = [s.dev, s.ino, s.size, s.mtimeNs ?? s.mtimeMs,
+      s.ctimeNs ?? s.ctimeMs];
+    return parts.some((part) => part === undefined || part === null)
+      ? null : parts.map(String).join(":");
+  };
+  const fileSignature = async () => {
+    // Older/custom adapters without stat remain correct through the uncached path.
+    if (typeof fsAdapter.stat !== "function") return null;
+    const entries = [];
+    for (const file of trackedFiles) {
+      try {
+        const s = await fsAdapter.stat(file, { bigint: true });
+        const signature = statSignature(s);
+        if (signature === null) return null;
+        entries.push(signature);
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        entries.push("missing");
+      }
+    }
+    return entries.join("|");
+  };
+  const assertCurrentSchema = (value) => {
+    if (!legacyAllowed && value.schemaVersion !== 3)
+      throw packageError("workspace_upgrade_required", "旧格式仅可通过启动升级读取。", 503);
+  };
   const readStored = async () => {
     let raw;
     try {
@@ -66,40 +103,80 @@ export async function openWorkspaceRepository({
     } catch (e) {
       throw Error("Corrupt workspace JSON: " + e.message);
     }
-    if (!legacyAllowed && value.schemaVersion !== 3)
-      throw packageError(
-        "workspace_upgrade_required",
-        "旧格式仅可通过启动升级读取。",
-        503,
-      );
+    assertCurrentSchema(value);
     return assertWorkspace(value);
   };
-  const readInLock = async () => {
-    const value = await readStored();
-    const control = await controlStore.read({
-      allowUninitialized: value.schemaVersion !== 3,
-    });
-    return assertWorkspace(applyDeletionLedger(value, control));
+  const ledgerKey = (control) => JSON.stringify(control?.deletionLedger || {});
+  const jsonRoundTripStable = (value) => {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+    if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
+    if (typeof value !== "object") return false;
+    if (Array.isArray(value)) {
+      const keys = Object.keys(value);
+      if (keys.length !== value.length || keys.some((key, index) => key !== String(index))) return false;
+    } else {
+      const proto = Object.getPrototypeOf(value);
+      if (proto !== Object.prototype && proto !== null) return false;
+    }
+    return Object.values(value).every(jsonRoundTripStable);
   };
+  const loadSnapshot = async ({ bootstrap = false } = {}) => {
+    // A stable metadata pair prevents publishing a torn read from an external
+    // editor that does not participate in our process lock.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const signature = await fileSignature();
+      if (!bootstrap && signature !== null && snapshotCache?.signature === signature) {
+        assertCurrentSchema(snapshotCache.workspace);
+        return snapshotCache;
+      }
+      snapshotCache = undefined;
+      const stored = await readStored();
+      const control = await controlStore.read({
+        allowUninitialized: stored.schemaVersion !== 3 || bootstrap,
+      });
+      const workspace = assertWorkspace(applyDeletionLedger(stored, control));
+      const after = await fileSignature();
+      if (signature !== null && signature !== after) continue;
+      const loaded = { workspace, control, signature: after, ledger: ledgerKey(control), serialized: null };
+      if (!bootstrap && after !== null) snapshotCache = loaded;
+      return loaded;
+    }
+    throw Error("Workspace changed during read; retry after the external writer finishes");
+  };
+  const readInLock = async () => structuredClone((await loadSnapshot()).workspace);
   const read = () => inLock(readInLock);
-  await read();
+  // Opening validates/prepares the private snapshot; no public copy is consumed.
+  await inLock(() => loadSnapshot());
   let queue = Promise.resolve();
+  const transactionSnapshots = new WeakMap();
   async function makeTransaction(options = {}) {
-    const stored = await readStored();
-    const initialControl = await controlStore.read({
-      allowUninitialized: stored.schemaVersion !== 3 || options.bootstrap,
-    });
+    let committed = await loadSnapshot(options);
+    const stored = committed.workspace;
+    const initialControl = committed.control;
     if (stored.schemaVersion === 3 && !initialControl)
       throw packageError("control_state_invalid", "控制状态缺失。", 503);
     if (!options.bootstrap) assertOperationWriteAllowed(stored, options);
     let committedControl = structuredClone(initialControl);
+    let controlSignatures = committed.signature?.split("|").slice(1);
+    let publicWorkspace;
     const tx = {
-      workspace: applyDeletionLedger(stored, initialControl),
+      // Most regular mutations never inspect tx.workspace. Clone the separate
+      // transaction view only when requested, preserving its original API semantics.
+      get workspace() {
+        return publicWorkspace ??= structuredClone(committed.workspace);
+      },
+      set workspace(value) {
+        publicWorkspace = value;
+      },
       control: structuredClone(initialControl),
       async commitControl(next) {
-        await controlStore.commitInLock(next, { previous: committedControl });
+        // A partially committed control file must never reuse the old projection.
+        snapshotCache = undefined;
+        const identities = await controlStore.commitInLock(next, { previous: committedControl });
         committedControl = structuredClone(next);
         tx.control = structuredClone(next);
+        controlSignatures = [statSignature(identities.state),
+          identities.marker ? statSignature(identities.marker) : controlSignatures?.[1]];
       },
       async commitWorkspace(next) {
         if (next.schemaVersion === 3 && !committedControl)
@@ -109,18 +186,39 @@ export async function openWorkspaceRepository({
             503,
           );
         const draft = applyDeletionLedger(next, committedControl);
-        draft.revision = tx.workspace.revision + 1;
+        draft.revision = committed.workspace.revision + 1;
         assertWorkspace(draft);
+        snapshotCache = undefined;
         if (
-          tx.workspace.revision > 0 &&
-          !(tx.workspace.schemaVersion === 2 && draft.schemaVersion === 3)
+          committed.workspace.revision > 0 &&
+          !(committed.workspace.schemaVersion === 2 && draft.schemaVersion === 3)
         )
           await write(
             path.join(dataDir, "workspace.v2.previous.json"),
-            applyDeletionLedger(tx.workspace, committedControl),
+            committed.serialized && committed.ledger === ledgerKey(committedControl)
+              ? committed.serialized
+              : JSON.stringify(applyDeletionLedger(committed.workspace, committedControl)),
+            true,
           );
-        await write(filename, draft);
-        tx.workspace = structuredClone(draft);
+        // Internal snapshots are machine data; compact JSON avoids persisting
+        // indentation on every transaction. Exports/configuration retain their format.
+        const serialized = JSON.stringify(draft);
+        const identity = await write(filename, serialized, true);
+        // The private committed value has no references in caller-owned drafts.
+        committed = { workspace: draft, control: committedControl, ledger: ledgerKey(committedControl), serialized };
+        try {
+          committed.signature = await fileSignature();
+          const expected = [statSignature(identity), ...(controlSignatures || [])];
+          // A later stat can describe an outside replacement. Admit only the exact
+          // synced file plus unchanged/owned control files, otherwise reread next time.
+          if (expected.length === 3 && expected.every((s) => typeof s === "string") &&
+              committed.signature === expected.join("|") &&
+              jsonRoundTripStable(draft) && jsonRoundTripStable(committedControl)) snapshotCache = committed;
+        } catch {
+          // Saving already succeeded; inability to cache must not report a failed save.
+          snapshotCache = undefined;
+        }
+        publicWorkspace = undefined;
         return draft.revision;
       },
       async readSnapshot(id) {
@@ -269,6 +367,7 @@ export async function openWorkspaceRepository({
         await fsAdapter.unlink(current);
       },
     };
+    transactionSnapshots.set(tx, stored);
     return tx;
   }
   const withMaintenanceTransaction = (action, options = {}) => {
@@ -303,24 +402,20 @@ export async function openWorkspaceRepository({
         return inLock(async () => {
           phase = "read";
           const tx = await makeTransaction(options);
-          const current = tx.workspace;
+          const current = transactionSnapshots.get(tx);
+          const currentRevision = current.revision;
           const draft = structuredClone(current);
+          const business = (w) => contentHash({ ...w, revision: undefined, operationLeases: undefined });
+          const previousBusiness = options.operationMaintenance ? business(draft) : null;
           phase = "mutation";
           const result = await fn(draft, tx);
           if (options.operationMaintenance) {
-            const business = (w) =>
-              contentHash({
-                ...w,
-                revision: undefined,
-                operationLeases: undefined,
-              });
-            if (business(current) !== business(draft))
+            if (previousBusiness !== business(draft))
               throw Error("Operation maintenance cannot change business data");
           }
-          draft.revision = current.revision + 1;
+          draft.revision = currentRevision + 1;
           revision = draft.revision;
           phase = "validation";
-          assertWorkspace(draft);
           phase = "previous";
           phase = "current";
           await tx.commitWorkspace(draft);

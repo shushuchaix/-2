@@ -167,15 +167,20 @@ export function JobUpdateProvider({
       busy.current = true;
       setBusy(true);
       setState({ key: captured, result: null });
+      let refreshNeeded = false;
       try {
         const result = await promise;
+        refreshNeeded = result.run !== undefined || "error" in result;
         if (
           current.current.key === captured &&
           sameScope(current.current.scope, result.scope)
         )
           setState({ key: captured, result });
       } finally {
-        await collection.refresh();
+        // A blocked or already-running startup made no mutation. Its existing
+        // activity is already known; a redundant background read can keep the
+        // preparation indicator busy indefinitely on a slow workspace.
+        if (refreshNeeded) await collection.refresh();
         busy.current = false;
         setBusy(false);
       }

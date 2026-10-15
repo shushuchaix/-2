@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import {
   assertWorkspace,
   assertSourceRecord,
@@ -43,4 +44,44 @@ test("workspace schema rejects future versions and malformed entities", () => {
     () => assertSourceRecord({ title: "标题", url: "javascript:alert(1)" }),
     /source|url/i,
   );
+});
+
+test("every legacy test entry has exactly one aggregate or explicit exclusion registration", async () => {
+  const { assertTestRegistration, TEST_SUITES, EXCLUDED_TEST_ENTRIES } =
+    await import("../../tools/lib/test-suites.mjs");
+  const files = fs
+    .readdirSync(new URL("../../tools/", import.meta.url))
+    .filter((file) => /^test-.*\.mjs$/.test(file));
+  assert.doesNotThrow(() => assertTestRegistration({ files }));
+  assert.throws(
+    () => assertTestRegistration({ files: [...files, "test-new-orphan.mjs"] }),
+    /Unregistered.*test-new-orphan/,
+  );
+  assert.throws(
+    () =>
+      assertTestRegistration({
+        files,
+        suites: [...TEST_SUITES, { f: "test-security.mjs", offline: true }],
+      }),
+    /Duplicate.*test-security/,
+  );
+  assert.throws(
+    () =>
+      assertTestRegistration({
+        files,
+        exclusions: [
+          ...EXCLUDED_TEST_ENTRIES,
+          {
+            f: "test-no-longer-exists.mjs",
+            reason: "manual fixture",
+            mode: "manual",
+          },
+        ],
+      }),
+    /Missing.*test-no-longer-exists/,
+  );
+  for (const entry of EXCLUDED_TEST_ENTRIES) {
+    assert.ok(entry.reason.length >= 10, entry.f);
+    assert.ok(["aggregate", "native", "manual"].includes(entry.mode), entry.f);
+  }
 });

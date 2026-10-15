@@ -18,6 +18,18 @@ export const desktopPages = Object.freeze([
 ]);
 export const desktopWidths = Object.freeze([1440, 1024, 768, 375]);
 
+export function executeDesktopFixtureScript(webContents, clock, source) {
+  const now = clock.now();
+  if (!Number.isSafeInteger(now)) throw Error("invalid_self_test_clock");
+  // A renderer reload recreates Date with the host time. Each synthetic probe
+  // restores the service clock before evaluating the original expression, so
+  // expiry checks keep one time base across reloads and explicit advances.
+  return webContents.executeJavaScript(
+    `(()=>{Date.now=()=>${now};})();\n${source}`,
+    true,
+  );
+}
+
 export function desktopNavigationMatches(width, { links, toggle }) {
   return width <= 768 ? toggle && links === 0 : links === 9;
 }
@@ -496,7 +508,7 @@ export async function runWorkspaceSelfTest({
     interactions = [],
     visualAudits = [],
     origin = new URL(window.webContents.getURL()).origin;
-  const js = (source) => window.webContents.executeJavaScript(source, true);
+  const js = (source) => executeDesktopFixtureScript(window.webContents, clock, source);
   let requestedWidth = await js("innerWidth"), lastPage = "workbench";
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const observe = (name, ok, details) => results.push({ name, ok:Boolean(ok), ...(details ? {details} : {}) });
@@ -1273,29 +1285,23 @@ export async function runWorkspaceSelfTest({
       await context.trashService.archive({packageId:candidate.packageId});
       const deadline=Date.parse((await context.repository.read()).packages[candidate.packageId].purgeAt);
       clock.advance(Math.max(0,deadline-clock.now()-1000));
-      try {
-        await js(`(()=>{window.__rjrOriginalDateNow=Date.now;window.__rjrRendererNow=${clock.now()};Date.now=()=>window.__rjrRendererNow;})()`);
-        await navigate("回收站");
-        await click("查看内容"+candidate.versionName);
-        await wait("Boolean(document.querySelector('[aria-label=版本内容摘要]'))");
-        await click("简历正文");
-        await wait(textHas(body));
-        await capture("trash-before-expiry.png",{scenario:"到期前展开正文"});
-        clock.advance(Math.max(0,deadline-clock.now()));
-        await js(`window.__rjrRendererNow=${clock.now()}`);
-        await wait(textHas("已到期，不能读取正文或恢复。"),5000);
-        check("到期不保留已展开正文或恢复按钮",!(await js(textHas(body))) && (await js("!document.querySelector('[aria-label=版本内容摘要]')")) && !(await js(`Boolean(${locate("恢复"+candidate.versionName)})`)));
-        await trace("expiry","版本到期隐藏正文与恢复入口");
-        await wait("![...document.querySelectorAll('[data-slot=sheet-content],[data-slot=sheet-overlay]')].some(el=>el.getClientRects().length>0)");
-        check("到期截图前关闭 Sheet 且正文与恢复入口仍不可用",!(await js(textHas(body))) && (await js("!document.querySelector('[aria-label=版本内容摘要]')")) && !(await js(`Boolean(${locate("恢复"+candidate.versionName)})`)));
-        await capture("trash-expired.png",{scenario:"版本到期"});
-        await escaped();
-        await context.trashScheduler.sweep();
-        check("界面到期合成包由既有服务清理",!(await context.repository.read()).packages[candidate.packageId]);
-        await navigate("设置");
-      } finally {
-        await js("(()=>{if(typeof window.__rjrOriginalDateNow==='function')Date.now=window.__rjrOriginalDateNow;delete window.__rjrOriginalDateNow;delete window.__rjrRendererNow;})()");
-      }
+      await navigate("回收站");
+      await click("查看内容"+candidate.versionName);
+      await wait("Boolean(document.querySelector('[aria-label=版本内容摘要]'))");
+      await click("简历正文");
+      await wait(textHas(body));
+      await capture("trash-before-expiry.png",{scenario:"到期前展开正文"});
+      clock.advance(Math.max(0,deadline-clock.now()));
+      await wait(textHas("已到期，不能读取正文或恢复。"),5000);
+      check("到期不保留已展开正文或恢复按钮",!(await js(textHas(body))) && (await js("!document.querySelector('[aria-label=版本内容摘要]')")) && !(await js(`Boolean(${locate("恢复"+candidate.versionName)})`)));
+      await trace("expiry","版本到期隐藏正文与恢复入口");
+      await wait("![...document.querySelectorAll('[data-slot=sheet-content],[data-slot=sheet-overlay]')].some(el=>el.getClientRects().length>0)");
+      check("到期截图前关闭 Sheet 且正文与恢复入口仍不可用",!(await js(textHas(body))) && (await js("!document.querySelector('[aria-label=版本内容摘要]')")) && !(await js(`Boolean(${locate("恢复"+candidate.versionName)})`)));
+      await capture("trash-expired.png",{scenario:"版本到期"});
+      await escaped();
+      await context.trashScheduler.sweep();
+      check("界面到期合成包由既有服务清理",!(await context.repository.read()).packages[candidate.packageId]);
+      await navigate("设置");
     });
     await phase("减少动效仍显示正常合成数据",async()=>{
       const debuggerApi=window.webContents.debugger;

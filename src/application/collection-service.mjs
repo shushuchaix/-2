@@ -38,7 +38,10 @@ import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { projectCollectionQuality } from "../domain/collection-quality.mjs";
 import { createRecordEnrichment } from "./record-enrichment.mjs";
 import { recordCollectionSourceHealth } from "./collection-source-health.mjs";
-import { safeSourceIssues } from "../sources/source-status.mjs";
+import {
+  safeSourceIssues,
+  safeSourceDiagnosticRefs,
+} from "../sources/source-status.mjs";
 const terminal = new Set(["completed", "cancelled"]);
 const bossRiskCodes = new Set([
   "boss_account_risk",
@@ -1282,7 +1285,7 @@ export function createCollectionService({
           record = await enrichRecord(record, ctx);
         } catch (e) {
           if (e.code === "source_budget_exhausted" && !signal.aborted)
-            await issue(unit, e.code, false, e.nextDueAt);
+            await issue(unit, e.code, false, e.nextDueAt, e);
           if (
             signal.aborted ||
             [
@@ -1302,9 +1305,10 @@ export function createCollectionService({
             code: idValid(e.code) ? e.code : "detail_unavailable",
             sourceId: record.sourceId,
             siteId: record.siteId,
+            ...safeSourceDiagnosticRefs(e),
           };
           if (bossAuthCodes.has(e.code)) {
-            await issue(unit, e.code, true);
+            await issue(unit, e.code, true, undefined, e);
             continue;
           }
         }
@@ -1447,7 +1451,10 @@ export function createCollectionService({
                     retryEligible: e.retryable !== false,
                     ...(e.nextDueAt ? { nextDueAt: e.nextDueAt } : {}),
                   };
-                  issues.push({ code: e.code || "detail_unavailable" });
+                  issues.push({
+                    code: e.code || "detail_unavailable",
+                    ...safeSourceDiagnosticRefs(e),
+                  });
                   if (e.code === "source_budget_exhausted") stopCode = e.code;
                 }
               }
@@ -1534,7 +1541,7 @@ export function createCollectionService({
             )
               throw e;
             if (e.code === "source_budget_exhausted") {
-              await issue(unit, e.code, false, e.nextDueAt);
+              await issue(unit, e.code, false, e.nextDueAt, e);
               stopCode = e.code;
               break;
             }
@@ -1549,6 +1556,7 @@ export function createCollectionService({
                 "http_forbidden",
               ].includes(e.code) || bossAuthCodes.has(e.code),
               e.nextDueAt,
+              e,
             );
           }
         }
@@ -2027,7 +2035,8 @@ export function createCollectionService({
         ).catch(() => {});
       }
     }
-    async function issue(unit, code, auth, nextDueAt) {
+    async function issue(unit, code, auth, nextDueAt, error) {
+      const diagnosticRefs = safeSourceDiagnosticRefs(error);
       await mutateCurrent(ref, token, lease, (w, r) => {
         recordCollectionSourceHealth(w, {
           scope: ref.scope,
@@ -2035,7 +2044,7 @@ export function createCollectionService({
           sourceId: unit.sourceId,
           siteId: unit.siteId,
           records: [],
-          issues: [{ code }],
+          issues: [{ code, ...diagnosticRefs }],
           now: clock.now(),
         });
         if (unit.sourceId === "boss" && bossAuthCodes.has(code)) {
@@ -2058,6 +2067,7 @@ export function createCollectionService({
             code,
             sourceId: "boss",
             siteId: unit.siteId,
+            ...diagnosticRefs,
           });
           return;
         }
@@ -2079,6 +2089,7 @@ export function createCollectionService({
           code: u.lastErrorCode,
           sourceId: u.sourceId,
           siteId: u.siteId,
+          ...diagnosticRefs,
         });
       });
     }

@@ -1,8 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  runTestProcess,
+  formatTestResult,
+  publishTestResult,
+} from "./lib/test-process.mjs";
+process.env.RJR_DISABLE_LOCAL_CREDENTIALS = "1";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const selected = args[0] === "--file" ? args[1] : null;
@@ -26,9 +31,9 @@ if (
 )
   throw Error("Unexpected UI fixture directory");
 try {
-  const result = spawnSync(
-    process.execPath,
-    [
+  const result = runTestProcess({
+    name: "React UI tests",
+    args: [
       "--import",
       "./tests/helpers/network-guard.mjs",
       "--import",
@@ -38,20 +43,19 @@ try {
       "--test",
       ...files,
     ],
-    {
-      cwd: root,
-      stdio: "inherit",
-      timeout: 300000,
-      env: {
-        ...process.env,
-        DEBUG_PRINT_LIMIT: "800",
-        TSX_TSCONFIG_PATH: path.join(root, "tests/tsconfig.json"),
-        RJR_DATA_DIR: dataDir,
-      },
+    cwd: root,
+    stdio: "inherit",
+    timeoutMs: 300000,
+    env: {
+      ...process.env,
+      DEBUG_PRINT_LIMIT: "800",
+      TSX_TSCONFIG_PATH: path.join(root, "tests/tsconfig.json"),
+      RJR_DATA_DIR: dataDir,
     },
-  );
-  if (result.error) throw result.error;
-  process.exitCode = result.status ?? 1;
+  });
+  console.log(formatTestResult(result));
+  publishTestResult(result);
+  process.exitCode = result.code;
 } finally {
   await fs.rm(dataDir, { recursive: true, force: true });
 }

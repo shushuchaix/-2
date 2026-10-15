@@ -51,6 +51,64 @@ export const diagnosticResultLabel = (value: unknown) =>
       EAI_AGAIN: "域名解析暂不可用",
     }) as Record<string, string>
   )[String(value)] || (value ? "需要查看技术详情" : "过程记录");
+const resultCategoryLabels: Record<string, string> = {
+  response: "已收到响应",
+  success: "业务成功",
+  network: "网络异常",
+  timeout: "超时",
+  cancelled: "已取消",
+  policy: "被访问策略阻止",
+  budget: "达到预算上限",
+  response_unobserved: "未观察到完整响应",
+  business_risk: "平台风险限制",
+  auth: "需要登录或会话已失效",
+  rate_limited: "平台限流",
+  unknown: "原因尚未确认",
+};
+const requestPurposeLabels: Record<string, string> = {
+  login: "登录流程",
+  login_poll: "登录状态轮询",
+  list: "岗位列表",
+  detail: "岗位详情",
+  document: "页面文档",
+  asset: "静态资源",
+  other: "其他请求",
+};
+const enumLabel = (labels: Record<string, string>, value: unknown) =>
+  typeof value === "string" && Object.hasOwn(labels, value)
+    ? labels[value]
+    : undefined;
+export const diagnosticResultCategoryLabel = (value: unknown) =>
+  enumLabel(resultCategoryLabels, value);
+function diagnosticPhaseLabel(entry: DiagnosticEntry) {
+  if (
+    entry.phase === "parse" &&
+    object(entry.parser) &&
+    entry.parser.version === "boss-business-response"
+  )
+    return "业务响应判定";
+  return (
+    enumLabel(
+      {
+        started: "请求开始",
+        finished: "处理结束",
+        validation: "请求检查",
+        queue: "请求排队",
+        dns: "域名解析",
+        budget: "预算检查",
+        transport: "网络传输",
+        response: "收到网络响应",
+        redirect: "页面跳转",
+        retry: "等待重试",
+        parse: "内容解析",
+        cleanup: "资源清理",
+        load: "页面加载",
+        commit: "保存结果",
+      },
+      entry.phase,
+    ) || "其他处理阶段"
+  );
+}
 const numberKeys = new Set([
   "httpStatus",
   "retryCount",
@@ -228,6 +286,10 @@ export function safeDiagnostic(entry: DiagnosticEntry): DiagnosticEntry {
       Number.isFinite(value)
     )
       result[key] = value;
+    else if (key === "resultCategory" && enumLabel(resultCategoryLabels, value))
+      result[key] = value;
+    else if (key === "requestPurpose" && enumLabel(requestPurposeLabels, value))
+      result[key] = value;
     else if (tokenKeys.has(key) && token(value)) result[key] = value;
     else if (
       [
@@ -389,12 +451,21 @@ export function safeDiagnostic(entry: DiagnosticEntry): DiagnosticEntry {
 
 export function DiagnosticDetails({
   entry,
+  entries = [],
   onClose,
 }: {
   entry: DiagnosticEntry | null;
+  entries?: DiagnosticEntry[];
   onClose(): void;
 }) {
   const safe = entry ? safeDiagnostic(entry) : null;
+  const related = safe?.requestId
+    ? entries
+        .map(safeDiagnostic)
+        .filter((item) => item.requestId === safe.requestId)
+        .sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")))
+        .slice(0, 64)
+    : [];
   return (
     <Sheet
       open={Boolean(entry)}
@@ -417,14 +488,26 @@ export function DiagnosticDetails({
                   ["操作", diagnosticOperationLabel(safe.operation)],
                   ["级别", diagnosticLevelLabel(safe.level)],
                   ["时间", safe.at],
-                  ["结果", diagnosticResultLabel(safe.code)],
-                  ["耗时（毫秒）", safe.durationMs],
+                  [
+                    "结果",
+                    diagnosticResultCategoryLabel(safe.resultCategory) ||
+                      diagnosticResultLabel(safe.code),
+                  ],
+                  [
+                    "请求用途",
+                    enumLabel(requestPurposeLabels, safe.requestPurpose),
+                  ],
+                  ["处理阶段", diagnosticPhaseLabel(safe)],
+                  ["实际耗时（毫秒）", safe.durationMs],
+                  ["配置超时（毫秒）", safe.timeoutMs],
                 ].map(([label, value]) => (
                   <div key={String(label)}>
                     <dt className="text-sm text-muted-foreground">
                       {String(label)}
                     </dt>
-                    <dd>{value === undefined ? "未提供" : String(value)}</dd>
+                    <dd className="break-words">
+                      {value === undefined ? "未提供" : String(value)}
+                    </dd>
                   </div>
                 ))}
               </dl>
@@ -436,6 +519,39 @@ export function DiagnosticDetails({
                 />
               )}
             </section>
+            {related.length > 0 && (
+              <section
+                aria-label="同一请求过程"
+                className="flex flex-col gap-3"
+              >
+                <h3>同一请求过程</h3>
+                <p className="text-sm text-muted-foreground">
+                  仅关联当前列表中相同请求编号的记录；HTTP 成功不代表业务成功。
+                </p>
+                <ol className="flex flex-col gap-3">
+                  {related.map((item, index) => (
+                    <li
+                      key={String(item.diagnosticId || index)}
+                      className="flex flex-col gap-1"
+                    >
+                      <p>
+                        {diagnosticPhaseLabel(item)} ·{" "}
+                        {diagnosticResultCategoryLabel(item.resultCategory) ||
+                          "过程记录"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {enumLabel(requestPurposeLabels, item.requestPurpose) ||
+                          "用途未提供"}
+                        {typeof item.httpStatus === "number" &&
+                          ` · HTTP ${item.httpStatus}`}
+                        {typeof item.durationMs === "number" &&
+                          ` · 实际耗时 ${item.durationMs} 毫秒`}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
             <Collapsible>
               <CollapsibleTrigger render={<Button variant="outline" />}>
                 技术详情

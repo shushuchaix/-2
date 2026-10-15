@@ -35,6 +35,7 @@ const issueCodes = new Set([
   "boss_rate_limited",
   "collection_browser_timeout",
   "collection_browser_output_limit",
+  "collection_route_forbidden",
   "service_disabled",
   "not_configured",
   "candidate_not_verified",
@@ -70,6 +71,24 @@ export function isVersionPrivateSource(provider) {
     ["social", "social_discovery"].includes(provider?.capabilities?.category)
   );
 }
+export function safeSourceDiagnosticRefs(value) {
+  const refs = {};
+  for (const [key, prefix] of [
+    ["diagnosticId", "d"],
+    ["requestId", "q"],
+  ]) {
+    if (
+      typeof value?.[key] === "string" &&
+      new RegExp(
+        "^" +
+          prefix +
+          "-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$",
+      ).test(value[key])
+    )
+      refs[key] = value[key];
+  }
+  return refs;
+}
 export function safeSourceIssues(issues, sourceId, siteId) {
   return (Array.isArray(issues) ? issues : []).slice(0, 100).map((issue) => ({
     code: issueCodes.has(issue?.code) ? issue.code : "source_probe_failed",
@@ -78,12 +97,7 @@ export function safeSourceIssues(issues, sourceId, siteId) {
     ...(typeof issue?.retryable === "boolean"
       ? { retryable: issue.retryable }
       : {}),
-    ...(typeof issue?.diagnosticId === "string" &&
-    /^d-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
-      issue.diagnosticId,
-    )
-      ? { diagnosticId: issue.diagnosticId }
-      : {}),
+    ...safeSourceDiagnosticRefs(issue),
   }));
 }
 export function normalizeSourceStatus({ status, issues = [] }) {

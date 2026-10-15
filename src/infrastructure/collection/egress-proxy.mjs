@@ -98,6 +98,7 @@ export function createEgressProxy({
         return;
       }
       const selected = resolved.addresses[0],
+        startedAt = performance.now(),
         socket = connect({
           host: selected.address,
           port:
@@ -123,6 +124,10 @@ export function createEgressProxy({
             resolved.client.onTimeout?.({
               phase: connected ? "idle" : "connect",
               timeoutMs: connected ? resolved.client.idleTimeoutMs : 45000,
+              durationMs: Math.max(
+                0,
+                Math.round(performance.now() - startedAt),
+              ),
             }),
           ).catch(() => {});
         } catch {}

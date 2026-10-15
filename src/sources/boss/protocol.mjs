@@ -93,11 +93,17 @@ export function parseBossResponse({ kind, status, payload, checkedAt, code }) {
       "boss_ajax_unavailable",
       "boss_transport_failed",
       "collection_cancelled",
+      "collection_route_forbidden",
     ].includes(code)
   )
     return {
       ...out("unavailable", code),
-      phase: code === "boss_ajax_unavailable" ? "render" : "transport",
+      phase:
+        code === "boss_ajax_unavailable"
+          ? "render"
+          : code === "collection_route_forbidden"
+            ? "validation"
+            : "transport",
     };
   if (
     status !== 200 ||

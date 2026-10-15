@@ -195,6 +195,7 @@ export function verifyPackageArchive({
       /(?:^|\/)(?:config\.json|\.env(?:\.[^/]+)?|\.?credentials(?:\.v2)?\.(?:json|ya?ml)|workspace\.v2(?:\.previous)?\.json|desktop-self-test\.json)$/.test(
         file,
       ) ||
+      /(?:^|\/)(?:\.auth-sessions\.json|\.session-secret)(?:$|\.)/.test(file) ||
       (file.startsWith("public/") &&
         !file.startsWith("public/app/") &&
         !PUBLIC_RUNTIME_FILES.some((rel) => file === "public/" + rel)),

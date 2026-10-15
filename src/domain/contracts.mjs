@@ -90,9 +90,11 @@ export function assertWorkspace(value) {
     for (const list of Object.values(value[key]))
       if (!Array.isArray(list) || list.some((x) => !plain(x)))
         throw new Error("Invalid " + key + " revisions");
-  for (const [id, job] of Object.entries(value.jobs))
+  for (const [id, job] of Object.entries(value.jobs)) {
     if (!plain(job) || job.jobId !== id || !JOB_KINDS.includes(job.kind))
       throw new Error("Invalid job " + id);
+    if (Object.hasOwn(job, "canonical")) assertStoredSourceFacts(job.canonical);
+  }
   for (const [id, application] of Object.entries(value.applications))
     if (
       !plain(application) ||
@@ -105,24 +107,76 @@ export function assertWorkspace(value) {
   assertWorkspaceExtensions(value);
   return value;
 }
+const sourceCoreKeys = [
+  "sourceId",
+  "title",
+  "url",
+  "kind",
+  "jobType",
+  "cities",
+  "evidence",
+];
+function assertSourceFactTypes(value, { validateUrl = true } = {}) {
+  if (!plain(value)) throw new Error("Invalid source facts");
+  for (const key of ["sourceId", "title"])
+    if (Object.hasOwn(value, key) && typeof value[key] !== "string")
+      throw new Error("Invalid source " + key);
+  for (const key of ["company", "description"])
+    if (
+      Object.hasOwn(value, key) &&
+      value[key] !== null &&
+      typeof value[key] !== "string"
+    )
+      throw new Error("Invalid source " + key);
+  if (Object.hasOwn(value, "kind") && !JOB_KINDS.includes(value.kind))
+    throw new Error("Invalid source kind/type");
+  if (Object.hasOwn(value, "jobType") && !JOB_TYPES.includes(value.jobType))
+    throw new Error("Invalid source kind/type");
+  if (
+    Object.hasOwn(value, "cities") &&
+    (!Array.isArray(value.cities) ||
+      value.cities.some((city) => typeof city !== "string"))
+  )
+    throw new Error("Invalid source evidence/cities");
+  if (
+    Object.hasOwn(value, "evidence") &&
+    (!Array.isArray(value.evidence) ||
+      value.evidence.some((item) => !plain(item)))
+  )
+    throw new Error("Invalid source evidence/cities");
+  if (validateUrl && Object.hasOwn(value, "url") && value.url !== null)
+    assertSourceUrl(value.url);
+}
+function assertSourceUrl(value) {
+  let url;
+  try {
+    if (typeof value !== "string") throw Error("Invalid url type");
+    url = new URL(value);
+  } catch {
+    throw new Error("Invalid source url");
+  }
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password
+  )
+    throw new Error("Invalid source url");
+}
+/** Historical stubs remain sparse; fields they do supply must obey the fact contract. */
+function assertStoredSourceFacts(value) {
+  if (plain(value) && sourceCoreKeys.every((key) => Object.hasOwn(value, key)))
+    return assertSourceRecord(value);
+  assertSourceFactTypes(value);
+  return value;
+}
 export function assertSourceRecord(value) {
+  assertSourceFactTypes(value, { validateUrl: false });
   if (!plain(value) || typeof value.sourceId !== "string" || !value.sourceId)
     throw new Error("Missing sourceId");
   if (typeof value.title !== "string" || !value.title.trim())
     throw new Error("Missing source title");
   if (!(value.sourceId === "manual" && value.url === null)) {
-    let url;
-    try {
-      url = new URL(value.url);
-    } catch {
-      throw new Error("Invalid source url");
-    }
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      url.username ||
-      url.password
-    )
-      throw new Error("Invalid source url");
+    assertSourceUrl(value.url);
   }
   if (!JOB_KINDS.includes(value.kind) || !JOB_TYPES.includes(value.jobType))
     throw new Error("Invalid source kind/type");

@@ -9,7 +9,11 @@ import {
 } from "./boss-page.mjs";
 import { recordDiagnostic } from "../../src/infrastructure/diagnostics/log.mjs";
 import { createCollectionPublicResolver } from "./public-dns.mjs";
-import { createBossLoginDiagnostics } from "./boss-login-diagnostics.mjs";
+import {
+  createBossLoginDiagnostics,
+  classifyCollectionFailure,
+  classifyBossBusinessResult,
+} from "./boss-login-diagnostics.mjs";
 import {
   publicCollectionUrl,
   platformPolicy,
@@ -296,7 +300,7 @@ export function createCollectionBrowser({
           { webContentsId: window.webContents.id },
           "collection_login_byte_limit",
         ),
-      onTimeout: ({ phase, timeoutMs }) =>
+      onTimeout: ({ phase, timeoutMs, durationMs }) =>
         recordDiagnostic(diagnostics, {
           operation: "network.request",
           sourceId: routePolicy.platform,
@@ -310,7 +314,11 @@ export function createCollectionBrowser({
               ? "collection_idle_tunnel_closed"
               : "collection_browser_timeout",
           parser: { version: "egress-" + phase },
-          durationMs: timeoutMs,
+          timeoutMs,
+          ...(Number.isSafeInteger(durationMs) && durationMs >= 0
+            ? { durationMs }
+            : {}),
+          ...(phase === "idle" ? {} : { resultCategory: "timeout" }),
         }),
       // Each of the at most 60 manual DNS requests reserves 64 KiB. Keep
       // that allowance inside the existing 20 MiB window ceiling.
@@ -366,10 +374,13 @@ export function createCollectionBrowser({
         : null;
     window.webContents.setWebRTCIPHandlingPolicy?.("disable_non_proxied_udp");
     loginDiagnostics =
-      manual && routePolicy.platform === "boss"
+      routePolicy.platform === "boss"
         ? createBossLoginDiagnostics({
             diagnostics,
             webContentsId: id,
+            manual,
+            operation: routePolicy.bossOperation,
+            activityId: ref.activityId,
             counts: () => ({
               manualRequests: manualAllowance.requests,
               manualBytes:
@@ -396,7 +407,8 @@ export function createCollectionBrowser({
       offlineAllows,
       webContentsId: id,
       onDenied: (details, code) => loginDiagnostics?.denied(details, code),
-      reserve: async (details) => {
+      prepareRequest: (details) => client.grant(details.url),
+      reserve: async (details, ownership) => {
         if (manual) {
           claimManualRequest();
           const next = manualQueue.then(async () => {
@@ -425,7 +437,9 @@ export function createCollectionBrowser({
             physicalRequests.set(key, reservation.reservationId);
         }
         client.grant(details.url);
-        loginDiagnostics?.started(details);
+        loginDiagnostics?.started(details, {
+          ownedOperation: ownership?.ownedBossOperation === true,
+        });
       },
     });
     const denyDownload = (event) => event.preventDefault();
@@ -440,10 +454,13 @@ export function createCollectionBrowser({
       }
     };
     const navigation = (event, url) => {
-      if (!allowsRoute(url, routePolicy, { manual })) {
+      // Electron exposes the destination on the event and, in older callback
+      // forms, as the second argument. Both carry the same policy boundary.
+      const destination = typeof url === "string" ? url : event?.url;
+      if (!allowsRoute(destination, routePolicy, { manual })) {
         event.preventDefault();
         loginDiagnostics?.denied(
-          { url, webContentsId: id },
+          { url: destination, webContentsId: id },
           "collection_route_forbidden",
           "redirect",
         );
@@ -479,9 +496,13 @@ export function createCollectionBrowser({
         // Failed and cancelled requests retain their unresolved upper bound.
         physicalRequests.delete(requestKey(details));
       });
+      ses.webRequest.onBeforeRedirect?.({ urls: ["<all_urls>"] }, (details) =>
+        loginDiagnostics?.redirected(details),
+      );
       ses.webRequest.onHeadersReceived(
         { urls: ["<all_urls>"] },
         (details, callback) => {
+          loginDiagnostics?.headers(details);
           if (details.resourceType === "mainFrame")
             networkStatus.status = details.statusCode;
           const responseHeaders = { ...details.responseHeaders };
@@ -500,6 +521,7 @@ export function createCollectionBrowser({
       window.webContents.on("login", proxyLogin);
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       window.webContents.on("will-navigate", navigation);
+      window.webContents.on("will-redirect", navigation);
       let disposing;
       const saveMaterial = async () => {
         if (entry)
@@ -524,6 +546,7 @@ export function createCollectionBrowser({
         manualAllowance,
         dnsFailure: (url) => publicResolver?.lastFailure?.(url) || null,
         networkStatus,
+        requestDiagnostics: loginDiagnostics,
         lifetime,
         preserveMaterial: false,
         dispose({ keepWindow = false } = {}) {
@@ -549,6 +572,7 @@ export function createCollectionBrowser({
               detach();
               ses.webRequest.onCompleted?.(null);
               ses.webRequest.onErrorOccurred?.(null);
+              ses.webRequest.onBeforeRedirect?.(null);
               await Promise.allSettled([...completionSettlements]);
               await loginDiagnostics?.close();
               physicalRequests.clear();
@@ -568,6 +592,7 @@ export function createCollectionBrowser({
               ses.removeListener("will-download", denyDownload);
               window.webContents.removeListener("login", proxyLogin);
               window.webContents.removeListener("will-navigate", navigation);
+              window.webContents.removeListener("will-redirect", navigation);
               window.removeListener("closed", onClosed);
               if (!keepWindow && !window.isDestroyed()) window.destroy();
               try {
@@ -598,6 +623,7 @@ export function createCollectionBrowser({
         for (const hook of [
           "onCompleted",
           "onErrorOccurred",
+          "onBeforeRedirect",
           "onHeadersReceived",
         ])
           try {
@@ -610,6 +636,7 @@ export function createCollectionBrowser({
       ses.removeListener("will-download", denyDownload);
       window.webContents.removeListener("login", proxyLogin);
       window.webContents.removeListener("will-navigate", navigation);
+      window.webContents.removeListener("will-redirect", navigation);
       if (!existingWindow && !window.isDestroyed()) window.destroy();
       windows.delete(id);
       throw error;
@@ -651,6 +678,7 @@ export function createCollectionBrowser({
         );
         error.phase = verification.phase || "response";
         if (result.diagnosticId) error.diagnosticId = result.diagnosticId;
+        if (result.requestId) error.requestId = result.requestId;
         throw error;
       }
       return sessionStore.clearRisk({
@@ -674,6 +702,7 @@ export function createCollectionBrowser({
       operation,
       [riskRecovery]: recovering,
     }) {
+      const readStartedAt = performance.now();
       publicCollectionUrl(url);
       if (
         sessionRef &&
@@ -816,10 +845,12 @@ export function createCollectionBrowser({
             await Promise.race([item.window.loadURL(url), aborted, deadline]);
           signal?.throwIfAborted();
           phase = "render";
+          const ownershipToken = operation ? randomUUID() : undefined;
+          if (operation) item.policy.armBossOperation(ownershipToken);
           const document = await Promise.race([
             item.window.webContents.executeJavaScript(
               operation
-                ? bossPageScript(operation, item.id)
+                ? bossPageScript(operation, item.id, ownershipToken)
                 : `({html:document.documentElement.outerHTML,selectorFound:!!document.querySelector(${JSON.stringify(routePolicy.bodySelector || "__no_body_selector__")})?.textContent.trim()})`,
               true,
             ),
@@ -831,8 +862,19 @@ export function createCollectionBrowser({
             throw failure("collection_cancelled", "采集已取消。");
           if (operation) {
             phase = "response";
-            const result = decodeBossPageResult(document),
-              checkedAt = new Date().toISOString();
+            let result = decodeBossPageResult(document);
+            const ownedDenial = item.policy.bossOperationStatus().denied;
+            if (
+              [
+                "source_budget_exhausted",
+                "collection_browser_budget_exhausted",
+              ].includes(ownedDenial)
+            )
+              throw Object.assign(failure(ownedDenial, "采集请求额度不足。"), {
+                phase: "budget",
+              });
+            if (ownedDenial) result = { status: 0, code: ownedDenial };
+            const checkedAt = new Date().toISOString();
             const parsed = parseBossResponse({
               kind: operation.kind,
               ...result,
@@ -851,30 +893,48 @@ export function createCollectionBrowser({
                 sessionRef,
                 state: parsed.status === "success" ? "verified" : "expired",
               });
-            const diagnostic =
-              parsed.status !== "success" &&
-              (await recordDiagnostic(diagnostics, {
-                operation: "network.request",
-                sourceId: "boss",
-                siteId: "boss",
-                engine: "browser",
-                phase: parsed.phase || "response",
-                outcome: "failed",
-                code: parsed.code,
-                httpStatus: result.status >= 100 ? result.status : undefined,
-                errorNumber: Number.isSafeInteger(result.payload?.code)
-                  ? result.payload.code
-                  : undefined,
-                endpointKind:
-                  operation.kind === "boss.search" ? "list" : "detail",
-                method: operation.method,
-                parser: {
-                  resultType: result.payload ? "object" : "null",
-                  format: "json",
-                },
-              }));
+            const observed = ownedDenial
+              ? {}
+              : item.requestDiagnostics?.operationMetadata() || {};
+            const diagnostic = await recordDiagnostic(diagnostics, {
+              operation: "network.request",
+              sourceId: "boss",
+              siteId: "boss",
+              engine: "browser",
+              phase: "parse",
+              failurePhase:
+                parsed.status === "success"
+                  ? undefined
+                  : parsed.phase || "response",
+              outcome: parsed.status === "success" ? "success" : "failed",
+              code: parsed.code || "boss_request_success",
+              ...observed,
+              resultCategory: classifyBossBusinessResult(
+                parsed,
+                result,
+                observed,
+              ),
+              durationMs:
+                observed.durationMs ??
+                Math.max(0, Math.round(performance.now() - readStartedAt)),
+              httpStatus: result.status >= 100 ? result.status : undefined,
+              errorNumber: Number.isSafeInteger(result.payload?.code)
+                ? result.payload.code
+                : undefined,
+              endpointKind:
+                operation.kind === "boss.search" ? "list" : "detail",
+              requestPurpose:
+                operation.kind === "boss.search" ? "list" : "detail",
+              method: operation.method,
+              parser: {
+                version: "boss-business-response",
+                resultType: result.payload ? "object" : "null",
+                format: "json",
+              },
+            });
             return {
               ...result,
+              ...(observed.requestId ? { requestId: observed.requestId } : {}),
               ...(diagnostic?.diagnosticId
                 ? { diagnosticId: diagnostic.diagnosticId }
                 : {}),
@@ -920,6 +980,41 @@ export function createCollectionBrowser({
       } catch (error) {
         if (error && typeof error === "object" && !error.phase)
           error.phase = phase;
+        if (operation) {
+          const observed = item?.policy.bossOperationStatus?.().denied
+            ? {}
+            : item?.requestDiagnostics?.operationMetadata() || {};
+          const diagnostic = await recordDiagnostic(
+            diagnostics,
+            {
+              operation: "network.request",
+              sourceId: "boss",
+              siteId: "boss",
+              activityId: ref.activityId,
+              engine: "browser",
+              phase: error.phase || phase,
+              outcome: "failed",
+              code: error.code || "collection_request_failed",
+              ...observed,
+              resultCategory: classifyCollectionFailure(error),
+              durationMs:
+                observed.durationMs ??
+                Math.max(0, Math.round(performance.now() - readStartedAt)),
+              endpointKind:
+                operation.kind === "boss.search" ? "list" : "detail",
+              requestPurpose:
+                operation.kind === "boss.search" ? "list" : "detail",
+              parser: { version: "boss-read-failure" },
+              method: operation.method,
+            },
+            error,
+          );
+          if (error && typeof error === "object") {
+            if (observed.requestId) error.requestId = observed.requestId;
+            if (diagnostic?.diagnosticId)
+              error.diagnosticId = diagnostic.diagnosticId;
+          }
+        }
         throw error;
       } finally {
         try {

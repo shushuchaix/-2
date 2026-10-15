@@ -24,6 +24,31 @@ const root = (status: string, extra = {}) => ({
   },
 });
 
+test("a deliberately paused startup releases its preparation state without waiting for a redundant refresh", async (t) => {
+  let reads = 0;
+  let release!: (value: unknown) => void;
+  const paused = { collections: [root("paused", { manualPaused: true })] };
+  const slow = new Promise((resolve) => {
+    release = resolve;
+  });
+  t.after(async () => {
+    await act(async () => release(paused));
+  });
+  const f = await renderApp(t, {
+    startupUpdate: true,
+    route: "#/sources?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (p, o) => {
+      if (p === "/collections") return ++reads === 1 ? paused : slow;
+      return syntheticApi(p, o);
+    },
+  });
+  await f.screen.findByText("活动已主动暂停，可手动继续采集。");
+  await waitFor(() =>
+    assert.equal(!!f.screen.queryByText("正在准备岗位更新…"), false),
+  );
+  assert.equal(posts(f).length, 0);
+});
+
 test("startup updates the selected target once with local rules across page navigation", async (t) => {
   let activity: unknown = null;
   const f = await renderApp(t, {
@@ -390,20 +415,33 @@ test("workbench connects startup updates to completion and shows the actual save
 });
 
 test("returning to the workbench reconnects its newer manual run instead of cached startup history", async (t) => {
-  let started = 0, manualConnections = 0;
+  let started = 0,
+    manualConnections = 0;
   let activity: unknown = null;
   let rejectRecovered!: (error: Error) => void;
-  const recoveredStream = new Promise((_, reject) => { rejectRecovered = reject; });
+  const recoveredStream = new Promise((_, reject) => {
+    rejectRecovered = reject;
+  });
   const f = await renderApp(t, {
     startupUpdate: true,
     route: "#/workbench?packageId=A&targetRevisionId=t1%401",
     apiHandler: (p, o) => {
-      if (p === "/collections") return { collections: activity ? [activity] : [] };
-      if (p === "/runs" && o.method !== "POST") return { runs: started > 1 ? [{ runId: "current-manual", status: "running" }] : [] };
+      if (p === "/collections")
+        return { collections: activity ? [activity] : [] };
+      if (p === "/runs" && o.method !== "POST")
+        return {
+          runs:
+            started > 1 ? [{ runId: "current-manual", status: "running" }] : [],
+        };
       if (p === "/runs" && o.method === "POST") {
         started++;
-        activity = root("collecting", { activeSliceRunId: started === 1 ? "old-auto" : "current-manual" });
-        return { runId: started === 1 ? "old-auto" : "current-manual", status: "queued" };
+        activity = root("collecting", {
+          activeSliceRunId: started === 1 ? "old-auto" : "current-manual",
+        });
+        return {
+          runId: started === 1 ? "old-auto" : "current-manual",
+          status: "queued",
+        };
       }
       if (p === "/runs/old-auto/events") {
         activity = root("completed");
@@ -411,18 +449,33 @@ test("returning to the workbench reconnects its newer manual run instead of cach
       }
       if (p === "/runs/current-manual/events") {
         manualConnections++;
-        return manualConnections === 2 ? recoveredStream : [{ type: "status", payload: { status: "running" } }];
+        return manualConnections === 2
+          ? recoveredStream
+          : [{ type: "status", payload: { status: "running" } }];
       }
       return syntheticApi(p, o);
     },
   });
   await f.screen.findByText("岗位更新完成");
-  await f.user.click(f.screen.getByRole("button", { name: "更新岗位", exact: true }));
+  await f.user.click(
+    f.screen.getByRole("button", { name: "更新岗位", exact: true }),
+  );
   await waitFor(() => assert.equal(manualConnections, 1));
-  await f.user.click(f.screen.getByRole("link", { name: "招聘来源", exact: true }));
-  await f.user.click(f.screen.getByRole("link", { name: "工作台", exact: true }));
+  await f.user.click(
+    f.screen.getByRole("link", { name: "招聘来源", exact: true }),
+  );
+  await f.user.click(
+    f.screen.getByRole("link", { name: "工作台", exact: true }),
+  );
   await waitFor(() => assert.equal(manualConnections, 2));
   rejectRecovered(Error("synthetic stream failure"));
-  await f.user.click(await f.screen.findByRole("button", { name: "重新连接任务" }));
-  await waitFor(() => assert.equal(f.apiCalls.filter(c => c.path.endsWith("/events")).at(-1)?.path, "/runs/current-manual/events"));
+  await f.user.click(
+    await f.screen.findByRole("button", { name: "重新连接任务" }),
+  );
+  await waitFor(() =>
+    assert.equal(
+      f.apiCalls.filter((c) => c.path.endsWith("/events")).at(-1)?.path,
+      "/runs/current-manual/events",
+    ),
+  );
 });

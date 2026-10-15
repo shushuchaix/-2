@@ -55,6 +55,7 @@ import {
   diagnosticOperationLabel,
   diagnosticLevelLabel,
   diagnosticResultLabel,
+  diagnosticResultCategoryLabel,
   type DiagnosticEntry,
 } from "./DiagnosticDetails";
 
@@ -385,9 +386,17 @@ export function LogsPage({ api }: { api: ApiClient }) {
                           run.status === "failed" ? "destructive" : "secondary"
                         }
                       >
-                        {run.collectionProgress ? deriveActivityView(run as CollectionActivity, null).label : status[run.status] || "状态未提供"}
+                        {run.collectionProgress
+                          ? deriveActivityView(run as CollectionActivity, null)
+                              .label
+                          : status[run.status] || "状态未提供"}
                       </Badge>
-                      <p>阶段：{run.collectionProgress ? "子批次阶段见技术详情" : stageLabels[run.stage ?? ""] || "未记录"}</p>
+                      <p>
+                        阶段：
+                        {run.collectionProgress
+                          ? "子批次阶段见技术详情"
+                          : stageLabels[run.stage ?? ""] || "未记录"}
+                      </p>
                       <RecordCounts
                         counts={run.counts || {}}
                         kind="run"
@@ -604,7 +613,10 @@ export function LogsPage({ api }: { api: ApiClient }) {
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <p>{diagnosticResultLabel(safe.code)}</p>
+                      <p>
+                        {diagnosticResultCategoryLabel(safe.resultCategory) ||
+                          diagnosticResultLabel(safe.code)}
+                      </p>
                     </CardContent>
                     <CardFooter>
                       <Button
@@ -637,7 +649,11 @@ export function LogsPage({ api }: { api: ApiClient }) {
           </div>
         </TabsContent>
       </Tabs>
-      <DiagnosticDetails entry={selected} onClose={() => setSelected(null)} />
+      <DiagnosticDetails
+        entry={selected}
+        entries={data.entries}
+        onClose={() => setSelected(null)}
+      />
     </section>
   );
 }

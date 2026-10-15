@@ -98,7 +98,7 @@ export function assertControlTransition(previous, next) {
       throw invalid();
   }
 }
-export function openPackageControl({ dataDir, fsAdapter = fs }) {
+export function openPackageControl({ dataDir, fsAdapter = fs, captureFileIdentity = false }) {
   const dir = path.join(path.resolve(dataDir), "control"),
     state = path.join(dir, "state.json"),
     marker = path.join(dir, "initialized.json");
@@ -142,17 +142,19 @@ export function openPackageControl({ dataDir, fsAdapter = fs }) {
         { formatVersion: 1, workspaceId: next.workspaceId, phase: "preparing" },
         { fsAdapter },
       );
-    await writeAtomicJson(
+    const stateIdentity = await writeAtomicJson(
       state,
       { ...next, checksum: checksum(next) },
-      { fsAdapter },
+      { fsAdapter, captureFileIdentity },
     );
+    let markerIdentity;
     if (!m || m.phase !== "ready")
-      await writeAtomicJson(
+      markerIdentity = await writeAtomicJson(
         marker,
         { formatVersion: 1, workspaceId: next.workspaceId, phase: "ready" },
-        { fsAdapter },
+        { fsAdapter, captureFileIdentity },
       );
+    return { state: stateIdentity, marker: markerIdentity };
   }
   return { read, commitInLock };
 }

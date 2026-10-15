@@ -267,9 +267,12 @@ test("Boss only permits the selected fixed API operation for every resource type
       claims++;
     },
   });
+  const token = "00000000-0000-4000-8000-000000000001";
+  p.armBossOperation(token);
   assert.equal(
     (
       await p.authorize({
+        id: 1,
         url: routePolicy.bossOperation.url,
         method: "POST",
         resourceType: "xhr",
@@ -280,6 +283,15 @@ test("Boss only permits the selected fixed API operation for every resource type
             ),
           },
         ],
+      })
+    ).cancel,
+    false,
+  );
+  assert.equal(
+    (
+      await p.authorizeHeaders({
+        id: 1,
+        requestHeaders: { "X-RJR-Owned-Operation": token },
       })
     ).cancel,
     false,

@@ -11,6 +11,7 @@ const scope = {
 const operation = buildBossOperation({ kind: "boss.search", query: "消防" });
 const ref = { scope, activityId: "root-A" };
 const diagnosticId = "d-12345678-1234-1234-1234-123456789abc";
+const wireRequestId = "q-00000000-0000-4000-8000-000000000001";
 
 for (const [code, phase] of [
   ["boss_ajax_unavailable", "render"],
@@ -80,6 +81,7 @@ for (const code of [
       const error = Object.assign(Error("private upstream text and account"), {
         code,
         phase: "render",
+        requestId: wireRequestId,
       });
 
       registerCollectionIpc({
@@ -135,6 +137,8 @@ for (const code of [
       assert.equal(result.sourceStatus, "unavailable");
       assert.equal(result.issues[0].code, code);
       assert.equal(result.issues[0].diagnosticId, diagnosticId);
+      assert.equal(result.issues[0].requestId, wireRequestId);
+      assert.equal(events[0].requestId, wireRequestId);
       assert.equal(events.length, 1);
       assert.doesNotMatch(JSON.stringify(result), /private upstream|account/);
       assert.equal(health.length, 1);
@@ -145,6 +149,7 @@ for (const code of [
         sessionRef: "session-A",
         code,
         diagnosticId,
+        requestId: wireRequestId,
       });
     },
   );

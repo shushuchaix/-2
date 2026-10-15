@@ -90,6 +90,18 @@ test("missing page Ajax authentication hook returns unavailable and sends nothin
 });
 
 test("wire policy binds form and detail references to one operation before issuing a permit", async () => {
+  const token = "00000000-0000-4000-8000-000000000001";
+  let requestId = 0;
+  const authorize = async (policy, details, marked = true) => {
+    const d = { ...details, id: ++requestId };
+    const before = await policy.authorize(d);
+    return before.cancel
+      ? before
+      : policy.authorizeHeaders({
+          ...d,
+          requestHeaders: marked ? { "X-RJR-Owned-Operation": token } : {},
+        });
+  };
   let claims = 0;
   const policy = createPagePolicy({
     routePolicy: { ...platformPolicy("boss"), bossOperation: operation },
@@ -109,20 +121,25 @@ test("wire policy binds form and detail references to one operation before issui
       },
     ],
   };
+  policy.armBossOperation(token);
   assert.equal(
     (
-      await policy.authorize({
-        ...input,
-        uploadData: [
-          { bytes: Buffer.from("query=other&page=1&pageSize=15&scene=1") },
-        ],
-      })
+      await authorize(
+        policy,
+        {
+          ...input,
+          uploadData: [
+            { bytes: Buffer.from("query=other&page=1&pageSize=15&scene=1") },
+          ],
+        },
+        false,
+      )
     ).cancel,
     true,
   );
   assert.equal(claims, 0);
-  assert.equal((await policy.authorize(input)).cancel, false);
-  assert.equal((await policy.authorize(input)).cancel, true);
+  assert.equal((await authorize(policy, input)).cancel, false);
+  assert.equal((await authorize(policy, input)).cancel, true);
   assert.equal(claims, 1);
   const detail = buildBossOperation({
     kind: "boss.detail",
@@ -136,28 +153,37 @@ test("wire policy binds form and detail references to one operation before issui
     },
   });
   const url = detail.url + "?" + new URLSearchParams(detail.parameters);
+  card.armBossOperation(token);
   assert.equal(
     (
-      await card.authorize({
-        url: url + "&extra=1",
-        method: "GET",
-        resourceType: "xhr",
-      })
+      await authorize(
+        card,
+        {
+          url: url + "&extra=1",
+          method: "GET",
+          resourceType: "xhr",
+        },
+        false,
+      )
     ).cancel,
     true,
   );
   assert.equal(
     (
-      await card.authorize({
-        url: url.replace("synthetic", "other"),
-        method: "GET",
-        resourceType: "xhr",
-      })
+      await authorize(
+        card,
+        {
+          url: url.replace("synthetic", "other"),
+          method: "GET",
+          resourceType: "xhr",
+        },
+        false,
+      )
     ).cancel,
     true,
   );
   assert.equal(
-    (await card.authorize({ url, method: "GET", resourceType: "xhr" })).cancel,
+    (await authorize(card, { url, method: "GET", resourceType: "xhr" })).cancel,
     false,
   );
   assert.equal(claims, 2);

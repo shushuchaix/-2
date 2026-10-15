@@ -8,7 +8,11 @@ import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
 import { canonicalizeSourceUrl } from "../../domain/identity.mjs";
 import { validatePublicUrl } from "../../infrastructure/http/public-url.mjs";
-import { readJobPostingEvidence, assessApplicationResponse } from "../../domain/recruitment-evidence.mjs";
+import { withExplicitJobType } from "./explicit-job-type.mjs";
+import {
+  readJobPostingEvidence,
+  assessApplicationResponse,
+} from "../../domain/recruitment-evidence.mjs";
 import {
   collectInlineOfficialJobs,
   fetchInlineOfficialJob,
@@ -29,9 +33,18 @@ import {
   collectXustPublicNotices,
   fetchXustPublicNotice,
 } from "./xust-public-onlines.mjs";
-import { collectShenzhenAirportJobs, fetchShenzhenAirportJob } from "./shenzhen-airport-wecruit.mjs";
-import { collectAlibabaPublicJobs, fetchAlibabaPublicJob } from "./alibaba-public-career.mjs";
-import { collectXiaomiPublicNotices, fetchXiaomiPublicNotice } from "./xiaomi-public-notices.mjs";
+import {
+  collectShenzhenAirportJobs,
+  fetchShenzhenAirportJob,
+} from "./shenzhen-airport-wecruit.mjs";
+import {
+  collectAlibabaPublicJobs,
+  fetchAlibabaPublicJob,
+} from "./alibaba-public-career.mjs";
+import {
+  collectXiaomiPublicNotices,
+  fetchXiaomiPublicNotice,
+} from "./xiaomi-public-notices.mjs";
 import {
   readZhejiangNoticePage,
   zhejiangNoticeCursor,
@@ -118,7 +131,7 @@ export default createPagedProvider({
   name: "官方招聘公告",
   capabilities: {
     category: "public",
-    jobTypes: ["campus", "social", "unknown"],
+    jobTypes: ["campus", "internship", "social", "unknown"],
     kinds: ["recruitment_notice", "job"],
     detail: true,
     attachments: true,
@@ -146,13 +159,15 @@ export default createPagedProvider({
     if (template?.inlineJob === true)
       return collectInlineOfficialJobs(site, page, ctx, noticeDocument);
     const jobMode = template?.recordKind === "job";
-    const nativePagination = template?.nativePagination === "zjairports-options-1";
+    const nativePagination =
+      template?.nativePagination === "zjairports-options-1";
     if (template?.nativePagination && !nativePagination)
       throw Object.assign(Error("Unknown native pagination contract"), {
         code: "template_not_configured",
       });
     const paginated =
-      template?.paginationVerified === true && (nativePagination || !!template.nextPageRule);
+      template?.paginationVerified === true &&
+      (nativePagination || !!template.nextPageRule);
     if (page > 1 && !paginated)
       return {
         records: [],
@@ -187,8 +202,13 @@ export default createPagedProvider({
     const nativePage = nativePagination
       ? await readZhejiangNoticePage(site, page, ctx)
       : null;
-    const listUrl = nativePage?.url || listLocation(site, ctx.cursor?.url || template.listUrl);
-    const document = noticeDocument(nativePage?.response || await ctx.request(listUrl, { signal: ctx.signal }));
+    const listUrl =
+      nativePage?.url ||
+      listLocation(site, ctx.cursor?.url || template.listUrl);
+    const document = noticeDocument(
+      nativePage?.response ||
+        (await ctx.request(listUrl, { signal: ctx.signal })),
+    );
     const records = [],
       seen = new Set();
     for (const anchor of document.querySelectorAll(template.linkRule)) {
@@ -238,62 +258,66 @@ export default createPagedProvider({
       const nativeId = idPattern ? jobUrlId(url, idPattern) : null;
       if (idPattern && !nativeId) continue;
       seen.add(url);
-      const publishedAt = nativePagination ? zhejiangNoticeDate(anchor.closest(".newsItem02")) : explicitDate(
-        jobMode
-          ? template.listDateRule === null
-            ? null
-            : row.querySelector(template.listDateRule)?.textContent
-          : row?.textContent,
-      );
+      const publishedAt = nativePagination
+        ? zhejiangNoticeDate(anchor.closest(".newsItem02"))
+        : explicitDate(
+            jobMode
+              ? template.listDateRule === null
+                ? null
+                : row.querySelector(template.listDateRule)?.textContent
+              : row?.textContent,
+          );
       title = title
         .replace(/(?:20\d{2}[年./-]\d{1,2}[月./-]\d{1,2}日?)/g, "")
         .trim();
       records.push(
-        baseRecord({
-          id: nativeId || url,
-          ...(nativeId ? { sourceRecordIdKind: "authority" } : {}),
-          sourceId: "official-announcements",
-          siteId: site.siteId,
-          scope: site.siteId,
-          kind: jobMode ? "job" : "recruitment_notice",
-          title,
-          url,
-          company: site.name,
-          jobType: !jobMode && /校园|应届/.test(title) ? "campus" : "unknown",
-          publishedAt,
-          ...(jobMode
-            ? {
-                urlKind: "job_detail",
-                detailStatus: "incomplete",
-                bodyStatus: "incomplete",
-                bodyIncomplete: true,
-              }
-            : {}),
-          evidence: [
-            ...(nativeId
-              ? [
-                  {
-                    field: "sourceRecordId",
-                    url,
-                    source: "job_url_id",
-                    value: nativeId,
-                  },
-                ]
-              : []),
-            {
-              field: "title",
-              url: listUrl,
-              selector: jobMode
-                ? `${template.rowRule} ${template.titleRule}`
-                : template.linkRule,
-            },
-            {
-              field: "publishedAt",
-              source: "visible_list_date",
-              value: publishedAt,
-            },
-          ],
-        }),
+        withExplicitJobType(
+          baseRecord({
+            id: nativeId || url,
+            ...(nativeId ? { sourceRecordIdKind: "authority" } : {}),
+            sourceId: "official-announcements",
+            siteId: site.siteId,
+            scope: site.siteId,
+            kind: jobMode ? "job" : "recruitment_notice",
+            parserVersion: "official-announcements-2",
+            title,
+            url,
+            company: site.name,
+            publishedAt,
+            ...(jobMode
+              ? {
+                  urlKind: "job_detail",
+                  detailStatus: "incomplete",
+                  bodyStatus: "incomplete",
+                  bodyIncomplete: true,
+                }
+              : {}),
+            evidence: [
+              ...(nativeId
+                ? [
+                    {
+                      field: "sourceRecordId",
+                      url,
+                      source: "job_url_id",
+                      value: nativeId,
+                    },
+                  ]
+                : []),
+              {
+                field: "title",
+                url: listUrl,
+                selector: jobMode
+                  ? `${template.rowRule} ${template.titleRule}`
+                  : template.linkRule,
+              },
+              {
+                field: "publishedAt",
+                source: "visible_list_date",
+                value: publishedAt,
+              },
+            ],
+          }),
+        ),
       );
     }
     if (
@@ -306,7 +330,10 @@ export default createPagedProvider({
     }
     let nextCursor = null;
     if (nativePage) {
-      nextCursor = zhejiangNoticeCursor(nativePage, document.querySelectorAll(template.linkRule).length);
+      nextCursor = zhejiangNoticeCursor(
+        nativePage,
+        document.querySelectorAll(template.linkRule).length,
+      );
     } else if (paginated) {
       const next = document
         .querySelector(template.nextPageRule)
@@ -484,9 +511,10 @@ export default createPagedProvider({
       ...record,
       description,
     });
-    return {
+    return withExplicitJobType({
       ...record,
       description,
+      parserVersion: "official-announcements-2",
       publishedAt: explicitDate(dateNode?.textContent) || record.publishedAt,
       attachments,
       detailStatus: incomplete ? "incomplete" : "complete",
@@ -531,6 +559,6 @@ export default createPagedProvider({
           selector: site.template.bodyRule,
         },
       ],
-    };
+    });
   },
 });

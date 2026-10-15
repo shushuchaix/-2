@@ -503,3 +503,135 @@ test("maintenance diagnostics use unscoped safe logs only after explicit server 
   assert.ok(reads.length > 0);
   assert.ok(reads.every((c) => !c.scope));
 });
+
+test("diagnostic details distinguish elapsed time from configured timeout and explain request categories", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/logs?packageId=A&targetRevisionId=t1%401&tab=system",
+    apiHandler: (path) =>
+      path.startsWith("/diagnostics/logs")
+        ? {
+            entries: [
+              {
+                operation: "network.request",
+                level: "error",
+                phase: "transport",
+                code: "collection_browser_timeout",
+                resultCategory: "timeout",
+                requestPurpose: "login_poll",
+                durationMs: 378,
+                timeoutMs: 120000,
+                url: "https://PRIVATE_HOST_SENTINEL/?token=PRIVATE_TOKEN_SENTINEL",
+                body: "PRIVATE_BODY_SENTINEL",
+              },
+            ],
+          }
+        : undefined,
+  });
+  await f.user.click(await f.screen.findByRole("button", { name: /查看诊断/ }));
+  const summary = f.screen.getByRole("region", { name: "诊断事件摘要" });
+  for (const text of [
+    "实际耗时（毫秒）",
+    "378",
+    "配置超时（毫秒）",
+    "120000",
+    "超时",
+    "登录状态轮询",
+    "网络传输",
+  ])
+    assert.ok(within(summary).getByText(text));
+  await f.user.click(f.screen.getByRole("button", { name: "技术详情" }));
+  assert.match(document.body.textContent ?? "", /"resultCategory": "timeout"/);
+  assert.match(
+    document.body.textContent ?? "",
+    /"requestPurpose": "login_poll"/,
+  );
+  assert.doesNotMatch(document.body.textContent ?? "", /PRIVATE_/);
+});
+
+test("diagnostic request timeline keeps wire response separate from business result and excludes other requests", async (t) => {
+  const requestId = "q-00000000-0000-4000-8000-000000000001";
+  const f = await renderApp(t, {
+    route: "#/logs?packageId=A&targetRevisionId=t1%401&tab=system",
+    apiHandler: (path) =>
+      path.startsWith("/diagnostics/logs")
+        ? {
+            entries: [
+              {
+                requestId,
+                operation: "network.request",
+                phase: "parse",
+                at: "2026-10-15T10:00:02Z",
+                resultCategory: "business_risk",
+                requestPurpose: "list",
+                httpStatus: 200,
+                parser: { version: "boss-business-response" },
+              },
+              {
+                requestId,
+                operation: "network.request",
+                phase: "response",
+                at: "2026-10-15T10:00:01Z",
+                resultCategory: "response",
+                requestPurpose: "list",
+                httpStatus: 200,
+              },
+              {
+                requestId,
+                operation: "network.request",
+                phase: "started",
+                at: "2026-10-15T10:00:00Z",
+                requestPurpose: "list",
+              },
+              {
+                requestId: "q-00000000-0000-4000-8000-000000000002",
+                operation: "network.request",
+                phase: "transport",
+                resultCategory: "network",
+                requestPurpose: "asset",
+              },
+            ],
+          }
+        : undefined,
+  });
+  await f.user.click(
+    (await f.screen.findAllByRole("button", { name: /查看诊断/ }))[0],
+  );
+  const chain = f.screen.getByRole("region", { name: "同一请求过程" });
+  const rows = within(chain).getAllByRole("listitem");
+  assert.equal(rows.length, 3);
+  assert.match(rows[0].textContent ?? "", /请求开始/);
+  assert.match(rows[1].textContent ?? "", /收到网络响应.*已收到响应/);
+  assert.match(rows[2].textContent ?? "", /业务响应判定.*平台风险限制/);
+  assert.doesNotMatch(chain.textContent ?? "", /网络异常|静态资源/);
+  assert.ok(within(chain).getByText(/HTTP 成功不代表业务成功/));
+});
+
+test("diagnostic details reject unknown enum strings and never infer elapsed time from a timeout", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/logs?packageId=A&targetRevisionId=t1%401&tab=system",
+    apiHandler: (path) =>
+      path.startsWith("/diagnostics/logs")
+        ? {
+            entries: [
+              {
+                operation: "network.request",
+                phase: "cleanup",
+                timeoutMs: 120000,
+                resultCategory: "PRIVATE_CATEGORY_SENTINEL",
+                requestPurpose: "PRIVATE_PURPOSE_SENTINEL",
+              },
+            ],
+          }
+        : undefined,
+  });
+  await f.user.click(await f.screen.findByRole("button", { name: /查看诊断/ }));
+  const summary = f.screen.getByRole("region", { name: "诊断事件摘要" });
+  const elapsed = within(summary).getByText("实际耗时（毫秒）").parentElement!;
+  assert.match(elapsed.textContent ?? "", /未提供/);
+  assert.doesNotMatch(elapsed.textContent ?? "", /120000/);
+  await f.user.click(f.screen.getByRole("button", { name: "技术详情" }));
+  assert.doesNotMatch(
+    document.body.textContent ?? "",
+    /PRIVATE_|resultCategory|requestPurpose/,
+  );
+});

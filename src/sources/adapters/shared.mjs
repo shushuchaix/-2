@@ -1,5 +1,8 @@
 import { assertSourceRecord } from "../../domain/contracts.mjs";
-import { normalizeSourceStatus } from "../source-status.mjs";
+import {
+  normalizeSourceStatus,
+  safeSourceDiagnosticRefs,
+} from "../source-status.mjs";
 import { recordDiagnostic } from "../../infrastructure/diagnostics/log.mjs";
 import { parseHTML } from "linkedom";
 import { validatePublicUrl } from "../../infrastructure/http/public-url.mjs";
@@ -390,6 +393,7 @@ export function createPagedProvider({
               outcome: "failed",
               code: e.code,
               parser: e.parser,
+              requestId: safeSourceDiagnosticRefs(e).requestId,
               truncationReason: requestBudgetExhausted
                 ? "request_budget"
                 : undefined,
@@ -404,6 +408,7 @@ export function createPagedProvider({
               siteId: site.siteId,
               message: e.message,
               retryable: !e.code,
+              ...safeSourceDiagnosticRefs(e),
               ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
             });
             coverage.push({
@@ -523,6 +528,7 @@ export function createPagedProvider({
             siteId: r.siteId,
             message: e.message,
             retryable: false,
+            ...safeSourceDiagnosticRefs(e),
             ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
           });
         }

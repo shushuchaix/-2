@@ -20,27 +20,52 @@ const report = dpr => ({
 });
 
 const pages = ['workbench','jobs','applications','profiles','targets','sources','logs','trash','settings'];
-test("expiry clock scripts return cloneable values and restore the renderer clock", () => {
-  const source = fs.readFileSync(new URL("../../electron/self-test.mjs", import.meta.url), "utf8");
-  // Execute the actual native fixture expressions, including the IPC return value.
-  const setup = source.match(/await js\(`([^`]*__rjrOriginalDateNow[^`]*)`\)/)[1]
-    .replace('${clock.now()}', '1234');
-  const restore = source.match(/await js\("([^"\n]*__rjrOriginalDateNow[^"\n]*)"\)/)[1];
-  const original = () => 99;
-  const renderer = vm.createContext({ window: {}, Date: { now: original } });
-  // A failed setup may leave no saved clock; cleanup must still preserve Date.now.
-  assert.doesNotThrow(() => structuredClone(vm.runInContext(restore, renderer)));
-  assert.equal(renderer.Date.now, original);
-  try {
-    const result = vm.runInContext(setup, renderer);
-    assert.doesNotThrow(() => structuredClone(result), "executeJavaScript must not return a function");
-    assert.equal(vm.runInContext("Date.now()", renderer), 1234);
-  } finally {
-    assert.doesNotThrow(() => structuredClone(vm.runInContext(restore, renderer)));
-    assert.equal(renderer.Date.now, original);
-    assert.equal(Object.hasOwn(renderer.window, "__rjrOriginalDateNow"), false);
-    assert.equal(Object.hasOwn(renderer.window, "__rjrRendererNow"), false);
+test("native fixture keeps renderer time aligned across historical dates, clock advances and reloads", async () => {
+  let now = Date.parse("2026-10-09T00:00:00Z");
+  const realNow = Date.parse("2026-10-16T00:00:00Z");
+  const clock = { now: () => now };
+  const deadline = now + 72 * 3600 * 1000;
+  let renderer;
+  const reload = () => {
+    renderer = vm.createContext({ Date: { now: () => realNow } });
+  };
+  const webContents = {
+    async executeJavaScript(source, userGesture) {
+      assert.equal(userGesture, true);
+      return structuredClone(await vm.runInContext(source, renderer));
+    },
+  };
+  reload();
+  assert.ok(vm.runInContext("Date.now()", renderer) > deadline);
+  assert.equal(await desktop.executeDesktopFixtureScript(webContents, clock, "Date.now()"), now);
+  assert.equal(await desktop.executeDesktopFixtureScript(webContents, clock, `Date.now() < ${deadline}`), true);
+  now = deadline - 1;
+  assert.equal(await desktop.executeDesktopFixtureScript(webContents, clock, `Date.now() < ${deadline}`), true);
+  now = deadline;
+  assert.equal(await desktop.executeDesktopFixtureScript(webContents, clock, `Date.now() < ${deadline}`), false);
+  assert.equal(await desktop.executeDesktopFixtureScript(webContents, clock, "Date.now()"), now);
+  // A reload recreates a renderer with the host clock. The first fixture
+  // operation must restore the current service time before evaluating the UI.
+  reload();
+  assert.equal(await desktop.executeDesktopFixtureScript(webContents, clock, "Date.now()"), now);
+  assert.equal(await desktop.executeDesktopFixtureScript(webContents, clock, `Date.now() < ${deadline}`), false);
+  assert.equal(await desktop.executeDesktopFixtureScript(webContents, clock, "Promise.resolve(Date.now())"), now);
+  await assert.rejects(
+    desktop.executeDesktopFixtureScript(webContents, clock, "throw Error('original_expression_failure')"),
+    /original_expression_failure/,
+  );
+  let executed = false;
+  for (const invalid of [NaN, Infinity, "123;throw Error('injected')", null]) {
+    assert.throws(() => desktop.executeDesktopFixtureScript({
+      executeJavaScript() { executed = true; },
+    }, { now: () => invalid }, "Date.now()"), /invalid_self_test_clock/);
   }
+  assert.equal(executed, false);
+});
+
+test("native fixture focus script returns a cloneable value", () => {
+  const source = fs.readFileSync(new URL("../../electron/self-test.mjs", import.meta.url), "utf8");
+  const renderer = vm.createContext({ window: {} });
   const rememberFocus = source.match(/await js\(`([^`]*__rjrReturnFocus[^`]*)`\)/)[1]
     .replace('${locate("查看岗位")}', 'window.syntheticElement');
   renderer.window.syntheticElement = { focus() {} };

@@ -8,6 +8,7 @@ import { createSourceRegistry } from "../../src/sources/registry.mjs";
 import { collectionFixture } from "../helpers/collection-fixture.mjs";
 import { createBossProvider } from "../../src/sources/adapters/boss.mjs";
 import { createDiagnosticsLog } from "../../src/infrastructure/diagnostics/log.mjs";
+const requestId = "q-00000000-0000-4000-8000-000000000001";
 
 for (const code of [
   "boss_ajax_unavailable",
@@ -47,8 +48,12 @@ for (const code of [
               readService: {
                 readBoss: async () => {
                   if (code === "collection_browser_timeout")
-                    throw Object.assign(Error(canary), { code, phase: "load" });
-                  return { status: 0, code, message: canary };
+                    throw Object.assign(Error(canary), {
+                      code,
+                      phase: "load",
+                      requestId,
+                    });
+                  return { status: 0, code, message: canary, requestId };
                 },
               },
             }),
@@ -62,12 +67,14 @@ for (const code of [
     assert.equal(result.status, "unavailable");
     assert.equal(result.issues[0].code, code);
     assert.match(result.issues[0].diagnosticId, /^d-[a-f0-9-]{36}$/);
+    assert.equal(result.issues[0].requestId, requestId);
     const w = await f.repository.read();
     const saved =
       w.packages[f.scope.packageId].collectionSettings.sourceVerification[
         "boss/boss"
       ];
     assert.equal(saved.issues[0].diagnosticId, result.issues[0].diagnosticId);
+    assert.equal(saved.issues[0].requestId, requestId);
     assert.equal(
       w.packages[f.otherScope.packageId].collectionSettings
         ?.sourceVerification?.["boss/boss"],
@@ -81,6 +88,7 @@ for (const code of [
     );
     assert.equal(entry.operation, "source.probe");
     assert.equal(entry.error.code, code);
+    assert.equal(entry.requestId, requestId);
     if (code === "collection_browser_timeout")
       assert.equal(entry.phase, "load");
     assert.equal(JSON.stringify([result, saved, log]).includes(canary), false);
@@ -95,9 +103,10 @@ const issues = () => [
     siteId: canary,
     message: canary,
     retryable: false,
+    requestId,
     raw: { body: canary, apiKey: canary },
   },
-  { code: canary, message: canary, diagnosticId: canary },
+  { code: canary, message: canary, diagnosticId: canary, requestId: canary },
 ];
 function assertSafe(result) {
   assert.equal(JSON.stringify(result).includes(canary), false);
@@ -106,12 +115,19 @@ function assertSafe(result) {
   assert.equal(result.issues[0].siteId, "synthetic-1");
   assert.equal(result.issues[0].retryable, false);
   assert.equal(result.issues[1].code, "source_probe_failed");
+  assert.equal(result.issues[0].requestId, requestId);
+  assert.equal(result.issues[1].requestId, undefined);
   for (const issue of result.issues) {
     assert.ok(
       Object.keys(issue).every((key) =>
-        ["code", "sourceId", "siteId", "retryable", "diagnosticId"].includes(
-          key,
-        ),
+        [
+          "code",
+          "sourceId",
+          "siteId",
+          "retryable",
+          "diagnosticId",
+          "requestId",
+        ].includes(key),
       ),
     );
   }

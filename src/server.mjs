@@ -52,7 +52,7 @@ import {
 } from "./infrastructure/diagnostics/log.mjs";
 
 const PUBLIC_DIR = path.join(ROOT, "public");
-const MAX_BODY = 40 * 1024 * 1024;
+const MAX_LOGIN_BODY = 4096;
 const startupMessages = {
   control_state_invalid:
     "控制状态损坏或缺失，已停止业务访问。请保留数据目录并查看安全日志。",
@@ -138,34 +138,6 @@ function sendJson(req, res, cfg, code, obj) {
   res.end(body);
 }
 
-function readBody(req, limit = MAX_BODY) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on("data", (c) => {
-      size += c.length;
-      if (size > limit) {
-        reject(new Error(`请求体过大（>${(limit / 1048576).toFixed(0)}MB）`));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-async function readJsonBody(req) {
-  const buf = await readBody(req);
-  if (!buf.length) return {};
-  try {
-    return JSON.parse(buf.toString("utf8"));
-  } catch (e) {
-    throw new Error(`请求体不是合法 JSON：${e.message}`);
-  }
-}
-
 function serveStatic(req, res, cfg, pathname, { allowMissing = false } = {}) {
   if (pathname === "/index.html") {
     res.writeHead(302, { Location: "/", ...securityHeaders(req, cfg) });
@@ -192,10 +164,14 @@ function serveStatic(req, res, cfg, pathname, { allowMissing = false } = {}) {
     res.end();
     return;
   }
+  let decoded;
+  try { decoded = decodeURIComponent(pathname); } catch {
+    return sendJson(req, res, cfg, 400, { error: "非法路径编码", code: "invalid_path_encoding" });
+  }
   const rel =
     pathname === "/"
       ? "app/index.html"
-      : decodeURIComponent(pathname).replace(/^\/+/, "");
+      : decoded.replace(/^\/+/, "");
   const resolved = path.resolve(path.join(PUBLIC_DIR, rel));
   if (
     resolved !== path.resolve(PUBLIC_DIR) &&
@@ -286,20 +262,24 @@ export function createServer(
   const llm = new DeepSeek(cfg);
   const exposure = assertSafeExposure(cfg);
 
-  // 鉴权上下文：公网监听必须有口令；本地环回访问可免登录，方便自用
+  // 鉴权由显式模式决定；不存在环回地址免登录旁路。
   const passwordHash = cfg.__envAuthPassword
     ? hashPassword(cfg.__envAuthPassword)
     : cfg.auth.passwordHash;
   const authRequired = cfg.auth.mode !== "none" && Boolean(passwordHash);
   const sessions = new SessionManager({
     secret: cfg.__authSecret,
+    credential: cfg.__envAuthPassword || cfg.auth.passwordHash || "",
+    dataDir,
+    storageFile: authRequired ? path.join(dataDir, ".auth-sessions.json") : undefined,
     ttlMs: (Number(cfg.auth.sessionTtlHours) || 168) * 3600 * 1000,
   });
   const loginGuard = new LoginGuard({
     maxFails: Number(cfg.auth.maxLoginFails) || 5,
     lockMs: (Number(cfg.auth.lockMinutes) || 15) * 60 * 1000,
   });
-  setInterval(() => loginGuard.sweep(), 10 * 60 * 1000).unref?.();
+  const loginSweep = setInterval(() => loginGuard.sweep(), 10 * 60 * 1000);
+  loginSweep.unref?.();
 
   const gate = new RunGate({
     maxConcurrent: cfg.limits.maxConcurrent,
@@ -359,9 +339,15 @@ export function createServer(
         ? suppliedId
         : "q-" + randomUUID();
     return withDiagnosticContext({ requestId }, async () => {
-      const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      let url;
+      try {
+        url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+        decodeURIComponent(url.pathname);
+      } catch {
+        return sendJson(req, res, cfg, 400, { error: "非法请求路径", code: "invalid_path_encoding" });
+      }
       const { pathname } = url;
-      const ip = clientIp(req, cfg.server.trustProxy);
+      const ip = clientIp(req, cfg.server.trustProxy, cfg.server.trustedProxyHops ?? 1);
       const secure = isSecureRequest(req, cfg.server.trustProxy);
       const requestStarted = Date.now(),
         route = safeApiRoute(pathname);
@@ -427,7 +413,7 @@ export function createServer(
           if (!originAllowed(req, cfg))
             return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
 
-          const guard = loginGuard.check(ip);
+          let guard = loginGuard.check(ip);
           if (!guard.allowed) {
             const mins = Math.ceil(guard.retryAfterMs / 60000);
             return sendJson(req, res, cfg, 429, {
@@ -435,9 +421,19 @@ export function createServer(
             });
           }
 
-          const body = await readJsonBody(req);
+          const body = await readValidatedJsonBody(req, MAX_LOGIN_BODY);
           assertInput("login", body);
           const password = body.password;
+          // Body reads yield: requests opened before another failure may have
+          // become locked while waiting for their payload. Check immediately
+          // before the synchronous password hash, with no intervening await.
+          guard = loginGuard.check(ip);
+          if (!guard.allowed) {
+            const mins = Math.ceil(guard.retryAfterMs / 60000);
+            return sendJson(req, res, cfg, 429, {
+              error: `登录尝试过于频繁，请 ${mins} 分钟后再试`,
+            });
+          }
 
           if (!verifyPassword(password, passwordHash)) {
             const lockedUntil = loginGuard.fail(ip);
@@ -470,6 +466,9 @@ export function createServer(
         }
 
         if (pathname === "/api/logout" && req.method === "POST") {
+          if (!originAllowed(req, cfg))
+            return sendJson(req, res, cfg, 403, { error: "请求来源不被允许" });
+          sessions.revoke(parseCookies(req)[sessions.cookieName]);
           res.writeHead(200, {
             "Content-Type": "application/json; charset=utf-8",
             "Set-Cookie": clearCookie(sessions.cookieName),
@@ -607,7 +606,7 @@ export function createServer(
             json: (request, response, status, data) =>
               sendJson(request, response, cfg, status, data),
             readJson: readValidatedJsonBody,
-            ip: (request) => clientIp(request, cfg.server.trustProxy),
+            ip: (request) => clientIp(request, cfg.server.trustProxy, cfg.server.trustedProxyHops ?? 1),
           };
           for (const [name, value] of Object.entries(securityHeaders(req, cfg)))
             res.setHeader(name, value);
@@ -736,6 +735,7 @@ export function createServer(
       }
     });
   });
+  server.once("close", () => clearInterval(loginSweep));
 
   return { server, llm, gate, authRequired, exposure, ready, diagnostics };
 }

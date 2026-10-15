@@ -32,6 +32,9 @@ function syntheticBossWindows() {
         Object.assign(ses, {
           cookies: { get: async () => [], set: async () => {} },
           webRequest: {
+            onBeforeSendHeaders: (filter, cb) => {
+              ses.beforeHeaders = filter === null ? null : cb;
+            },
             onBeforeRequest: (filter, cb) => {
               ses.before = filter === null ? null : cb;
             },
@@ -58,6 +61,7 @@ function syntheticBossWindows() {
     },
   };
   let nextId = 0;
+  let nextRequestId = 0;
   class BrowserWindow extends EventEmitter {
     constructor(options) {
       super();
@@ -75,27 +79,44 @@ function syntheticBossWindows() {
       });
       const ajaxSettings = { beforeSend() {} };
       const ajax = (input) => {
-        ajaxSettings.beforeSend();
         let aborted = false;
+        const headers = {};
+        const handle = {
+          setRequestHeader(name, value) {
+            headers[name] = value;
+          },
+          abort() {
+            aborted = true;
+            controls.aborts++;
+            input.error({ status: 0 }, "abort");
+          },
+        };
+        (input.beforeSend || ajaxSettings.beforeSend)(handle, input);
         Promise.resolve()
           .then(async () => {
             const query = new URLSearchParams(input.data).toString();
             const url =
               input.type === "GET" ? input.url + "?" + query : input.url;
-            const decision = await new Promise((resolve) =>
-              ses.before(
-                {
-                  url,
-                  method: input.type,
-                  resourceType: "xhr",
-                  webContentsId: this.webContents.id,
-                  ...(input.type === "POST"
-                    ? { uploadData: [{ bytes: Buffer.from(query) }] }
-                    : {}),
-                },
-                resolve,
-              ),
+            const details = {
+              id: ++nextRequestId,
+              url,
+              method: input.type,
+              resourceType: "xhr",
+              webContentsId: this.webContents.id,
+              ...(input.type === "POST"
+                ? { uploadData: [{ bytes: Buffer.from(query) }] }
+                : {}),
+            };
+            let decision = await new Promise((resolve) =>
+              ses.before(details, resolve),
             );
+            if (!decision.cancel)
+              decision = await new Promise((resolve) =>
+                ses.beforeHeaders(
+                  { ...details, requestHeaders: headers },
+                  resolve,
+                ),
+              );
             if (decision.cancel) return input.error({ status: 403 }, "blocked");
             methods.add(input.type);
             const page =
@@ -136,13 +157,7 @@ function syntheticBossWindows() {
             } else if (!aborted) finish();
           })
           .catch(() => input.error({ status: 0 }, "synthetic_failure"));
-        return {
-          abort() {
-            aborted = true;
-            controls.aborts++;
-            input.error({ status: 0 }, "abort");
-          },
-        };
+        return handle;
       };
       this.page = vm.createContext({ window: { $: { ajax, ajaxSettings } } });
       windows.push(this);

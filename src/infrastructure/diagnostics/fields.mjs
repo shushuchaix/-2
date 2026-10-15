@@ -74,6 +74,29 @@ const countKeys = [
   "issues",
 ];
 const enums = {
+  requestPurpose: [
+    "login",
+    "login_poll",
+    "list",
+    "detail",
+    "document",
+    "asset",
+    "other",
+  ],
+  resultCategory: [
+    "response",
+    "success",
+    "network",
+    "timeout",
+    "cancelled",
+    "policy",
+    "budget",
+    "response_unobserved",
+    "business_risk",
+    "auth",
+    "rate_limited",
+    "unknown",
+  ],
   shutdownResource: [
     "application",
     "browser",

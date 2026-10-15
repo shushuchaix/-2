@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import {
   normalizeSourceStatus,
   safeSourceIssues,
+  safeSourceDiagnosticRefs,
   isVersionPrivateSource,
 } from "../sources/source-status.mjs";
 import { assertCollectionWrite } from "../domain/collection.mjs";
@@ -255,6 +256,7 @@ export function createSourceService({
       sessionRef,
       code,
       diagnosticId,
+      requestId,
       signal,
       collectionGuard,
     }) {
@@ -294,7 +296,11 @@ export function createSourceService({
             siteId: "boss",
             sampleCount: 0,
             status: bossBlockingCodes.has(code) ? "restricted" : "unavailable",
-            issues: safeSourceIssues([{ code, diagnosticId }], "boss", "boss"),
+            issues: safeSourceIssues(
+              [{ code, diagnosticId, requestId }],
+              "boss",
+              "boss",
+            ),
           },
           clock.now(),
         );
@@ -379,6 +385,9 @@ export function createSourceService({
                 sourceId,
                 siteId: site.siteId,
                 phase: error.phase || location.phase,
+                requestId:
+                  safeSourceDiagnosticRefs(error).requestId ||
+                  location.requestId,
               },
               error,
             ),
@@ -399,6 +408,7 @@ export function createSourceService({
               phase: error.phase || "response",
               outcome: "failed",
               code: error.code,
+              requestId: safeSourceDiagnosticRefs(error).requestId,
             },
             error,
           );
@@ -413,6 +423,7 @@ export function createSourceService({
             issues: [
               {
                 code: error.code || "unavailable",
+                ...safeSourceDiagnosticRefs(error),
                 ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
               },
             ],
@@ -434,6 +445,7 @@ export function createSourceService({
             });
             issues.push({
               code: e.code || "detail_unavailable",
+              ...safeSourceDiagnosticRefs(e),
               ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
             });
             if (terminalError) {
@@ -627,7 +639,15 @@ export function createSourceService({
           reportError: (error, context) =>
             recordDiagnostic(
               diagnostics,
-              { operation: "source.probe", sourceId, siteId, ...context },
+              {
+                operation: "source.probe",
+                sourceId,
+                siteId,
+                ...context,
+                requestId:
+                  safeSourceDiagnosticRefs(error).requestId ||
+                  context?.requestId,
+              },
               error,
             ),
         });
@@ -639,6 +659,7 @@ export function createSourceService({
             sourceId,
             siteId,
             durationMs: clock.now() - started,
+            requestId: safeSourceDiagnosticRefs(error).requestId,
           },
           error,
         );
@@ -660,6 +681,7 @@ export function createSourceService({
                 issues: [
                   {
                     code: error.code || "unavailable",
+                    ...safeSourceDiagnosticRefs(error),
                     ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
                   },
                 ],
@@ -690,7 +712,13 @@ export function createSourceService({
         if (issue.diagnosticId) continue;
         const entry = await recordDiagnostic(
           diagnostics,
-          { operation: "source.probe", sourceId, siteId, code: issue.code },
+          {
+            operation: "source.probe",
+            sourceId,
+            siteId,
+            code: issue.code,
+            requestId: safeSourceDiagnosticRefs(issue).requestId,
+          },
           Object.assign(Error(issue.message || issue.code), {
             code: issue.code,
           }),

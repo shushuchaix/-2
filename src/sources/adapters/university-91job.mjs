@@ -7,6 +7,7 @@ import {
 import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
 import { withMajorEvidence } from "../major-evidence.mjs";
+import { withExplicitJobType } from "./explicit-job-type.mjs";
 const id = "university-91job";
 const descriptionHtml = (value) => {
   if (!value) return null;
@@ -54,6 +55,7 @@ function parseNotice(r, site, previous = {}) {
     siteId: site.siteId,
     scope: String(site.tenantId),
     kind: "recruitment_notice",
+    parserVersion: id + "-2",
     title: String(r.zpggbt || "").trim() || previous.title,
     url:
       previous.url ||
@@ -70,7 +72,10 @@ function parseNotice(r, site, previous = {}) {
       { field: "kind", sourceField: "getZpggPageList" },
     ],
   });
-  return withApplicationLinks(record, r.zpggxq);
+  return withExplicitJobType(withApplicationLinks(record, r.zpggxq), {
+    titleField: "zpggbt",
+    descriptionField: "zpggxq",
+  });
 }
 function parse(r, site, previous = {}) {
   const city = String(r.gzdd || "").trim();
@@ -82,6 +87,7 @@ function parse(r, site, previous = {}) {
     sourceId: id,
     siteId: site.siteId,
     scope: String(site.tenantId),
+    parserVersion: id + "-2",
     title: String(r.zwmc || "").trim() || previous.title,
     url:
       previous.url ||
@@ -115,17 +121,24 @@ function parse(r, site, previous = {}) {
       { field: "description", sourceField: "zwms" },
     ],
   });
-  return withMajorEvidence(withApplicationLinks(record, r.zwms), r.xqzy, {
-    sourceField: "xqzy",
-    location: { jsonPath: "result.xqzy" },
-  });
+  return withMajorEvidence(
+    withExplicitJobType(withApplicationLinks(record, r.zwms), {
+      titleField: "zwmc",
+      descriptionField: "zwms",
+    }),
+    r.xqzy,
+    {
+      sourceField: "xqzy",
+      location: { jsonPath: "result.xqzy" },
+    },
+  );
 }
 const provider = createPagedProvider({
   id,
   name: "91job 高校招聘",
   capabilities: {
     category: "university",
-    jobTypes: ["campus", "internship", "unknown"],
+    jobTypes: ["campus", "internship", "social", "unknown"],
     detail: true,
   },
   async listPage(site, query, page, ctx) {

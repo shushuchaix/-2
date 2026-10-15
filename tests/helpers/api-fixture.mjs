@@ -8,7 +8,7 @@ import { allowLocalOrigin } from "./network-guard.mjs";
 import { hashPassword } from "../../src/auth.mjs";
 export async function apiFixture(t, options = {}) {
   const dataDir = options.dataDir || (await createTempDir(t)),
-    cfg = loadConfig({ quiet: true, dataDir });
+    cfg = loadConfig({ quiet: true, dataDir, readLocalCredentials: false });
   const password = "synthetic-auth-only-password";
   cfg.auth.mode = options.authRequired ? "password" : "none";
   cfg.__envAuthPassword = "";

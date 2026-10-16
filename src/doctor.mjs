@@ -11,6 +11,7 @@ import * as nowcoder from "./sources/nowcoder.mjs";
 import * as university from "./sources/university.mjs";
 import { searchQuery } from "./sources/searchapi.mjs";
 import { truncate } from "./util/text.mjs";
+import { isSupportedNodeVersion } from "./infrastructure/runtime/requirements.mjs";
 
 const PASS = "  ✅";
 if (process.argv.includes("--migration-check")) {
@@ -55,13 +56,13 @@ function line(icon, label, detail = "") {
 console.log("\n=== 简历岗位雷达 · 环境自检 ===\n");
 
 /* 1. Node 版本 */
-const major = Number(process.versions.node.split(".")[0]);
+const supportedNode = isSupportedNodeVersion(process.versions.node);
 line(
-  major >= 20 ? PASS : FAIL,
+  supportedNode ? PASS : FAIL,
   `Node.js ${process.versions.node}`,
-  major >= 20 ? "" : "需要 >= 20",
+  supportedNode ? "" : "需要 Node.js 24.x，至少 24.16.0，低于 25",
 );
-if (major < 20) failures++;
+if (!supportedNode) failures++;
 
 /* 2. 配置 */
 const cfg = loadConfig({ quiet: true });

@@ -93,19 +93,32 @@ test("simultaneous recovery contenders never overlap a live workspace writer", a
     import fs from 'node:fs'; import fsp from 'node:fs/promises'; import path from 'node:path';
     import { withWorkspaceLock } from ${JSON.stringify(lockUrl)};
     const dir = ${JSON.stringify(dataDir)}, main = path.join(dir, '.workspace.lock');
+    const parentPid = process.ppid;
+    const waitForRelease = async (name, timeoutMs) => {
+      const deadline = Date.now() + timeoutMs;
+      while (!fs.existsSync(path.join(dir, name))) {
+        if (Date.now() >= deadline) throw Error('Synthetic contender ' + name + ' timeout');
+        try { process.kill(parentPid, 0); }
+        catch (error) { if (error.code === 'ESRCH') throw Error('Synthetic contender parent closed'); }
+        await new Promise(resolve => setTimeout(resolve, 2));
+      }
+    };
+    // Synchronize process startup before the product's five-second lock budget.
+    // Keep a separate child setup limit and stop if the supervising test dies.
+    fs.writeFileSync(path.join(dir, 'started-${id}'), 'ready');
+    await waitForRelease('start-contenders', 30000);
+    // Keep the separate claim barrier: every warmed-up process must participate
+    // in stale-owner recovery before any contender can finish choosing a ticket.
     const open = fsp.open; let intercepted = false;
     fsp.open = async function(file, ...args) {
       const handle = await open.call(this, file, ...args);
       if (!intercepted && String(file).startsWith(main + '.reclaimers' + path.sep) && String(file).endsWith('.claim')) {
         intercepted = true; fs.writeFileSync(path.join(dir, 'ready-${id}'), 'ready');
-        const deadline = Date.now() + 10000;
-        while (!fs.existsSync(path.join(dir, 'release-contenders'))) {
-          if (Date.now() >= deadline) throw Error('Synthetic contender barrier timeout');
-          await new Promise(resolve => setTimeout(resolve, 2));
-        }
+        await waitForRelease('release-contenders', 5000);
       }
       return handle;
     };
+    fs.writeFileSync(path.join(dir, 'lock-started-${id}'), 'started');
     await withWorkspaceLock(dir, async () => {
       const critical = path.join(dir, 'critical');
       fs.mkdirSync(critical);
@@ -115,10 +128,19 @@ test("simultaneous recovery contenders never overlap a live workspace writer", a
     }, { timeoutMs: 5000, pollMs: 2 });
   `));
   const deadline = Date.now() + 10000;
-  while (Array.from({ length: 6 }, (_, id) => fs.existsSync(path.join(dataDir, "ready-" + id))).includes(false)) {
-    if (Date.now() >= deadline) throw Error("Synthetic contender setup timeout");
+  while (Array.from({ length: 6 }, (_, id) => fs.existsSync(path.join(dataDir, "started-" + id))).includes(false)) {
+    if (Date.now() >= deadline) throw Error("Synthetic contender startup timeout");
     await new Promise(resolve => setTimeout(resolve, 2));
   }
+  assert.equal(JSON.parse(fs.readFileSync(main, "utf8")).pid, dead.pid);
+  assert.equal(Array.from({ length: 6 }, (_, id) => fs.existsSync(path.join(dataDir, "lock-started-" + id))).some(Boolean), false);
+  fs.writeFileSync(path.join(dataDir, "start-contenders"), "go");
+  const claimDeadline = Date.now() + 5000;
+  while (Array.from({ length: 6 }, (_, id) => fs.existsSync(path.join(dataDir, "ready-" + id))).includes(false)) {
+    if (Date.now() >= claimDeadline) throw Error("Synthetic contender claim timeout");
+    await new Promise(resolve => setTimeout(resolve, 2));
+  }
+  assert.equal(JSON.parse(fs.readFileSync(main, "utf8")).pid, dead.pid);
   fs.writeFileSync(path.join(dataDir, "release-contenders"), "go");
   await Promise.all(children);
   assert.deepEqual(fs.readFileSync(path.join(dataDir, "completed"), "utf8").trim().split("\n").sort(), ["0", "1", "2", "3", "4", "5"]);

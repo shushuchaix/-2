@@ -70,9 +70,33 @@ const dockerfile = fs.readFileSync(path.join(ROOT, "Dockerfile"), "utf8");
 
 check("使用 node 官方镜像", /^FROM\s+node:/m.test(dockerfile));
 check(
-  "构建与运行层均固定 Node 20.20.2",
-  (dockerfile.match(/^FROM\s+node:20\.20\.2\S*\s+AS\s+\w+/gm) || []).length ===
-    2,
+  "构建与运行层均固定 Node 24.16.0 bookworm-slim",
+  (
+    dockerfile.match(/^FROM\s+node:24\.16\.0-bookworm-slim\s+AS\s+\w+\r?$/gm) ||
+    []
+  ).length === 2 && (dockerfile.match(/^FROM\s+/gm) || []).length === 2,
+);
+const packageManifest = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "package.json"), "utf8"),
+);
+const packageLock = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "package-lock.json"), "utf8"),
+);
+check(
+  "源码 engines 固定已核实的 Node 24.16 至 24.x 范围",
+  packageManifest.engines?.node === ">=24.16.0 <25",
+);
+check(
+  "lock 根记录与源码 engines 一致",
+  packageLock.packages?.[""]?.engines?.node === packageManifest.engines.node,
+);
+const ci = fs.readFileSync(
+  path.join(ROOT, ".github", "workflows", "ci.yml"),
+  "utf8",
+);
+check(
+  "CI 使用同一个 Node 24.16.0 基线",
+  /node-version:\s*["']24\.16\.0["']/.test(ci),
 );
 check(
   "builder 构建同一套 React 界面",

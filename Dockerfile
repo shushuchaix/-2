@@ -1,5 +1,5 @@
 # Build once, then ship the same renderer used by the desktop package.
-FROM node:20.20.2-bookworm-slim AS builder
+FROM node:24.16.0-bookworm-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY ui/package.json ./ui/package.json
@@ -9,7 +9,7 @@ COPY tools/build-ui.mjs ./tools/build-ui.mjs
 COPY public/js ./public/js
 RUN node tools/build-ui.mjs
 
-FROM node:20.20.2-bookworm-slim AS runtime
+FROM node:24.16.0-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

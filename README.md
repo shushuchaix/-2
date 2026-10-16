@@ -59,7 +59,9 @@ Windows 保存遇到短暂的 `EPERM`、`EACCES` 或 `EBUSY` 时，软件会在�
 
 ## 启动
 
-要求 Node.js 20 或更高版本。
+源码运行要求 **Node.js 24.x，至少 24.16.0，低于 25**；CI 和 Docker 构建／运行层固定 24.16.0。Windows 便携版使用随包提供的运行时，无需另外安装 Node。
+
+新增行存储层要求内置 `node:sqlite`，不支持 Node 20／22，也不向旧版 Node 回退另一套存储；正式仓储切换在后续实施。端口与运行时边界见 [行存储契约](docs/architecture/2026-10-16-row-store-contract.md)。`package.json` 的 `engines` 只是包管理器兼容性声明，默认不保证拒绝启动；`start.cmd` 会先检查实际运行版本。
 
 ```powershell
 npm ci --ignore-scripts

@@ -1,17 +1,21 @@
+import {withSourceContext} from '../src/sources/request-context.mjs';
 // 全网搜索适配器测试（Tavily / 博查 / Serper）
 //
 // 这个模块此前零测试，而且它是唯一一个「用户自己配 Key 才能用」的源 ——
 // 配错了没人会告诉你为什么没数据。这里用 mock fetch 把三家返回结构都验一遍，
 // 保证「配了 Key 就能出结果」这件事是可验证的。
 import {
-  searchQuery,
-  searchAll,
+  searchQuery as rawSearchQuery,
+  searchAll as rawSearchAll,
   siteLabel,
   providerLabel,
   normalizeWebResult,
   meta,
 } from '../src/sources/searchapi.mjs';
 
+const fakeRequest=async(url,opts)=>{const r=await globalThis.fetch(url,opts);return {status:r.status,headers:{},text:await r.text(),url:String(url)};};
+const searchQuery=(...args)=>withSourceContext({request:fakeRequest},()=>rawSearchQuery(...args));
+const searchAll=(...args)=>withSourceContext({request:fakeRequest},()=>rawSearchAll(...args));
 let pass = 0;
 let fail = 0;
 const ok = (n, c, e = '') => {

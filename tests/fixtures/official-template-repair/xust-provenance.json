@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "sourceKind": "actual_same_root_public_responses",
+  "samples": [
+    {
+      "sourceUrl": "https://jy.xust.edu.cn/detail/online?id=3378527&menu_id=8448",
+      "observedAt": "2026-10-13T10:02:57.919Z",
+      "decodedTextSha256": "1d70670658189b09fc1d7bcab35b062f84950c193bf3ecbc8f842f8eee3b1d7a"
+    },
+    {
+      "sourceUrl": "https://jy.xust.edu.cn/detail/online?id=3143333&menu_id=8448",
+      "observedAt": "2026-10-13T10:03:26.764Z",
+      "decodedTextSha256": "193da6cc0a9ac400fc8c7fd3881850ab4678a9a956aa0f1f346f21368279848b"
+    }
+  ],
+  "fixtures": "Synthetic schema examples are in the integration test; full employer advertisements are excluded.",
+  "nativeListObservedRows": 17,
+  "doesNotProveCurrentOpening": true,
+  "doesNotProveApplication": true
+}

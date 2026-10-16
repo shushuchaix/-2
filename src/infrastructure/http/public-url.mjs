@@ -1,0 +1,89 @@
+import dns from "node:dns/promises";
+import net from "node:net";
+function ipv6Words(ip) {
+  const sides = ip.toLowerCase().split("::");
+  const parse = (s) =>
+    s
+      ? s.split(":").flatMap((x) =>
+          x.includes(".")
+            ? (() => {
+                const a = x.split(".").map(Number);
+                return [(a[0] << 8) | a[1], (a[2] << 8) | a[3]];
+              })()
+            : [parseInt(x, 16)],
+        )
+      : [];
+  const left = parse(sides[0]),
+    right = sides.length > 1 ? parse(sides[1]) : [];
+  return sides.length > 1
+    ? [...left, ...Array(8 - left.length - right.length).fill(0), ...right]
+    : left;
+}
+export function isPublicAddress(ip) {
+  ip = String(ip).replace(/^\[|\]$/g, "");
+  const family = net.isIP(ip);
+  if (family === 4) {
+    const [a, b, c] = ip.split(".").map(Number);
+    return !(
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      a >= 224 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && (b === 168 || b === 0 || b === 2)) ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+      (a === 203 && b === 0 && c === 113)
+    );
+  }
+  if (family === 6) {
+    const w = ipv6Words(ip);
+    if (w.slice(0, 5).every((x) => x === 0) && w[5] === 0xffff)
+      return isPublicAddress(
+        [w[6] >> 8, w[6] & 255, w[7] >> 8, w[7] & 255].join("."),
+      );
+    return (
+      w[0] >= 0x2000 &&
+      w[0] <= 0x3fff &&
+      w[0] !== 0x2002 &&
+      !(
+        w[0] === 0x2001 &&
+        (w[1] === 0 || w[1] === 0xdb8 || (w[1] >= 0x10 && w[1] <= 0x2f))
+      )
+    );
+  }
+  return false;
+}
+export function validatePublicUrl(value) {
+  const url = new URL(value);
+  if (!["http:", "https:"].includes(url.protocol))
+    throw Error("Unsupported public URL protocol");
+  if (url.username || url.password) throw Error("URL credentials forbidden");
+  const host = url.hostname
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "")
+    .toLowerCase();
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    (net.isIP(host) && !isPublicAddress(host))
+  )
+    throw Error("Private address forbidden");
+  return url;
+}
+export async function resolvePublicUrl(value, { dnsLookup = dns.lookup } = {}) {
+  const url = validatePublicUrl(value),
+    host = url.hostname.replace(/^\[|\]$/g, "");
+  const addresses = net.isIP(host)
+    ? [{ address: host, family: net.isIP(host) }]
+    : await dnsLookup(host, { all: true, verbatim: true });
+  if (
+    !Array.isArray(addresses) ||
+    !addresses.length ||
+    addresses.some((x) => !isPublicAddress(x.address))
+  )
+    throw Error("Private or invalid DNS address forbidden");
+  return { url, addresses };
+}

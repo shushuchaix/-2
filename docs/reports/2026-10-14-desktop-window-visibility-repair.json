@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-14T14:12:26.391Z",
+  "scope": "desktop_window_visibility_recovery",
+  "rootCause": {
+    "loadedWithoutVisibleWindow": true,
+    "beforeWindowCount": 6,
+    "beforeVisibleWindows": 0,
+    "desktop": "Default",
+    "shortcutTargetValid": true,
+    "previousTaskLaunchedHidden": true,
+    "secondInstancePreviouslyOnlyFocused": true
+  },
+  "changes": [
+    "Reveal a hidden main window before focusing and restore a minimized window.",
+    "Present after successful local-page load if the first display did not succeed.",
+    "Track first presentation to preserve user minimization while loading finishes.",
+    "Reuse presentation for second launch and activation; keep offscreen tests hidden."
+  ],
+  "review": {
+    "critical": 0,
+    "important": 0,
+    "minor": 1,
+    "fixed": true,
+    "reReviewed": false,
+    "validRed": {
+      "lifecycleTests": 3,
+      "pass": 2,
+      "fail": 1
+    }
+  },
+  "verification": {
+    "newRegressionCases": 10,
+    "focused": {
+      "pass": 20,
+      "fail": 0
+    },
+    "business": {
+      "pass": 1957,
+      "fail": 0
+    },
+    "ui": {
+      "pass": 174,
+      "fail": 0
+    },
+    "offlineSuites": {
+      "total": 25,
+      "pass": 18,
+      "explicitSkip": 7,
+      "fail": 0
+    },
+    "package": {
+      "exactSourceHashes": 228,
+      "files": 10455,
+      "productionDependencies": 52,
+      "ocrHashes": 32,
+      "runtimeVerified": true
+    },
+    "native": {
+      "scale": 1,
+      "pass": 424,
+      "fail": 0,
+      "exit": 0,
+      "externalRequests": 0,
+      "rendererErrors": 0,
+      "screenshots": 63,
+      "visualAudits": 39
+    },
+    "realWindows": {
+      "normalStartupVisible": true,
+      "minimizeObserved": true,
+      "secondLaunchRestoredSameInstance": true,
+      "afterVisibleCount": 1,
+      "restoredVisibleCount": 1
+    }
+  },
+  "sourceHashes": {
+    "electron/main.mjs": "65c7bba75b81c79b8b8bae307c191ddbf69436ac1df9ecfe0cc20b05d842799e",
+    "electron/startup.mjs": "f1f4f411b7be2d812f15c9ad2196ef42a89c478aaa33ecd552a659139f8eb090",
+    "tests/unit/desktop-window-presentation.test.mjs": "5c6349d22ca2451fbda96f7b2785b7c403ea199a5d2723d77bf8b2c03ecf631c",
+    "tests/integration/desktop-window-lifecycle.test.mjs": "cbdd3bc7930c371a8bbd99936f2cd2e5fca8d314e3b0b2c218afe9b53d7cd816"
+  },
+  "delivery": {
+    "exe": "dist/简历岗位雷达-win32-x64/简历岗位雷达.exe",
+    "asarSha256": "3CC92C507CE9E33B7B6937AC750E55973AE1666826A99FDDE766E31C458FFAD3",
+    "previousProgramPreserved": true,
+    "closedOnlyTaskOwnedInvisibleInstance": true
+  },
+  "boundaries": [
+    "User workspace and session material files were not deleted or reset by deployment.",
+    "No Boss re-probe, risk reset, model call or job collection during this fix.",
+    "This patch does not establish successful Boss data retrieval or complete source expansion.",
+    "Only this package's 100 percent offscreen test and real visible startup/reopen paths were rechecked; earlier other-scale results are not attributed to this package."
+  ]
+}

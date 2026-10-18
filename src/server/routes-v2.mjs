@@ -154,7 +154,7 @@ export async function handleV2Request(req, res, context) {
         ? identifier(revision, { revision: true })
         : identifier(id + "@" + revision, { revision: true })
       : null;
-    const modern = (await context.repository.read()).schemaVersion === 3;
+    const modern = (await context.repository.getMeta('schemaVersion')) === 3;
     const packageId = url.searchParams.get("packageId") || undefined;
     if (modern && revisionId && !UUID_RE.test(packageId || ""))
       throw packageError(
@@ -442,7 +442,7 @@ export async function handleV2Request(req, res, context) {
               scope: businessScope(params),
             })
           : await context.sourceService.listSources(),
-      sites: await context.getCatalog(),
+      sites: await context.getCatalog(params.packageId || params.targetRevisionId ? businessScope(params) : undefined),
     });
     return true;
   }

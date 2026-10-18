@@ -103,13 +103,16 @@ test("permanent purge removes all package copies and preserves peer data", async
   assert.ok(b.workspace.packages[f.b.packageId]);
   for (const filename of [
     path.join(f.dataDir, "workspace.v2.json"),
-    path.join(f.dataDir, "workspace.v2.previous.json"),
     f.backup.path,
   ]) {
     const s = await fs.readFile(filename, "utf8");
     assert.ok(!s.includes("ONLY-A-PRIVATE-NOTE"));
     assert.ok(!s.includes("ONLY-A-SNAPSHOT"));
   }
+  await assert.rejects(fs.stat(path.join(f.dataDir,'workspace.v2.previous.json')),{code:'ENOENT'});
+  const database=await fs.readFile(path.join(f.dataDir,'workspace.sqlite'));
+  assert.ok(!database.includes(Buffer.from('ONLY-A-PRIVATE-NOTE')));
+  assert.ok(!database.includes(Buffer.from('ONLY-A-SNAPSHOT')));
   for (const name of await fs.readdir(path.join(f.dataDir, "runs-v2")))
     assert.ok(
       !(

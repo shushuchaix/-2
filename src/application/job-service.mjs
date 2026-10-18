@@ -3,7 +3,7 @@ import {
   assessRecruitmentEvidence,
   gateRecommendation,
 } from "../domain/recruitment-evidence.mjs";
-import { contentHash } from "../infrastructure/storage/repository.mjs";
+import { contentHash } from "../infrastructure/storage/content-hash.mjs";
 import { createPackageJobService } from "./package-job-service.mjs";
 import {
   assertInput,
@@ -563,17 +563,14 @@ function createLegacyJobService({ repository, clock = repository.clock }) {
 }
 export function createJobService(options) {
   const legacy = createLegacyJobService(options),
-    scoped = createPackageJobService({
-      ...options,
-      legacyFactory: createLegacyJobService,
-    });
+    scoped = createPackageJobService(options);
   return Object.fromEntries(
     [...new Set([...Object.keys(legacy), ...Object.keys(scoped)])].map(
       (name) => [
         name,
         async (...args) => {
-          const w = await options.repository.read();
-          const implementation = w.schemaVersion === 3 ? scoped : legacy;
+          const schemaVersion = await options.repository.getMeta('schemaVersion');
+          const implementation = schemaVersion === 3 ? scoped : legacy;
           if (!implementation[name])
             throw Object.assign(Error("该入口需要准确的目标版本。"), {
               code: "version_scope_required",

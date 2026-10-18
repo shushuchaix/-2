@@ -6,7 +6,22 @@ import {
 export function recordSourceHealth(workspace, result, milliseconds) {
   const key = result.sourceId + "/" + result.siteId;
   const stored = workspace.sourceHealth[key] || {};
+  const health = mergeSourceHealth(stored, result, milliseconds);
+  workspace.sourceHealth[key] = health;
+  return health;
+}
+export function mergeSourceHealth(stored = {}, result, milliseconds) {
+  stored ||= {};
+  if (
+    Date.parse(stored.lastAttemptAt || stored.checkedAt) > Number(milliseconds)
+  )
+    return structuredClone(stored);
   const fields = [
+    "projectionVersion",
+    "depth",
+    "bodySampleCount",
+    "applicationSampleCount",
+    "evidenceCheckedAt",
     "sourceId",
     "siteId",
     "status",
@@ -35,6 +50,11 @@ export function recordSourceHealth(workspace, result, milliseconds) {
             .map((k) => [k, object[field][k]]),
         );
   const at = new Date(milliseconds).toISOString();
+  const evidenceTime = Date.parse(result.evidenceCheckedAt),
+    evidenceAt =
+      Number.isFinite(evidenceTime) && evidenceTime <= Number(milliseconds)
+        ? new Date(evidenceTime).toISOString()
+        : at;
   const status = normalizeSourceStatus(result);
   const lastSuccess = [
     previous.lastSuccessAt,
@@ -50,6 +70,7 @@ export function recordSourceHealth(workspace, result, milliseconds) {
     status,
     issues: safeSourceIssues(result.issues, result.sourceId, result.siteId),
     checkedAt: at,
+    evidenceCheckedAt: evidenceAt,
     lastAttemptAt: at,
     lastSuccessAt:
       status === "ready"
@@ -68,6 +89,5 @@ export function recordSourceHealth(workspace, result, milliseconds) {
       ? new Date(Number(milliseconds) + 300000).toISOString()
       : null,
   };
-  workspace.sourceHealth[key] = health;
   return health;
 }

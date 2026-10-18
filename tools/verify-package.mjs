@@ -6,6 +6,7 @@ import * as asar from "@electron/asar";
 import { parse } from "acorn";
 import { verifyBundledOcr } from "./lib/bundled-resources.mjs";
 import { verifyCollectionRuntime } from "../src/infrastructure/collection/runtime.mjs";
+import { sourceBuildIdentity } from "./lib/build-identity.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const EXCLUDE_MODULES = [];
@@ -21,6 +22,10 @@ export const PUBLIC_RUNTIME_FILES = [
 ];
 const REQUIRED_RUNTIME = [
   "electron/main.mjs",
+  "electron/backend/entry.cjs",
+  "electron/backend/service.mjs",
+  "electron/backend/host.mjs",
+  "src/infrastructure/runtime/rpc.mjs",
   "electron/preload.cjs",
   "electron/credentials.mjs",
   "electron/directories.mjs",
@@ -208,8 +213,15 @@ export function verifyPackageArchive({
     ...REQUIRED_RUNTIME,
     ...PUBLIC_RUNTIME_FILES.map((rel) => "public/" + rel),
     "package.json",
+    "build-info.json",
   ])
     if (!listed.has(file)) throw Error("Missing runtime file: " + file);
+  const buildInfo = JSON.parse(read("build-info.json"));
+  if (
+    !/^[a-f0-9]{40}$/.test(buildInfo.buildId || "") ||
+    buildInfo.buildId !== sourceBuildIdentity(root)
+  )
+    throw Error("Source/package build identity mismatch");
   const matchedSources = [];
   for (const file of productionSourceFiles(root)) {
     if (!listed.has(file)) throw Error("Missing runtime file: " + file);

@@ -3,7 +3,8 @@ import { selectRunJobFact } from "../domain/job-facts.mjs";
 import {randomUUID} from 'node:crypto';
 import {assertScope,assertOwned} from '../domain/packages.mjs';
 import {packageWorkspace} from './package-job-service.mjs';
-export function createRunEventHub({
+import {createRowRunEventHub} from './run-row-events.mjs';
+function createLegacyRunEventHub({
   repository,
   clock = repository.clock,
   maxBuffered = 200,
@@ -190,4 +191,9 @@ export function createRunEventHub({
     },
   };
   return hub;
+}
+export function createRunEventHub(options) {
+  if(options.maxBuffered!==undefined&&(!Number.isSafeInteger(options.maxBuffered)||options.maxBuffered<1||options.maxBuffered>200))throw Error('Invalid event buffer');
+  const formal=createRowRunEventHub(options),legacy=createLegacyRunEventHub(options),isFormal=options.repository.getMeta?options.repository.getMeta('schemaVersion').then(value=>value===3):Promise.resolve(false);
+  return Object.fromEntries(['publish','getHead','getSnapshot','subscribe'].map(name=>[name,async(...args)=>(await isFormal?formal:legacy)[name](...args)]));
 }

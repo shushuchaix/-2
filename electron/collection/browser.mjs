@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { parseBossResponse } from "../../src/sources/boss/protocol.mjs";
 import { createBrowserWindowBudget } from "./window-budget.mjs";
+import { createManualAdmission } from "./manual-admission.mjs";
 import {
   bossPageScript,
   bossAbortScript,
@@ -49,11 +50,14 @@ export function createCollectionBrowser({
     sessionPrepares = new Map(),
     sessionGenerations = new Map(),
     closingLoginScopes = new Set(),
-    pendingReads = new Set();
+    pendingReads = new Set(),
+    nativeLifetimes = new Set();
   const scopeKey = (scope) =>
     JSON.stringify([scope.packageId, scope.targetRevisionId]);
   let reads = 0,
-    stopping = false;
+    stopping = false,
+    backendRevoked = false,
+    firstCleanupError;
   const riskRecovery = Symbol("owned-risk-recovery");
   async function assertBossRisk(input) {
     if (input[riskRecovery]) return;
@@ -141,24 +145,52 @@ export function createCollectionBrowser({
         }
         closing = Promise.resolve().then(async () => {
           lifetime.abort(failure("collection_cancelled", "采集窗口已关闭。"));
+          let cleanupError;
           try {
             await ses.closeAllConnections();
-            if (!keepWindow)
+            if (!keepWindow && !backendRevoked)
               await sessionStore.setState({
                 scope,
                 sessionRef: entry.sessionRef,
                 state: "unverified",
               });
-            await sessionStore.saveMaterial({
-              scope,
-              sessionRef: entry.sessionRef,
-              cookies: await ses.cookies.get({}),
-            });
+            if (!backendRevoked) {
+              const cookies = await ses.cookies.get({});
+              if (!backendRevoked)
+                await sessionStore.saveMaterial({
+                  scope,
+                  sessionRef: entry.sessionRef,
+                  cookies,
+                });
+            }
+          } catch (error) {
+            cleanupError = error;
           } finally {
-            detach();
-            window.removeListener("closed", onClosed);
-            if (!keepWindow && !window.isDestroyed()) window.destroy();
-            if (windows.get(id) === item) windows.delete(id);
+            try {
+              for (const cleanup of [
+                detach,
+                () => window.removeListener("closed", onClosed),
+                () => {
+                  if (!keepWindow && !window.isDestroyed()) window.destroy();
+                },
+              ]) {
+                try {
+                  cleanup();
+                } catch (error) {
+                  cleanupError ||= error;
+                }
+              }
+            } finally {
+              if (
+                windows.get(id) === item &&
+                (keepWindow || window.isDestroyed())
+              )
+                windows.delete(id);
+            }
+          }
+          if (cleanupError) {
+            firstCleanupError ||= cleanupError;
+            throw cleanupError;
           }
         });
         return closing;
@@ -254,6 +286,10 @@ export function createCollectionBrowser({
     ses.setPermissionCheckHandler(() => false);
     const proxy = await egressProxy.start();
     const lifetime = new AbortController();
+    nativeLifetimes.add(lifetime);
+    const abortFromParent = () => lifetime.abort(signal.reason);
+    signal?.addEventListener("abort", abortFromParent, { once: true });
+    if (signal?.aborted) abortFromParent();
     const ownedSignal = signal
       ? AbortSignal.any([signal, lifetime.signal])
       : lifetime.signal;
@@ -359,11 +395,14 @@ export function createCollectionBrowser({
         });
     } catch (error) {
       lifetime.abort(error);
+      nativeLifetimes.delete(lifetime);
+      signal?.removeEventListener("abort", abortFromParent);
       client.revoke();
       await publicResolver?.close();
       throw error;
     }
-    const id = window.webContents.id,
+    const webContents = window.webContents,
+      id = webContents.id,
       networkStatus = { status: 200 };
     const physicalRequests = new Map(),
       completionSettlements = new Set();
@@ -398,7 +437,12 @@ export function createCollectionBrowser({
               window.setTitle?.("来源页面跳转被限制，请查看来源问题日志"),
           })
         : null;
-    let manualQueue = Promise.resolve();
+    const manualAdmission = manual
+      ? createManualAdmission({
+          signal: ownedSignal,
+          allowance: manualAllowance,
+        })
+      : null;
     const policy = createPagePolicy({
       routePolicy,
       maxRequests: 60,
@@ -411,15 +455,7 @@ export function createCollectionBrowser({
       reserve: async (details, ownership) => {
         if (manual) {
           claimManualRequest();
-          const next = manualQueue.then(async () => {
-            await cancellableSleep(
-              Math.max(0, manualAllowance.lastAt + 300 - Date.now()),
-              ownedSignal,
-            );
-            manualAllowance.lastAt = Date.now();
-          });
-          manualQueue = next.catch(() => {});
-          await next;
+          await manualAdmission.admit(details);
         } else {
           const reservationId = randomUUID();
           const reservation = await accountingLedger.reserve({
@@ -467,11 +503,13 @@ export function createCollectionBrowser({
       }
     };
     let detach,
+      item,
       policyAttached = false;
     try {
       detach = attachNetworkPolicy(ses, "collection-page", policy);
       policyAttached = true;
       ses.webRequest.onCompleted?.({ urls: ["<all_urls>"] }, (details) => {
+        manualAdmission?.release(details);
         loginDiagnostics?.completed(details);
         const key = requestKey(details),
           reservationId = physicalRequests.get(key);
@@ -492,13 +530,15 @@ export function createCollectionBrowser({
           .catch(() => {});
       });
       ses.webRequest.onErrorOccurred?.({ urls: ["<all_urls>"] }, (details) => {
+        manualAdmission?.release(details);
         loginDiagnostics?.failed(details);
         // Failed and cancelled requests retain their unresolved upper bound.
         physicalRequests.delete(requestKey(details));
       });
-      ses.webRequest.onBeforeRedirect?.({ urls: ["<all_urls>"] }, (details) =>
-        loginDiagnostics?.redirected(details),
-      );
+      ses.webRequest.onBeforeRedirect?.({ urls: ["<all_urls>"] }, (details) => {
+        manualAdmission?.release(details);
+        loginDiagnostics?.redirected(details);
+      });
       ses.webRequest.onHeadersReceived(
         { urls: ["<all_urls>"] },
         (details, callback) => {
@@ -524,17 +564,20 @@ export function createCollectionBrowser({
       window.webContents.on("will-redirect", navigation);
       let disposing;
       const saveMaterial = async () => {
-        if (entry)
-          await sessionStore.saveMaterial({
-            scope: ref.scope,
-            sessionRef: entry.sessionRef,
-            cookies: await ses.cookies.get({}),
-          });
+        if (entry && !backendRevoked) {
+          const cookies = await ses.cookies.get({});
+          if (!backendRevoked)
+            await sessionStore.saveMaterial({
+              scope: ref.scope,
+              sessionRef: entry.sessionRef,
+              cookies,
+            });
+        }
       };
       const onClosed = () => {
         item.dispose().catch(() => {});
       };
-      const item = {
+      item = {
         id,
         window,
         ses,
@@ -556,25 +599,22 @@ export function createCollectionBrowser({
             return disposing;
           }
           disposing = Promise.resolve().then(async () => {
-            lifetime.abort(failure("collection_cancelled", "采集窗口已关闭。"));
-            policy.close();
-            client.revoke();
+            let cleanupError;
             try {
+              lifetime.abort(
+                failure("collection_cancelled", "采集窗口已关闭。"),
+              );
+              policy.close();
+              manualAdmission?.close();
+              client.revoke();
               await publicResolver?.close();
-              if (manual && entry && !keepWindow)
+              if (manual && entry && !keepWindow && !backendRevoked)
                 await sessionStore.setState({
                   scope: ref.scope,
                   sessionRef: entry.sessionRef,
                   state: "unverified",
                 });
               if (!item.preserveMaterial) await saveMaterial();
-            } finally {
-              detach();
-              ses.webRequest.onCompleted?.(null);
-              ses.webRequest.onErrorOccurred?.(null);
-              ses.webRequest.onBeforeRedirect?.(null);
-              await Promise.allSettled([...completionSettlements]);
-              await loginDiagnostics?.close();
               physicalRequests.clear();
               if (manual) manualAllowance.wireBytes += client.snapshot().bytes;
               if (manual && !keepWindow)
@@ -588,22 +628,63 @@ export function createCollectionBrowser({
                       manualAllowance.wireBytes + manualAllowance.dnsBytes,
                   },
                 });
-              ses.webRequest.onHeadersReceived(null);
-              ses.removeListener("will-download", denyDownload);
-              window.webContents.removeListener("login", proxyLogin);
-              window.webContents.removeListener("will-navigate", navigation);
-              window.webContents.removeListener("will-redirect", navigation);
-              window.removeListener("closed", onClosed);
-              if (!keepWindow && !window.isDestroyed()) window.destroy();
+            } catch (error) {
+              cleanupError = error;
+            } finally {
               try {
+                await Promise.allSettled([...completionSettlements]);
+                await loginDiagnostics?.close();
+              } catch (error) {
+                cleanupError ||= error;
+              }
+              try {
+                // Electron's window.webContents getter throws after destroy().
+                // Native teardown must not prevent bookkeeping or other hooks.
+                for (const cleanup of [
+                  () => nativeLifetimes.delete(lifetime),
+                  () => signal?.removeEventListener("abort", abortFromParent),
+                  detach,
+                  () => ses.webRequest.onCompleted?.(null),
+                  () => ses.webRequest.onErrorOccurred?.(null),
+                  () => ses.webRequest.onBeforeRedirect?.(null),
+                  () => ses.webRequest.onHeadersReceived(null),
+                  () => ses.removeListener("will-download", denyDownload),
+                  () => {
+                    if (!window.isDestroyed() && !webContents.isDestroyed?.()) {
+                      webContents.removeListener("login", proxyLogin);
+                      webContents.removeListener("will-navigate", navigation);
+                      webContents.removeListener("will-redirect", navigation);
+                    }
+                  },
+                  () => window.removeListener("closed", onClosed),
+                  () => {
+                    if (!keepWindow && !window.isDestroyed()) window.destroy();
+                  },
+                ]) {
+                  try {
+                    cleanup();
+                  } catch (error) {
+                    cleanupError ||= error;
+                  }
+                }
                 await ses.closeAllConnections();
                 if (!entry) {
                   await ses.clearStorageData();
                   await ses.clearCache();
                 }
+              } catch (error) {
+                cleanupError ||= error;
               } finally {
-                if (windows.get(id) === item) windows.delete(id);
+                if (
+                  windows.get(id) === item &&
+                  (keepWindow || window.isDestroyed())
+                )
+                  windows.delete(id);
               }
+            }
+            if (cleanupError) {
+              firstCleanupError ||= cleanupError;
+              throw cleanupError;
             }
           });
           return disposing;
@@ -613,32 +694,55 @@ export function createCollectionBrowser({
       window.once("closed", onClosed);
       return item;
     } catch (error) {
-      lifetime.abort(error);
-      policy.close();
-      client.revoke();
-      await publicResolver?.close();
-      await loginDiagnostics?.close();
-      if (policyAttached) {
-        detach?.();
-        for (const hook of [
-          "onCompleted",
-          "onErrorOccurred",
-          "onBeforeRedirect",
-          "onHeadersReceived",
-        ])
+      try {
+        for (const cleanup of [
+          () => lifetime.abort(error),
+          () => nativeLifetimes.delete(lifetime),
+          () => signal?.removeEventListener("abort", abortFromParent),
+          () => policy.close(),
+          () => manualAdmission?.close(),
+          () => client.revoke(),
+          () => publicResolver?.close(),
+          () => loginDiagnostics?.close(),
+          () => {
+            if (policyAttached) detach?.();
+          },
+          ...[
+            "onCompleted",
+            "onErrorOccurred",
+            "onBeforeRedirect",
+            "onHeadersReceived",
+          ].map((hook) => () => {
+            if (policyAttached) ses.webRequest[hook]?.(null);
+          }),
+          () => ses.removeListener("will-download", denyDownload),
+          () => {
+            if (!window.isDestroyed() && !webContents.isDestroyed?.()) {
+              webContents.removeListener("login", proxyLogin);
+              webContents.removeListener("will-navigate", navigation);
+              webContents.removeListener("will-redirect", navigation);
+            }
+          },
+          () => {
+            if (!existingWindow && !window.isDestroyed()) window.destroy();
+          },
+          () => {
+            if (policyAttached) return ses.closeAllConnections();
+          },
+        ]) {
           try {
-            ses.webRequest[hook]?.(null);
-          } catch {}
-        try {
-          await ses.closeAllConnections();
-        } catch {}
+            await cleanup();
+          } catch (cleanupError) {
+            firstCleanupError ||= cleanupError;
+          }
+        }
+      } finally {
+        if (
+          windows.get(id) === item &&
+          (!existingWindow || window.isDestroyed())
+        )
+          windows.delete(id);
       }
-      ses.removeListener("will-download", denyDownload);
-      window.webContents.removeListener("login", proxyLogin);
-      window.webContents.removeListener("will-navigate", navigation);
-      window.webContents.removeListener("will-redirect", navigation);
-      if (!existingWindow && !window.isDestroyed()) window.destroy();
-      windows.delete(id);
       throw error;
     }
   }
@@ -1090,10 +1194,12 @@ export function createCollectionBrowser({
       ref,
       platform,
       accountRef,
+      signal,
       remember,
       testUrl,
       sessionRef,
     }) {
+      signal?.throwIfAborted();
       const generation = generations.get(ref.scope.packageId) || 0,
         initialSessionGeneration = sessionGenerations.get(sessionRef) || 0;
       await assertScope?.(ref.scope);
@@ -1139,6 +1245,7 @@ export function createCollectionBrowser({
           ? initialSessionGeneration
           : sessionGenerations.get(entry.sessionRef) || 0;
       const ensureOwned = async () => {
+        signal?.throwIfAborted();
         if (
           stopping ||
           generation !== (generations.get(ref.scope.packageId) || 0) ||
@@ -1199,7 +1306,7 @@ export function createCollectionBrowser({
             "collection_browser_unavailable",
             "请先关闭其他采集窗口。",
           );
-        item = await prepare({ ref, routePolicy, manual: true, entry });
+        item = await prepare({ ref, routePolicy, manual: true, entry, signal });
         item.preserveMaterial = Boolean(entry.reused);
         await Promise.race([
           item.window.loadURL(entryUrl),
@@ -1416,6 +1523,59 @@ export function createCollectionBrowser({
       const result = await sessionStore.cleanupPackage(packageId);
       return cleanupFailed ? { status: "cleanup_pending" } : result;
     },
+    setDnsMode(mode) {
+      if (
+        !["auto", "system", "doh"].includes(mode) ||
+        windows.size ||
+        prepares.size
+      )
+        throw failure(
+          "collection_browser_configuration",
+          "采集窗口网络设置不可用。",
+        );
+      dnsMode = mode;
+      return { configured: true };
+    },
+    revokeBackend(reason = failure("backend_exited", "后台已停止。")) {
+      // This path is intentionally synchronous. Never wait on a dead backend's
+      // ledger or session RPC before closing network policies and proxy grants.
+      stopping = true;
+      backendRevoked = true;
+      for (const packageId of new Set([
+        ...prepares.keys(),
+        ...[...windows.values()].map((item) => item.scope.packageId),
+      ]))
+        generations.set(packageId, (generations.get(packageId) || 0) + 1);
+      for (const sessionRef of sessions.keys())
+        sessionGenerations.set(
+          sessionRef,
+          (sessionGenerations.get(sessionRef) || 0) + 1,
+        );
+      for (const lifetime of nativeLifetimes) lifetime.abort(reason);
+      for (const item of windows.values()) {
+        for (const revoke of [
+          () => item.policy.close(),
+          () => item.client.revoke(),
+          () => item.lifetime.abort(reason),
+          () => {
+            if (!item.window.isDestroyed()) item.window.webContents.stop?.();
+          },
+          () => {
+            if (!item.window.isDestroyed()) item.window.destroy();
+          },
+          () =>
+            Promise.resolve(item.ses.closeAllConnections()).catch(
+              (error) => (firstCleanupError ||= error),
+            ),
+        ]) {
+          try {
+            revoke();
+          } catch (error) {
+            firstCleanupError ||= error;
+          }
+        }
+      }
+    },
     async stop() {
       stopping = true;
       await Promise.allSettled([...prepares.values()].flatMap((s) => [...s]));
@@ -1431,10 +1591,17 @@ export function createCollectionBrowser({
           await ses.closeAllConnections();
           await ses.clearStorageData();
           await ses.clearCache();
-        } catch {}
+        } catch (error) {
+          firstCleanupError ||= error;
+        }
       }
       sessions.clear();
-      await egressProxy.stop();
+      try {
+        await egressProxy.stop();
+      } catch (error) {
+        firstCleanupError ||= error;
+      }
+      if (firstCleanupError) throw firstCleanupError;
     },
     snapshot: () => ({ activeReads: reads, windows: windows.size }),
   };

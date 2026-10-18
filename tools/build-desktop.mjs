@@ -14,6 +14,7 @@ import * as asar from "@electron/asar";
 import { NtExecutable, NtExecutableResource, Data, Resource } from "resedit";
 import { buildUi } from "./build-ui.mjs";
 import { copyBundledResources } from "./lib/bundled-resources.mjs";
+import { sourceBuildIdentity } from "./lib/build-identity.mjs";
 import {
   prodClosure,
   validateUiAssets,
@@ -158,6 +159,12 @@ stage("重命名主程序并精简语言包");
   const lic = path.join(ROOT, "node_modules", "electron", "LICENSE");
   if (fs.existsSync(lic))
     fs.copyFileSync(lic, path.join(OUT_DIR, "LICENSE.electron.txt"));
+  const shadcnLicense = path.join(ROOT, "ui/src/vendor/shadcn/LICENSE.md");
+  if (!fs.existsSync(shadcnLicense))
+    throw new Error(
+      "Missing vendored shadcn license: ui/src/vendor/shadcn/LICENSE.md",
+    );
+  fs.copyFileSync(shadcnLicense, path.join(OUT_DIR, "LICENSE.shadcn.txt"));
   console.log(`      ${EXE_NAME} ${mb(fs.statSync(to).size)}`);
 
   // 界面只有中文，其余 52 个语言包纯属浪费（约 42MB）
@@ -221,6 +228,13 @@ stage("打包应用代码为 app.asar");
   }
 
   // 生产依赖
+  fs.writeFileSync(
+    path.join(appStage, "build-info.json"),
+    JSON.stringify({
+      buildId: sourceBuildIdentity(ROOT),
+      version: pkg.version,
+    }),
+  );
   const closure = prodClosure({ root: ROOT });
   for (const name of closure) {
     copyRecursive(

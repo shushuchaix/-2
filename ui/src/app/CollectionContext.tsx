@@ -30,17 +30,14 @@ type Session = {
   live: boolean;
   busy: boolean;
   queued: boolean;
+  queuedFull: boolean;
+  cursor: number | null;
+  expiresAt: number | null;
   sequence: number;
   controller: AbortController | null;
   pending: Promise<void> | null;
 };
 const Context = createContext<Value | null>(null);
-const polling = new Set([
-  "collecting",
-  "paused",
-  "waiting_for_auth",
-  "budget_exhausted",
-]);
 const sameScope = (a: Scope, b: Scope) =>
   a.packageId === b.packageId && a.targetRevisionId === b.targetRevisionId;
 
@@ -64,83 +61,126 @@ export function CollectionProvider({
     error: null,
     lastFetchedAt: null,
   });
-  const refresh = useCallback(async () => {
-    const session = sessionRef.current;
-    if (
-      !session ||
-      !session.live ||
-      session.key !== key ||
-      current.current.key !== key ||
-      !current.current.ready
-    )
-      return;
-    if (session.busy) {
-      session.queued = true;
+  const refresh = useCallback(
+    async (incremental = false) => {
+      const session = sessionRef.current;
+      if (
+        !session ||
+        !session.live ||
+        session.key !== key ||
+        current.current.key !== key ||
+        !current.current.ready
+      )
+        return;
+      if (session.busy) {
+        session.queued = true;
+        session.queuedFull ||= !incremental;
+        await session.pending;
+        return;
+      }
+      session.busy = true;
+      session.pending = (async () => {
+        do {
+          const useCursor =
+            incremental && session.cursor !== null && !session.queuedFull &&
+            (session.expiresAt === null || Date.now() < session.expiresAt);
+          session.queued = false;
+          session.queuedFull = false;
+          const sequence = ++session.sequence;
+          const controller = new AbortController();
+          session.controller = controller;
+          setState((prev) => ({
+            ...prev,
+            key,
+            loading: prev.activity === null && prev.lastFetchedAt === null,
+          }));
+          try {
+            const result = await api.request<{
+              collections?: CollectionActivity[];
+              cursor?: number;
+              changed?: boolean;
+              asOf?: string;
+              validUntil?: string | null;
+            }>(
+              useCursor
+                ? "/collections?afterSeq=" + session.cursor
+                : "/collections",
+              {
+                scope: session.scope,
+                signal: controller.signal,
+              },
+            );
+            if (
+              session.live &&
+              current.current.key === key &&
+              sequence === session.sequence &&
+              !controller.signal.aborted
+            ) {
+              session.cursor =
+                typeof result.cursor === "number" &&
+                Number.isSafeInteger(result.cursor) &&
+                result.cursor >= 0
+                  ? result.cursor
+                  : null;
+              if (useCursor && result.changed === false) {
+                setState((previous) => ({
+                  ...previous,
+                  key,
+                  loading: false,
+                  error: null,
+                  lastFetchedAt: new Date().toISOString(),
+                }));
+                incremental = !session.queuedFull;
+                continue;
+              }
+              const activity =
+                result.collections?.find(
+                  (a) =>
+                    a.collectionRole !== "collection_slice" &&
+                    (!a.ownerPackageId ||
+                      a.ownerPackageId === session.scope.packageId) &&
+                    (!a.targetSnapshot?.revisionId ||
+                      a.targetSnapshot.revisionId ===
+                        session.scope.targetRevisionId),
+                ) ?? null;
+              const until = Date.parse(result.validUntil ?? ""), asOf = Date.parse(result.asOf ?? "");
+              session.expiresAt = Number.isFinite(until)
+                ? Date.now() + Math.max(0, until - (Number.isFinite(asOf) ? asOf : Date.now()))
+                : null;
+              setState({
+                key,
+                activity,
+                loading: false,
+                error: null,
+                lastFetchedAt: new Date().toISOString(),
+              });
+            }
+          } catch (error) {
+            if (
+              session.live &&
+              current.current.key === key &&
+              sequence === session.sequence &&
+              !controller.signal.aborted
+            ) {
+              setState((prev) => ({
+                ...prev,
+                key,
+                loading: false,
+                error:
+                  error instanceof Error
+                    ? (error as ApiError)
+                    : new Error("采集活动读取失败"),
+              }));
+            }
+          }
+          incremental = !session.queuedFull;
+        } while (session.queued && session.live && current.current.key === key);
+        session.busy = false;
+      })();
       await session.pending;
-      return;
-    }
-    session.busy = true;
-    session.pending = (async () => {
-      do {
-        session.queued = false;
-        const sequence = ++session.sequence;
-        const controller = new AbortController();
-        session.controller = controller;
-        setState((prev) => ({ ...prev, key, loading: true }));
-        try {
-          const result = await api.request<{
-            collections?: CollectionActivity[];
-          }>("/collections", {
-            scope: session.scope,
-            signal: controller.signal,
-          });
-          if (
-            session.live &&
-            current.current.key === key &&
-            sequence === session.sequence &&
-            !controller.signal.aborted
-          ) {
-            const activity =
-              result.collections?.find(
-                (a) =>
-                  a.collectionRole !== "collection_slice" &&
-                  (!a.ownerPackageId ||
-                    a.ownerPackageId === session.scope.packageId) &&
-                  (!a.targetSnapshot?.revisionId ||
-                    a.targetSnapshot.revisionId ===
-                      session.scope.targetRevisionId),
-              ) ?? null;
-            setState({
-              key,
-              activity,
-              loading: false,
-              error: null,
-              lastFetchedAt: new Date().toISOString(),
-            });
-          }
-        } catch (error) {
-          if (
-            session.live &&
-            current.current.key === key &&
-            sequence === session.sequence &&
-            !controller.signal.aborted
-          ) {
-            setState((prev) => ({
-              ...prev,
-              key,
-              loading: false,
-              error:
-                error instanceof Error
-                  ? (error as ApiError)
-                  : new Error("采集活动读取失败"),
-            }));
-          }
-        }
-      } while (session.queued && session.live && current.current.key === key);
-      session.busy = false;
-    })();
-    await session.pending;
-  }, [api, key]);
+    },
+    [api, key],
+  );
 
   const adopt = useCallback(
     (activity: CollectionActivity, scope: Scope) => {
@@ -162,6 +202,11 @@ export function CollectionProvider({
       const session = sessionRef.current;
       if (!session || session.key !== key || !session.live) return;
       session.sequence++;
+      session.cursor = null;
+      const until = Date.parse(activity.quality?.nextTemporalChangeAt ?? ""), asOf = Date.parse(activity.quality?.asOf ?? "");
+      session.expiresAt = Number.isFinite(until)
+        ? Date.now() + Math.max(0, until - (Number.isFinite(asOf) ? asOf : Date.now()))
+        : null;
       session.controller?.abort();
       setState({
         key,
@@ -193,6 +238,9 @@ export function CollectionProvider({
       live: true,
       busy: false,
       queued: false,
+      queuedFull: false,
+      cursor: null,
+      expiresAt: null,
       sequence: 0,
       controller: null,
       pending: null,
@@ -217,15 +265,34 @@ export function CollectionProvider({
           lastFetchedAt: null,
         };
   useEffect(() => {
-    if (
-      !ready ||
-      !visible.activity ||
-      !polling.has(visible.activity.collectionProgress.status)
-    )
-      return;
-    const timer = setInterval(() => void refresh(), 2000);
-    return () => clearInterval(timer);
-  }, [ready, key, visible.activity?.collectionProgress.status, refresh]);
+    if (!ready) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "hidden") void refresh();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    // Active work needs live controls. Waiting/paused/budget/terminal states
+    // retain a low-frequency fallback so another process remains observable.
+    const interval =
+      visible.activity?.collectionProgress.status === "collecting" ||
+      visible.activity?.collectionProgress.draining
+        ? 2000
+        : 30000;
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void refresh(true);
+    }, interval);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [
+    ready,
+    key,
+    visible.activity?.collectionProgress.status,
+    visible.activity?.collectionProgress.draining,
+    refresh,
+  ]);
   return (
     <Context.Provider value={{ ...visible, refresh, adopt }}>
       {children}

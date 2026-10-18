@@ -396,7 +396,7 @@ test("DNS allowance exhaustion has the same immediate visible feedback as a page
   const { window, events } = await loginFixture(t, {
     publicResolverFactory: (options) => {
       dnsLedger = options.ledger;
-      return async () => assert.fail("no DNS network in this fixture");
+      return Object.assign(async () => assert.fail("no DNS network in this fixture"), { close: async () => {} });
     },
   });
   for (let i = 1; i < 60; i++) await dnsLedger.reserve({});

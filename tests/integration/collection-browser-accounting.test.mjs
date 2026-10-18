@@ -11,13 +11,8 @@ async function readFixture(
 ) {
   const f = await collectionFixture(t),
     c = await f.openCommit();
-  let writes = 0;
+  const commitBaseline = f.repository.metrics().commits;
   const controller = new AbortController();
-  const mutate = f.repository.mutateWorkspace;
-  f.repository.mutateWorkspace = (...args) => {
-    writes++;
-    return mutate(...args);
-  };
   const fixture = collectionBrowserFixture({
     executeJavaScript: async () => ({
       html: '<div class="weibo-text">公开招聘正文</div>',
@@ -114,7 +109,14 @@ async function readFixture(
       return true;
     });
   else await read;
-  return { f, c, fixture, settles, writes, root: await f.service.get(c.ref) };
+  return {
+    f,
+    c,
+    fixture,
+    settles,
+    writes: f.repository.metrics().commits - commitBaseline,
+    root: await f.service.get(c.ref),
+  };
 }
 
 test("production browser uses one upfront allowance and one drained settlement", async (t) => {

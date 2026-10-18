@@ -8,6 +8,7 @@ import {
   target,
   namedTargetInput,
   job,
+  registerTestResource,
 } from "../helpers/fixtures.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 import { createWorkspaceService } from "../../src/application/workspace-service.mjs";
@@ -31,6 +32,7 @@ async function setup(t) {
 test("cross-repository shared leases block exclusive operations and guard business writes", async (t) => {
   const repository = await tempRepository(t),
     other = await openWorkspaceRepository({allowLegacy:true, dataDir: repository.dataDir });
+  registerTestResource(t,()=>other.close());
   const { createWorkspaceOperationGate } = await gateModule();
   const a = createWorkspaceOperationGate({ repository }),
     b = createWorkspaceOperationGate({ repository: other });
@@ -99,6 +101,7 @@ test("a simultaneous collection and cleanup registration can only have one winne
   const repository = await tempRepository(t),
     other = await openWorkspaceRepository({allowLegacy:true, dataDir: repository.dataDir }),
     { createWorkspaceOperationGate } = await gateModule();
+  registerTestResource(t,()=>other.close());
   const results = await Promise.allSettled([
     createWorkspaceOperationGate({ repository }).acquire("cleanup"),
     createWorkspaceOperationGate({ repository: other }).acquire("collect"),

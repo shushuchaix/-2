@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { packageBusinessFixture } from "../helpers/package-business-fixture.mjs";
-import { job } from "../helpers/fixtures.mjs";
+import { job, registerTestResource } from "../helpers/fixtures.mjs";
 import { createApplicationContext } from "../../src/application/context.mjs";
 import { DEFAULT_CONFIG } from "../../src/config.mjs";
 import { DeepSeek } from "../../src/llm/deepseek.mjs";
@@ -73,7 +73,9 @@ async function fixture(
     },
   });
   await context.ready;
-  t.after(() => context.close());
+  registerTestResource(t, () => context.close());
+  await context.saveSettings({ model: { apiKey: 'synthetic-test-key', baseUrl: cfg.deepseek.baseUrl, model: cfg.deepseek.model } });
+  assert.equal((await context.getSettings()).model.configured, true);
   return { context, a, ids, cfg, transport, calls: () => transports };
 }
 

@@ -348,7 +348,7 @@ test("a new application client updates again after the previous activity complet
     route: "#/sources?packageId=A&targetRevisionId=t1%401",
     apiHandler: (p: string, o: Parameters<typeof syntheticApi>[1]) => {
       if (p === "/collections") return { collections: [root("completed")] };
-      if (p === "/runs" && o.method === "POST")
+      if (p === "/runs" && o?.method === "POST")
         return { runId: "new-launch", status: "queued" };
       return syntheticApi(p, o);
     },
@@ -458,14 +458,14 @@ test("returning to the workbench reconnects its newer manual run instead of cach
   });
   await f.screen.findByText("岗位更新完成");
   await f.user.click(
-    f.screen.getByRole("button", { name: "更新岗位", exact: true }),
+    f.screen.getByRole("button", { name: /^更新岗位$/ }),
   );
   await waitFor(() => assert.equal(manualConnections, 1));
   await f.user.click(
-    f.screen.getByRole("link", { name: "招聘来源", exact: true }),
+    f.screen.getByRole("link", { name: /^招聘来源$/ }),
   );
   await f.user.click(
-    f.screen.getByRole("link", { name: "工作台", exact: true }),
+    f.screen.getByRole("link", { name: /^工作台$/ }),
   );
   await waitFor(() => assert.equal(manualConnections, 2));
   rejectRecovered(Error("synthetic stream failure"));

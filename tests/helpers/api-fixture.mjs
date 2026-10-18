@@ -43,10 +43,14 @@ export async function apiFixture(t, options = {}) {
   const origin = "http://127.0.0.1:" + ctx.server.address().port;
   allowLocalOrigin(origin);
   registerTestResource(t, async () => {
-    await (await ctx.ready).close?.();
-    ctx.server.closeAllConnections();
-    await new Promise((resolve) => ctx.server.close(resolve));
-    await ctx.diagnostics.list({ limit: 1 });
+    try {
+      const application = await ctx.ready.catch(() => null);
+      await application?.close?.();
+    } finally {
+      ctx.server.closeAllConnections();
+      await new Promise((resolve) => ctx.server.close(resolve));
+      await ctx.diagnostics.list({ limit: 1 });
+    }
   });
   // Static asset requests do not wait for application startup in the server.
   // Finish migration before a fixture can be torn down by its first test.

@@ -23,7 +23,7 @@ export function createJobCleanupService({
   const previews=new Map();
   return {
     async preview(options={}) {
-      const p=buildWorkspaceDuplicatePlan(await repository.read(),{...options,now:clock.now()});previews.set(p.planHash,options);return p;
+      const p=buildWorkspaceDuplicatePlan(await repository.exportWorkspace(),{...options,now:clock.now()});previews.set(p.planHash,options);return p;
     },
     async apply({ workspaceRevision, planHash, selectedGroupIds }) {
       if (

@@ -325,7 +325,7 @@ test("failed Boss verification shows its cause and diagnostic instead of a succe
   assert.equal(f.screen.queryByText("Boss来源核验已结束，请查看状态"), null);
 });
 test("Boss version session supports a paused root and keeps risk recovery an explicit action", async (t) => {
-  // Paused activities intentionally poll every two seconds. Drive that clock
+  // Paused activities poll every thirty seconds. Drive that clock
   // explicitly so elapsed render time cannot masquerade as a second probe.
   t.mock.timers.enable({ apis: ["setInterval"] });
   const probes: any[] = [];
@@ -394,6 +394,8 @@ test("Boss version session supports a paused root and keeps risk recovery an exp
   });
   assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 1);
   await act(async () => t.mock.timers.tick(2000));
+  assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 1);
+  await act(async () => t.mock.timers.tick(28000));
   await waitFor(() =>
     assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 2),
   );
@@ -467,7 +469,7 @@ test("dedicated login never treats a closed window as verified and cannot rememb
 });
 
 test("a late login window response cannot become the next version session", async (t) => {
-  let finishA: (v: unknown) => void = () => {};
+  let finishA: (v: { sessionRef: string; state: string; remembered: boolean; riskBlocked?: boolean }) => void = () => {};
   const opens: any[] = [],
     verifications: any[] = [];
   const f = await renderApp(t, {
@@ -492,7 +494,7 @@ test("a late login window response cannot become the next version session", asyn
       },
       verifyCollectionSession: async (input: any) => {
         verifications.push(input);
-        return { state: "verified" };
+        return { sessionRef: input.sessionRef, state: "verified", bodyStatus: "ok" };
       },
     },
     apiHandler: (p, o) =>

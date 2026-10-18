@@ -9,8 +9,11 @@ import {
 import { migrateV1 } from "./infrastructure/storage/migrate-v1.mjs";
 import { createWorkspaceOperationGate } from "./application/workspace-operations.mjs";
 import {getDefaultApplicationContext} from './application/context.mjs';
-import {resolveLegacyScope} from './application/legacy-scope.mjs';
-import {packageWorkspace} from './application/package-job-service.mjs';
+import {resolveLegacyScopeFromRepository,resolveLegacyApplicationReference} from './application/legacy-scope.mjs';
+import {exportLegacyOwner,legacyTrackingPage,guardLegacyScope} from './application/legacy-bridge.mjs';
+import {ingestRecordsDraft} from './domain/ingest-records.mjs';
+import {rowKey} from './infrastructure/storage/sqlite-records.mjs';
+import {resolveOwnedJobId} from './application/job-row-access.mjs';
 import {randomUUID} from 'node:crypto';
 import {
   resolveJobId,
@@ -109,11 +112,16 @@ function view(w) {
   };
 }
 export async function loadIndex({scope,context:provided,targetRevisionId,targetId}={}) {
-  const ctx=await context(provided),full=await ctx.repository.read(),selected=resolveLegacyScope({scope,targetRevisionId,targetId},full,ctx.repository.clock.now());return view(full.schemaVersion===3?packageWorkspace(full,selected.packageId):full);
+  const ctx=await context(provided),selected=await resolveLegacyScopeFromRepository({scope,targetRevisionId,targetId},ctx.repository);
+  return view(selected?await exportLegacyOwner(ctx.repository,selected):await ctx.repository.read());
 }
 export async function saveIndex(index,{scope,context:provided,targetRevisionId,targetId}={}) {
-  const ctx=await context(provided),{ repository } = ctx,full=await repository.read();
-  if(full.schemaVersion===3){const selected=resolveLegacyScope({scope,targetRevisionId,targetId},full,repository.clock.now()),service=ctx.jobService||ctx.service;for(const rec of Object.values(index.jobs||{}))await service.updateJobApplication(rec.jobId||rec.id,{...(Object.hasOwn(rec,'status')?{status:rec.status}:{}),...(Object.hasOwn(rec,'note')?{note:rec.note}:{})},selected);return {ok:true};}
+  const ctx=await context(provided),{repository}=ctx;
+  if(await repository.getMeta('schemaVersion')===3){
+    const selected=await resolveLegacyScopeFromRepository({scope,targetRevisionId,targetId},repository),service=ctx.jobService||ctx.service;
+    for(const rec of Object.values(index.jobs||{}))await service.updateJobApplication(rec.jobId||rec.id,{...(Object.hasOwn(rec,'status')?{status:rec.status}:{}),...(Object.hasOwn(rec,'note')?{note:rec.note}:{})},selected);
+    await guardLegacyScope(repository,selected);return {ok:true};
+  }
   await repository.mutateWorkspace((w) => {
     for (const rec of Object.values(index.jobs || {})) {
       const id = resolveStoredJobId(w, rec.jobId || rec.id);
@@ -152,7 +160,8 @@ export async function upsert(
   } = {},
 ) {
   const ctx = await context(provided);
-  const initial=await ctx.repository.read();scope=resolveLegacyScope({scope,...(runId&&initial.runs[runId]?{runId}:{})},initial,ctx.repository.clock.now());
+  if(await ctx.repository.getMeta('schemaVersion')===3)return upsertOwned(jobs,{runId,at,persist,operationLease,scope,context:ctx});
+
   if (persist && !operationLease)
     return ctx.operationGate.withOperation("legacy", {scope}, (lease) =>
       upsert(jobs, { runId, at, persist, operationLease: lease,scope,context:ctx }),
@@ -173,9 +182,6 @@ export async function upsert(
   }
   const service = createJobService({ repository });
   const valid = jobs.filter((j) => j.title && j.url);
-  if(before.schemaVersion===3){
-    runId ||= 'legacy-'+randomUUID();if(!before.runs[runId])await repository.mutateWorkspace(w=>{const target=Object.values(w.targets).flat().find(t=>t.revisionId===scope.targetRevisionId);w.runs[runId]={runId,recordId:randomUUID(),ownerPackageId:scope.packageId,targetSnapshot:structuredClone(target),status:'completed',lastSeq:0,events:[],createdAt:at,counts:{},issues:[],usage:{},snapshotRef:null};},{operationLease});
-  }
   const { jobIds } = await service.ingestRecords({
     runId: runId || "legacy-" + Date.now(),
     records: valid,
@@ -210,7 +216,7 @@ export async function upsert(
       : added
     ).push(j.id || jobIds[i]);
   });
-  const updated=await repository.read(),index = view(updated.schemaVersion===3?packageWorkspace(updated,scope.packageId):updated);
+  const updated=await repository.read(),index = view(updated);
   return {
     added,
     ongoing,
@@ -228,13 +234,21 @@ export async function upsert(
   };
 }
 export async function annotate(jobs = [], diff, { now = Date.now(),scope,context:provided } = {}) {
-  const ctx=await context(provided),full=await ctx.repository.read(),selected=resolveLegacyScope({scope},full,ctx.repository.clock.now());const w=full.schemaVersion===3?packageWorkspace(full,selected.packageId):full;
-  const index = full.schemaVersion===3?view(w):diff.index || view(w);
+  const ctx=await context(provided),selected=await resolveLegacyScopeFromRepository({scope},ctx.repository);
+  const resolvedJobIds = new Map();
+  let w,index;
+  if(selected){
+    const ids=[];
+    for(const job of jobs){const requested=job.jobId||job.id,resolved=await resolveOwnedJobId(ctx.repository,selected,requested);resolvedJobIds.set(requested,resolved);ids.push(resolved);}
+    const rows=[];
+    for(let offset=0;offset<ids.length;offset+=200)rows.push(...(await legacyTrackingPage(ctx.repository,selected,{jobIds:ids.slice(offset,offset+200),pageSize:200})).items);
+    index={jobs:Object.fromEntries(rows.map(row=>[row.id,row]))};
+  }else{w=await ctx.repository.read();index=diff.index||view(w);}
   for (const j of jobs) {
     const rec =
-      index.jobs[j.id] ||
+      (selected ? Object.values(index.jobs).find(r => r.jobId === resolvedJobIds.get(j.jobId || j.id)) : index.jobs[j.id]) ||
       Object.values(index.jobs).find((r) =>
-        jobIdMatches(w, r.jobId, j.jobId || j.id),
+        selected?r.jobId===(j.jobId||j.id)||r.id===(j.jobId||j.id):jobIdMatches(w, r.jobId, j.jobId || j.id),
       );
     j.tracking = {
       isNew: diff.added.includes(j.id || j.jobId),
@@ -251,13 +265,19 @@ export async function annotate(jobs = [], diff, { now = Date.now(),scope,context
   return { jobs, disappearedIds: [] };
 }
 export async function setStatus(id, status, note,{scope,context:provided}={}) {
-  const ctx=await context(provided),full=await ctx.repository.read(),service=ctx.jobService||ctx.service,selected=resolveLegacyScope({scope,...(full.applications[id]?{applicationId:id}:{jobId:id})},full,ctx.repository.clock.now());
-  const patch = { status };
-  if (note !== undefined) patch.note = note;
-  return full.schemaVersion===3?(full.applications[id]?service.updateApplication(id,patch,selected):service.updateJobApplication(id,patch,selected)):service.updateApplication(id, patch);
+  const ctx=await context(provided),service=ctx.jobService||ctx.service,{scope:selected,isApplication}=await resolveLegacyApplicationReference(id,{scope},ctx.repository);
+  const patch={status};if(note!==undefined)patch.note=note;
+  return selected?(isApplication?service.updateApplication(id,patch,selected):service.updateJobApplication(id,patch,selected)):service.updateApplication(id,patch);
 }
 export async function summary(options={}) {
-  const index = await loadIndex(options);
+  const ctx=await context(options.context),selected=await resolveLegacyScopeFromRepository(options,ctx.repository);
+  if(selected){
+    const result=await ctx.repository.queryLegacyTrackingSummary({ownerPackageId:selected.packageId},{scope:selected});
+    const byStatus=Object.fromEntries(STATUSES.map(status=>[status,0]));let total=0,staleCount=0,updatedAt='';
+    for(const row of result.statuses){byStatus[row.status]=(byStatus[row.status]||0)+row.n;total+=row.n;staleCount+=options.staleMode==='lifecycle'?row.lifecycleStale:row.seenStale;if((row.updatedAt||'')>updatedAt)updatedAt=row.updatedAt;}
+    return {total,byStatus,statusLabels:STATUS_LABELS,staleCount,runs:result.runs,updatedAt};
+  }
+  const index = await loadIndex({...options,context:ctx});
   const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0]));
   for (const rec of Object.values(index.jobs)) byStatus[rec.status]++;
   return {
@@ -265,15 +285,47 @@ export async function summary(options={}) {
     byStatus,
     statusLabels: STATUS_LABELS,
     staleCount: Object.values(index.jobs).filter(
-      (r) => r.seenCount >= 5 && ["new", "seen"].includes(r.status),
+      (r) => options.staleMode==='lifecycle'?r.lifecycle==='notRecentlySeen':r.seenCount >= 5 && ["new", "seen"].includes(r.status),
     ).length,
     runs: index.runs.filter(r=>r.collectionRole!=='collection_root').length,
     updatedAt: index.updatedAt,
   };
 }
 export async function listJobs({ status = "", limit = 200,...options } = {}) {
-  return Object.values((await loadIndex(options)).jobs)
+  const ctx=await context(options.context),selected=await resolveLegacyScopeFromRepository(options,ctx.repository);
+  if(selected){
+    const items=[];let page=1;
+    while(items.length<limit){const next=await legacyTrackingPage(ctx.repository,selected,{status:status||undefined,page,pageSize:Math.min(200,Math.max(1,limit))});items.push(...next.items);if(!next.items.length||items.length>=next.total)break;page++;}
+    return items.slice(0,limit);
+  }
+  return Object.values((await loadIndex({...options,context:ctx})).jobs)
     .filter((r) => !status || r.status === status)
     .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
     .slice(0, limit);
+}
+
+async function upsertOwned(jobs,{runId,at,persist,operationLease,scope,context:ctx}) {
+  const repository=ctx.repository,existing=runId?(await repository.discoverLegacyOwners({kind:'run',id:runId})).owners:[];
+  scope=await resolveLegacyScopeFromRepository({scope,...(existing.length?{runId}:{})},repository);
+  if(persist&&!operationLease)return ctx.operationGate.withOperation('legacy',{scope},lease=>upsertOwned(jobs,{runId,at,persist,operationLease:lease,scope,context:ctx}));
+  const valid=jobs.filter(job=>job.title&&job.url);runId ||= 'legacy-'+randomUUID();
+  const target=await repository.getRow({collection:'targets',id:scope.targetRevisionId,ownerPackageId:scope.packageId},{scope});
+  const header={runId,recordId:randomUUID(),ownerPackageId:scope.packageId,status:'completed',lastSeq:0,createdAt:at,counts:{},usage:{},snapshotRef:null};
+  let result,index;
+  if(!persist){
+    const workspace=await exportLegacyOwner(repository,scope);
+    workspace.runs[runId] ||= {...header,targetSnapshot:target,events:[],issues:[]};
+    result=ingestRecordsDraft(workspace,{scope,runId,records:valid,observedAt:at});index=view(workspace);
+  }else{
+    const prior=await repository.getRow({collection:'runs',id:runId,ownerPackageId:scope.packageId},{scope});
+    if(!prior)await repository.transaction({select:[{collection:'runs',ownerPackageId:scope.packageId,ids:[runId]},{collection:'runSnapshots',ownerPackageId:scope.packageId,ids:[rowKey(runId,'targetSnapshot','value')]}]},tx=>{
+      if(!tx.getRow({collection:'runs',id:runId})){tx.putRow({collection:'runs',id:runId,ownerPackageId:scope.packageId,value:header});tx.putRow({collection:'runSnapshots',id:rowKey(runId,'targetSnapshot','value'),ownerPackageId:scope.packageId,parent:{collection:'runs',id:runId,path:'targetSnapshot'},value:target});}
+    },{scope,operationLease});
+    const service=ctx.jobService||ctx.service||createJobService({repository}),jobIds=[],newForTarget=[];
+    for(let offset=0;offset<valid.length;offset+=1000){const batch=await service.ingestRecords({scope,runId,records:valid.slice(offset,offset+1000),observedAt:at,operationLease});jobIds.push(...batch.jobIds);newForTarget.push(...batch.newForTarget);}
+    result={jobIds,newForTarget};index=view(await exportLegacyOwner(repository,scope));
+  }
+  const added=[],ongoing=[],counted=new Set(),fresh=new Set(result.newForTarget);
+  valid.forEach((job,i)=>{const id=result.jobIds[i];if(counted.has(id))return;counted.add(id);(fresh.has(id)?added:ongoing).push(job.id||id);});
+  return {added,ongoing,disappeared:[],saved:{ok:true},stats:{total:Object.keys(index.jobs).length,added:added.length,ongoing:ongoing.length,disappeared:0,pruned:0,persisted:persist},index};
 }

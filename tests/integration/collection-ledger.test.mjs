@@ -138,8 +138,7 @@ async function fixture(t, limits = {}) {
     repository: f.repository,
     operationGate: f.operationGate,
   });
-  return {
-    ...f,
+  return Object.assign(f, {
     a,
     ref,
     token,
@@ -156,7 +155,7 @@ async function fixture(t, limits = {}) {
         bytesUpperBound: 0,
         ...input,
       }),
-  };
+  });
 }
 test("reservation_is_durable_idempotent_and_page_revision_does_not_change", async (t) => {
   const f = await fixture(t),

@@ -27,6 +27,31 @@ const paused = {
   },
 };
 
+test('expired temporal quality forces a full read twice even when SQL cursor never changes',async t=>{
+  const startedAt=Date.parse('2026-10-09T00:00:00.000Z');
+  t.mock.timers.enable({apis:['Date','setInterval'],now:startedAt});
+  const calls:string[]=[];let fullReads=0,current!:ReturnType<typeof useCollectionActivity>;
+  const api={request:async(path:string)=>{
+    if(path.startsWith('/collections')){
+      calls.push(path);
+      if(path.includes('afterSeq='))return {changed:false,cursor:7,collections:[],validUntil:'2099-01-01T00:00:00.000Z'};
+      fullReads++;
+      return {changed:true,cursor:7,asOf:new Date().toISOString(),validUntil:new Date(Date.now()+45000).toISOString(),collections:[{...paused,runId:'period-'+fullReads}]};
+    }
+    return syntheticApi(path);
+  }} as ApiClient;
+  function Consumer(){current=useCollectionActivity();return <p>{current.activity?.runId??'empty'}</p>;}
+  window.history.replaceState(null,'','http://localhost/#/jobs?packageId=A&targetRevisionId=t1%401');
+  const view=render(<VersionProvider api={api}><CollectionProvider api={api}><Consumer/></CollectionProvider></VersionProvider>);
+  t.after(()=>{view.unmount();cleanup();});
+  await waitFor(()=>assert.equal(current.activity?.runId,'period-1'));
+  await act(async()=>t.mock.timers.tick(30000));await waitFor(()=>assert.equal(calls.at(-1),'/collections?afterSeq=7'));
+  await act(async()=>t.mock.timers.tick(30000));await waitFor(()=>assert.equal(current.activity?.runId,'period-2'));
+  await act(async()=>t.mock.timers.tick(30000));await waitFor(()=>assert.equal(calls.at(-1),'/collections?afterSeq=7'));
+  await act(async()=>t.mock.timers.tick(30000));await waitFor(()=>assert.equal(current.activity?.runId,'period-3'));
+  assert.deepEqual(calls,['/collections','/collections?afterSeq=7','/collections','/collections?afterSeq=7','/collections']);
+});
+
 test("first activity read failure can be retried without changing version or reloading", async (t) => {
   let reads = 0;
   const f = await renderApp(t, {
@@ -97,6 +122,8 @@ test("same-version page navigation keeps the shared activity and initial query",
   await f.screen.findByText("持续采集活动");
   assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 1);
   await act(async () => t.mock.timers.tick(2000));
+  assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 1);
+  await act(async () => t.mock.timers.tick(28000));
   await waitFor(() =>
     assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 2),
   );
@@ -107,6 +134,51 @@ test("all-target and missing scope never query private collections", async (t) =
   await f.screen.findByRole("heading", { name: "工作台" });
   await act(async () => new Promise((resolve) => setImmediate(resolve)));
   assert.equal(f.apiCalls.filter((c) => c.path === "/collections").length, 0);
+});
+
+test("idle timers use the scoped SQL cursor, unchanged results retain the root, and focus makes a full refresh", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const calls: string[] = [];
+  let current!: ReturnType<typeof useCollectionActivity>;
+  const api = {
+    request: async (path: string) => {
+      if (path.startsWith("/collections")) {
+        calls.push(path);
+        return path.includes("afterSeq=")
+          ? { changed: false, cursor: 9, collections: [] }
+          : { changed: true, cursor: 7, collections: [paused] };
+      }
+      return syntheticApi(path);
+    },
+  } as ApiClient;
+  function Consumer() {
+    current = useCollectionActivity();
+    return <p>{current.activity?.runId ?? "empty"}</p>;
+  }
+  window.history.replaceState(
+    null,
+    "",
+    "http://localhost/#/jobs?packageId=A&targetRevisionId=t1%401",
+  );
+  const view = render(
+    <VersionProvider api={api}>
+      <CollectionProvider api={api}>
+        <Consumer />
+      </CollectionProvider>
+    </VersionProvider>,
+  );
+  t.after(() => {
+    view.unmount();
+    cleanup();
+  });
+  await waitFor(() => assert.equal(current.activity?.runId, paused.runId));
+  await act(async () => t.mock.timers.tick(2000));
+  assert.deepEqual(calls, ["/collections"]);
+  await act(async () => t.mock.timers.tick(28000));
+  await waitFor(() => assert.equal(calls.at(-1), "/collections?afterSeq=7"));
+  assert.equal(current.activity?.runId, paused.runId);
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  await waitFor(() => assert.equal(calls.at(-1), "/collections"));
 });
 
 test("late version A collection response cannot replace version B", async (t) => {
@@ -178,7 +250,7 @@ test("adopt invalidates an in-flight older list and explicit refresh queues one 
   const api = {
     request: (path: string) =>
       path === "/collections"
-        ? (++count, new Promise((resolve) => responses.push(resolve)))
+        ? (++count, new Promise<unknown>((resolve) => responses.push(resolve)))
         : Promise.resolve(syntheticApi(path)),
   } as ApiClient;
   function Consumer() {
@@ -277,5 +349,7 @@ test("first A generation adopt cannot replace the state after A to B to A", asyn
   await act(async () =>
     state.adopt(paused, { packageId: "A", targetRevisionId: "t1@1" }),
   );
-  assert.equal(state.activity?.collectionProgress.status, "paused");
+  const readActivity = (): ReturnType<typeof useCollectionActivity>["activity"] => state.activity;
+  const adopted = readActivity();
+  assert.equal(adopted?.collectionProgress.status, "paused");
 });

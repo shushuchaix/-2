@@ -237,7 +237,7 @@ export function createAttachmentService({
               });
             return {
               ...read.evidence.result,
-              observedAt: read.checkedAt,
+              observedAt: read.evidenceCheckedAt || read.checkedAt,
               cacheReused: read.reused,
             };
           }

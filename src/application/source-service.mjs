@@ -18,6 +18,7 @@ import {
   isVersionPrivateSource,
 } from "../sources/source-status.mjs";
 import { assertCollectionWrite } from "../domain/collection.mjs";
+import { createRowSourceService } from './source-row-service.mjs';
 import {
   probeReadService,
   enableReadService,
@@ -90,7 +91,7 @@ function validateConfig(provider, config) {
   }
   return structuredClone(config);
 }
-export function createSourceService({
+function createLegacySourceService({
   registry,
   repository,
   requestFactory,
@@ -824,4 +825,8 @@ export function createSourceService({
     },
   };
   return service;
+}
+export function createSourceService(options) {
+  const formal=createRowSourceService({...options,validateConfig,safeProbeResult}),legacy=createLegacySourceService(options),isFormal=options.repository.getMeta?options.repository.getMeta('schemaVersion').then(value=>value===3):Promise.resolve(false);
+  return Object.fromEntries(Object.keys(legacy).map(name=>[name,async(...args)=>(await isFormal?formal:legacy)[name](...args)]));
 }

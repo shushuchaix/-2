@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { tempRepository } from "../helpers/repository.mjs";
-import { profile, target, job, AT } from "../helpers/fixtures.mjs";
+import { profile, target, job, AT, registerTestResource } from "../helpers/fixtures.mjs";
 import { createApplicationContext } from "../../src/application/context.mjs";
 import { loadConfig } from "../../src/config.mjs";
 import { assertWorkspace } from "../../src/domain/contracts.mjs";
@@ -43,26 +43,28 @@ async function legacy(t) {
   });
   return repository;
 }
-async function start(repository) {
+async function start(repository,t) {
   const cfg = loadConfig({ quiet: true, dataDir: repository.dataDir });
   cfg.deepseek.apiKey = "";
-  return createApplicationContext({
+  const context=await createApplicationContext({
     cfg,
     dataDir: repository.dataDir,
     dependencies: {legacySchema:true, repository },
   });
+  if(t)registerTestResource(t,()=>context.close());
+  return context;
 }
 test("upgrade is idempotent and preserves facts", async (t) => {
   const repository = await legacy(t),
     before = await repository.read();
-  const first = await start(repository),
+  const first = await start(repository,t),
     after = await repository.read();
   assert.equal(after.managementVersion, 1);
   assert.match(after.versionMetadata["t1@1"].versionName, /Java开发.*v1/);
   assert.deepEqual(after.profiles, before.profiles);
   assert.deepEqual(after.observations, before.observations);
   assert.equal(first.managementUpgrade.changed, true);
-  const backups = await fs.readdir(path.join(repository.dataDir, "backups"));
+  const backups = (await fs.readdir(path.join(repository.dataDir, "backups"))).filter(name=>/^workspace-\d+-[0-9a-f-]+\.json$/.test(name));
   assert.equal(backups.length, 1);
   const archive = JSON.parse(
     await fs.readFile(
@@ -71,17 +73,17 @@ test("upgrade is idempotent and preserves facts", async (t) => {
     ),
   );
   assert.equal(archive.workspace.managementVersion, undefined);
-  const second = await start(repository);
+  const second = await start(repository,t);
   assert.equal(second.managementUpgrade.changed, false);
   assert.equal(
-    (await fs.readdir(path.join(repository.dataDir, "backups"))).length,
+    (await fs.readdir(path.join(repository.dataDir, "backups"))).filter(name=>/^workspace-\d+-[0-9a-f-]+\.json$/.test(name)).length,
     1,
   );
 });
 test("old restore replaces extension state", async (t) => {
   const repository = await legacy(t),
     backup = await createBackup({ repository });
-  await start(repository);
+  await start(repository,t);
   await repository.mutateWorkspace((w) => {
     w.jobRedirects ||= {};
     w.dedupOperations ||= {};
@@ -114,7 +116,7 @@ test("failed upgrade keeps valid workspace", async (t) => {
     };
   });
   const before = await repository.read();
-  await assert.rejects(start(repository));
+  await assert.rejects(start(repository,t));
   const after = await repository.read();
   assert.deepEqual(
     { ...after, revision: before.revision, operationLeases: undefined },
@@ -124,7 +126,7 @@ test("failed upgrade keeps valid workspace", async (t) => {
 });
 test("extension validation rejects corrupt shapes names and redirect cycles", async (t) => {
   const repository = await legacy(t);
-  await start(repository);
+  await start(repository,t);
   const good = await repository.read();
   assert.throws(
     () => assertWorkspace({ ...good, versionMetadata: [] }),

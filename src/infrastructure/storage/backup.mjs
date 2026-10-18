@@ -13,23 +13,22 @@ import { createTrashService } from "../../application/trash-service.mjs";
 import { createPurgeService } from "../../application/purge-service.mjs";
 import { isExpired, packageError } from "../../domain/packages.mjs";
 import { normalizeCollectionWorkspace } from "../../domain/collection.mjs";
+import { assertSnapshotPath, snapshotPath } from './managed-snapshots.mjs';
 export async function createBackup({
   repository,
   clock = repository.clock,
   workspaceSnapshot,
   snapshotReader,
+  fsAdapter = fs,
 }) {
-  if (!workspaceSnapshot && (await repository.read()).schemaVersion === 3)
-    return repository.withMaintenanceTransaction(
-      (tx) =>
-        createBackup({
-          repository,
-          clock,
-          workspaceSnapshot: tx.workspace,
-          snapshotReader: (id) => tx.readSnapshot(id),
-        }),
-      { operationMaintenance: true },
-    );
+  if(!workspaceSnapshot&&(await repository.getMeta('schemaVersion'))===3)
+    return createWorkspaceOperationGate({repository}).withOperation('backup',{},async()=>{
+      const source=await repository.exportWorkspace();
+      return createBackup({repository,clock,workspaceSnapshot:source,fsAdapter,snapshotReader:async id=>{
+        const filename=snapshotPath(repository.dataDir,id);await assertSnapshotPath(repository.dataDir,filename,fsAdapter);
+        return JSON.parse(await fsAdapter.readFile(filename,'utf8'));
+      }});
+    });
   const workspace = redactBusiness(
       workspaceSnapshot || (await repository.read()),
     ),
@@ -93,7 +92,7 @@ export async function createBackup({
     "backups",
     "workspace-" + Date.now() + "-" + randomUUID() + ".json",
   );
-  await writeAtomicJson(filename, { manifest, workspace, runSnapshots });
+  await writeAtomicJson(filename, { manifest, workspace, runSnapshots }, {fsAdapter});
   return { path: filename, backupId: path.basename(filename), manifest };
 }
 export function validateBackupArchive(archive) {
@@ -127,6 +126,7 @@ export async function restoreBackup({
   purgeService,
   fsAdapter = fs,
   validatedArchive,
+  faultInjector,
 }) {
   const source =
     validatedArchive ||
@@ -147,6 +147,7 @@ export async function restoreBackup({
             purgeService,
             fsAdapter,
             validatedArchive: source,
+            faultInjector,
           }),
       );
     const trash = trashService || createTrashService({ repository }),
@@ -172,109 +173,8 @@ export async function restoreBackup({
           503,
         );
     }
-    return repository.withMaintenanceTransaction(
-      async (tx) => {
-        const local = tx.workspace,
-          filtered = filterBackup({
-            workspace: source.workspace,
-            snapshots: source.runSnapshots,
-            control: tx.control,
-            now: repository.clock.now(),
-            currentWorkspace: local,
-          }),
-          restored = filtered.workspace,
-          snapshots = filtered.snapshots;
-        // Unexpired local trash is authoritative. A backup restore cannot act as trash.restore.
-        for (const p of Object.values(local.packages).filter(
-          (p) => p.state === "trashed" && !isExpired(p, repository.clock.now()),
-        )) {
-          restored.packages[p.packageId] = structuredClone(p);
-          for (const kind of ["profiles", "targets"]) {
-            for (const [id, list] of Object.entries(restored[kind])) {
-              restored[kind][id] = list.filter(
-                (r) => r.ownerPackageId !== p.packageId,
-              );
-              if (!restored[kind][id].length) delete restored[kind][id];
-            }
-            for (const [id, list] of Object.entries(local[kind])) {
-              const owned = list.filter(
-                (r) => r.ownerPackageId === p.packageId,
-              );
-              if (owned.length) {
-                restored[kind][id] ||= [];
-                restored[kind][id].push(...structuredClone(owned));
-                for (const r of owned)
-                  restored.versionMetadata[r.revisionId] = structuredClone(
-                    local.versionMetadata[r.revisionId],
-                  );
-              }
-            }
-          }
-          for (const key of [
-            "jobs",
-            "observations",
-            "evaluations",
-            "runs",
-            "applications",
-            "events",
-            "files",
-          ]) {
-            for (const [id, r] of Object.entries(restored[key]))
-              if (r.ownerPackageId === p.packageId) delete restored[key][id];
-            for (const [id, r] of Object.entries(local[key]))
-              if (r.ownerPackageId === p.packageId)
-                restored[key][id] = structuredClone(r);
-          }
-          if (local.targetMembers[p.versionId])
-            restored.targetMembers[p.versionId] = structuredClone(
-              local.targetMembers[p.versionId],
-            );
-          for (const r of Object.values(local.runs).filter(
-            (r) => r.ownerPackageId === p.packageId && r.snapshotRef,
-          ))
-            snapshots[r.runId] = await tx.readSnapshot(r.runId);
-        }
-        restored.operationLeases = {
-          [operationLease.operationId]: structuredClone(
-            local.operationLeases[operationLease.operationId],
-          ),
-        };
-        const at = new Date(repository.clock.now()).toISOString();
-        for (const run of Object.values(restored.runs))
-          if (["queued", "running"].includes(run.status)) {
-            run.status = "interrupted";
-            run.stage = "finished";
-            run.finishedAt = at;
-            run.ownerPid = null;
-            run.cancelRequestedAt = null;
-            run.snapshotRef = null;
-            run.issues = [
-              ...(run.issues || []),
-              {
-                code: "restored_unfinished_run",
-                message: "恢复的未完成任务已中断，请重新更新来源。",
-              },
-            ];
-          }
-        assertWorkspace(restored);
-        await tx.commitControl(filtered.control);
-        // Validate the complete clean object before writing a single snapshot. The internal replacement
-        // uses the existing exclusive lease and stable identity; no nested workspace lock is taken.
-        for (const [id, snapshot] of Object.entries(snapshots)) {
-          if (!restored.runs[id]?.snapshotRef) continue;
-          const old = tx.workspace;
-          tx.workspace = restored;
-          try {
-            await tx.replaceSnapshot(id, snapshot);
-          } finally {
-            tx.workspace = old;
-          }
-        }
-        await tx.commitWorkspace(restored);
-        return { revision: tx.workspace.revision, recovered: true };
-      },
-      { operationLease },
-    );
+    const {restoreWorkspaceWithIntent}=await import('./restore-maintenance.mjs');
+    return restoreWorkspaceWithIntent({repository,source,operationLease,fsAdapter,faultInjector});
   }
   if (!operationLease)
     return createWorkspaceOperationGate({ repository }).withOperation(

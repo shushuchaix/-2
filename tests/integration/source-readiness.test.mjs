@@ -4,7 +4,7 @@ import { countReadyProviders } from "../../tools/probe-sources-v2.mjs";
 import { createImportService } from "../../src/application/import-service.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 import { createJobService } from "../../src/application/job-service.mjs";
-import { createTempDir } from "../helpers/fixtures.mjs";
+import { createTempDir, registerTestResource } from "../helpers/fixtures.mjs";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 
 test("listed injected source sites can be probed without external requests", async (t) => {
@@ -72,6 +72,7 @@ test("imports retain social provenance without fetching prohibited platform bodi
     allowLegacy: true,
     dataDir: await createTempDir(t),
   });
+  registerTestResource(t, () => repository.close());
   const jobs = createJobService({ repository });
   let calls = 0;
   const service = createImportService({

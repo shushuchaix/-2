@@ -4,6 +4,14 @@ import { createBossProvider } from "../../src/sources/adapters/boss.mjs";
 import { collectionFixture } from "../helpers/collection-fixture.mjs";
 import { createPagedProvider } from "../../src/sources/adapters/shared.mjs";
 import { registerCollectionIpc } from "../../electron/collection/ipc.mjs";
+import { createCollectionCommands as createDesktopCollectionCommands } from "../../electron/backend/collection-commands.mjs";
+import { createBrowserCapabilities } from "../../electron/backend/browser-capabilities.mjs";
+
+function registerBackendIpc({ browser, context, sessionStore, ...ipc }) {
+  const commands = createDesktopCollectionCommands({ browser, context, sessionStore,
+    forgetSession: createBrowserCapabilities(context).forget });
+  registerCollectionIpc({ ...ipc, backend: { call: (method, input) => commands[method](input) } });
+}
 
 const site = { siteId: "boss", providerId: "boss" };
 
@@ -16,7 +24,7 @@ test("Boss desktop probe forwards only safe failure metadata to the interface", 
     mainFrame = { url: "http://127.0.0.1:31000/" },
     sender = { mainFrame };
   const diagnosticId = "d-12345678-1234-1234-1234-123456789abc";
-  registerCollectionIpc({
+  registerBackendIpc({
     ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
     getWindow: () => ({ webContents: sender }),
     getOrigin: () => mainFrame.url,
@@ -26,6 +34,7 @@ test("Boss desktop probe forwards only safe failure metadata to the interface", 
       getStatus: async () => ({ state: "unverified", riskBlocked: false }),
     },
     context: {
+      repository: f.repository,
       collectionService: f.service,
       sourceService: {
         probeScopedSource: async () => ({
@@ -403,7 +412,7 @@ test("clearing login also invalidates its owned source proof without removing an
   const handlers = new Map(),
     mainFrame = { url: "http://127.0.0.1:31000/" },
     sender = { mainFrame };
-  registerCollectionIpc({
+  registerBackendIpc({
     ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
     getWindow: () => ({ webContents: sender }),
     getOrigin: () => mainFrame.url,

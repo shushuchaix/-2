@@ -56,7 +56,7 @@ function writeCompleteSync(file, data) {
 
 // Publish a complete owner in one no-replace operation. A process that dies
 // before publication leaves no main lock; after publication its PID is readable.
-async function publishOwnedFileLock(filename, owner, adapter) {
+export async function publishOwnedFileLock(filename, owner, adapter) {
   await legacyGuardAbsent(filename, adapter);
   const temp = filename + "." + process.pid + "." + nonce() + ".tmp";
   let published = false;
@@ -119,7 +119,7 @@ const nextTicket = records => Math.max(0, ...records.map(item => item.ticket || 
  * path atomically. No fixed recovery lock, recursive recovery lock, expiry, or
  * read-nonce/unlink race is used to remove another contender's ownership.
  */
-async function reclaimDeadFileLock(filename, adapter) {
+export async function reclaimDeadFileLock(filename, adapter) {
   try { if (!deadOwner(JSON.parse(await adapter.readFile(filename, "utf8")))) return false; }
   catch (error) { return error.code === "ENOENT"; }
   try { await legacyGuardAbsent(filename, adapter); } catch { return false; }
@@ -177,18 +177,38 @@ export async function withWorkspaceLock(dataDir, fn, { timeoutMs = 10000, pollMs
   const transient = error => platform === "win32" && ["EPERM", "EACCES", "EBUSY"].includes(error.code);
   await adapter.mkdir(dataDir, { recursive: true });
   const filename = path.join(dataDir, ".workspace.lock"), token = randomUUID(), start = Date.now();
+  const busy = () => Error("Workspace busy: active or uncertain owner lock (including legacy recovery locks)");
+  let attempted = false, recoveredSlot = false;
   for (;;) {
+    // Finishing an already-started recovery is not another wait. If its native
+    // IO crossed the deadline, consume that result with exactly one no-replace
+    // publication; losing that final race must never start another recovery.
+    const followsRecovery = recoveredSlot;
+    recoveredSlot = false;
+    if (attempted && !followsRecovery && Date.now() - start >= timeoutMs) throw busy();
+    attempted = true;
     try {
       await publishOwnedFileLock(filename, { pid: process.pid, token, createdAt: new Date().toISOString() }, adapter);
       break;
     } catch (error) {
+      if (followsRecovery && Date.now() - start >= timeoutMs) {
+        if (error.code === "EEXIST") throw busy();
+        throw error;
+      }
       if (transient(error)) {
         if (Date.now() - start >= timeoutMs) throw error;
       } else if (error.code !== "EEXIST") throw error;
       else {
-        try { await reclaimDeadFileLock(filename, adapter); }
-        catch (failure) { if (!["ENOENT", "EEXIST"].includes(failure.code) && !transient(failure)) throw failure; }
-        if (Date.now() - start >= timeoutMs) throw Error("Workspace busy: active or uncertain owner lock (including legacy recovery locks)");
+        if (Date.now() - start >= timeoutMs) throw busy();
+        // An immediate recovered-slot publication can lose to a live writer or
+        // a legacy guard. Within budget it resumes the normal polling interval;
+        // a repeatedly absent main file must not turn this into a busy loop.
+        if (!followsRecovery) {
+          try { recoveredSlot = await reclaimDeadFileLock(filename, adapter); }
+          catch (failure) { if (!["ENOENT", "EEXIST"].includes(failure.code) && !transient(failure)) throw failure; }
+          if (recoveredSlot) continue;
+          if (Date.now() - start >= timeoutMs) throw busy();
+        }
       }
       await sleep(pollMs);
     }

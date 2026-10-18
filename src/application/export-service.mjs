@@ -1,12 +1,16 @@
 import { createJobService } from "./job-service.mjs";
 import { assertInput } from "../../public/js/validation-rules.js";
 import { redactBusiness, csvCell } from "../domain/redact.mjs";
-import { assertScope, packageError } from "../domain/packages.mjs";
+import { packageError } from "../domain/packages.mjs";
+import { readOwnedTarget } from './job-row-access.mjs';
+const jobHeadToken = result => JSON.stringify([result.head, result.controlDeletionHead]);
 export function createExportService({ repository }) {
   return {
     async export({ format = "json", filters = {}, scope } = {}) {
-      const snapshot = await repository.read();
-      if (snapshot.schemaVersion === 3) {
+      const schemaVersion = await repository.getMeta('schemaVersion');
+      const revision = schemaVersion === 3 ? null : await repository.getMeta('revision'), asOf = new Date(repository.clock.now()).toISOString();
+      let jobHead;
+      if (schemaVersion === 3) {
         const selected = scope || filters;
         if (selected.allTargets === true) {
           if (
@@ -26,7 +30,7 @@ export function createExportService({ repository }) {
               "package_scope_mismatch",
               "导出范围与筛选条件不一致。",
             );
-          assertScope(snapshot, selected, repository.clock.now());
+          await readOwnedTarget(repository, selected, repository.clock.now());
           filters = {
             ...filters,
             packageId: selected.packageId,
@@ -36,12 +40,12 @@ export function createExportService({ repository }) {
       }
       assertInput("export", { format: format === "markdown" ? "md" : format });
       assertInput("filters", filters);
+      if (schemaVersion === 3) jobHead = jobHeadToken(await repository.readJobHead(filters.allTargets ? { allTargets: true } : { ownerPackageId: filters.packageId }, { scope: filters.allTargets ? undefined : filters }));
       if (format === "md") format = "markdown";
-      const service = createJobService({
-        repository: { ...repository, read: async () => snapshot },
-      });
+      const service = createJobService({ repository });
       const result = await service.queryJobs({
         ...filters,
+        ...(schemaVersion === 3 ? { asOf } : {}),
         page: 1,
         pageSize: 200,
       });
@@ -49,6 +53,7 @@ export function createExportService({ repository }) {
       for (let page = 2; items.length < result.total; page++) {
         const next = await service.queryJobs({
           ...filters,
+          ...(schemaVersion === 3 ? { asOf } : {}),
           page,
           pageSize: 200,
         });
@@ -64,14 +69,23 @@ export function createExportService({ repository }) {
               "search",
               "page",
               "pageSize",
+              "packageId",
+              "targetRevisionId",
+              "allTargets",
+              "asOf",
             ].includes(k) &&
             filters[k] &&
             filters[k] !== "all",
         )
       ) {
-        const unresolved = await service.listUnresolvedApplications(filters);
+        const unresolvedItems=[];
+        for(let page=1;;page++){
+          const unresolved=await service.listUnresolvedApplications({...filters,page,pageSize:200});
+          unresolvedItems.push(...unresolved.items);
+          if(!unresolved.hasMore || !unresolved.items.length)break;
+        }
         items.push(
-          ...unresolved.items.map(({ application, candidateJobs }) => ({
+          ...unresolvedItems.map(({ application, candidateJobs }) => ({
             jobId: application.jobId,
             title: "待确认旧记录",
             company: null,
@@ -87,6 +101,8 @@ export function createExportService({ repository }) {
         );
       }
       const rows = redactBusiness(items);
+      const changed = schemaVersion === 3 ? jobHeadToken(await repository.readJobHead(filters.allTargets ? { allTargets: true } : { ownerPackageId: filters.packageId }, { scope: filters.allTargets ? undefined : filters })) !== jobHead : await repository.getMeta('revision') !== revision;
+      if (changed) throw packageError('export_changed', '导出期间岗位已变化，请重新导出。');
       if (format === "json")
         return {
           filename: "jobs.json",

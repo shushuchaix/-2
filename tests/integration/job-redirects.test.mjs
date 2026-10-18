@@ -13,6 +13,7 @@ import {
 } from "../helpers/fixtures.mjs";
 import { snapshotToLegacy, loadRun } from "../../src/pipeline.mjs";
 import {packageBusinessFixture} from '../helpers/package-business-fixture.mjs';
+import { annotate } from "../../src/store.mjs";
 async function fixture(t) {
   const f = await apiFixture(t),
     ctx = await f.ctx.ready,
@@ -235,6 +236,41 @@ test("standalone store preserves scoped aliases and refuses peer writes or unsco
   assert.equal((await f.jobs.getJob(peerId,b)).application.status,'new');
   assert.equal(w.jobs[keptId].jobId, keptId);
 });
+test("global aliases survive application publication and annotate resolves aliases and redirect chains without changing raw jobs", async (t) => {
+  const f = await packageBusinessFixture(t), { a, b } = await f.twoTargets(), [id] = await f.ingest(a, [job()]);
+  await f.repository.mutateWorkspace(w => {
+    w.identityAliases["global-old"] = [id];
+  });
+  await f.repository.transaction({ select: [{ collection: "jobRedirects", ownerPackageId: a.packageId, ids: ["redirect-first", "redirect-second"] }] }, tx => {
+    for (const [fromJobId, toJobId] of [["redirect-first", "redirect-second"], ["redirect-second", id]]) tx.putRow({
+      collection: "jobRedirects", id: fromJobId, ownerPackageId: a.packageId,
+      value: { fromJobId, toJobId, ownerPackageId: a.packageId, operationId: "synthetic-chain" },
+    });
+  }, { scope: a });
+  const rawJob = await f.repository.getRow({ collection: "jobs", id, ownerPackageId: a.packageId }, { scope: a });
+  const rawAliases = await f.repository.queryRows({ collection: "identityAliasLinks", ownerPackageId: a.packageId, where: { parentId: "global-old" }, limit: 2 }, { scope: a });
+  const candidates = () => f.repository.findJobIdentityCandidates({ ownerPackageId: a.packageId, keys: [{ kind: "alias", resourceKey: "global-old" }], limit: 2 }, { scope: a });
+  assert.deepEqual((await candidates()).jobIds, [id]);
+  await f.jobs.updateJobApplication("global-old", { status: "interviewing", note: "合成别名申请" }, a);
+  assert.deepEqual((await candidates()).jobIds, [id]);
+  assert.deepEqual(await f.repository.getRow({ collection: "jobs", id, ownerPackageId: a.packageId }, { scope: a }), rawJob);
+  assert.deepEqual(await f.repository.queryRows({ collection: "identityAliasLinks", ownerPackageId: a.packageId, where: { parentId: "global-old" }, limit: 2 }, { scope: a }), rawAliases);
+  const context = () => ({ repository: f.repository, jobService: f.jobs }), diff = { added: [], index: { jobs: {} } };
+  const canonical = await annotate([{ id }], diff, { scope: a, context: context() });
+  assert.equal(canonical.jobs[0].tracking.status, "interviewing");
+  for (const requestedId of ["global-old", "redirect-first"]) {
+    const alias = await annotate([{ id: requestedId }], diff, { scope: a, context: context() });
+    assert.deepEqual(alias.jobs[0].tracking, canonical.jobs[0].tracking);
+    assert.equal(alias.jobs[0].id, requestedId);
+  }
+  await assert.rejects(annotate([{ id: "global-old" }], diff, { scope: b, context: context() }), { code: "job_not_found" });
+  await f.reopen();
+  assert.equal((await annotate([{ id: "global-old" }], diff, { scope: a, context: context() })).jobs[0].tracking.status, "interviewing");
+  const [other] = await f.ingest(a, [job({ sourceRecordId: "other-alias", title: "另一项合成招聘" })]);
+  await f.repository.mutateWorkspace(w => { w.identityAliases["global-old"] = [id, other]; });
+  await assert.rejects(annotate([{ id: "global-old" }], diff, { scope: a, context: context() }), { code: "job_identity_ambiguous" });
+});
+
 test("archived v1 run projects current status while its saved result remains unchanged", async (t) => {
   const { ctx } = await fixture(t),
     snapshot = {

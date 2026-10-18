@@ -1,4 +1,4 @@
-import { namedTargetInput } from "../helpers/fixtures.mjs";
+import { namedTargetInput, registerTestResource } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createEvaluationService } from "../../src/application/evaluation-service.mjs";
@@ -12,6 +12,7 @@ test("rescore keeps prior revisions and application without collecting sources",
     }),
     workspace = createWorkspaceService({ repository }),
     jobs = createJobService({ repository });
+  registerTestResource(t, () => repository.close());
   let sourceCalls = 0;
   const service = createEvaluationService({
     repository,
@@ -96,8 +97,9 @@ test("rescore cancellation retains completed batch and validates real revisions"
     }),
     workspace = createWorkspaceService({ repository }),
     jobs = createJobService({ repository }),
-    service = createEvaluationService({ repository }),
-    p = await workspace.saveProfile({ profile: profile() }),
+    service = createEvaluationService({ repository });
+  registerTestResource(t, () => repository.close());
+  const p = await workspace.saveProfile({ profile: profile() }),
     tar = await workspace.saveTarget(
       namedTargetInput({
         ...target(),

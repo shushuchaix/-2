@@ -1,7 +1,7 @@
 @import "tailwindcss" source(none);
 @source "./";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./vendor/shadcn/tailwind.css";
 @theme inline {
   --font-sans: system-ui, "Microsoft YaHei", "PingFang SC", sans-serif;
   --font-heading: var(--font-sans);

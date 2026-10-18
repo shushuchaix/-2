@@ -1,3 +1,4 @@
+import {legacyDiagnosticSelection,guardLegacyScope} from '../application/legacy-bridge.mjs';
 import {
   identifier,
   jobIdentifier,
@@ -51,7 +52,7 @@ export async function handlePackageBusinessRequest(req, res, context) {
     )
   )
     return false;
-  if ((await context.repository.read()).schemaVersion !== 3) return false;
+  if ((await context.repository.getMeta('schemaVersion')) !== 3) return false;
   const { http, jobService: jobs, runService: runs } = context,
     send = (status, data) => http.json(req, res, status, data),
     body = () => http.readJson(req),
@@ -64,76 +65,20 @@ export async function handlePackageBusinessRequest(req, res, context) {
     ["/diagnostics/logs", "/diagnostics/logs/export"].includes(route) &&
     method === "GET"
   ) {
-    const selection = readScope(),
-      w = await context.repository.read(),
-      { exporting, options } = parseDiagnosticQuery(url, { allowScope: true }),
-      limit = options.limit;
-    if (!selection.allTargets)
-      assertScope(w, selection, context.repository.clock.now());
-    let runIds = Object.values(w.runs)
-      .filter((r) =>
-        selection.allTargets
-          ? w.packages[r.ownerPackageId]?.state === "active" &&
-            w.packages[r.ownerPackageId]?.kind === "target"
-          : r.ownerPackageId === selection.packageId,
-      )
-      .map((r) => r.runId);
-    if (params.runId) {
-      identifier(params.runId);
-      const run = w.runs[params.runId];
-      if (!run) throw packageError("run_not_found", "运行记录不存在。", 404);
-      requirePackage(w, run.ownerPackageId, {
-        now: context.repository.clock.now(),
-      });
-      if (!selection.allTargets) assertOwned(w, run, selection.packageId);
-      runIds = [params.runId];
-    }
-    if (exporting) {
-      const texts =
-        selection.allTargets && !params.runId
-          ? [await context.diagnostics.exportText(options)]
-          : await Promise.all(
-              runIds.map((runId) =>
-                context.diagnostics.exportText({ ...options, runId }),
-              ),
-            );
-      res.writeHead(200, {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Content-Disposition":
-          'attachment; filename="job-radar-diagnostics.txt"',
-        "Cache-Control": "no-store",
-      });
-      res.end(texts.join("\n") || "当前版本没有运行诊断记录。");
-    } else {
-      const results =
-        selection.allTargets && !params.runId
-          ? [await context.diagnostics.list(options)]
-          : await Promise.all(
-              runIds.map((runId) =>
-                context.diagnostics.list({ ...options, runId }),
-              ),
-            );
-      const entries = results
-          .flatMap((r) => r.entries)
-          .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-          .slice(0, limit),
-        total = results.reduce(
-          (n, r) => n + (r.summary?.total || r.entries.length),
-          0,
-        );
-      send(200, {
-        ...(results[0] || {}),
-        entries,
-        summary: {
-          total,
-          returned: entries.length,
-          truncated: total > entries.length,
-          errors: entries.filter((e) => e.level === "error").length,
-          warnings: entries.filter((e) => e.level === "warn").length,
-        },
-        scope: selection,
-      });
-    }
+    const selection=readScope(),{exporting,options}=parseDiagnosticQuery(url,{allowScope:true});
+    if(params.runId)identifier(params.runId);
+     const readSnapshot=await context.diagnostics.captureReadSnapshot();
+     const {runIds,scopes}=await legacyDiagnosticSelection(context.repository,selection,params.runId,readSnapshot.runIds);
+     const logOptions={...options,readSnapshot,runIds,...(selection.allTargets&&!params.runId?{includeRuntimeGlobals:true}:{})};
+     const result=exporting?await context.diagnostics.exportText(logOptions):await context.diagnostics.list(logOptions);
+    // Logger I/O is outside storage snapshots. Revoke cached results if an owner
+    // was archived, expired or deleted while the one filtered scan was running.
+    for(const selected of scopes)await guardLegacyScope(context.repository,selected);
+      if(selection.allTargets)await context.repository.queryDiagnosticRunScopes({runIds:[]});
+    if(exporting){
+      res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Content-Disposition':'attachment; filename="job-radar-diagnostics.txt"','Cache-Control':'no-store'});
+      res.end(result||'当前版本没有运行诊断记录。');
+    }else send(200,{...result,scope:selection});
     return true;
   }
   async function evaluate(input, jobIds) {

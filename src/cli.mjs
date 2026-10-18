@@ -6,7 +6,7 @@ import { getDefaultApplicationContext } from "./application/context.mjs";
 import { runPipeline, saveRun } from "./pipeline.mjs";
 import { extractResumeText } from "./resume/extract-text.mjs";
 import { exportResult } from "./export.mjs";
-import {resolveLegacyScope} from './application/legacy-scope.mjs';
+import {resolveLegacyScopeFromRepository,resolveLegacyApplicationReference} from './application/legacy-scope.mjs';
 const booleans = new Set([
   "help",
   "h",
@@ -59,15 +59,10 @@ async function main() {
   }
   if (group === "runs" && command === "start") {
     const requested = String(args.target || "");
-    const revisions = await context.workspaceService.listTargets(),
-      target =
-        revisions.find((t) => t.revisionId === requested) ||
-        revisions.filter((t) => t.targetId === requested).at(-1);
-    if (!target) throw Error("Target not found");
-    const scope=resolveLegacyScope(target.revisionId===requested?{targetRevisionId:requested}:{targetId:requested},await context.repository.read(),context.repository.clock.now());
+    const scope=await resolveLegacyScopeFromRepository(requested.includes('@')?{targetRevisionId:requested}:{targetId:requested},context.repository);
     const started = await context.runService.startRun({
         scope,
-        targetRevisionId: target.revisionId,
+        targetRevisionId: scope?.targetRevisionId || requested,
         mode: args.rules ? "rules" : cfg.deepseek.apiKey ? "ai" : "rules",
       }),
       result = await context.runService.waitForRun(started.runId,scope);
@@ -75,16 +70,16 @@ async function main() {
     return;
   }
   if (group === "runs" && command === "show") {
-    const scope=resolveLegacyScope({runId:id,...(args.target?{targetRevisionId:String(args.target)}:{})},await context.repository.read(),context.repository.clock.now());
+    const scope=await resolveLegacyScopeFromRepository({runId:id,...(args.target?{targetRevisionId:String(args.target)}:{})},context.repository);
     console.log(JSON.stringify(await context.runService.getRun(id,scope), null, 2));
     return;
   }
   if (group === "applications" && command === "set") {
     if (!args.status) throw Error("--status required");
-    const w=await context.repository.read(),scope=resolveLegacyScope({...(w.applications[id]?{applicationId:id}:{jobId:id}),...(args.target?{targetRevisionId:String(args.target)}:{})},w,context.repository.clock.now());
+    const {scope,isApplication}=await resolveLegacyApplicationReference(id,{...(args.target?{targetRevisionId:String(args.target)}:{})},context.repository);
     console.log(
       JSON.stringify(
-        await (w.schemaVersion===3&&!w.applications[id]?context.jobService.updateJobApplication:context.jobService.updateApplication)(id, {
+        await (!isApplication?context.jobService.updateJobApplication:context.jobService.updateApplication)(id, {
           status: args.status,
           ...(Object.hasOwn(args, "note")
             ? { note: String(args.note === true ? "" : args.note) }

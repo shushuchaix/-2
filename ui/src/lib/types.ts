@@ -11,6 +11,8 @@ export type CollectionActivity = {
   collectionUsage?: Record<string, number>;
   quality?: CollectionQuality;
   collectionProgress: {
+    draining?: boolean;
+    stopIntent?: "pause" | "cancel" | null;
     status: string;
     revision: number;
     activeSliceRunId?: string | null;
@@ -21,13 +23,17 @@ export type CollectionActivity = {
     metrics?: Record<string, number>;
     lastErrorCode?: string;
     replanRequired?: boolean;
-    units: Record<
+    unitSummary?: {plannedSites:number;actualSites:number;pendingUnits:number;totalUnits:number};
+    unitPage?: {hasMore:boolean;nextCursor:string|null};
+    units?: Record<
       string,
-      { status: string; siteId: string; committedPages: number }
+      { status: string; sourceId?: string; siteId: string; committedPages: number }
     >;
   };
 };
 export type CollectionQuality = {
+  asOf?: string;
+  nextTemporalChangeAt?: string | null;
   uniqueRecords: number;
   bodyVerified: number;
   open: number;

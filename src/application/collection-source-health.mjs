@@ -22,6 +22,18 @@ const restrictedCodes = new Set([
   "boss_auth_expired",
   "boss_login_required",
 ]);
+export const isUnattemptedSourceResult = ({ records = [], issues = [] } = {}) =>
+  records.length === 0 &&
+  issues.length > 0 &&
+  issues.every((issue) =>
+    [
+      "model_budget_exhausted",
+      "page_limit_reached",
+      "collection_stale_epoch",
+      "collection_cancelled",
+      "not_executed",
+    ].includes(issue.code),
+  );
 
 // A successful list commit proves reading capability, independently of job eligibility.
 export function deriveCollectionSourceHealth({
@@ -63,6 +75,14 @@ export function deriveCollectionSourceHealth({
     issues: allIssues,
   });
   return {
+    projectionVersion: 1,
+    depth: bodies.length ? "body" : "list",
+    bodySampleCount: bodies.length,
+    applicationSampleCount: bodies.filter(
+      (record) =>
+        assessRecruitmentEvidence({ record, now }).applicationStatus ===
+        "available",
+    ).length,
     sourceId,
     siteId,
     status,
@@ -90,6 +110,7 @@ export function recordCollectionSourceHealth(
   workspace,
   { scope, provider, sourceId = provider?.id, siteId, records, issues, now },
 ) {
+  if (isUnattemptedSourceResult({ records, issues })) return null;
   let destination = workspace;
   if (
     isVersionPrivateSource({

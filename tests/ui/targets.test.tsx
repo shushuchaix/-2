@@ -3,6 +3,10 @@ import test from "node:test";
 import { act, waitFor } from "@testing-library/react";
 import { renderApp } from "../helpers/react-fixture";
 
+function assertRecord(value: unknown): asserts value is Record<string, unknown> {
+  assert.ok(value !== null && typeof value === "object" && !Array.isArray(value));
+}
+
 const profile = {
   profileId: "p-one",
   revisionId: "p-one@1",
@@ -93,6 +97,9 @@ test("target wizard saves preferences and budget and selects the returned exact 
   const call = f.apiCalls.find(
     (c: any) => c.path === "/targets" && c.options.method === "POST",
   );
+  assert.ok(call);
+  assertRecord(call.options.body);
+  assertRecord(call.options.body.budgets);
   assert.equal(call.options.body.profileRevisionId, "p-one@1");
   assert.deepEqual(call.options.body.roles, ["消防", "机场"]);
   assert.equal(call.options.body.budgets.maxCostCny, 10);
@@ -191,6 +198,9 @@ test("duplicate target name keeps creation draft and a retry cannot create a sec
   const calls = f.apiCalls.filter(
     (c: any) => c.path === "/targets" && c.options.method === "POST",
   );
+  assert.equal(calls.length, 2);
+  assertRecord(calls[0].options.body);
+  assertRecord(calls[1].options.body);
   assert.equal(
     calls[0].options.body.submissionId,
     calls[1].options.body.submissionId,

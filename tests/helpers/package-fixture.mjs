@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createTempDir } from "./fixtures.mjs";
+import { createTempDir, registerTestResource } from "./fixtures.mjs";
 import { createFakeClock } from "./clock.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 import {
@@ -24,6 +24,12 @@ export function failOnce(fsAdapter, phase) {
     arm(when) {
       armed = when;
     },
+    faultInjector(when) {
+      if ((armed==='workspace_commit'&&['sqlite.beforeImport','sqlite.beforeWrite'].includes(when)) ||
+        (armed==='previous_commit'&&when==='sqlite.beforeCommit')) {
+        armed=null;throw Error('synthetic storage failure');
+      }
+    },
     async rename(from, to) {
       if (armed && String(to).includes(match[armed] || "never")) {
         armed = null;
@@ -32,7 +38,7 @@ export function failOnce(fsAdapter, phase) {
       return fsAdapter.rename(from, to);
     },
     async unlink(file) {
-      if (armed === "file_cleanup" && !String(file).endsWith(".tmp")) {
+      if (armed === "file_cleanup" && !String(file).endsWith(".tmp") && !String(file).includes('.workspace.lock')) {
         armed = null;
         throw Error("synthetic storage failure");
       }
@@ -55,6 +61,7 @@ export async function packageFixture(t, options = {}) {
       dataDir,
       clock,
       fsAdapter: adapter,
+      faultInjector: adapter.faultInjector,
     });
     f.control = openPackageControl({ dataDir, fsAdapter: adapter });
     f.trash = createTrashService({
@@ -68,6 +75,7 @@ export async function packageFixture(t, options = {}) {
     });
   }
   await open();
+  registerTestResource(t,()=>f.repository.close());
   if ((await f.repository.read()).schemaVersion !== 3)
     await f.repository.withMaintenanceTransaction(
       async (tx) => {
@@ -77,6 +85,7 @@ export async function packageFixture(t, options = {}) {
       { bootstrap: true },
     );
   f.reopen = async () => {
+    await f.repository.close();
     await open();
     return f;
   };

@@ -23,6 +23,7 @@ test("backup_restores_owned_progress_paused_without_session_refs_or_budget_reset
     });
     root.collectionProgress.status = "collecting";
     root.collectionProgress.ledger.reservations.r1 = {
+      reservationId: "r1",
       kind: "model",
       status: "reserved",
       costUpperBoundCny: 0.7,

@@ -244,7 +244,7 @@ export function JobsPage({ api }: { api: ApiClient }) {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3">
-                    <p>{f.cities?.join("、") ?? "城市待核实"}</p>
+                    <p>{f.cities?.join("、") || "城市待核实"}</p>
                     <p>
                       {qualificationOf(row)} · 截止 {f.deadline ?? "待核实"}
                     </p>
@@ -304,7 +304,7 @@ export function JobsPage({ api }: { api: ApiClient }) {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell>{f.cities?.join("、") ?? "待核实"}</TableCell>
+                    <TableCell>{f.cities?.join("、") || "待核实"}</TableCell>
                     <TableCell className="whitespace-normal">
                       {qualificationOf(row)}
                     </TableCell>

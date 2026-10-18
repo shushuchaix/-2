@@ -7,6 +7,7 @@ export const SHARED_OPERATION_KINDS = new Set([
   "evaluate",
   "import",
   "legacy",
+  "backup",
 ]);
 export const EXCLUSIVE_OPERATION_KINDS = new Set([
   "cleanup",
@@ -45,7 +46,80 @@ export function assertOperationWriteAllowed(
   )
     throw operationBusy();
 }
-export function createWorkspaceOperationGate({
+
+/** Formal schema3 operations coordinate only bounded lease rows and live-run metadata. */
+export function createWorkspaceOperationGate(options){
+  const {repository,clock=repository.clock,isOwnerAlive=pid=>hasLiveOwner({ownerPid:pid})}=options;
+  const legacy=createLegacyWorkspaceOperationGate(options);
+  const alive=lease=>{try{return isOwnerAlive(lease.ownerPid)!==false;}catch{return true;}};
+  const leaseObject=(value,parent=false)=>({...value,async release(){
+    if(parent)return;
+    await repository.transaction({select:[{collection:'operationLeases',ids:[value.operationId]}]},tx=>{
+      if(tx.getRow({collection:'operationLeases',id:value.operationId})?.token!==value.token)throw invalidLease();
+      tx.deleteRow({collection:'operationLeases',id:value.operationId});
+    },{operationMaintenance:true});
+  }});
+  const formal={
+    async recover(){
+      return repository.withWriteFence(fence=>{
+        const state=fence.readOperationState();if(state.hasMore)throw operationBusy();
+        const dead=state.leases.filter(lease=>!alive(lease));if(!dead.length)return {removed:0};
+        fence.transaction({select:[{collection:'operationLeases',ids:dead.map(lease=>lease.operationId)}]},tx=>{
+          for(const lease of dead)tx.deleteRow({collection:'operationLeases',id:lease.operationId});
+        });return {removed:dead.length};
+      },{operationMaintenance:true});
+    },
+    async acquire(kind,{targetRevisionId,profileRevisionId,parentLease,expectedWorkspaceRevision,signal,scope,packageIds}={}){
+      if(!SHARED_OPERATION_KINDS.has(kind)&&!EXCLUSIVE_OPERATION_KINDS.has(kind))throw Error('Invalid operation kind');
+      signal?.throwIfAborted();
+      const value=await repository.withWriteFence(fence=>{
+        signal?.throwIfAborted();const revision=fence.getMeta('revision');
+        if(expectedWorkspaceRevision!==undefined&&expectedWorkspaceRevision!==revision)throw Object.assign(Error('岗位数据已变化，请重新预览后确认清理。'),{status:409,code:'duplicate_preview_stale'});
+        const state=fence.readOperationState();if(state.hasMore)throw operationBusy();
+        const leases=state.leases.filter(alive),dead=state.leases.filter(lease=>!alive(lease));
+        if(scope){
+          if(fence.control.migrationJournal?.archives?.[scope.packageId]?.phase==='prepared')throw operationBusy();
+          const pkg=fence.getRow({collection:'packages',id:scope.packageId});
+          assertScope({packages:pkg?{[pkg.packageId]:pkg}:{}},scope,clock.now());targetRevisionId=pkg.versionId;packageIds=[pkg.packageId];
+          const copies=fence.queryRows({collection:'profileCopies',ownerPackageId:pkg.packageId,where:{parentId:targetRevisionId},limit:2});
+          profileRevisionId=copies.rows[0]?.value.revisionId||null;
+          if(kind==='collect'&&!pkg.enabled)throw packageError('version_disabled','目标版本已停用，请先启用。');
+          scope={packageId:pkg.packageId,targetRevisionId};
+        }else if(SHARED_OPERATION_KINDS.has(kind)&&kind!=='backup'&&!packageIds?.length)throw packageError('version_scope_required','操作需要明确的数据包范围。');
+        for(const id of packageIds||[]){
+          if(fence.control.migrationJournal?.archives?.[id]?.phase==='prepared')throw operationBusy();
+          const pkg=fence.getRow({collection:'packages',id});
+          if(!pkg)throw packageError('package_not_found','数据包不存在。',404);
+          if(!['permanent-delete','restore'].includes(kind))requirePackage({packages:{[id]:pkg}},id,{access:SHARED_OPERATION_KINDS.has(kind)?'business':'management',now:clock.now()});
+        }
+        let parent;
+        if(parentLease){
+          parent=leases.find(lease=>lease.operationId===parentLease.operationId);
+          if(!parent||parent.token!==parentLease.token||!(EXCLUSIVE_OPERATION_KINDS.has(parent.kind)||(SHARED_OPERATION_KINDS.has(parent.kind)&&SHARED_OPERATION_KINDS.has(kind))))throw invalidLease();
+          if(scope&&parent.scope&&(scope.packageId!==parent.scope.packageId||scope.targetRevisionId!==parent.scope.targetRevisionId))throw invalidLease();
+          if(parent.packageIds?.length&&packageIds?.some(id=>!parent.packageIds.includes(id)))throw invalidLease();
+          if(parent.targetRevisionId&&targetRevisionId&&parent.targetRevisionId!==targetRevisionId)throw invalidLease();
+          if(parent.profileRevisionId&&profileRevisionId&&parent.profileRevisionId!==profileRevisionId)throw invalidLease();
+          parent={...parent,targetRevisionId:parent.targetRevisionId||targetRevisionId||null,profileRevisionId:parent.profileRevisionId||profileRevisionId||null};
+        }else{
+          const legacyActive=state.runs.some(run=>hasLiveOwner(run)&&!leases.some(lease=>lease.targetRevisionId===run.targetRevisionId));
+          if(leases.some(lease=>EXCLUSIVE_OPERATION_KINDS.has(lease.kind))||(EXCLUSIVE_OPERATION_KINDS.has(kind)&&(leases.length||legacyActive)))throw operationBusy();
+        }
+        const lease=parent||{operationId:'op-'+randomUUID(),kind,token:randomUUID(),ownerPid:process.pid,
+          targetRevisionId:targetRevisionId||null,profileRevisionId:profileRevisionId||null,createdAt:new Date(clock.now()).toISOString(),scope:scope||null,packageIds:[...new Set(packageIds||[])]};
+        const receipt=fence.transaction({select:[{collection:'operationLeases',ids:[...dead.map(lease=>lease.operationId),lease.operationId]}]},tx=>{
+          for(const stale of dead)tx.deleteRow({collection:'operationLeases',id:stale.operationId});
+          tx.putRow({collection:'operationLeases',id:lease.operationId,value:lease});
+        });return {...lease,acquiredRevision:receipt.revision,...(parent?{parent:true}:{})};
+      },{operationMaintenance:true});
+      return leaseObject(value,value.parent===true);
+    },
+    async withOperation(kind,input,action){const lease=await formal.acquire(kind,input);try{return await action(lease);}finally{await lease.release();}},
+  };
+  return Object.fromEntries(['recover','acquire','withOperation'].map(method=>[method,async(...args)=>
+    (await repository.getMeta('schemaVersion'))===3?formal[method](...args):legacy[method](...args)]));
+}
+function createLegacyWorkspaceOperationGate({
   repository,
   clock = repository.clock,
   isOwnerAlive = (pid) => hasLiveOwner({ ownerPid: pid }),

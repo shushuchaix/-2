@@ -28,7 +28,8 @@ test("review: page-limited first ten sites do not starve later batches", async (
     }),
     ref = { scope: f.scope, activityId: first.activityId };
   await f.service.wait(ref);
-  assert.equal(seen.length, 10);
+  assert.equal(seen.length, 11);
+  assert.deepEqual(seen, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   await f.service.resume({ ref, requestId: "second-batch" });
   await f.service.wait(ref);
   assert.deepEqual(seen, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -44,7 +45,7 @@ test("review: page-limited first ten sites do not starve later batches", async (
   });
   await f.service.resume({ ref, requestId: "more-depth" });
   await f.service.wait(ref);
-  assert.equal(seen.length, 21);
+  assert.equal(seen.length, 22);
 });
 test("review: explicit continue honors pending body server cooldown", async (t) => {
   let calls = 0,

@@ -88,20 +88,68 @@ export function assertControlTransition(previous, next) {
       if (next.identityIndex[namespace][key] !== id) throw invalid();
   for (const [key, n] of Object.entries(previous.versionHighWater))
     if ((next.versionHighWater[key] ?? -1) < n) throw invalid();
+  for(const [key,episode]of Object.entries(previous.archiveEpisodes)){
+    const nextEpisode=next.archiveEpisodes[key];
+    if(!nextEpisode||['packageId','archiveId','archivedAt','purgeAt','legacy','archiveDateUnknown'].some(field=>
+      episode[field]!==undefined&&nextEpisode[field]!==episode[field]))throw invalid();
+  }
   for (const [id, e] of Object.entries(previous.deletionLedger)) {
     const n = next.deletionLedger[id];
     if (
       !n ||
       e.recordIds.some((r) => !n.recordIds.includes(r)) ||
-      (e.phase === "purged" && n.phase !== "purged")
+      (e.phase === "purged" && n.phase !== "purged") ||
+      ['archiveId','archivedAt','purgeAt','operationId','createdAt','purgedAt'].some(field=>e[field]!==undefined&&n[field]!==e[field])
     )
       throw invalid();
   }
 }
-export function openPackageControl({ dataDir, fsAdapter = fs, captureFileIdentity = false }) {
+export function openPackageControl({
+  dataDir,
+  fsAdapter = fs,
+  captureFileIdentity = false,
+  onRenameRecovery,
+}) {
   const dir = path.join(path.resolve(dataDir), "control"),
     state = path.join(dir, "state.json"),
     marker = path.join(dir, "initialized.json");
+  const atomicOptions = (resource, identity = captureFileIdentity) => ({
+    fsAdapter,
+    captureFileIdentity: identity,
+    onRenameRecovery: (event) => {
+      // A completed rename cannot fail or wait on an optional observer.
+      try {
+        Promise.resolve(
+          onRenameRecovery?.({
+            resource,
+            retryCount: event.retryCount,
+            code: event.code,
+            retryDelayMs: event.retryDelayMs,
+          }),
+        ).catch(() => {});
+      } catch {}
+    },
+  });
+  const atomicWrite = async (
+    resource,
+    file,
+    value,
+    identity = captureFileIdentity,
+  ) => {
+    try {
+      return await writeAtomicJson(
+        file,
+        value,
+        atomicOptions(resource, identity),
+      );
+    } catch (error) {
+      // Only the writer of this fixed destination assigns its public alias.
+      try {
+        error.storageResource = resource;
+      } catch {}
+      throw error;
+    }
+  };
   const json = async (file) => {
     try {
       return JSON.parse(await fsAdapter.readFile(file, "utf8"));
@@ -137,22 +185,23 @@ export function openPackageControl({ dataDir, fsAdapter = fs, captureFileIdentit
     const m = await json(marker);
     if (m && m.workspaceId !== next.workspaceId) throw invalid();
     if (!m)
-      await writeAtomicJson(
+      await atomicWrite(
+        "control/initialized.json",
         marker,
         { formatVersion: 1, workspaceId: next.workspaceId, phase: "preparing" },
-        { fsAdapter },
+        false,
       );
-    const stateIdentity = await writeAtomicJson(
+    const stateIdentity = await atomicWrite(
+      "control/state.json",
       state,
       { ...next, checksum: checksum(next) },
-      { fsAdapter, captureFileIdentity },
     );
     let markerIdentity;
     if (!m || m.phase !== "ready")
-      markerIdentity = await writeAtomicJson(
+      markerIdentity = await atomicWrite(
+        "control/initialized.json",
         marker,
         { formatVersion: 1, workspaceId: next.workspaceId, phase: "ready" },
-        { fsAdapter, captureFileIdentity },
       );
     return { state: stateIdentity, marker: markerIdentity };
   }

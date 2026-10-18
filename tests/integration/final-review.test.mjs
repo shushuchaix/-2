@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { tempRepository } from "../helpers/repository.mjs";
+import { packageBusinessFixture } from "../helpers/package-business-fixture.mjs";
 import { job, profile, target } from "../helpers/fixtures.mjs";
 import { fakeProvider } from "../helpers/fake-sources.mjs";
 import { apiFixture } from "../helpers/api-fixture.mjs";
@@ -330,36 +331,43 @@ test("review 8: selected target uses its own evaluation revision and retains une
   );
 });
 
-test("review 10: export takes one snapshot so concurrent filter changes cannot cause endless pagination", async (t) => {
-  const repository = await tempRepository(t),
-    jobs = createJobService({ repository });
-  await jobs.ingestRecords({
-    runId: "fixture",
-    records: Array.from({ length: 201 }, (_, i) =>
-      job({ sourceRecordId: String(i) }),
-    ),
-  });
-  const original = await repository.read();
-  let reads = 0;
-  const changing = {
-    ...repository,
-    read: async () => {
-      reads++;
-      if (reads > 4) throw Error("pagination made no progress");
-      const copy = structuredClone(original);
-      if (reads > 1)
-        copy.applications[Object.keys(copy.jobs).at(-1)] = {
-          status: "ignored",
-        };
-      return copy;
+test("review 10: bounded export finishes stable pagination and rejects a real filter change", async (t) => {
+  const f = await packageBusinessFixture(t), { a } = await f.twoTargets();
+  const scope = { packageId: a.packageId, targetRevisionId: a.revisionId };
+  const ids = await f.ingest(a, Array.from({ length: 201 }, (_, i) => job({ sourceRecordId: String(i) })));
+  const pages = [], heads = [];
+  let changeAfterPage = false, changed = false;
+  const repository = {
+    ...f.repository,
+    read: async () => { throw Error("ordinary export must use bounded ports"); },
+    readJobHead: async (...args) => {
+      const result = await f.repository.readJobHead(...args);
+      heads.push(result.head);
+      return result;
+    },
+    queryJobPage: async (filters, options) => {
+      pages.push({ page: filters.page, pageSize: filters.pageSize, asOf: options.asOf });
+      assert.ok(pages.length <= 2, "pagination must finish after two bounded pages");
+      if (changeAfterPage && !changed && filters.page === 2) {
+        changed = true;
+        await f.jobs.updateJobApplication(ids.at(-1), { status: "ignored" }, scope);
+      }
+      return f.repository.queryJobPage(filters, options);
     },
   };
-  const result = await createExportService({ repository: changing }).export({
-    format: "json",
-    filters: { status: "new" },
-  });
+  const service = createExportService({ repository });
+  const result = await service.export({ format: "json", filters: { ...scope, status: "new" } });
   assert.equal(JSON.parse(result.body).length, 201);
-  assert.equal(reads, 1);
+  assert.deepEqual(pages.map((p) => p.page), [1, 2]);
+  assert.ok(pages.every((p) => p.pageSize === 200 && p.asOf === pages[0].asOf));
+  assert.ok(heads.every((head) => head === heads[0]));
+  pages.length = 0;
+  heads.length = 0;
+  changeAfterPage = true;
+  await assert.rejects(service.export({ format: "json", filters: { ...scope, status: "new" } }), { code: "export_changed" });
+  assert.equal(changed, true);
+  assert.deepEqual(pages.map((p) => p.page), [1, 2]);
+  assert.notEqual(heads[0], heads.at(-1), "the real application mutation advances the owned job head");
 });
 
 test("review 11a: failed probes preserve the last successful time and capability", async (t) => {

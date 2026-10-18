@@ -10,7 +10,13 @@ import { createApplicationContext } from "../../src/application/context.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
 import { loadConfig } from "../../src/config.mjs";
 import { fakeProvider } from "../helpers/fake-sources.mjs";
-import { createTempDir, job, profile, target } from "../helpers/fixtures.mjs";
+import {
+  createTempDir,
+  registerTestResource,
+  job,
+  profile,
+  target,
+} from "../helpers/fixtures.mjs";
 
 const site = {
   siteId: "public-synthetic",
@@ -221,6 +227,7 @@ test("a run separates confirmed qualification from unknown and failed while reta
       },
     },
   });
+  registerTestResource(t, () => context.close());
   const p = await context.workspaceService.saveProfile({ profile: profile() });
   const tar = await context.workspaceService.saveTarget(
     namedTargetInput({

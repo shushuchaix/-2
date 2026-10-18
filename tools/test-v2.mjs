@@ -1,12 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   runTestProcess,
   formatTestResult,
   publishTestResult,
 } from "./lib/test-process.mjs";
+import {
+  createTestWorkerArgs,
+  runTestExecutionPlan,
+} from "./lib/test-execution-plan.mjs";
+const startedAt = performance.now();
 process.env.RJR_DISABLE_LOCAL_CREDENTIALS = "1";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -47,18 +52,26 @@ if (!files.length) {
 }
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rjr-v2-"));
 try {
-  const result = runTestProcess({
-    name: "v2 tests",
-    args: [
-      "--import",
-      pathToFileURL(path.join(root, "tests/helpers/network-guard.mjs")).href,
-      "--test",
-      ...files,
-    ],
-    cwd: root,
-    env: { RJR_DATA_DIR: dir },
+  const result = runTestExecutionPlan({
+    files: files.map(relative),
     timeoutMs: 300000,
+    startedAt,
+    executeWave: (wave) => {
+      const args = createTestWorkerArgs(wave, { root });
+      const outcome = runTestProcess({
+        name: wave.name,
+        args,
+        cwd: root,
+        env: { RJR_DATA_DIR: dir },
+        timeoutMs: wave.timeoutMs,
+      });
+      return { ...outcome, subprocessArgs: args };
+    },
+    onWave: (wave) => console.log(formatTestResult(wave)),
   });
+  console.log(
+    JSON.stringify({ version: 1, type: "v2_execution_plan", ...result }),
+  );
   console.log(formatTestResult(result));
   publishTestResult(result);
   process.exitCode = result.code;

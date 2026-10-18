@@ -40,10 +40,11 @@ const hasManualRecord = (a) =>
   !!a.appliedAt ||
   !!a.followUpAt ||
   !!a.resumeRevisionId ||
+  a.manualHistory === true ||
   !!a.events?.length;
 function manualAssociations(w) {
   return Object.values(w.applications || {})
-    .filter(hasManualRecord)
+    .filter(application => hasManualRecord(application) || w.jobProjections?.[application.jobId]?.manualApplication === true)
     .map((application) => ({
       applicationId: application.jobId,
       jobIds: resolveApplicationAssociation(w, application).jobIds,
@@ -60,18 +61,32 @@ function completeness(record) {
 export function buildWorkspaceDuplicatePlan(w, options = {}) {
   if (w.schemaVersion === 3 && !w._scope)
     return buildOwnedDuplicatePlan(w, options);
-  const jobs = Object.values(w.jobs),
+  const allJobs = Object.values(w.jobs),
     manual = manualAssociations(w),
     manualIds = new Set(manual.flatMap((a) => a.jobIds));
+  const completenessById = new Map(allJobs.map(job => [job.jobId, completeness(job.canonical)]));
   const rank = (a, b) =>
     Number(manualIds.has(b.jobId)) - Number(manualIds.has(a.jobId)) ||
     Number(b.canonical.sourceRecordIdKind === "authority") -
       Number(a.canonical.sourceRecordIdKind === "authority") ||
-    completeness(b.canonical) - completeness(a.canonical) ||
+    completenessById.get(b.jobId) - completenessById.get(a.jobId) ||
     String(a.firstSeen || "").localeCompare(String(b.firstSeen || "")) ||
     a.jobId.localeCompare(b.jobId);
-  jobs.sort(rank);
-  const indexes = new Map(),
+  allJobs.sort(rank);
+  // Exact canonical equality is an equivalence proof for every classifier
+  // input. Compare one representative, then expand its members in the plan.
+  // A self-confirmation is required: equal weak records can still be possible.
+  const equivalent = new Map(), representativeOf = new Map(), selfProof = new Map(), canonicalBuckets = new Map(), jobs = [];
+  for (const job of allJobs) {
+    const canonical = options.preclassifiedRelations ? null : JSON.stringify(stable(job.canonical));
+    const bucket = canonical === null ? null : canonicalBuckets.get(canonical);
+    if (bucket?.confirmed) { bucket.members.push(job); representativeOf.set(job.jobId, bucket.root.jobId); continue; }
+    const members = [job], proof = canonical !== null ? classifyJobDuplicate(job.canonical, job.canonical) : null, confirmed = proof?.relation === 'confirmed';
+    if (confirmed) selfProof.set(job.jobId, proof.reasonCodes);
+    if (canonical !== null) canonicalBuckets.set(canonical, { root: job, members, confirmed });
+    equivalent.set(job.jobId, members); representativeOf.set(job.jobId, job.jobId); jobs.push(job);
+  }
+  const indexes = new Map(), confirmed = new Map(), byId = new Map(jobs.map(job => [job.jobId, job])),
     pairs = new Map(),
     possiblePairs = [];
   const keys = (r) => {
@@ -79,8 +94,10 @@ export function buildWorkspaceDuplicatePlan(w, options = {}) {
       "fields:" +
         JSON.stringify([identityText(r.company), identityText(r.title)]),
     ];
-    if (identityText(r.company))
-      values.push("company:" + identityText(r.company));
+    if (identityText(r.company)) {
+      const title = identityText(r.title);
+      for (const gram of new Set([...title].slice(1).map((_, index) => title.slice(index, index + 2)))) values.push('titlegram:' + JSON.stringify([identityText(r.company), gram]));
+    }
     if (r.sourceRecordIdKind === "authority")
       values.push(
         "id:" + JSON.stringify([source(r), scope(r), String(r.sourceRecordId)]),
@@ -94,45 +111,67 @@ export function buildWorkspaceDuplicatePlan(w, options = {}) {
     return values;
   };
   const pairKey = (a, b) => JSON.stringify([a, b].sort());
+  const compactGroupByJob = new Map(), compactGroups = new Map();
+  for (const group of options.preclassifiedGroups || []) {
+    const members = group.jobIds.filter(id => byId.has(id));
+    compactGroups.set(group.groupId, { ...group, jobIds: members });
+    for (const id of members) compactGroupByJob.set(id, group.groupId);
+  }
+  const pairResult = (a, b) => pairs.get(pairKey(a, b)) || (compactGroupByJob.get(a) && compactGroupByJob.get(a) === compactGroupByJob.get(b) ? { relation: 'confirmed', reasonCodes: compactGroups.get(compactGroupByJob.get(a)).reasonCodes } : null);
+  if (options.preclassifiedRelations) {
+    for (const relation of options.preclassifiedRelations) {
+      if (!byId.has(relation.jobId) || !byId.has(relation.otherJobId) || relation.jobId === relation.otherJobId) continue;
+      const id = pairKey(relation.jobId, relation.otherJobId);
+      if (pairs.has(id)) continue;
+      pairs.set(id, { relation: relation.relation, reasonCodes: relation.reasonCodes || [] });
+      if (relation.relation === 'confirmed') {
+        (confirmed.get(relation.jobId) || (confirmed.set(relation.jobId, []), confirmed.get(relation.jobId))).push(relation.otherJobId);
+        (confirmed.get(relation.otherJobId) || (confirmed.set(relation.otherJobId, []), confirmed.get(relation.otherJobId))).push(relation.jobId);
+      } else if (relation.relation === 'possible') possiblePairs.push({ jobIds: [relation.jobId, relation.otherJobId].sort(), reasonCodes: relation.reasonCodes || [] });
+    }
+  } else {
   for (const job of jobs) {
     const candidates = new Set(
       keys(job.canonical).flatMap((k) => indexes.get(k) || []),
     );
     for (const other of candidates) {
       const result = classifyJobDuplicate(job.canonical, other.canonical);
-      pairs.set(pairKey(job.jobId, other.jobId), result);
+      if (result.relation !== 'distinct') pairs.set(pairKey(job.jobId, other.jobId), result);
+      if (result.relation === 'confirmed') {
+        (confirmed.get(job.jobId) || (confirmed.set(job.jobId, []), confirmed.get(job.jobId))).push(other.jobId);
+        (confirmed.get(other.jobId) || (confirmed.set(other.jobId, []), confirmed.get(other.jobId))).push(job.jobId);
+      }
       if (result.relation === "possible")
-        possiblePairs.push({
-          jobIds: [job.jobId, other.jobId].sort(),
-          reasonCodes: result.reasonCodes,
-        });
+        for (const a of equivalent.get(job.jobId)) for (const b of equivalent.get(other.jobId)) possiblePairs.push({ jobIds: [a.jobId, b.jobId].sort(), reasonCodes: result.reasonCodes });
     }
     for (const key of keys(job.canonical)) {
       if (!indexes.has(key)) indexes.set(key, []);
       indexes.get(key).push(job);
     }
   }
+  }
   const used = new Set(),
     groups = [];
   for (const root of jobs) {
     if (used.has(root.jobId)) continue;
-    const members = [root];
-    for (const candidate of jobs) {
+    const members = [root], memberBuckets = new Map([[compactGroupByJob.get(root.jobId) || 'job:' + root.jobId, [root]]]);
+    const neighbors = new Set([...(confirmed.get(root.jobId) || []), ...(compactGroups.get(compactGroupByJob.get(root.jobId))?.jobIds || [])]);
+    for (const candidate of [...neighbors].map(id => byId.get(id)).sort(rank)) {
       if (candidate === root || used.has(candidate.jobId)) continue;
       if (
-        members.every(
-          (m) =>
-            pairs.get(pairKey(m.jobId, candidate.jobId))?.relation ===
-            "confirmed",
-        )
-      )
+        [...memberBuckets].every(([bucket, bucketMembers]) => compactGroupByJob.get(candidate.jobId) === bucket || bucketMembers.every(m => pairResult(m.jobId, candidate.jobId)?.relation === 'confirmed'))
+      ) {
         members.push(candidate);
+        const bucket = compactGroupByJob.get(candidate.jobId) || 'job:' + candidate.jobId;
+        (memberBuckets.get(bucket) || (memberBuckets.set(bucket, []), memberBuckets.get(bucket))).push(candidate);
+      }
     }
-    if (members.length < 2) continue;
-    members.forEach((j) => used.add(j.jobId));
-    const ids = members.map((j) => j.jobId),
+    const expanded = members.flatMap(member => equivalent.get(member.jobId)).sort(rank);
+    if (expanded.length < 2) continue;
+    expanded.forEach((j) => used.add(j.jobId));
+    const ids = expanded.map((j) => j.jobId), idSet = new Set(ids),
       applications = manual.filter((a) =>
-        a.jobIds.some((id) => ids.includes(id)),
+        a.jobIds.some((id) => idSet.has(id)),
       );
     const targetRevisionIds = Object.entries(w.targetMembers || {})
       .filter(([, m]) => ids.some((id) => m[id]))
@@ -144,10 +183,10 @@ export function buildWorkspaceDuplicatePlan(w, options = {}) {
       removeJobIds: ids.slice(1).sort(),
       reasonCodes: [
         ...new Set(
-          members
+          expanded
             .slice(1)
             .flatMap(
-              (m) => pairs.get(pairKey(root.jobId, m.jobId)).reasonCodes,
+              (m) => representativeOf.get(m.jobId) === root.jobId ? selfProof.get(root.jobId) : pairResult(root.jobId, representativeOf.get(m.jobId)).reasonCodes,
             ),
         ),
       ].sort(),
@@ -181,7 +220,7 @@ export function buildWorkspaceDuplicatePlan(w, options = {}) {
   };
   return {
     workspaceRevision: w.revision,
-    planHash: workspaceDuplicateHash(w),
+    planHash: options.readModelOnly ? null : workspaceDuplicateHash(w),
     groups,
     possiblePairs: possiblePairs.sort((a, b) =>
       JSON.stringify(a.jobIds).localeCompare(JSON.stringify(b.jobIds)),

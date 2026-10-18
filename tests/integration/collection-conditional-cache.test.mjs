@@ -9,14 +9,38 @@ async function setup(t) {
     other = { packageId: b.packageId, targetRevisionId: b.revisionId };
   const lease = await f.operationGate.acquire("collect", { scope });
   t.after(() => lease.release().catch(() => {}));
-  return {
-    ...f,
+  return Object.assign(f, {
     scope,
     other,
     lease,
     cache: createConditionalCache({ repository: f.repository }),
-  };
+  });
 }
+test("conditional cache rejects credentialed and unsafe requests before transport", async (t) => {
+  const f = await setup(t);
+  let calls = 0;
+  const input = {
+    scope: f.scope,
+    resourceKey: "public-document",
+    url: "https://jobs.example.com/one",
+    operationLease: f.lease,
+    request: async () => {
+      calls++;
+      throw Error("No transport allowed");
+    },
+  };
+  for (const changed of [
+    { requestOptions: { method: "POST" } },
+    { requestOptions: { body: "payload" } },
+    { requestOptions: { headers: { Authorization: "synthetic-only" } } },
+    { requestOptions: { headers: { Cookie: "synthetic-only" } } },
+    { url: "https://synthetic:synthetic@jobs.example.com/one" },
+  ])
+    await assert.rejects(f.cache.read({ ...input, ...changed }), {
+      code: "collection_cache_invalid",
+    });
+  assert.equal(calls, 0);
+});
 test("304_and_unchanged_body_reuse_owned_evidence_without_reparsing", async (t) => {
   const f = await setup(t);
   let parses = 0,

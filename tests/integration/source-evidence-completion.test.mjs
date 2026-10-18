@@ -18,6 +18,7 @@ import { collectionFixture } from "../helpers/collection-fixture.mjs";
 import { job } from "../helpers/fixtures.mjs";
 import { contentKey } from "../../src/sources/content-queue.mjs";
 import { loadSiteCatalog } from "../../src/sources/catalog.mjs";
+import { collectionPartRows } from "./collection-contract-rows.mjs";
 
 test("application discovery distinguishes explicit public entry, placeholder, login and ambiguous entries", () => {
   const record = job(),
@@ -357,8 +358,8 @@ test("automatic body refresh runs after the list completes, stops after three fa
     await f.service.wait(ref);
   }
   assert.equal(details, 4);
-  let root = await f.service.get(ref),
-    pending = root.collectionProgress.pendingBodies[contentKey(record)];
+  let pending = (await collectionPartRows(f.repository, ref, "contentBodies", "pendingBodies"))
+    .find(row => JSON.parse(row.id).at(-1) === contentKey(record))?.value;
   assert.equal(pending.automaticAttempts, 3);
   assert.equal(pending.status, "needs_review");
   f.clock.advance(600001);
@@ -367,9 +368,8 @@ test("automatic body refresh runs after the list completes, stops after three fa
   await f.service.resume({ ref, requestId: "explicit-body-check" });
   await f.service.wait(ref);
   assert.equal(details, 5);
-  pending = (await f.service.get(ref)).collectionProgress.pendingBodies[
-    contentKey(record)
-  ];
+  pending = (await collectionPartRows(f.repository, ref, "contentBodies", "pendingBodies"))
+    .find(row => JSON.parse(row.id).at(-1) === contentKey(record))?.value;
   assert.equal(pending.automaticAttempts, 3);
 });
 test("a short notice becomes expandable only after complete confident attachment extraction", async (t) => {
@@ -407,6 +407,7 @@ test("a short notice becomes expandable only after complete confident attachment
             {
               text: "合成公司公开招聘消防工程师，负责消防设施维护与检测，要求消防工程相关专业、本科及以上学历，具体任职要求以本岗位原文为准。",
               confidence: 100,
+              location: { sheet: "岗位表", cell: "A1" },
             },
           ],
           tables: [],
@@ -417,18 +418,22 @@ test("a short notice becomes expandable only after complete confident attachment
   const start = await f.service.start({ scope: f.scope }),
     ref = { scope: f.scope, activityId: start.activityId };
   await f.service.wait(ref);
-  const root = await f.service.get(ref),
-    fields = Object.values((await f.repository.read()).observations)[0].fields;
+  const observed = await f.repository.queryRows({ collection: "observations", ownerPackageId: f.scope.packageId, limit: 2 }, { scope: f.scope });
+  assert.equal(observed.hasMore, false);
+  assert.equal(observed.rows.length, 1);
+  const fields = observed.rows[0].value.fields;
   assert.equal(fields.bodyStatus, "complete");
   assert.equal(fields.retryEligible, false);
-  assert.equal(Object.keys(root.collectionProgress.pendingBodies).length, 0);
-  assert.equal(Object.keys(root.collectionProgress.pendingArticles).length, 1);
+  assert.equal((await collectionPartRows(f.repository, ref, "contentBodies", "pendingBodies")).length, 0);
+  assert.equal((await collectionPartRows(f.repository, ref, "contentArticles", "pendingArticles")).length, 1);
 });
 test("expanded article jobs run the same readonly application check before ingestion", async (t) => {
   const excerpt =
     "消防工程师，北京，本科，负责消防设施检查、日常维护、隐患排查与消防设备运行保障，具备相关专业知识与工程实践能力。";
   const record = job({
     title: "合成公司招聘公告",
+    siteId: "site-0",
+    identityScope: "site-0",
     kind: "recruitment_notice",
     description:
       "合成公司招聘公告\n报名截止时间：2030年1月1日。\n统一投递入口：https://jobs.example.com/apply。\n消防工程师\n" +

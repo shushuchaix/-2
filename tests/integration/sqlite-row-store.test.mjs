@@ -7,6 +7,7 @@ import { openSqliteRowStore } from '../../src/infrastructure/storage/sqlite-stor
 import { createEmptyWorkspace } from '../../src/domain/contracts.mjs';
 import { createCollectionRoot } from '../../src/domain/collection.mjs';
 import { rowKey } from '../../src/infrastructure/storage/sqlite-records.mjs';
+import { writeTestEvidence } from '../helpers/evidence.mjs';
 
 export function syntheticSqliteWorkspace({ jobs = 2, bodySize = 32 } = {}) {
   const w = createEmptyWorkspace({schemaVersion:3});
@@ -99,6 +100,25 @@ test('SQLite declared writes roll back, reject async and undeclared writes, and 
   assert.throws(() => store.queryRows({collection:'jobs',ownerPackageId:owner,limit:Infinity}),{code:'sqlite_selection_invalid'});
 });
 
+test('SQLite declared new rows allow two writes while disk scope, owner, identity and rollback stay guarded',async t => {
+  const f=await sqliteFixture(t),store=f.open(),w=syntheticSqliteWorkspace(),owner=ownerOf(w);
+  store.importWorkspace(w);
+  const id='rotation-double-put',selection=declare('sourceRotation',id,owner);
+  const first={ownerPackageId:owner,recordId:randomUUID(),round:1};
+  store.transaction(selection,tx=>{tx.putRow({collection:'sourceRotation',id,ownerPackageId:owner,value:first});tx.putRow({collection:'sourceRotation',id,ownerPackageId:owner,value:{...first,round:2}});});
+  assert.equal(store.getRow({collection:'sourceRotation',id,ownerPackageId:owner}).round,2);
+  const outside={select:[{collection:'sourceRotation',ids:[id],ownerPackageId:owner,where:{kind:'not-this-row'}}]};
+  assert.throws(()=>store.transaction(outside,tx=>tx.putRow({collection:'sourceRotation',id,ownerPackageId:owner,value:first})),{code:'sqlite_undeclared_write'});
+  const nextId='rotation-rollback',next={...first,recordId:randomUUID()};
+  assert.throws(()=>store.transaction(declare('sourceRotation',nextId,owner),tx=>{tx.putRow({collection:'sourceRotation',id:nextId,ownerPackageId:owner,value:next});tx.putRow({collection:'sourceRotation',id:nextId,ownerPackageId:'20000000-0000-4000-8000-000000000002',value:{...next,ownerPackageId:'20000000-0000-4000-8000-000000000002'}});}),{code:'sqlite_undeclared_write'});
+  assert.equal(store.getRow({collection:'sourceRotation',id:nextId,ownerPackageId:owner}),null);
+  const newJob={...w.jobs.j00000,jobId:'new-double-put',recordId:randomUUID()};
+  assert.throws(()=>store.transaction(declare('jobs',newJob.jobId,owner),tx=>{tx.putRow({collection:'jobs',id:newJob.jobId,ownerPackageId:owner,value:newJob});tx.putRow({collection:'jobs',id:newJob.jobId,ownerPackageId:owner,value:{...newJob,recordId:randomUUID()}});}),{code:'sqlite_identity_immutable'});
+  assert.equal(store.getRow({collection:'jobs',id:newJob.jobId,ownerPackageId:owner}),null);
+  assert.throws(()=>store.transaction(declare('sourceRotation',nextId,owner),tx=>{tx.putRow({collection:'sourceRotation',id:nextId,ownerPackageId:owner,value:next});tx.putRow({collection:'sourceRotation',id:nextId,ownerPackageId:owner,value:{...next,round:3}});throw Error('double-put rollback');}),/double-put rollback/);
+  assert.equal(store.getRow({collection:'sourceRotation',id:nextId,ownerPackageId:owner}),null);
+});
+
 test('SQLite enforces foreign keys, ownership, stable identity, names and reservation idempotency keys',async t => {
   const f = await sqliteFixture(t),store = f.open(),w = syntheticSqliteWorkspace(),owner = ownerOf(w);
   store.importWorkspace(w);
@@ -147,7 +167,7 @@ test('SQLite single row and tiny metadata transactions do not scale with unrelat
   assert.equal(totals[0].decodedRows,1);assert.ok(totals[0].serializedBytes<100);
   const evidence={observedAt:new Date().toISOString(),runtime:{node:process.versions.node,electron:process.versions.electron || null},
     scales:[{jobs:1000,bodySize:128},{jobs:10000,bodySize:1280}],measurements:totals};
-  await fs.writeFile(path.resolve('.cache',`sqlite-foundation-metrics-${process.versions.node}.json`),JSON.stringify(evidence,null,2));
+  await writeTestEvidence('sqlite-row-store',`sqlite-foundation-metrics-${process.versions.node}.json`,JSON.stringify(evidence,null,2));
 });
 
 test('SQLite post-commit faults explicitly report a committed result, backup and compaction use real database',async t=>{
@@ -178,7 +198,8 @@ test('SQLite fixed indexed pages and same-transaction projections do not decode 
   const ids=store.queryIds({collection:'jobProjections',ownerPackageId:owner,where:{recommendation:'consider',score:{gte:80}},orderBy:'score',direction:'desc',limit:50});
   assert.deepEqual(ids.ids,['j00000']);assert.equal(ids.total,1);assert.equal(store.metrics().decodedRows,0);
   const aggregate=store.aggregateRows({collection:'jobProjections',ownerPackageId:owner,groupBy:'recommendation'});
-  assert.deepEqual(aggregate.groups,[{key:'consider',value:1}]);assert.equal(store.metrics().decodedRows,0);
+  // Formal import materializes the other job as an unevaluated projection.
+  assert.deepEqual(aggregate.groups,[{key:'consider',value:1},{key:'unevaluated',value:1}]);assert.equal(store.metrics().decodedRows,0);
   const page=store.queryRows({collection:'jobs',ownerPackageId:owner,limit:1});
   assert.equal(page.hasMore,true);assert.equal(page.total,2);
   assert.deepEqual(store.queryRows({collection:'jobs',ownerPackageId:owner,afterId:page.nextCursor,limit:1}).rows.map(r=>r.id),['j00001']);

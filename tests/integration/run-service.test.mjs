@@ -1,4 +1,4 @@
-import { namedTargetInput } from "../helpers/fixtures.mjs";
+import { namedTargetInput, registerTestResource } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
@@ -20,6 +20,7 @@ async function fixture(t, providers, gate) {
     workspaceService = createWorkspaceService({ repository }),
     jobService = createJobService({ repository }),
     evaluationService = createEvaluationService({ repository });
+  registerTestResource(t, () => repository.close());
   const p = await workspaceService.saveProfile({ profile: profile() }),
     tar = await workspaceService.saveTarget(
       namedTargetInput({
@@ -259,16 +260,12 @@ test("a late wait still rejects a snapshot failure after the active task and lea
     targetRevisionId: f.tar.revisionId,
     mode: "rules",
   });
-  let w;
-  for (let i = 0; i < 100; i++) {
-    w = await f.repository.read();
-    if (
-      w.runs[started.runId]?.status === "failed" &&
-      !Object.keys(w.operationLeases).length
-    )
-      break;
-    await delay(10);
-  }
+  // Observing lease removal can race the active task's finally continuation.
+  // Settling its public promise drains that continuation before the late read.
+  await assert.rejects(f.service.waitForRun(started.runId), {
+    code: "snapshot_failed",
+  });
+  const w = await f.repository.read();
   assert.equal(w.runs[started.runId].status, "failed");
   assert.equal(Object.keys(w.operationLeases).length, 0);
   assert.ok(

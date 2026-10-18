@@ -45,6 +45,7 @@ const sameScope = (a: Scope | null, b: Scope) =>
 
 function blockedMessage(activity: CollectionActivity, automatic: boolean) {
   const p = activity.collectionProgress;
+  if (p.draining) return "活动正在排空，请等待停止完成后再更新岗位。";
   if (p.status === "budget_exhausted")
     return "活动累计额度不足，请在工作台查看额度。";
   if (p.status === "waiting_for_auth")

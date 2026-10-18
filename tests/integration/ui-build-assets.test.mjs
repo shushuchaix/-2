@@ -8,10 +8,15 @@ import * as asar from "@electron/asar";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 import { createTempDir } from "../helpers/fixtures.mjs";
 import { drainArchiveWrite } from "../../tools/lib/archive-write.mjs";
+import { sourceBuildIdentity } from "../../tools/lib/build-identity.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const runtime = [
   "electron/main.mjs",
+  "electron/backend/entry.cjs",
+  "electron/backend/service.mjs",
+  "electron/backend/host.mjs",
+  "src/infrastructure/runtime/rpc.mjs",
   "electron/preload.cjs",
   "electron/credentials.mjs",
   "electron/directories.mjs",
@@ -113,7 +118,16 @@ async function packageFixture(t) {
   );
   await write("public/app/assets/chunk.js", "export const shared = 1;");
   await write("public/app/assets/index.css", 'body {font-family: "Synthetic"}');
-  const pack = () => drainArchiveWrite(asar.createPackage(stage, archive));
+  await fs.cp(path.join(stage, "public/app"), path.join(root, "public/app"), {
+    recursive: true,
+  });
+  const pack = async () => {
+    await write(
+      "build-info.json",
+      JSON.stringify({ buildId: sourceBuildIdentity(root) }),
+    );
+    return drainArchiveWrite(asar.createPackage(stage, archive));
+  };
   const verify = () =>
     spawnSync(
       process.execPath,

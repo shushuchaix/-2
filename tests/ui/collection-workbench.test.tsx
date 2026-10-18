@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderApp, syntheticApi } from "../helpers/react-fixture";
-import { render, cleanup, waitFor, within } from "@testing-library/react";
+import { act, render, cleanup, waitFor, within } from "@testing-library/react";
 import { RecruitmentEvidence } from "../../ui/src/features/jobs/RecruitmentEvidence";
 const root = {
   runId: "activity-A",
@@ -29,6 +29,11 @@ const root = {
     usedBytes: 1024,
   },
 };
+test('activity unit summary is authoritative when the returned unit controls are a partial page',async t=>{
+  const activity={...root,collectionProgress:{...root.collectionProgress,unitPage:{hasMore:true,nextCursor:'next'},unitSummary:{plannedSites:2,actualSites:2,pendingUnits:249,totalUnits:250}}};
+  const f=await renderApp(t,{route:'#/workbench?packageId=A&targetRevisionId=t1%401',apiHandler:(path,options)=>path==='/collections'?{collections:[activity]}:syntheticApi(path,options)});
+  await f.screen.findByText('持续采集活动');const region=f.screen.getByRole('region',{name:'当前采集活动'});assert.match(region.textContent!,/计划 2 站 · 实际 2 站 ·\s*未覆盖或未完成 249 个单元/);
+});
 test("current collection region uses the root status and does not imply a completed child finished the activity", async (t) => {
   const f = await renderApp(t, {
     route: "#/workbench?packageId=A&targetRevisionId=t1%401",
@@ -45,6 +50,66 @@ test("current collection region uses the root status and does not imply a comple
     /已暂停，可继续/,
   );
   assert.equal(f.screen.queryByText("计划范围已完成"), null);
+});
+
+test("pause acceptance shows draining and only confirms completion after the shared state reports paused", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  let activity = {
+    ...root,
+    collectionProgress: {
+      ...root.collectionProgress,
+      status: "collecting",
+      draining: false,
+      stopIntent: null as "pause" | null,
+    },
+  };
+  const f = await renderApp(t, {
+    route: "#/workbench?packageId=A&targetRevisionId=t1%401",
+    apiHandler: (path, options) => {
+      if (path === "/collections") return { collections: [activity] };
+      if (path === "/collections/activity-A/pause") {
+        activity = {
+          ...activity,
+          collectionProgress: {
+            ...activity.collectionProgress,
+            draining: true,
+            stopIntent: "pause",
+          },
+        };
+        return { ...activity, accepted: true, action: "pause", draining: true };
+      }
+      return syntheticApi(path, options);
+    },
+  });
+  await f.user.click(await f.screen.findByRole("button", { name: "暂停采集" }));
+  await waitFor(() =>
+    assert.match(
+      f.screen.getByRole("region", { name: "当前采集活动" }).textContent!,
+      /已受理暂停，正在排空/,
+    ),
+  );
+  assert.equal(f.screen.queryByText("活动已暂停"), null);
+  assert.equal(
+    (f.screen.getByRole("button", { name: "继续采集" }) as HTMLButtonElement)
+      .disabled,
+    true,
+  );
+  activity = {
+    ...activity,
+    collectionProgress: {
+      ...activity.collectionProgress,
+      status: "paused",
+      draining: false,
+      stopIntent: null,
+    },
+  };
+  await act(async () => t.mock.timers.tick(2000));
+  await waitFor(() =>
+    assert.match(
+      f.screen.getByRole("region", { name: "当前采集活动" }).textContent!,
+      /活动已暂停/,
+    ),
+  );
 });
 async function pausedSliceFixture(
   t: Parameters<typeof renderApp>[0],
@@ -303,7 +368,9 @@ test("review: source changes can replan the same activity with preserved cost", 
     f.screen.getByRole("button", { name: "确认重新规划并继续" }),
   );
   const call = f.apiCalls.find((c) => c.path.endsWith("/resume"));
-  assert.equal(call?.options.body?.replan, true);
+  assert.ok(call);
+  assert.ok(call.options.body && typeof call.options.body === "object" && "replan" in call.options.body);
+  assert.equal(call.options.body.replan, true);
   assert.equal(call?.path, "/collections/activity-A/resume");
 });
 test("root progress retains cumulative costs; repeated resume sends one request", async (t) => {

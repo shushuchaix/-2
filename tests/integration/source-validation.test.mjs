@@ -15,6 +15,40 @@ import { createScheduler } from "../../src/infrastructure/http/scheduler.mjs";
 import weibo from "../../src/sources/adapters/weibo-public.mjs";
 import announcements from "../../src/sources/adapters/official-announcements.mjs";
 import { loadSiteCatalog } from "../../src/sources/catalog.mjs";
+import { readOwnedTarget } from "../../src/application/job-row-access.mjs";
+
+async function pendingBodies(f) {
+  const result = [];
+  let afterId;
+  do {
+    const page = await f.repository.queryRows({
+      collection: "contentBodies", ownerPackageId: f.scope.packageId,
+      where: { parentId: f.ref.activityId, path: "collectionProgress.pendingBodies" },
+      limit: 200, ...(afterId ? { afterId } : {}),
+    }, { scope: f.scope });
+    result.push(...page.rows.map((row) => row.value));
+    afterId = page.hasMore ? page.nextCursor : null;
+    assert.ok(!page.hasMore || afterId, "queue pages retain a bounded continuation");
+  } while (afterId);
+  return result;
+}
+
+function assertPublicContext(context) {
+  for (const key of ["profile", "profileRevision", "profileSnapshot", "enrichRecord",
+    "operationLease", "collectionGuard", "token", "ref"])
+    assert.equal(context[key], undefined, `${key} stays local`);
+  assert.deepEqual(context.targetSnapshot, {
+    cities: [], cityMode: "any", roles: [], jobTypes: [], graduationYear: "",
+  });
+}
+
+async function withOnlyRowPorts(f, callback) {
+  const saved = { read: f.repository.read, mutateWorkspace: f.repository.mutateWorkspace };
+  for (const method of Object.keys(saved))
+    f.repository[method] = () => { throw Error(`Diagnostic must use bounded row ports: ${method}`); };
+  try { return await callback(); }
+  finally { Object.assign(f.repository, saved); }
+}
 
 async function moduleUnderTest() {
   const module = await import("../../tools/source-validation.mjs").catch(
@@ -167,6 +201,7 @@ test("validation commits both diagnostic pages and evaluates the owned copy with
     name: "Public fixture",
     capabilities: {},
     listPage: async (s, query, page, ctx) => {
+      assertPublicContext(ctx);
       assert.ok(["消防", "机场"].includes(query.keyword));
       assert.equal(query.city, "");
       assert.equal(query.pageLimit, 1);
@@ -182,17 +217,19 @@ test("validation commits both diagnostic pages and evaluates the owned copy with
     maxRequests: 2,
     maxDetails: 0,
   });
-  const report = await validateSources({
+  const report = await withOnlyRowPorts(f, () => validateSources({
     context: f.context,
     ref: f.ref,
     catalog,
     detailsPerSite: 0,
-  });
+  }));
   assert.equal(report.rows.length, 2);
   assert.deepEqual(
     report.rows.map((row) => row.parsedCount),
     [1, 1],
   );
+  assert.deepEqual(report.rows.map((row) => row.status), ["parsed", "parsed"]);
+  assert.deepEqual(report.rows.map((row) => row.evaluatedCount), [1, 1]);
   assert.deepEqual(
     report.rows.map((row) => row.validNewUniqueCount),
     [0, 0],
@@ -210,6 +247,10 @@ test("validation commits both diagnostic pages and evaluates the owned copy with
   );
   const evaluations = Object.values(w.evaluations);
   assert.equal(evaluations.length, 2);
+  const childEvaluationIds = Object.values(w.runs)
+    .filter((run) => run.diagnosticOnly)
+    .flatMap((run) => run.evaluationIds);
+  assert.deepEqual(childEvaluationIds.sort(), evaluations.map((e) => e.evaluationId).sort());
   assert.ok(
     evaluations.every(
       (e) =>
@@ -600,7 +641,8 @@ for (const [name, sections] of [
   test(`source validation rejects row-inline ${name} before network`, async (t) => {
     const { validateSources } = await moduleUnderTest();
     const entry = rowInlineValidationSite();
-    entry.template.requiredBodySections = sections;
+    if (sections === undefined) delete entry.template.requiredBodySections;
+    else entry.template.requiredBodySections = sections;
     const catalog = [entry];
     const f = await prepared(t, [announcements], catalog, {
       maxRequests: 1,
@@ -1381,9 +1423,9 @@ test("detail sampling prioritizes related nonfailed candidates over an unrelated
     target.roles = [...root.targetSnapshot.roles];
     target.profileSnapshot = structuredClone(root.profileSnapshot);
   });
-  const root = await f.service.get(f.ref);
+  const { target } = await readOwnedTarget(f.repository, f.scope, f.clock.now());
   const drafts = candidates(catalog[0]).map((r) =>
-    evaluateRules(r, root.profileSnapshot.profile, root.targetSnapshot, {
+    evaluateRules(r, target.profileSnapshot.profile, target, {
       now: f.clock.now(),
     }),
   );
@@ -1441,6 +1483,7 @@ test("known hard qualification failure cannot win detail selection by matching a
     name: "Hard gate sampling fixture",
     capabilities: {},
     listPage: async (s, _q, _p, ctx) => {
+      assertPublicContext(ctx);
       await ctx.request("https://jobs.example.org/list");
       return {
         records: [
@@ -1464,6 +1507,7 @@ test("known hard qualification failure cannot win detail selection by matching a
       };
     },
     detail: async (r, ctx) => {
+      assertPublicContext(ctx);
       detailedIds.push(r.sourceRecordId);
       await ctx.request(r.url);
       return { ...r, detailStatus: "complete" };
@@ -1818,6 +1862,7 @@ function enrichmentProvider({ listed, detailed } = {}) {
     name: "Enrichment fixture",
     capabilities: {},
     listPage: async (s, _q, _p, ctx) => {
+      assertPublicContext(ctx);
       assert.equal(ctx.profileRevision, undefined);
       assert.equal(ctx.profileSnapshot, undefined);
       assert.doesNotMatch(
@@ -1831,6 +1876,7 @@ function enrichmentProvider({ listed, detailed } = {}) {
       return { records, raw: records.length, hasMore: false };
     },
     detail: async (r, ctx) => {
+      assertPublicContext(ctx);
       assert.equal(ctx.profileRevision, undefined);
       assert.equal(ctx.profileSnapshot, undefined);
       await ctx.request(r.url);
@@ -1882,8 +1928,9 @@ test("selected detail uses owned enrichment for public application verification 
     {
       transport: async (url, options) => {
         calls.push(url);
-        assert.equal(options.profileRevision, undefined);
-        assert.equal(options.profileSnapshot, undefined);
+        for (const key of ["profile", "profileRevision", "profileSnapshot", "targetSnapshot",
+          "enrichRecord", "operationLease", "collectionGuard", "token", "ref"])
+          assert.equal(options[key], undefined, `${key} stays out of requests`);
         assert.doesNotMatch(JSON.stringify(options), /OWNED_PROFILE_CANARY/);
         return {
           status: 200,
@@ -1919,7 +1966,7 @@ test("selected detail uses owned enrichment for public application verification 
     sampleApplyUrl,
   ]);
   const root = await f.service.get(f.ref);
-  const pending = Object.values(root.collectionProgress.pendingBodies);
+  const pending = await pendingBodies(f);
   assert.deepEqual(
     pending.map((p) => p.record.sourceRecordId),
     ["unrelated-stub"],
@@ -1982,7 +2029,7 @@ test("unselected legacy incomplete stubs are queued without changing permanent f
   });
   const root = await f.service.get(f.ref);
   const pending = new Map(
-    Object.values(root.collectionProgress.pendingBodies).map((p) => [
+    (await pendingBodies(f)).map((p) => [
       p.record.sourceRecordId,
       p,
     ]),
@@ -2063,9 +2110,7 @@ test("uncertain attachment evidence stays pending and cannot upgrade a sampled n
     ref: f.ref,
     catalog,
   });
-  const pending = Object.values(
-    (await f.service.get(f.ref)).collectionProgress.pendingBodies,
-  );
+  const pending = await pendingBodies(f);
   const sampled = pending.find(
     (p) => p.record.sourceRecordId === "job-one",
   ).record;
@@ -2147,8 +2192,7 @@ test("attachment allowance exhaustion is reported as blocked while incomplete sa
   assert.equal(report.rows[0].bodyVerifiedCount, 0);
   assert.equal(report.rows[0].committedPages, 1);
   const root = await f.service.get(f.ref);
-  const pending = Object.values(root.collectionProgress.pendingBodies)[0]
-    .record;
+  const pending = (await pendingBodies(f))[0].record;
   assert.equal(pending.attachmentBudgetExhausted, true);
   assert.equal(pending.attachments[0].textStatus, "pending");
   assert.equal(root.collectionUsage.usedAttachments, 0);

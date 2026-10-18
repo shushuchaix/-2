@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { gateRecommendation } from "../domain/recruitment-evidence.mjs";
 import { CONDITIONS_PARSER_VERSION } from "../domain/recruitment-evidence.mjs";
 import {
-  runtimeRepository,
   runtimeGate,
-  assertRuntimeJobs,
 } from "./package-runtime-service.mjs";
+import { createPackageJobService } from './package-job-service.mjs';
+import { loadJobClosure, readOwnedTarget, resolveOwnedJobId } from './job-row-access.mjs';
+import { nextJobTemporalChangeAt } from '../domain/job-read-model.mjs';
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
-import { contentHash } from "../infrastructure/storage/repository.mjs";
+import { contentHash } from "../infrastructure/storage/content-hash.mjs";
 import { evaluateRules, RULE_VERSION } from "../domain/ranking.mjs";
 import {
   createModelBudget,
@@ -42,6 +43,8 @@ function createLegacyEvaluationService({
   modelFactory,
   budgetFactory,
   diagnostics,
+  loadWorkspace = () => repository.read(),
+  saveEvaluations,
   clock = repository.clock,
   operationGate = createWorkspaceOperationGate({ repository }),
 }) {
@@ -65,8 +68,8 @@ function createLegacyEvaluationService({
           const trace = { ...diagnosticContext, ...(runId ? { runId } : {}) },
             started = clock.now();
           signal?.throwIfAborted();
-          const workspace = await repository.read();
-          backfillTargetMembers(workspace);
+          const workspace = await loadWorkspace({ jobIds, targetRevisionId, profileRevisionId, runId });
+          if (workspace.schemaVersion !== 3) backfillTargetMembers(workspace);
           const p = Object.values(workspace.profiles)
               .flat()
               .find((p) => p.revisionId === profileRevisionId),
@@ -149,6 +152,9 @@ function createLegacyEvaluationService({
             const reusable = (e) =>
               e &&
               e.schemaVersion === SCHEMA_VERSION &&
+              Number.isFinite(Date.parse(e.evaluatedAsOf || e.createdAt)) &&
+              Date.parse(e.evaluatedAsOf || e.createdAt) <= clock.now() &&
+              (!nextJobTemporalChangeAt(record, p.profile, e.evaluatedAsOf || e.createdAt) || Date.parse(nextJobTemporalChangeAt(record, p.profile, e.evaluatedAsOf || e.createdAt)) > clock.now()) &&
               e.conditionsParserVersion === CONDITIONS_PARSER_VERSION &&
               e.ruleVersion === RULE_VERSION &&
               e.promptVersion === PROMPT_VERSION &&
@@ -387,6 +393,7 @@ function createLegacyEvaluationService({
                   cacheKey,
                   runId,
                   createdAt: new Date(clock.now()).toISOString(),
+                  evaluatedAsOf: new Date(clock.now()).toISOString(),
                   status: model ? "ai" : ai ? "rule_fallback" : "rules",
                 };
                 if (model) {
@@ -415,7 +422,8 @@ function createLegacyEvaluationService({
                 return gateRecommendation(evaluation, record, clock.now());
               },
             );
-            await repository.mutateWorkspace(
+            if (saveEvaluations) await saveEvaluations(completed, { operationLease, collectionGuard, signal });
+            else await repository.mutateWorkspace(
               (w) => {
                 signal?.throwIfAborted();
                 for (const e of completed) {
@@ -499,8 +507,8 @@ function createLegacyEvaluationService({
           signal: input.signal,
         },
         async (operationLease) => {
-          const before = await repository.read();
-          backfillTargetMembers(before);
+          const before = await loadWorkspace(input);
+          if (before.schemaVersion !== 3) backfillTargetMembers(before);
           const ids = new Set(resolveJobIds(before, input.jobIds || []));
           const previous = new Map();
           for (const jobId of ids) {
@@ -557,14 +565,8 @@ export function createEvaluationService(options) {
     options.operationGate ||
     createWorkspaceOperationGate({ repository: options.repository });
   async function invoke(method, input) {
-    const w = await options.repository.read();
-    if (w.schemaVersion !== 3) return legacy[method](input);
-    const target = await assertRuntimeJobs(
-        options.repository,
-        input.scope,
-        input.jobIds,
-        input.runId,
-      ),
+    if (await options.repository.getMeta('schemaVersion') !== 3) return legacy[method](input);
+    const { target } = await readOwnedTarget(options.repository, input.scope, options.repository.clock.now()),
       scope = {
         packageId: input.scope.packageId,
         targetRevisionId: input.scope.targetRevisionId,
@@ -574,7 +576,17 @@ export function createEvaluationService(options) {
         scope.packageId,
         createLegacyEvaluationService({
           ...options,
-          repository: runtimeRepository(options.repository, scope),
+          loadWorkspace: async selected => {
+            if (!Array.isArray(selected.jobIds) || selected.jobIds.length > 5000) throw Error('Invalid job selection');
+            const ids = [];
+            for (const id of selected.jobIds) ids.push(await resolveOwnedJobId(options.repository, scope, id));
+            const closed = await loadJobClosure(options.repository, scope, ids), w = closed.workspace;
+            w.targets[closed.target.targetId][0].profileRevisionId = closed.target.profileSnapshot.revisionId;
+            w.settings = Object.fromEntries((await options.repository.queryRows({ collection: 'settings', ids: ['budgets'] })).rows.map(row => [row.id, row.value]));
+            if (selected.runId && !await options.repository.getRow({ collection: 'runs', id: selected.runId, ownerPackageId: scope.packageId }, { scope })) throw Error('Run not found');
+            return w;
+          },
+          saveEvaluations: (evaluations, saveOptions) => createPackageJobService(options).saveEvaluations(evaluations, scope, saveOptions),
           operationGate: runtimeGate(gate, scope),
         }),
       );

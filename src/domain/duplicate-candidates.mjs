@@ -43,7 +43,17 @@ export function compareRecruitmentFacts(a, b) {
     conflicts: c.reasonCodes,
   };
 }
+const simHashCache = new Map();
+let simHashComputations = 0, simHashCacheHits = 0;
+export function duplicateSimHashMetrics({ reset = false } = {}) {
+  const result = { computations: simHashComputations, cacheHits: simHashCacheHits };
+  if (reset) { simHashComputations = 0; simHashCacheHits = 0; }
+  return result;
+}
 function simHash(text) {
+  const cacheKey = norm(text).slice(0, 12000);
+  if (simHashCache.has(cacheKey)) { simHashCacheHits++; return simHashCache.get(cacheKey); }
+  simHashComputations++;
   const grams = [...norm(text)].slice(0, 12000),
     weights = Array(64).fill(0);
   for (let i = 0; i < grams.length - 1; i++) {
@@ -57,11 +67,15 @@ function simHash(text) {
     for (let bit = 0; bit < 64; bit++)
       weights[bit] += (n >> BigInt(bit)) & 1n ? 1 : -1;
   }
-  return weights.reduce(
+  const result = weights.reduce(
     (n, v, bit) => (v >= 0 ? n | (1n << BigInt(bit)) : n),
     0n,
   );
+  if (simHashCache.size >= 512) simHashCache.delete(simHashCache.keys().next().value);
+  simHashCache.set(cacheKey, result);
+  return result;
 }
+export const duplicateSimHash = text => simHash(text).toString(16).padStart(16, '0');
 const distance = (a, b) => {
   let n = a ^ b,
     count = 0;

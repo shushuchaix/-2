@@ -8,6 +8,7 @@ import {
   isOfficialDeepSeekFlash,
 } from "../llm/budget.mjs";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
+import { createRowCollectionLedger } from './collection-row-ledger.mjs';
 
 const kinds = new Set([
   "request",
@@ -161,7 +162,7 @@ function assertBrowserBatch(items) {
 export function collectionUsageFromWorkspace(workspace, ref, clock) {
   return usageOf(activity(workspace, ref, clock));
 }
-export function createCollectionLedger({
+function createLegacyCollectionLedger({
   repository,
   clock = repository.clock,
 }) {
@@ -500,6 +501,11 @@ export function createCollectionLedger({
     },
   };
 }
+export function createCollectionLedger(options) {
+  const row = createRowCollectionLedger(options), legacy = createLegacyCollectionLedger(options);
+  const formal = options.repository.getMeta ? options.repository.getMeta('schemaVersion').then(version => version === 3) : Promise.resolve(false);
+  return Object.fromEntries(['snapshot','reserve','settle','reserveBatch','settleBatch','adjustLimits'].map(name => [name, async (...args) => (await formal ? row : legacy)[name](...args)]));
+}
 /** Root-bound asynchronous adapters. Snapshot is a coherent confirmed view;
  * atomic reservation remains authoritative for concurrent callers. */
 export async function createActivityBudgets({
@@ -528,11 +534,14 @@ export async function createActivityBudgets({
       }),
     );
   const sources = {
+    setSource(sourceId, siteId) { sources.sourceId = sourceId; sources.siteId = siteId; },
     async claimRequest(kind = "request", { bytesUpperBound = 0 } = {}) {
       return reserve({
         kind: kinds.has(kind) ? kind : "request",
         requestUpperBound: 1,
         bytesUpperBound,
+        ...(sources.sourceId ? { sourceId: sources.sourceId } : {}),
+        ...(sources.siteId ? { siteId: sources.siteId } : {}),
       });
     },
     async settleRequest(reservation, { bytes }) {

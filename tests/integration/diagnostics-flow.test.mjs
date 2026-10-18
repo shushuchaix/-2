@@ -1,7 +1,6 @@
 import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AsyncLocalStorage } from "node:async_hooks";
 import { createApplicationContext } from "../../src/application/context.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
 import { createDiagnosticsLog } from "../../src/infrastructure/diagnostics/log.mjs";
@@ -17,7 +16,7 @@ import { loadConfig } from "../../src/config.mjs";
 import { createRequestClient } from "../../src/infrastructure/http/client.mjs";
 import { createScheduler } from "../../src/infrastructure/http/scheduler.mjs";
 import { fakeProvider } from "../helpers/fake-sources.mjs";
-import { createTempDir, job, profile, target } from "../helpers/fixtures.mjs";
+import { createTempDir, registerTestResource, job, profile, target } from "../helpers/fixtures.mjs";
 
 async function flow(
   t,
@@ -61,6 +60,7 @@ async function flow(
       ...(modelFactory ? { modelFactory } : {}),
     },
   });
+  registerTestResource(t, () => context.close());
   const p = await context.workspaceService.saveProfile({ profile: profile() });
   const tar = await context.workspaceService.saveTarget(
     namedTargetInput({
@@ -110,42 +110,30 @@ test("completed collection exports planning, stages, batches and final counters"
   );
 });
 
-test("snapshot failure still exports final status and preserved collection counters", async (t) => {
+test("snapshot failure still exports final status and preserved collection counters", { timeout: 5000 }, async (t) => {
   const f = await flow(t);
-  let releaseSnapshot;
+  let releaseSnapshot, snapshotEntered;
+  const entered = new Promise((resolve) => { snapshotEntered = resolve; });
   const snapshotGate = new Promise((resolve) => {
     releaseSnapshot = resolve;
   });
+  registerTestResource(t, () => releaseSnapshot());
   f.context.repository.writeRunSnapshot = async () => {
+    snapshotEntered();
     await snapshotGate;
     throw Object.assign(Error("private snapshot location"), { code: "EPERM" });
   };
   const { runId } = await f.context.runService.startRun({
     targetRevisionId: f.targetRevisionId,
   });
-  // The public API reads the workspace before delegating to the live task.
-  // Its promise existing is not yet proof that routing reached that task.
-  const route = new AsyncLocalStorage();
-  let routingReadFinished;
-  const routed = new Promise((resolve) => {
-    routingReadFinished = resolve;
-  });
-  const originalRead = f.context.repository.read.bind(f.context.repository);
-  f.context.repository.read = async (...args) => {
-    const workspace = await originalRead(...args);
-    if (route.getStore() === "live-wait")
-      // Return the routing read, then let its caller capture the active task
-      // before the notified test continuation releases the snapshot failure.
-      queueMicrotask(routingReadFinished);
-    return workspace;
-  };
-  const liveWait = route.run("live-wait", () =>
-    assert.rejects(f.context.runService.waitForRun(runId), { code: "EPERM" }),
-  );
-  await routed;
+  await entered;
+  const liveWait = assert.rejects(f.context.runService.waitForRun(runId), { code: "EPERM" });
+  // createRunService awaits its already resolved schema routing promise, then
+  // captures the active task directly. One microtask dispatches that routing;
+  // a repository.read observer is no longer part of this public path.
+  await Promise.resolve();
   releaseSnapshot();
   await liveWait;
-  f.context.repository.read = originalRead;
   await assert.rejects(f.context.runService.waitForRun(runId), {
     code: "snapshot_failed",
   });

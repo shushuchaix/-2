@@ -1,7 +1,7 @@
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { classifyRecruitmentIntent } from "./social-intent.mjs";
 import { articleCacheIdentity } from "../llm/prompt-registry.mjs";
-const articlePartKey = (pending) =>
+export const articlePartKey = (pending) =>
   contentHash([
     contentKey(pending.record),
     pending.record.parserVersion,

@@ -131,7 +131,64 @@ const numberKeys = new Set([
   "pageLimit",
   "batchSize",
   "errorNumber",
+  "lockMs",
+  "storeMs",
+  "transactionReadMs",
+  "transactionStageMs",
+  "transactionWriteRowsMs",
+  "transactionRefsMs",
+  "transactionCommitMs",
+  "maintenanceFlattenMs",
+  "maintenanceBuildMs",
+  "maintenanceWriteRowsMs",
+  "maintenanceRefsMs",
+  "maintenanceCommitMs",
+  "sqlTransactions",
+  "sqlCommits",
+  "sqlRollbacks",
+  "statements",
+  "prepares",
+  "statementCacheHits",
+  "readRows",
+  "writeRows",
+  "decodedRows",
+  "metaReadRows",
+  "metaReadBytes",
+  "serializedRows",
+  "readBytes",
+  "writeBytes",
+  "recoveredWrites",
 ]);
+const storageLabels: Record<string, string> = {
+  queueMs: "等待写入锁（毫秒）",
+  lockMs: "持有写入锁（毫秒）",
+  storeMs: "同步存储处理（含回调，毫秒）",
+  sqlTransactions: "实际 SQL 写事务数",
+  sqlCommits: "已提交 SQL 事务数",
+  sqlRollbacks: "已回滚 SQL 事务数",
+  statements: "预编译语句调用数",
+  prepares: "新准备语句数",
+  statementCacheHits: "语句缓存命中数",
+  readRows: "已读取逻辑行数",
+  writeRows: "尝试写入逻辑行数",
+  decodedRows: "已解码正文行数",
+  metaReadRows: "已解码元数据行数",
+  readBytes: "正文 JSON 解码字节数",
+  metaReadBytes: "元数据 JSON 解码字节数",
+  serializedRows: "JSON 编码次数",
+  writeBytes: "JSON 编码字节数",
+  transactionReadMs: "事务读视图（毫秒）",
+  transactionStageMs: "事务校验与暂存（毫秒）",
+  transactionWriteRowsMs: "事务写行阶段（毫秒）",
+  transactionRefsMs: "事务引用阶段（毫秒）",
+  transactionCommitMs: "事务提交阶段（毫秒）",
+  maintenanceFlattenMs: "维护拆行（毫秒）",
+  maintenanceBuildMs: "维护派生构建（毫秒）",
+  maintenanceWriteRowsMs: "维护写行阶段（毫秒）",
+  maintenanceRefsMs: "维护引用阶段（毫秒）",
+  maintenanceCommitMs: "维护提交阶段（毫秒）",
+  recoveredWrites: "恢复成功的文件替换数",
+};
 const tokenKeys = new Set([
   "operation",
   "level",
@@ -283,7 +340,8 @@ export function safeDiagnostic(entry: DiagnosticEntry): DiagnosticEntry {
     if (
       numberKeys.has(key) &&
       typeof value === "number" &&
-      Number.isFinite(value)
+      Number.isSafeInteger(value) &&
+      (value >= 0 || key === "exitCode" || key === "errorNumber")
     )
       result[key] = value;
     else if (key === "resultCategory" && enumLabel(resultCategoryLabels, value))
@@ -324,6 +382,9 @@ export function safeDiagnostic(entry: DiagnosticEntry): DiagnosticEntry {
       [
         "workspace.v2.json",
         "workspace.v2.previous.json",
+        "workspace.sqlite",
+        "control/state.json",
+        "control/initialized.json",
         "config.json",
         "runs-v2/*.json",
         "backups/*.json",
@@ -332,7 +393,7 @@ export function safeDiagnostic(entry: DiagnosticEntry): DiagnosticEntry {
     )
       result[key] = value;
     else if (
-      ["cacheHit", "hasMore"].includes(key) &&
+      ["cacheHit", "hasMore", "committed"].includes(key) &&
       typeof value === "boolean"
     )
       result[key] = value;
@@ -511,6 +572,30 @@ export function DiagnosticDetails({
                   </div>
                 ))}
               </dl>
+              {safe.operation === "storage.transaction" && (
+                <section
+                  aria-label="存储事务计数"
+                  className="flex flex-col gap-3"
+                >
+                  <p className="text-sm text-muted-foreground">
+                    行数和字节数是逻辑处理计数；同步处理包含校验和回调。部分写入可能已回滚，已提交事务数单独列出。
+                  </p>
+                  <dl className="grid grid-cols-2 gap-3">
+                    {Object.entries(storageLabels)
+                      .filter(([key]) => safe[key] !== undefined)
+                      .map(([key, label]) => (
+                        <div key={key}>
+                          <dt className="text-sm text-muted-foreground">
+                            {label}
+                          </dt>
+                          <dd className="break-words">
+                            {Number(safe[key]).toLocaleString("zh-CN")}
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
+                </section>
+              )}
               {object(safe.counts) && (
                 <RecordCounts
                   counts={safe.counts}

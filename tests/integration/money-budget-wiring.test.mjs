@@ -1,12 +1,13 @@
 import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { createApplicationContext } from "../../src/application/context.mjs";
 import { DEFAULT_CONFIG } from "../../src/config.mjs";
 import { DeepSeek } from "../../src/llm/deepseek.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
 import { fakeProvider } from "../helpers/fake-sources.mjs";
-import { createTempDir, profile, target, job } from "../helpers/fixtures.mjs";
+import { createTempDir, registerTestResource, profile, target, job } from "../helpers/fixtures.mjs";
 
 async function fixture(t, count = 105) {
   const cfg = structuredClone(DEFAULT_CONFIG);
@@ -18,6 +19,7 @@ async function fixture(t, count = 105) {
   const records = Array.from({ length: count }, (_, i) =>
     job({
       sourceRecordId: String(i),
+      description: job().description.repeat(3),
       url: `https://jobs.example.com/${i}`,
       title: `Java开发工程师${i}`,
       company: `合成公司${i}`,
@@ -28,7 +30,7 @@ async function fixture(t, count = 105) {
   const context = await createApplicationContext({
     cfg,
     dataDir: await createTempDir(t),
-    dependencies: {legacySchema:true,
+    dependencies: {startScheduler:false,
       registry: createSourceRegistry([fakeProvider({ records })]),
       catalog: [
         {
@@ -38,6 +40,8 @@ async function fixture(t, count = 105) {
           name: "合成",
           origin: "https://example.com",
           status: "ready",
+          verifiedAt: new Date().toISOString(),
+          probeEvidence: [{ hasRequirements: true }],
         },
       ],
       requestFactory: () => async () => {
@@ -82,7 +86,13 @@ async function fixture(t, count = 105) {
       },
     },
   });
-  const p = await context.workspaceService.saveProfile({ profile: profile() });
+  registerTestResource(t,()=>context.close());
+  // Bind only the synthetic transport key through the real schema3 settings port.
+  await context.saveSettings({ model: { apiKey: "synthetic-test-key" } });
+  const p = await context.workspaceService.saveProfile(namedTargetInput({
+    text: "合成测试简历：本科软件工程专业，2027届毕业，拥有Java开发技能和软件项目经验。",
+    profile: profile(),
+  }));
   const tar = await context.workspaceService.saveTarget(
     namedTargetInput({
       ...target(),
@@ -96,6 +106,7 @@ async function fixture(t, count = 105) {
     p,
     tar,
     records,
+    scope: { packageId: tar.packageId, targetRevisionId: tar.revisionId },
     clients,
     transports: () => transports,
   };
@@ -121,10 +132,11 @@ test("a currency run evaluates beyond old twenty request target cap", async (t) 
   await f.context.saveSettings({ budgets: { maxCostCny: 10 } });
   const started = await f.context.runService.startRun({
     targetRevisionId: f.tar.revisionId,
+    scope: f.scope,
     mode: "ai",
   });
-  const result = await f.context.runService.waitForRun(started.runId);
-  assert.equal(result.run.counts.aiSuccess, 105);
+  const result = await f.context.runService.waitForRun(started.runId, f.scope);
+  assert.equal(result.evaluations.filter((e) => e.status === "ai").length, 105);
   assert.equal(f.transports(), 21);
   assert.equal(result.run.usage.model.maxCostCny, 10);
   assert.equal(result.run.usage.model.maxRequests, 1000);
@@ -137,9 +149,10 @@ test("zero currency budget performs no transport while preserving rule results",
   await f.context.saveSettings({ budgets: { maxCostCny: 0 } });
   const started = await f.context.runService.startRun({
     targetRevisionId: f.tar.revisionId,
+    scope: f.scope,
     mode: "ai",
   });
-  const result = await f.context.runService.waitForRun(started.runId);
+  const result = await f.context.runService.waitForRun(started.runId, f.scope);
   assert.equal(f.transports(), 0);
   assert.equal(result.evaluations.length, 6);
   assert.equal(result.run.usage.model.maxCostCny, 0);
@@ -147,20 +160,78 @@ test("zero currency budget performs no transport while preserving rule results",
     result.run.issues.filter((i) => i.code === "model_budget_exhausted").length,
     1,
   );
+  assert.equal(result.run.issues.find((i) => i.code === "model_budget_exhausted").affectedCount, 6);
+  assert.equal(result.run.issueCount, 1);
+});
+
+test("model issues without evaluation IDs remain owned counted and redacted", async (t) => {
+  const f = await fixture(t, 6);
+  const diagnosticId = "d-" + randomUUID();
+  f.context.evaluationService.evaluate = async () => ({
+    evaluations: [],
+    issues: [
+      { code: "model_budget_exhausted", affectedCount: 6, diagnosticId, message: "private model text", sourceId: "private source" },
+      { code: "private upstream code", affectedCount: -1, diagnosticId: "private diagnostic", jobId: "private job" },
+    ],
+  });
+  const started = await f.context.runService.startRun({ scope: f.scope, mode: "ai" });
+  const result = await f.context.runService.waitForRun(started.runId, f.scope);
+  assert.equal(result.evaluations.length, 0);
+  assert.equal(result.run.issueCount, 2);
+  assert.deepEqual(result.run.issues, [
+    { code: "model_budget_exhausted", affectedCount: 6, diagnosticId },
+    { code: "model_unavailable" },
+  ]);
+  const stored = await f.context.repository.queryRows({ collection: "runIssues", ownerPackageId: f.scope.packageId, where: { runId: started.runId }, limit: 50 }, { scope: f.scope });
+  assert.equal(stored.rows.length, 2);
+  assert.ok(stored.rows.every((row) => row.indexes.ownerPackageId === f.scope.packageId));
+  assert.equal(JSON.stringify(stored).includes("private"), false);
+  await assert.rejects(f.context.runService.waitForRun(started.runId, { ...f.scope, packageId: randomUUID() }));
+});
+
+test("cancelled evaluation cannot append a late model issue", { timeout: 5000 }, async (t) => {
+  const f = await fixture(t, 6);
+  const entered = Promise.withResolvers(), release = Promise.withResolvers(), aborted = Promise.withResolvers();
+  registerTestResource(t, () => release.resolve());
+  f.context.evaluationService.evaluate = async ({ signal }) => {
+    signal.addEventListener("abort", () => aborted.resolve(), { once: true });
+    entered.resolve();
+    await release.promise;
+    return { evaluations: [], issues: [{ code: "model_budget_exhausted", affectedCount: 6 }] };
+  };
+  const started = await f.context.runService.startRun({ scope: f.scope, mode: "ai" });
+  await entered.promise;
+  const cancelled = f.context.collectionService.cancel({ scope: f.scope, activityId: started.activityId });
+  await aborted.promise;
+  release.resolve();
+  await cancelled;
+  await f.context.collectionService.wait({ scope: f.scope, activityId: started.activityId });
+  const rows = await f.context.repository.queryRows({ collection: "runIssues", ownerPackageId: f.scope.packageId, where: { runId: started.runId }, limit: 50 }, { scope: f.scope });
+  assert.equal(rows.rows.some((row) => row.value.code === "model_budget_exhausted"), false);
 });
 
 test("saved job rescore uses the same configured money budget", async (t) => {
   const f = await fixture(t);
   await f.context.saveSettings({ budgets: { maxCostCny: 10 } });
+  // Saved-job rescoring starts from a real owned run; an invented run ID is
+  // deliberately rejected by the formal ingest port before any write.
+  await f.context.repository.transaction({ select: [{ collection: "runs", ownerPackageId: f.scope.packageId, ids: ["manual"] }] }, (tx) => {
+    tx.putRow({ collection: "runs", id: "manual", ownerPackageId: f.scope.packageId,
+      targetRevisionId: f.scope.targetRevisionId,
+      value: { runId: "manual", recordId: randomUUID(), ownerPackageId: f.scope.packageId,
+        status: "completed", counts: {}, usage: {} } });
+  }, { scope: f.scope });
   const ingested = await f.context.jobService.ingestRecords({
     runId: "manual",
     targetRevisionId: f.tar.revisionId,
+    scope: f.scope,
     records: f.records,
   });
   const result = await f.context.evaluationService.rescore({
     jobIds: ingested.jobIds,
     profileRevisionId: f.p.revisionId,
     targetRevisionId: f.tar.revisionId,
+    scope: f.scope,
     mode: "ai",
   });
   assert.equal(result.evaluations.filter((e) => e.status === "ai").length, 105);
@@ -180,9 +251,10 @@ test("target currency budget uses the configured model and cannot exceed the wor
   );
   const started = await f.context.runService.startRun({
     targetRevisionId: tar.revisionId,
+    scope: { packageId: tar.packageId, targetRevisionId: tar.revisionId },
     mode: "ai",
   });
-  const result = await f.context.runService.waitForRun(started.runId);
+  const result = await f.context.runService.waitForRun(started.runId, { packageId: tar.packageId, targetRevisionId: tar.revisionId });
   assert.equal(f.transports(), 0);
   assert.equal(result.run.usage.model.maxCostCny, 0);
 });

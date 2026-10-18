@@ -4,6 +4,11 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
+  withDiagnosticLogTurn,
+  withDiagnosticFatalTurn,
+  getDiagnosticFatalFailureFacts,
+} from "./coordination.mjs";
+import {
   token,
   identifier,
   cleanMetadata,
@@ -11,18 +16,122 @@ import {
   defaultRuntime,
 } from "./fields.mjs";
 const contextStorage = new AsyncLocalStorage();
-export function withDiagnosticContext(context, action) {
-  return contextStorage.run(
-    { ...contextStorage.getStore(), ...cleanMetadata(context) },
-    action,
+const storageFailureCodes = new Set([
+  "EACCES", "EPERM", "EBUSY", "ENOSPC", "EIO", "ENOENT", "EEXIST",
+  "EMFILE", "ENFILE", "EROFS", "EINVAL", "EBADF", "ENOTDIR", "EISDIR",
+  "ENAMETOOLONG", "EFBIG", "ENOTSUP", "EXDEV",
+  "diagnostic_lock_lost", "diagnostic_lock_busy", "diagnostic_lock_timeout",
+  "diagnostic_io_timeout", "diagnostic_queue_full", "diagnostic_entry_too_large",
+  "diagnostic_filesystem_stalled", "diagnostic_storage_error",
+]);
+const storageFailurePhases = new Set([
+  "storage", "normal_queue", "normal_directory", "normal_turn", "fatal_prepare",
+  "fatal_turn", "read_queue", "read_file", "normal_observer", "entry_size", "queue",
+]);
+function storageFailureCode(error) {
+  try {
+    const code = error?.code;
+    return storageFailureCodes.has(code) ? code : "diagnostic_storage_error";
+  } catch {
+    return "diagnostic_storage_error";
+  }
+}
+// This accepts only module-owned, frozen facts, never external error metadata.
+// Keep the export surface explicit even when more internal observations exist.
+function copyFatalFailureFacts(facts) {
+  return Object.freeze({
+    configuredTimeoutMs: facts.configuredTimeoutMs,
+    acquisitionElapsedMs: facts.acquisitionElapsedMs,
+    prepareCallElapsedMs: facts.prepareCallElapsedMs,
+    acquireProbeCount: facts.acquireProbeCount,
+    totalWaitRequestedMs: facts.totalWaitRequestedMs,
+    actualWaitMs: facts.actualWaitMs,
+    lastStage: facts.lastStage,
+  });
+}
+const runtimeGlobalOperations = new Set([
+  "application.start",
+  "application.migration",
+  "application.recovery",
+  "application.shutdown",
+  "desktop.start",
+  "desktop.ready",
+  "desktop.load",
+  "desktop.failure",
+]);
+const explicitGlobalStorageOperations = new Set([
+  "storage.read",
+  "storage.write",
+  "storage.transaction",
+  "storage.recovered",
+]);
+const businessContextKeys = [
+  "runId",
+  "sourceId",
+  "siteId",
+  "jobId",
+  "activityId",
+  "sliceRunId",
+  "unitId",
+  "packageId",
+  "ownerPackageId",
+  "ownerPackageIds",
+  "targetRevisionId",
+  "scope",
+  "package",
+  "target",
+  "owner",
+  "targetId",
+  "profileId",
+  "profileRevisionId",
+  "recordId",
+  "operationId",
+  "applicationId",
+  "route",
+  "session",
+  "sessionRef",
+  "sessionRefs",
+  "sessionScope",
+  "sessionKey",
+  "cookies",
+  "cookie",
+];
+function hasBusinessContext(value, diagnosticSessionId) {
+  return (
+    value?.businessContext === true ||
+    businessContextKeys.some((key) => Object.hasOwn(value, key)) ||
+    (Object.hasOwn(value, "sessionId") &&
+      !(
+        identifier(value.sessionId, "s") &&
+        value.sessionId === diagnosticSessionId
+      ))
   );
+}
+function diagnosticMetadata(event) {
+  const inherited = contextStorage.getStore();
+  const metadata = { ...inherited, ...event };
+  if (inherited?.businessContext === true) metadata.businessContext = true;
+  return metadata;
+}
+function isRuntimeGlobal(entry) {
+  return (
+    !hasBusinessContext(entry, entry.sessionId) &&
+    (runtimeGlobalOperations.has(entry.operation) ||
+      (explicitGlobalStorageOperations.has(entry.operation) &&
+        entry.runtimeGlobal === true))
+  );
+}
+export function withDiagnosticContext(context, action) {
+  const metadata = diagnosticMetadata(cleanMetadata(context));
+  if (hasBusinessContext(context)) metadata.businessContext = true;
+  return contextStorage.run(metadata, action);
 }
 
 /** Observers are optional and must never change the operation they describe. */
 export async function recordDiagnostic(diagnostics, event, error) {
   let timer;
   try {
-    const metadata = { ...contextStorage.getStore(), ...event };
+    const metadata = diagnosticMetadata(event);
     const write =
       typeof diagnostics === "function"
         ? diagnostics(metadata, error)
@@ -119,6 +228,9 @@ const safeResource = (value) =>
   [
     "workspace.v2.json",
     "workspace.v2.previous.json",
+    "workspace.sqlite",
+    "control/state.json",
+    "control/initialized.json",
     ".workspace.lock",
     "quota.json",
     "config.json",
@@ -289,6 +401,15 @@ function cleanEntry(event, error, clock, sessionId) {
     message: messages[operation],
   };
   Object.assign(result, cleanMetadata(event));
+  // Preserve ownership presence before unknown IDs/scopes are redacted. It is
+  // deliberately monotonic across nested contexts and stored-entry cleaning.
+  if (hasBusinessContext(event, sessionId)) result.businessContext = true;
+  if (
+    (runtimeGlobalOperations.has(operation) ||
+      explicitGlobalStorageOperations.has(operation)) &&
+    typeof event.runtimeGlobal === "boolean"
+  )
+    result.runtimeGlobal = event.runtimeGlobal;
   if (safeResource(event.resource))
     result.resource = safeResource(event.resource);
   if (error) result.error = diagnosticError(error);
@@ -307,25 +428,66 @@ export function createDiagnosticsLog({
   dataDir = path.resolve(dataDir);
   const dir = path.join(dataDir, "logs"),
     file = path.join(dir, "application.log"),
-    previous = path.join(dir, "application.previous.log");
+    previous = path.join(dir, "application.previous.log"),
+    fatalFile = path.join(dir, "application.fatal.log"),
+    fatalPrevious = path.join(dir, "application.fatal.previous.log"),
+    logTurn = path.join(dir, ".application.lock"),
+    fatalTurn = path.join(dir, ".application-fatal.lock");
   let queue = Promise.resolve(),
     memory = [],
     storage = { mode: "file" },
     ioStalled = false,
     pendingWrites = 0,
     droppedWrites = 0,
-    failedWrites = 0;
+    failedWrites = 0,
+    enqueuedWrites = 0,
+    rejectedThrough = 0;
   const sessionId = "s-" + randomUUID();
   const safeRuntime = cleanMetadata({ runtime }).runtime || {};
-  const failed = () => {
+  const readSnapshots = new WeakMap();
+  const activeNativeIO = new Set();
+  async function nativeIO(action) {
+    const operation = { startedAt: Date.now() };
+    activeNativeIO.add(operation);
+    try {
+      return await action();
+    } finally {
+      activeNativeIO.delete(operation);
+    }
+  }
+  // Include handle IO used by the shared lock primitives. Waiting for another
+  // live owner alone is not a stalled filesystem and must not disable fatal IO.
+  const tracked = (object) =>
+    new Proxy(object, {
+      get(target, key) {
+        const value = Reflect.get(target, key);
+        if (typeof value !== "function") return value;
+        return (...args) =>
+          nativeIO(async () => {
+            const result = await Reflect.apply(value, target, args);
+            return key === "open" ? tracked(result) : result;
+          });
+      },
+    });
+  fsAdapter = tracked(fsAdapter);
+  const remember = (entry) => {
+    memory =
+      maxMemoryEntries > 0 ? [...memory, entry].slice(-maxMemoryEntries) : [];
+  };
+  const failed = (error, phase = "storage") => {
+    const facts = getDiagnosticFatalFailureFacts(error);
     storage = {
       mode: "memory",
+      failureCode: storageFailureCode(error),
+      failurePhase: storageFailurePhases.has(phase) ? phase : "storage",
+      ...(facts ? { failureFacts: copyFatalFailureFacts(facts) } : {}),
       message:
         "日志文件写入或读取失败或超时，请检查目录权限和可用空间；当前日志暂存在内存，关闭软件后可能丢失，请先导出后重启软件。",
     };
   };
-  async function boundedIO(action) {
+  async function boundedIO(action, onTimeout) {
     let timer,
+      observerWake,
       expired = false;
     const timeoutError = () =>
       Object.assign(new Error("Diagnostic IO timeout"), {
@@ -340,13 +502,28 @@ export function createDiagnosticsLog({
         new Promise((_, reject) => {
           timer = setTimeout(() => {
             expired = true;
-            ioStalled = true;
-            reject(timeoutError());
+            // Short, completed lock probes are contention. Only a native call
+            // pending for almost the full deadline marks a filesystem stall;
+            // allow 50ms for timer/microtask scheduling around the observer.
+            if (
+              [...activeNativeIO].some(
+                (operation) => Date.now() - operation.startedAt >= 450,
+              )
+            )
+              ioStalled = true;
+            if (onTimeout) {
+              // Stop only an acquisition which owns no turn yet. Let its
+              // rejection/queue bookkeeping settle in this event-loop turn;
+              // native IO or a held turn remains owned until it really ends.
+              onTimeout();
+              observerWake = setImmediate(() => reject(timeoutError()));
+            } else reject(timeoutError());
           }, 500);
         }),
       ]);
     } finally {
       clearTimeout(timer);
+      clearImmediate(observerWake);
     }
   }
   function category(entry) {
@@ -357,12 +534,12 @@ export function createDiagnosticsLog({
         ? "application"
         : name;
   }
-  async function collect(options = {}) {
-    await boundedIO(() => queue).catch(failed);
+  async function readRetained() {
+    await boundedIO(() => queue).catch((error) => failed(error, "read_queue"));
     const entries = new Map();
     let damagedLines = 0,
       rotated = false;
-    for (const filename of [previous, file]) {
+    for (const filename of [previous, file, fatalPrevious, fatalFile]) {
       try {
         const records = await boundedIO(async (check) => {
           let handle;
@@ -392,17 +569,44 @@ export function createDiagnosticsLog({
             await handle?.close().catch(() => {});
           }
         });
-        if (filename === previous) rotated = true;
+        if (filename === previous || filename === fatalPrevious) rotated = true;
         damagedLines += records.damagedLines;
         for (const entry of records.entries)
           entries.set(entry.diagnosticId, entry);
       } catch (error) {
-        if (error.code !== "ENOENT") failed();
+        if (error.code !== "ENOENT") failed(error, "read_file");
       }
     }
     for (const entry of memory) entries.set(entry.diagnosticId, entry);
-    const matching = [...entries.values()]
+    return { entries: [...entries.values()], damagedLines, rotated };
+  }
+  async function collect(options = {}) {
+    let records;
+    if (options.readSnapshot !== undefined) {
+      records = readSnapshots.get(options.readSnapshot);
+      if (!records)
+        throw Object.assign(Error("Unknown diagnostic read snapshot"), {
+          code: "diagnostic_snapshot_invalid",
+        });
+    } else records = await readRetained();
+    const { entries, damagedLines, rotated } = records;
+    // Internal scope callers supply an already-authorized run allowlist. The
+    // HTTP boundary still validates its own filters; a malformed allowlist is
+    // empty, never an instruction to expose every run. Filter before limiting.
+    const runIds =
+      options.runIds === undefined
+        ? null
+        : new Set(Array.isArray(options.runIds) ? options.runIds : []);
+    const includeRuntimeGlobals =
+      Array.isArray(options.runIds) && options.includeRuntimeGlobals === true;
+    const matching = entries
       .filter((entry) => {
+        if (
+          runIds &&
+          !runIds.has(entry.runId) &&
+          !(includeRuntimeGlobals && isRuntimeGlobal(entry))
+        )
+          return false;
         for (const key of [
           "runId",
           "sourceId",
@@ -436,7 +640,9 @@ export function createDiagnosticsLog({
       file: "logs/application.log",
       runtime: safeRuntime,
       retention: {
-        fileCount: 2,
+        fileCount: 4,
+        normalFileCount: 2,
+        fatalFileCount: 2,
         maxFileBytes,
         maxMemoryEntries,
         maxEntryBytes: 16384,
@@ -459,99 +665,143 @@ export function createDiagnosticsLog({
     dataDir,
     // Only the fatal monitor uses synchronous IO, before Node exits by default.
     recordFatal(event = {}, error) {
-      let entry;
+      let entry, failurePhase = "fatal_prepare";
       try {
-        entry = cleanEntry(
-          { ...contextStorage.getStore(), ...event },
-          error,
-          clock,
-          sessionId,
-        );
-        if (ioStalled) return entry;
+        entry = cleanEntry(diagnosticMetadata(event), error, clock, sessionId);
+        remember(entry);
         const line = JSON.stringify(entry) + "\n";
-        if (Buffer.byteLength(line) > Math.min(16384, maxFileBytes))
+        if (
+          ioStalled ||
+          Buffer.byteLength(line) > Math.min(16384, maxFileBytes)
+        ) {
+          droppedWrites++;
+          failed({ code: ioStalled ? "diagnostic_filesystem_stalled" : "diagnostic_entry_too_large" }, ioStalled ? "fatal_prepare" : "entry_size");
           return entry;
+        }
         fsSync.mkdirSync(dir, { recursive: true });
-        let size = 0;
-        try {
-          size = fsSync.statSync(file).size;
-        } catch (error) {
-          if (error.code !== "ENOENT") throw error;
-        }
-        if (size + Buffer.byteLength(line) > maxFileBytes) {
+        // A synchronous fatal monitor cannot wait for this thread's pending
+        // normal append. Its independent, fixed two-file channel is also
+        // serialized across every main/backend/CLI process.
+        failurePhase = "fatal_turn";
+        withDiagnosticFatalTurn(fatalTurn, () => {
+          let size = 0;
           try {
-            fsSync.unlinkSync(previous);
+            size = fsSync.statSync(fatalFile).size;
           } catch (error) {
             if (error.code !== "ENOENT") throw error;
           }
-          try {
-            fsSync.renameSync(file, previous);
-          } catch (error) {
-            if (error.code !== "ENOENT") throw error;
+          if (size + Buffer.byteLength(line) > maxFileBytes) {
+            try {
+              fsSync.unlinkSync(fatalPrevious);
+            } catch (error) {
+              if (error.code !== "ENOENT") throw error;
+            }
+            try {
+              fsSync.renameSync(fatalFile, fatalPrevious);
+            } catch (error) {
+              if (error.code !== "ENOENT") throw error;
+            }
           }
-        }
-        fsSync.appendFileSync(file, line, { encoding: "utf8", mode: 0o600 });
-      } catch {
-        failed();
+          fsSync.appendFileSync(fatalFile, line, {
+            encoding: "utf8",
+            mode: 0o600,
+          });
+        });
+      } catch (failure) {
+        failedWrites++;
+        failed(failure, failurePhase);
       }
       return entry;
     },
     async record(event = {}, error) {
       const entry = cleanEntry(
-        { ...contextStorage.getStore(), ...event },
+        diagnosticMetadata(event),
         error,
         clock,
         sessionId,
       );
-      memory =
-        maxMemoryEntries > 0 ? [...memory, entry].slice(-maxMemoryEntries) : [];
+      remember(entry);
       // A stalled filesystem must not retain an unbounded chain of entries.
       if (pendingWrites >= 256) {
         droppedWrites++;
-        failed();
+        failed({ code: "diagnostic_queue_full" }, "queue");
         return entry;
       }
       pendingWrites++;
+      const sequence = ++enqueuedWrites;
+      const controller = new AbortController();
+      let failurePhase = "normal_queue";
+      let waitingForOwner = false;
       // The native write owns its place in the queue until it actually settles.
       // A caller deadline never starts a second writer or abandons a late write.
       const write = queue.then(async () => {
+        // Once a completed lock wait fails, already-waiting entries fall back
+        // together. They must not each keep a CLI alive for another 500ms.
+        // New records can retry; unfinished native writes never enter here.
+        if (sequence <= rejectedThrough || controller.signal.aborted)
+          throw Object.assign(Error("Diagnostic log ownership unavailable"), {
+            code: "diagnostic_lock_timeout",
+          });
         const line = JSON.stringify(entry) + "\n";
         // Bound an entry too, even when a long stack is supplied.
         if (Buffer.byteLength(line) > Math.min(16384, maxFileBytes)) {
           droppedWrites++;
-          failed();
+          failed({ code: "diagnostic_entry_too_large" }, "entry_size");
           return;
         }
+        failurePhase = "normal_directory";
         await fsAdapter.mkdir(dir, { recursive: true });
-        let size = 0;
         try {
-          size = (await fsAdapter.stat(file)).size;
+          failurePhase = "normal_turn";
+          await withDiagnosticLogTurn(logTurn, fsAdapter, async () => {
+            let size = 0;
+            try {
+              size = (await fsAdapter.stat(file)).size;
+            } catch (error) {
+              if (error.code !== "ENOENT") throw error;
+            }
+            if (size + Buffer.byteLength(line) > maxFileBytes) {
+              await fsAdapter.unlink(previous).catch((error) => {
+                if (error.code !== "ENOENT") throw error;
+              });
+              await fsAdapter.rename(file, previous).catch((error) => {
+                if (error.code !== "ENOENT") throw error;
+              });
+            }
+            await fsAdapter.appendFile(file, line, {
+              encoding: "utf8",
+              mode: 0o600,
+            });
+          }, { signal: controller.signal, onWaiting: (waiting) => { waitingForOwner = waiting; } });
         } catch (error) {
-          if (error.code !== "ENOENT") throw error;
+          if (error.code === "diagnostic_lock_timeout")
+            rejectedThrough = enqueuedWrites;
+          throw error;
         }
-        if (size + Buffer.byteLength(line) > maxFileBytes) {
-          await fsAdapter.unlink(previous).catch((error) => {
-            if (error.code !== "ENOENT") throw error;
-          });
-          await fsAdapter.rename(file, previous).catch((error) => {
-            if (error.code !== "ENOENT") throw error;
-          });
-        }
-        await fsAdapter.appendFile(file, line, {
-          encoding: "utf8",
-          mode: 0o600,
-        });
         ioStalled = false;
         if (!failedWrites && !droppedWrites) storage = { mode: "file" };
       });
       queue = write
-        .catch(() => {
+        .catch((error) => {
           failedWrites++;
-          failed();
+          failed(error, failurePhase);
         })
         .finally(() => pendingWrites--);
-      await boundedIO(() => queue).catch(failed);
+      await boundedIO(() => queue, () => {
+        if (waitingForOwner) controller.abort();
+      }).catch((error) => failed(error, "normal_observer"));
       return entry;
+    },
+    async captureReadSnapshot() {
+      const records = await readRetained();
+      const entries = records.entries.map(storedEntry).filter(Boolean);
+      const snapshot = Object.freeze({
+        runIds: Object.freeze([
+          ...new Set(entries.map((entry) => entry.runId).filter(Boolean)),
+        ]),
+      });
+      readSnapshots.set(snapshot, { ...records, entries });
+      return snapshot;
     },
     async list(options = {}) {
       return resultFor(
@@ -579,7 +829,10 @@ export function createDiagnosticsLog({
           "简历岗位雷达运行诊断（已省略私人内容）",
           result.storage.message || "日志文件：" + result.file,
           "持久化状态：" +
-            JSON.stringify({ pendingWrites, droppedWrites, failedWrites }),
+            JSON.stringify({ pendingWrites, droppedWrites, failedWrites,
+              ...(storage.failureCode ? { failureCode: storage.failureCode, failurePhase: storage.failurePhase } : {}),
+              ...(storage.failureFacts ? { failureFacts: copyFatalFailureFacts(storage.failureFacts) } : {}),
+            }),
           "运行环境：" + JSON.stringify(result.runtime),
           "保留范围：" +
             JSON.stringify({ ...result.summary, ...result.retention }),

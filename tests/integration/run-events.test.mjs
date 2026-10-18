@@ -6,11 +6,13 @@ import { createRunEventHub } from "../../src/application/run-events.mjs";
 import { writeRunEventStream } from "../../src/server/event-stream.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 import { recoverWorkspace } from "../../src/infrastructure/storage/recovery.mjs";
-import { createTempDir } from "../helpers/fixtures.mjs";
+import { createTempDir, registerTestResource } from "../helpers/fixtures.mjs";
 async function fixture(t) {
-  const repository = await openWorkspaceRepository({allowLegacy:true,
+  const repository = await openWorkspaceRepository({
+    allowLegacy: true,
     dataDir: await createTempDir(t),
   });
+  registerTestResource(t, () => repository.close());
   await repository.mutateWorkspace((w) => {
     w.runs.r1 = {
       runId: "r1",

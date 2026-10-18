@@ -18,8 +18,10 @@ export function deriveActivityView(
   activity: CollectionActivity | null,
   slice: Record<string, unknown> | null,
 ) {
-  const status =
-    activity?.collectionProgress.status ?? String(slice?.status ?? "idle");
+  const progress = activity?.collectionProgress;
+  const status = progress?.draining
+    ? "draining"
+    : (progress?.status ?? String(slice?.status ?? "idle"));
   const matches =
     !activity ||
     (!!activity.collectionProgress.activeSliceRunId &&
@@ -27,7 +29,11 @@ export function deriveActivityView(
   return {
     rootId: activity?.runId ?? null,
     status,
-    label: activityLabels[status] ?? status,
+    label: progress?.draining
+      ? progress.stopIntent === "cancel"
+        ? "已受理取消，正在排空"
+        : "已受理暂停，正在排空"
+      : (activityLabels[status] ?? status),
     phase:
       matches && slice
         ? String(slice.stage ?? slice.phase ?? "") || null

@@ -122,6 +122,7 @@ export async function collectionFixture(
         const p = w.runs[ref.activityId].collectionProgress;
         p.status = "collecting";
         p.activeSliceRunId = sliceRunId;
+        p.operationId = lease.operationId;
         w.runs[sliceRunId] = {
           runId: sliceRunId,
           recordId: randomUUID(),

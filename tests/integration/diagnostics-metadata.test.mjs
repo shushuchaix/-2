@@ -7,10 +7,12 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createTempDir } from "../helpers/fixtures.mjs";
 import { createDiagnosticsLog } from "../../src/infrastructure/diagnostics/log.mjs";
+import { createDiagnosticWriteBarrier } from "../helpers/diagnostic-write-barrier.mjs";
 
 test("detailed diagnostic metadata survives restart while unknown nested payloads are discarded", async (t) => {
   const dataDir = await createTempDir(t);
-  const log = createDiagnosticsLog({ dataDir });
+  const completion = createDiagnosticWriteBarrier({ dataDir });
+  const log = createDiagnosticsLog({ dataDir, fsAdapter: completion.fsAdapter });
   const requestId = "q-00000000-0000-4000-8000-000000000001";
   const error = Object.assign(Error("private-response"), {
     code: "parse_error",
@@ -62,6 +64,7 @@ test("detailed diagnostic metadata survives restart while unknown nested payload
     },
     error,
   );
+  await completion.waitForWrites(1);
   const reopened = createDiagnosticsLog({ dataDir });
   const result = await reopened.list();
   const saved = result.entries.find(
@@ -162,7 +165,8 @@ test("severity and correlation filters find old failures before the view limit",
 
 test("tampered metadata is sanitized again and export reports damaged or rotated history", async (t) => {
   const dataDir = await createTempDir(t);
-  const log = createDiagnosticsLog({ dataDir });
+  const completion = createDiagnosticWriteBarrier({ dataDir });
+  const log = createDiagnosticsLog({ dataDir, fsAdapter: completion.fsAdapter });
   const entry = await log.record({ operation: "http.request" });
   const altered = {
     ...entry,
@@ -177,6 +181,7 @@ test("tampered metadata is sanitized again and export reports damaged or rotated
     },
     parser: { format: "private-format", textLength: -1, text: "private-text" },
   };
+  await completion.waitForWrites(1);
   await fs.writeFile(
     path.join(dataDir, "logs", "application.log"),
     "damaged\n" + JSON.stringify(altered) + "\n",
@@ -252,7 +257,8 @@ test("concurrent task contexts correlate internal storage logs without mixing ta
 
 test("default export includes all retained events even beyond 5000", async (t) => {
   const dataDir = await createTempDir(t);
-  const log = createDiagnosticsLog({ dataDir });
+  const completion = createDiagnosticWriteBarrier({ dataDir });
+  const log = createDiagnosticsLog({ dataDir, fsAdapter: completion.fsAdapter });
   const first = await log.record({ operation: "run.failed", runId: "r-many" });
   // Seed retained history in one write; this verifies export scope, not disk throughput.
   const history = [
@@ -262,6 +268,7 @@ test("default export includes all retained events even beyond 5000", async (t) =
       diagnosticId: "d-" + randomUUID(),
     })),
   ];
+  await completion.waitForWrites(1);
   await fs.writeFile(
     path.join(dataDir, "logs", "application.log"),
     history.map((entry) => JSON.stringify(entry)).join("\n") + "\n",
@@ -353,10 +360,11 @@ test("late diagnostic IO recovers all writes once in order across restart", asyn
         return fs[phase](...args);
       },
     };
+    const completion = createDiagnosticWriteBarrier({ dataDir, fsAdapter: adapter });
     const log = createDiagnosticsLog({
       dataDir,
       clock: { now: () => tick++ },
-      fsAdapter: adapter,
+      fsAdapter: completion.fsAdapter,
     });
     const ids = [];
     for (let i = 0; i < 241; i++)
@@ -365,6 +373,7 @@ test("late diagnostic IO recovers all writes once in order across restart", asyn
           .diagnosticId,
       );
     await log.list();
+    await completion.waitForWrites(241, { phase });
     const reopened = createDiagnosticsLog({ dataDir });
     const entries = (await reopened.exportText())
       .split("\n")

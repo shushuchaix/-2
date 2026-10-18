@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { apiFixture } from "../helpers/api-fixture.mjs";
-import { createTempDir } from "../helpers/fixtures.mjs";
+import { createTempDir, registerTestResource } from "../helpers/fixtures.mjs";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { createDiagnosticsLog } from "../../src/infrastructure/diagnostics/log.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 
@@ -64,36 +65,68 @@ test("successful writes are traced but diagnostic polling never fills its own hi
 test("transaction failures keep the failed storage step and do not commit private data", async (t) => {
   const dataDir = await createTempDir(t),
     diagnostics = createDiagnosticsLog({ dataDir });
-  const repository = await openWorkspaceRepository({allowLegacy:true,
+  let armed = false,
+    mutations = 0;
+  const primary = Object.assign(Error("private-path"), {
+    code: "ENOSPC",
+    syscall: "rename",
+    dest: path.join(dataDir, "control", "state.json"),
+  });
+  const repository = await openWorkspaceRepository({
     dataDir,
     diagnostics,
     fsAdapter: {
       ...fs,
       rename: async (from, to) => {
-        if (to === path.join(dataDir, "workspace.v2.json"))
-          throw Object.assign(Error("private-path"), {
-            code: "ENOSPC",
-            syscall: "rename",
-            dest: to,
-          });
+        if (armed && to === path.join(dataDir, "control", "state.json"))
+          throw primary;
         return fs.rename(from, to);
       },
     },
   });
+  registerTestResource(t, () => repository.close());
+  const previous = await repository.readControl();
+  const revision = await repository.getMeta("revision");
+  armed = true;
   await assert.rejects(
-    repository.mutateWorkspace((w) => {
-      w.settings.privateNote = "private-resume";
+    repository.withWriteFence(async (fence) => {
+      const next = fence.control;
+      next.migrationJournal.syntheticPrivateNote = "private-resume";
+      await fence.commitControl(next);
+      return fence.transaction(
+        { select: [{ collection: "settings", ids: ["privateNote"] }] },
+        (tx) => {
+          mutations++;
+          tx.putRow({
+            collection: "settings",
+            id: "privateNote",
+            value: "private-resume",
+          });
+        },
+      );
     }),
-    { code: "ENOSPC" },
+    (error) => error === primary && error.code === "ENOSPC",
   );
+  await nextTurn();
   const result = await diagnostics.list({ category: "storage" });
   const failed = result.entries.find((e) => e.outcome === "failed");
   assert.ok(failed);
-  assert.equal(failed.phase, "current");
+  assert.equal(failed.phase, "finished");
+  assert.equal(failed.failurePhase, "commit");
   assert.equal(failed.error.storageOperation, "atomic.rename");
-  assert.equal(failed.resource, "workspace.v2.json");
+  assert.equal(failed.resource, "control/state.json");
+  assert.equal(failed.code, "ENOSPC");
+  assert.equal(failed.committed, false);
+  assert.equal(failed.sqlCommits, 0);
   assert.equal(JSON.stringify(result).includes("private-"), false);
-  assert.equal((await repository.read()).revision, 0);
+  assert.equal(JSON.stringify(result).includes(dataDir), false);
+  assert.equal(mutations, 0);
+  assert.deepEqual(await repository.readControl(), previous);
+  assert.equal(await repository.getMeta("revision"), revision);
+  assert.equal(
+    await repository.getRow({ collection: "settings", id: "privateNote" }),
+    null,
+  );
 });
 
 test("startup and settings boundaries leave safe environment and completion metadata", async (t) => {

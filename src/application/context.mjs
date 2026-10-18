@@ -64,15 +64,23 @@ import { createContentReadService } from "./content-read-service.mjs";
 import { assertCollectionWrite } from "../domain/collection.mjs";
 import { contentHash } from "../infrastructure/storage/repository.mjs";
 import { createResourceShutdown } from "../infrastructure/lifecycle/resource-shutdown.mjs";
+import { createCollectionRuntimeManager } from './collection-runtime-manager.mjs';
+import { rowKey } from '../infrastructure/storage/sqlite-records.mjs';
+import { recoverPendingStorageMaintenance } from '../infrastructure/storage/restore-maintenance.mjs';
+import { createModelCredentialBinding, matchesModelCredentialBinding } from './model-credential-binding.mjs';
 export async function createApplicationContext({
   cfg,
   dataDir = process.env.RJR_DATA_DIR || DATA_ROOT,
   dependencies = {},
 }) {
+  const startupResources=[];
+  try {
   const diagnostics =
     dependencies.diagnostics ||
     createDiagnosticsLog({ dataDir, clock: dependencies.clock });
   const tick = () => dependencies.clock?.now?.() ?? Date.now();
+  const startupStage = stage => dependencies.onStartupStage?.({stage});
+  startupStage('storage-opening');
   async function trace(operation, action, summarize = () => ({})) {
     const started = tick();
     try {
@@ -108,11 +116,16 @@ export async function createApplicationContext({
           dataDir,
           clock: dependencies.clock,
           diagnostics,
-          allowLegacy: true,
+          allowLegacy: dependencies.legacySchema === true,
           fsAdapter: dependencies.fsAdapter,
+          faultInjector: dependencies.storageFaultInjector,
+          onStartupStage: dependencies.onStartupStage,
         }),
       () => ({ stage: "startup", runtime: defaultRuntime() }),
     ));
+  if(!dependencies.repository)startupResources.push(()=>repository.close());
+  startupResources.push(()=>dependencies.stopOwnedResources?.());
+  if(dependencies.legacySchema!==true)await recoverPendingStorageMaintenance({repository,fsAdapter:dependencies.fsAdapter});
   const migration = await trace(
     "application.migration",
     () =>
@@ -121,10 +134,32 @@ export async function createApplicationContext({
             dataDir: repository.dataDir,
             repository,
           })
-        : bootstrapWorkspace({ repository, fsAdapter: dependencies.fsAdapter }),
+        : repository.migration || bootstrapWorkspace({ repository, fsAdapter: dependencies.fsAdapter }),
     (result) => ({ issueCount: result.issues?.length || 0 }),
   );
   const operationGate = createWorkspaceOperationGate({ repository });
+  startupStage('storage-recovering');
+  const readSettings = async () => {
+    if(dependencies.legacySchema===true)return (await repository.read()).settings;
+    const page=await repository.queryRows({collection:'settings',limit:200});
+    if(page.hasMore)throw packageError('settings_limit_exceeded','设置记录超过安全读取上限。',503);
+    return Object.fromEntries(page.rows.map(row=>[row.id,row.value]));
+  };
+  const storedSettings=await readSettings();
+  cfg.deepseek||={};
+  let credentialCandidate=typeof cfg.deepseek.apiKey==='string'?cfg.deepseek.apiKey:'';
+  let credentialBinding=storedSettings.apiKeyBinding;
+  let credentialStatus='not_configured';
+  const publishModelSettings=(settings,candidate=credentialCandidate)=>{
+    for(const key of ['baseUrl','model'])if(typeof settings.model?.[key]==='string')cfg.deepseek[key]=settings.model[key];
+    credentialBinding=settings.apiKeyBinding;
+    credentialCandidate=candidate;
+    if(dependencies.legacySchema===true){cfg.deepseek.apiKey=candidate;credentialStatus=candidate?'configured':'not_configured';return;}
+    const verified=matchesModelCredentialBinding(candidate,cfg.deepseek,credentialBinding);
+    cfg.deepseek.apiKey=verified?candidate:'';
+    credentialStatus=verified?'configured':candidate||credentialBinding?.configured?'needs_configuration':'not_configured';
+  };
+  publishModelSettings(storedSettings);
   const managementUpgrade = await trace(
     "application.migration",
     () =>
@@ -144,6 +179,13 @@ export async function createApplicationContext({
       },
     }),
   );
+  if(dependencies.legacySchema!==true&&!storedSettings.model?.baseUrl&&!storedSettings.model?.model){
+    const model=Object.fromEntries(['baseUrl','model'].filter(key=>typeof cfg.deepseek[key]==='string').map(key=>[key,cfg.deepseek[key]]));
+    if(Object.keys(model).length)await repository.transaction({select:[{collection:'settings',ids:['model']}]},tx=>{
+      const latest=tx.getRow({collection:'settings',id:'model'})||{};
+      tx.putRow({collection:'settings',id:'model',value:{...model,...latest}});
+    });
+  }
   const registry = dependencies.registry || createDefaultSourceRegistry();
   if (dependencies.legacySchema !== true) repository.enableStrictSchema3?.();
   const attachmentLayout = resolveDataLayout(repository.dataDir),
@@ -160,19 +202,12 @@ export async function createApplicationContext({
         executable: dependencies.docConverterExecutable,
         cleanup: attachmentCleanup,
       });
+  startupResources.push(()=>ocr.close?.());
   await attachmentCleanup.resumePending();
   await dependencies.recoverOwnedResources?.();
-  const collectionRuntime =
-    dependencies.collectionRuntime ||
-    (dependencies.collectionRuntimeRoot
-      ? await verifyCollectionRuntime({
-          root: dependencies.collectionRuntimeRoot,
-        })
-      : {
-          verified: false,
-          capabilities: { static: false, dynamic: false, enhanced: false },
-        });
-  const anonymousWorker =
+  const collectionRuntime = createCollectionRuntimeManager({runtime:dependencies.collectionRuntime,
+    root:dependencies.collectionRuntimeRoot,verify:dependencies.verifyCollectionRuntime||verifyCollectionRuntime,onStage:dependencies.onStartupStage});
+  const rawAnonymousWorker =
     dependencies.anonymousWorker ||
     createAnonymousWorker({
       runtime: collectionRuntime,
@@ -183,6 +218,9 @@ export async function createApplicationContext({
       clock: repository.clock,
       diagnostics,
     });
+  const anonymousWorker=dependencies.anonymousWorker||Object.freeze({...rawAnonymousWorker,
+    async read(input){await collectionRuntime.ensureReady();return rawAnonymousWorker.read(input);}});
+  startupResources.push(()=>anonymousWorker.stop());
   const cleanupPackage = async (id) => {
     await anonymousWorker.closePackage(id);
     const resources = await dependencies.cleanupOwnedResources?.(id),
@@ -218,8 +256,11 @@ export async function createApplicationContext({
       diagnostics,
     });
   trashService.setPurgeService(purgeService);
+  startupResources.push(()=>trashScheduler.stop());
   if (dependencies.legacySchema !== true) {
     await trace("application.recovery", async () => {
+      const archived=await trashService.resumePending();
+      if(archived.pending.length)throw packageError('archive_cleanup_pending','版本归档仍待安全清理，业务访问已停止。',503);
       const assignments = await assignmentService.recoverPending();
       if (assignments.pending?.length)
         throw packageError(
@@ -244,7 +285,7 @@ export async function createApplicationContext({
       siteIds: (w) =>
         (
           dependencies.catalog ||
-          loadSiteCatalog({ customSites: w.settings.customSites })
+          loadSiteCatalog({ customSites: w.settings?.customSites })
         ).map((s) => s.siteId),
     }),
     jobService = createJobService({ repository });
@@ -256,22 +297,20 @@ export async function createApplicationContext({
         diagnostics,
         dnsMode: cfg.network?.dnsMode || "auto",
       }));
-  const modelFactory =
-    dependencies.modelFactory ||
-    ((options) =>
-      new DeepSeek(
-        {
-          ...cfg,
-          deepseek: {
-            ...(options.modelConfig || cfg.deepseek),
-            apiKey:
-              options.credentials?.userApiKey ||
-              options.modelConfig?.apiKey ||
-              cfg.deepseek.apiKey,
-          },
-        },
-        { ...options, diagnostics },
-      ));
+  const createModel=dependencies.modelFactory||((options)=>new DeepSeek({...cfg,deepseek:options.modelConfig},{...options,diagnostics}));
+  const modelFactory=(options={})=>{
+    const modelConfig={...(options.modelConfig||cfg.deepseek)};
+    if(dependencies.legacySchema===true&&options.credentials?.userApiKey)modelConfig.apiKey=options.credentials.userApiKey;
+    if(dependencies.legacySchema!==true){
+      // Recheck even an externally mutated cfg or an IPC-supplied candidate.
+      // Per-run userApiKey remains an explicit independent session credential.
+      const candidate=options.credentials?.userApiKey||modelConfig.apiKey||'';
+      const verified=Boolean(options.credentials?.userApiKey)||matchesModelCredentialBinding(candidate,modelConfig,credentialBinding);
+      modelConfig.apiKey=verified?candidate:'';
+      if(!matchesModelCredentialBinding(cfg.deepseek.apiKey,cfg.deepseek,credentialBinding))cfg.deepseek.apiKey='';
+    }
+    return createModel({...options,modelConfig});
+  };
   const evaluationService = createEvaluationService({
       repository,
       operationGate,
@@ -279,7 +318,7 @@ export async function createApplicationContext({
       budgetFactory: async ({ budgets } = {}) =>
         createConfiguredModelBudget({
           modelConfig: cfg.deepseek,
-          budgets: budgets || (await repository.read()).settings.budgets,
+          budgets: budgets || (await readSettings()).budgets,
         }),
       diagnostics,
     }),
@@ -310,24 +349,27 @@ export async function createApplicationContext({
     dependencies.contentReadService ||
     createContentReadService({
       anonymousWorker,
+      browser: dependencies.collectionBrowser,
       clock: repository.clock,
-      claimEnhancement: async ({ ref, token, url, operationLease }) =>
-        (
-          await repository.mutateWorkspace(
-            (w) => {
-              assertScope(w, ref.scope, repository.clock.now());
-              assertCollectionWrite(w, { ref, token });
-              const p = w.runs[ref.activityId].collectionProgress;
-              p.enhancementAttempts ||= {};
-              const key = contentHash(url);
-              if (p.enhancementAttempts[key]) return false;
-              p.enhancementAttempts[key] = true;
-              return true;
-            },
-            { operationLease },
-          )
-        ).result,
+      claimEnhancement: async ({ref,token,url,operationLease})=>{
+        const id=rowKey(ref.activityId,'enhancement',contentHash(url));
+        const receipt=await repository.transaction({select:[
+          {collection:'runs',ownerPackageId:ref.scope.packageId,ids:[ref.activityId]},
+          {collection:'sourceRotation',ownerPackageId:ref.scope.packageId,ids:[id]},
+        ]},tx=>{
+          const run=tx.getRow({collection:'runs',id:ref.activityId});
+          const revisionId=tx.view.indexes.runs?.[ref.activityId]?.targetRevisionId;
+          assertCollectionWrite({runs:{[ref.activityId]:{...run,targetSnapshot:{revisionId}}}},{ref,token});
+          if(tx.getRow({collection:'sourceRotation',id}))return false;
+          tx.putRow({collection:'sourceRotation',id,ownerPackageId:ref.scope.packageId,value:{ownerPackageId:ref.scope.packageId,runId:ref.activityId,kind:'enhancement',resourceKey:contentHash(url)}});
+          return true;
+        },{operationLease,scope:ref.scope});return receipt.result;
+      },
     });
+  if(!dependencies.contentReadService&&dependencies.collectionRuntimeRoot){
+    const readContent=contentReadService.read.bind(contentReadService);
+    contentReadService.read=async input=>{input.signal?.throwIfAborted();await collectionRuntime.ensureReady();return readContent(input);};
+  }
   const collectionService =
     dependencies.legacySchema === true
       ? null
@@ -337,6 +379,7 @@ export async function createApplicationContext({
           registry,
           requestFactory,
           readService: contentReadService,
+          jobService,
           officialSites: dependencies.catalog || loadSiteCatalog(),
           ledger: createCollectionLedger({ repository }),
           attachmentService: createAttachmentService({
@@ -351,26 +394,25 @@ export async function createApplicationContext({
           evaluationService,
           modelFactory,
           modelConfig: cfg.deepseek,
+          ensureCollectionRuntime: () => collectionRuntime.ensureReady(),
           diagnostics,
           runGate: gate,
           planner:
             dependencies.collectionPlanner ||
             (async (input) => {
-              const w = input.workspace;
+              const {settings={},sourceHealth={},packageSettings={}}=input;
               return buildCollectionPlan({
                 ...input,
                 catalog:
                   dependencies.catalog ||
-                  loadSiteCatalog({ customSites: w.settings.customSites }),
+                  loadSiteCatalog({ customSites: settings.customSites }),
                 health: {
-                  ...w.sourceHealth,
-                  ...w.packages[input.scope.packageId].collectionSettings
-                    ?.sourceVerification,
+                  ...sourceHealth,
+                  ...packageSettings.sourceVerification,
                 },
                 sourceOverrides: {
-                  ...w.settings.sourceOverrides,
-                  ...w.packages[input.scope.packageId].collectionSettings
-                    ?.sourceOverrides,
+                  ...settings.sourceOverrides,
+                  ...packageSettings.sourceOverrides,
                 },
               });
             }),
@@ -388,6 +430,7 @@ export async function createApplicationContext({
       })
     : null;
   collectionRefresh?.start();
+  startupResources.push(()=>collectionRefresh?.stop());
   const sourceService = createSourceService({
       catalog: dependencies.catalog,
       diagnostics,
@@ -437,12 +480,11 @@ export async function createApplicationContext({
       {
         id: "runs",
         stop: async () => {
-          const w = await repository.read();
-          if (w.schemaVersion !== 3) return;
+          if ((await repository.getMeta('schemaVersion')) !== 3) return;
+          const packages=await repository.queryRows({collection:'packages',where:{kind:'target',status:'active'},limit:200});
+          if(packages.hasMore)throw packageError('workspace_operation_busy','版本数量超过本轮安全停止上限。',503);
           const outcomes = await Promise.allSettled(
-            Object.values(w.packages)
-              .filter((p) => p.state === "active" && p.kind === "target")
-              .map((p) => runService.cancelPackageAndWait(p.packageId)),
+            packages.rows.map(({value:p}) => runService.cancelPackageAndWait(p.packageId)),
           );
           const failures = outcomes
             .filter((result) => result.status === "rejected")
@@ -455,6 +497,7 @@ export async function createApplicationContext({
       { id: "ocr", stop: () => ocr.close?.() },
       { id: "worker", stop: () => anonymousWorker.stop() },
       { id: "owned", stop: () => dependencies.stopOwnedResources?.() },
+      { id: 'repository', stop: () => repository.close?.() },
     ],
     onError: (shutdownResource, error) =>
       recordDiagnostic(
@@ -513,41 +556,61 @@ export async function createApplicationContext({
     managementUpgrade,
     recovery,
     async createModelBudget(scope) {
-      const workspace = await repository.read();
-      if (scope) assertScope(workspace, scope, repository.clock.now());
-      const target =
-        scope &&
-        Object.values(workspace.targets)
-          .flat()
-          .find((v) => v.revisionId === scope.targetRevisionId);
+      const settings=await readSettings();
+      let target;
+      if(scope){
+        await repository.getMeta('revision',{scope});
+        target=await repository.getRow({collection:'targets',id:scope.targetRevisionId,ownerPackageId:scope.packageId},{scope});
+      }
       return createConfiguredModelBudget({
         modelConfig: cfg.deepseek,
         budgets: effectiveModelBudgets(
-          workspace.settings.budgets,
+          settings.budgets,
           target?.budgets,
         ),
       });
     },
-    async getCatalog() {
-      const w = await repository.read(),
-        health = projectSourceHealth(w, { registry });
+    async getCatalog(scope) {
+      const settings=await readSettings();
+      let health;
+      if(dependencies.legacySchema===true)health=projectSourceHealth(await repository.read(),{registry,scope});
+      else{
+        const page=await repository.queryRows({collection:'sourceHealth',limit:200});
+        if(page.hasMore)throw packageError('source_health_limit','来源状态超过安全读取上限。',503);
+        const pkg=scope?await repository.getRow({collection:'packages',id:scope.packageId},{scope}):null;
+        health=projectSourceHealth({sourceHealth:Object.fromEntries(page.rows.map(row=>[row.id,row.value])),
+          packages:pkg?{[pkg.packageId]:pkg}:{},runs:{},observations:{}},{registry,scope});
+      }
       return (
         dependencies.catalog ||
-        loadSiteCatalog({ customSites: w.settings.customSites })
+        loadSiteCatalog({ customSites: settings.customSites })
       ).map((site) => ({
         ...site,
         health: health[site.providerId + "/" + site.siteId] || null,
       }));
     },
+    async commitModelCredential(key) {
+      if(typeof key!=='string')throw packageError('invalid_model_credential','模型凭据格式无效。',400);
+      const settings=await context.saveSettings({model:{apiKey:key}});
+      return {configured:settings.model.configured,credentialStatus:settings.model.credentialStatus};
+    },
+    async setModelCredentialCandidate(key) {
+      if(typeof key!=='string')throw packageError('invalid_model_credential','模型凭据格式无效。',400);
+      publishModelSettings(await readSettings(),key);
+      return {configured:credentialStatus==='configured',credentialStatus};
+    },
     async getSettings() {
-      const w = await repository.read();
+      const settings=await readSettings();
+      publishModelSettings(settings);
       return {
-        ...redactBusiness(w.settings),
+        ...redactBusiness(settings),
         model: {
-          ...redactBusiness(w.settings.model),
+          ...redactBusiness(settings.model),
           baseUrl: cfg.deepseek.baseUrl,
           model: cfg.deepseek.model,
-          configured: !!cfg.deepseek.apiKey,
+          configured: credentialStatus==='configured',
+          credentialStatus,
+          ...(credentialStatus==='needs_configuration'?{credentialMessage:'本地模型凭据与当前配置尚未核对，请重新填写密钥并保存；规则分析仍可使用。'}:{}),
         },
         searchConfigured: !!cfg.__activeSearchProvider,
       };
@@ -556,7 +619,7 @@ export async function createApplicationContext({
       const result = settingsQueue.then(() =>
         trace("application.settings", async () => {
           if (settingsRollbackFailure) throw settingsRollbackFailure;
-          const current = await repository.read(),
+          const current = {settings:await readSettings()},
             effectiveModel = { ...cfg.deepseek, ...input?.model },
             effectiveBudgets = {
               ...current.settings.budgets,
@@ -628,78 +691,57 @@ export async function createApplicationContext({
                 throw Error("Invalid model setting");
               changes[key] = model[key];
             }
-          const configFs = dependencies.fsAdapter || fs;
-          const filename = path.join(repository.dataDir, "config.json");
-          let previousConfig,
-            configExisted = false,
-            configWritten = false;
-          if (Object.keys(changes).length) {
-            let file = {};
-            try {
-              file = JSON.parse(await configFs.readFile(filename, "utf8"));
-              configExisted = true;
-            } catch (error) {
-              if (error.code !== "ENOENT") throw error;
-            }
-            previousConfig = structuredClone(file);
-            file.deepseek = { ...(file.deepseek || {}), ...changes };
-            await writeAtomicJson(filename, file, { fsAdapter: configFs });
-            configWritten = true;
-          }
-          // Compensate normal write failures; separate files are not crash-atomic.
+          const previousApiKey=credentialCandidate;
+          const keyChanged=Object.hasOwn(changes,'apiKey');
+          const candidate=keyChanged?changes.apiKey:credentialCandidate;
+          let credentialWritten=false, committedModel, committedBinding;
           try {
-            await repository.mutateWorkspace((w) => {
-              if (input.budgets) {
-                w.settings.budgets = {
-                  ...w.settings.budgets,
-                  ...input.budgets,
-                };
-                if (input.budgets.maxCostCny === null) {
-                  delete w.settings.budgets.maxCostCny;
-                  if (!Object.hasOwn(input.budgets, "maxModelRequests"))
-                    w.settings.budgets.maxModelRequests = Math.min(
-                      20,
-                      w.settings.budgets.maxModelRequests ?? 20,
-                    );
+            if(keyChanged&&dependencies.saveModelCredential){
+              await dependencies.saveModelCredential({apiKey:changes.apiKey});
+              credentialWritten=true;
+              await dependencies.settingsFaultInjector?.('settings.credential-written');
+            }
+            if(dependencies.legacySchema===true){
+              await repository.mutateWorkspace(w=>{
+                if(input.budgets)w.settings.budgets=effectiveBudgets;
+                if(input.model)w.settings.model={...w.settings.model,...redactBusiness(model)};
+              });
+            }else{
+              const receipt=await repository.transaction({select:[{collection:'settings',ids:['budgets','model','apiKeyBinding']}]},tx=>{
+                const latestBudgets={...(tx.getRow({collection:'settings',id:'budgets'})||{}),...input.budgets};
+                if(input.budgets?.maxCostCny===null){delete latestBudgets.maxCostCny;if(!Object.hasOwn(input.budgets,'maxModelRequests'))latestBudgets.maxModelRequests=Math.min(20,latestBudgets.maxModelRequests??20);}
+                const latestModel={...(tx.getRow({collection:'settings',id:'model'})||{}),...redactBusiness(model)};
+                if(latestBudgets.maxCostCny!=null)createConfiguredModelBudget({modelConfig:{...cfg.deepseek,...latestModel},budgets:latestBudgets});
+                let binding=tx.getRow({collection:'settings',id:'apiKeyBinding'});
+                // A budget-only patch never changes or clears a local credential.
+                // Only explicit credential confirmation binds a key to the
+                // endpoint/model. Public configuration changes fail closed.
+                if(keyChanged){
+                  binding=createModelCredentialBinding(candidate,latestModel);
+                  tx.putRow({collection:'settings',id:'apiKeyBinding',value:binding});
                 }
-              }
-              if (input.model)
-                w.settings.model = {
-                  ...w.settings.model,
-                  ...redactBusiness(model),
-                };
-            });
-          } catch (error) {
-            if (configWritten) {
-              try {
-                if (configExisted)
-                  await writeAtomicJson(filename, previousConfig, {
-                    fsAdapter: configFs,
-                  });
-                else
-                  await configFs.unlink(filename).catch((failure) => {
-                    if (failure.code !== "ENOENT") throw failure;
-                  });
-              } catch (rollbackError) {
-                await recordDiagnostic(
-                  diagnostics,
-                  {
-                    operation: "application.settings",
-                    phase: "rollback",
-                    outcome: "failed",
-                  },
-                  rollbackError,
-                );
-                settingsRollbackFailure = packageError(
-                  "settings_rollback_failed",
-                  "设置保存失败，原配置未能恢复。当前会话已停止保存设置，请检查存储问题并恢复原配置后重新启动软件。",
-                );
+                if(input.budgets)tx.putRow({collection:'settings',id:'budgets',value:latestBudgets});
+                if(input.model)tx.putRow({collection:'settings',id:'model',value:latestModel});
+                return {model:latestModel,binding};
+              });committedModel=receipt.result.model;committedBinding=receipt.result.binding;
+            }
+          }catch(error){
+            if(error.committed){
+              publishModelSettings(await readSettings(),candidate);
+              throw error;
+            }
+            if(credentialWritten){
+              try{await dependencies.saveModelCredential({apiKey:previousApiKey});}
+              catch(rollbackError){
+                await recordDiagnostic(diagnostics,{operation:'application.settings',phase:'rollback',outcome:'failed'},rollbackError);
+                settingsRollbackFailure=packageError('settings_rollback_failed','设置保存失败，本地凭据未能恢复。请检查本地存储后重新启动。',503);
                 throw settingsRollbackFailure;
               }
             }
             throw error;
           }
-          Object.assign(cfg.deepseek, changes);
+          if(dependencies.legacySchema===true)Object.assign(cfg.deepseek,changes);
+          publishModelSettings({model:committedModel||cfg.deepseek,apiKeyBinding:committedBinding},candidate);
           return context.getSettings();
         }),
       );
@@ -708,7 +750,7 @@ export async function createApplicationContext({
     },
     async backup() {
       return trace("application.backup", async () => {
-        if ((await repository.read()).schemaVersion === 3) {
+        if ((await repository.getMeta('schemaVersion')) === 3) {
           await trashScheduler.sweep();
           if (
             (await trashService.preview({ expiredOnly: true })).candidates
@@ -750,17 +792,21 @@ export async function createApplicationContext({
         );
         await writeAtomicJson(archivePath, archive);
         try {
-          return await restoreBackup({
+          const restored=await restoreBackup({
             repository,
             archivePath,
             trashService,
             purgeService,
             fsAdapter: dependencies.fsAdapter,
           });
+          publishModelSettings(await readSettings());
+          return restored;
         } catch (error) {
+          credentialBinding=undefined;cfg.deepseek.apiKey='';credentialStatus='needs_configuration';
           if (
             error.code === "workspace_operation_busy" ||
-            error.code === "invalid_operation_lease"
+            error.code === "invalid_operation_lease" ||
+            error.code === "workspace_restore_pending"
           )
             throw error;
           if (error.code && /ENOSPC|EACCES|EPERM|EROFS|EIO/.test(error.code))
@@ -781,7 +827,12 @@ export async function createApplicationContext({
     dependencies.startScheduler !== false
   )
     trashScheduler.start();
+  startupStage('business-ready');
   return context;
+  }catch(error){
+    for(const stop of startupResources.toReversed())try{await stop();}catch{}
+    throw error;
+  }
 }
 const defaults = new Map();
 export function getDefaultApplicationContext(cfg) {

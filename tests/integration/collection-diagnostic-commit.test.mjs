@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { collectionFixture } from "../helpers/collection-fixture.mjs";
 import { job } from "../helpers/fixtures.mjs";
+import { createCollectionService } from "../../src/application/collection-service.mjs";
+import { createSourceRegistry } from "../../src/sources/registry.mjs";
+import { rowKey } from "../../src/infrastructure/storage/sqlite-records.mjs";
+import { contentHash } from "../../src/infrastructure/storage/content-hash.mjs";
+import {
+  prepareCollectionPageCommit,
+  applyCollectionPageCommit,
+  collectionWriteSelectors,
+} from "../../src/application/collection-page-commit.mjs";
 
 const record = (overrides = {}) =>
   job({
@@ -32,6 +41,167 @@ async function fixture(t) {
     });
   return { f, c, commit };
 }
+
+test("a lost diagnostic acknowledgement leaves facts and original activity attribution in one commit", async (t) => {
+  const { f, c, commit } = await fixture(t);
+  let loseAcknowledgement = true;
+  f.service = createCollectionService({
+    repository: f.repository,
+    ledger: f.ledger,
+    operationGate: f.operationGate,
+    registry: createSourceRegistry([]),
+    jobService: {
+      ingestRecords: async (input) => {
+        const result = await f.jobs.ingestRecords(input);
+        if (loseAcknowledgement) {
+          loseAcknowledgement = false;
+          throw Object.assign(Error("synthetic lost acknowledgement"), {
+            code: "synthetic_lost_ack",
+          });
+        }
+        return result;
+      },
+    },
+    planner: async () => ({ units: [] }),
+  });
+  await assert.rejects(commit(), { code: "synthetic_lost_ack" });
+  const marker = await f.repository.getRow(
+    {
+      collection: "sourceRotation",
+      id: rowKey(c.ref.activityId, "diagnostic", contentHash("body-recheck-1")),
+      ownerPackageId: f.scope.packageId,
+    },
+    { scope: f.scope },
+  );
+  assert.ok(
+    marker,
+    "the facts commit must already contain the durable diagnostic result",
+  );
+  const saved = await f.repository.read();
+  assert.equal(
+    saved.runs[c.ref.activityId].collectionProgress.newJobIds.length,
+    1,
+  );
+  assert.equal(
+    saved.runs[c.ref.activityId].collectionProgress.metrics.newUnique,
+    1,
+  );
+  assert.equal(saved.runs[c.token.sliceRunId].counts.newForTarget, 1);
+  const replay = await commit();
+  assert.equal(replay.duplicate, true);
+  assert.deepEqual(replay.newForTarget, marker.result.newForTarget);
+  assert.deepEqual(replay.jobIds, marker.result.jobIds);
+  await c.lease.release();
+  await f.reopen();
+  await f.service.withDiagnosticContext(
+    { ref: c.ref, requestId: "lost-ack-recovery" },
+    async (ctx) => {
+      const recovered = await f.service.commitDiagnosticRecords({
+        ref: c.ref,
+        token: ctx.token,
+        operationLease: ctx.operationLease,
+        unitId: "unit",
+        observationKey: "body-recheck-1",
+        records: [record()],
+      });
+      assert.equal(recovered.duplicate, true);
+      assert.equal(recovered.sliceRunId, c.token.sliceRunId);
+      assert.deepEqual(recovered.newForTarget, marker.result.newForTarget);
+    },
+  );
+});
+
+test("diagnostic facts, counters, health and observation marker use one SQL commit", async (t) => {
+  const { f, c, commit } = await fixture(t);
+  f.repository.metrics({ reset: true });
+  await commit();
+  const metrics = f.repository.metrics();
+  assert.equal(metrics.commits, 1);
+  assert.equal(metrics.maintenanceReads, 0);
+  assert.equal(metrics.maintenanceMutations, 0);
+  assert.equal(metrics.maintenanceExports, 0);
+  const value = await f.repository.read();
+  assert.equal(
+    value.runs[c.ref.activityId].collectionProgress.metrics.newUnique,
+    1,
+  );
+});
+
+test("concurrent diagnostic observation keys return one original result without duplicate attribution", async (t) => {
+  const { f, c, commit } = await fixture(t),
+    results = await Promise.all([commit(), commit()]);
+  assert.equal(results.filter((result) => result.duplicate).length, 1);
+  assert.deepEqual(results[0].jobIds, results[1].jobIds);
+  assert.deepEqual(results[0].newForTarget, results[1].newForTarget);
+  const value = await f.repository.read();
+  assert.equal(Object.keys(value.observations).length, 1);
+  assert.equal(
+    value.runs[c.ref.activityId].collectionProgress.newJobIds.length,
+    1,
+  );
+  assert.equal(
+    value.runs[c.ref.activityId].collectionProgress.metrics.newUnique,
+    1,
+  );
+  assert.equal(value.runs[c.token.sliceRunId].counts.raw, 1);
+});
+
+test("prepared diagnostic apply rejects a concurrent marker and a changed expected revision", async (t) => {
+  const { f, c } = await fixture(t),
+    empty = {
+      jobIds: [],
+      newForTarget: [],
+      observationIds: [],
+      duplicateRelations: [],
+    },
+    input = {
+      kind: "diagnostic",
+      ref: c.ref,
+      token: c.token,
+      operationLease: c.lease,
+      unitId: "unit",
+      observationKey: "prepared-marker",
+      records: [],
+      issues: [],
+      ingestResult: empty,
+    };
+  const first = await prepareCollectionPageCommit(f.repository, input),
+    second = await prepareCollectionPageCommit(f.repository, input),
+    stale = await prepareCollectionPageCommit(f.repository, {
+      ...input,
+      observationKey: "other-marker",
+    });
+  const apply = (prepared) =>
+    f.repository.transaction(
+      {
+        select: [
+          ...prepared.select,
+          ...collectionWriteSelectors(prepared.records),
+        ],
+      },
+      (tx) => {
+        applyCollectionPageCommit(tx, prepared);
+        for (const row of prepared.records) tx.putRow(row);
+      },
+      { scope: f.scope, operationLease: c.lease },
+    );
+  await apply(first);
+  await assert.rejects(apply(second), {
+    code: "collection_diagnostic_replayed",
+  });
+  await assert.rejects(apply(stale), { code: "collection_stale_epoch" });
+  assert.equal(
+    await f.repository.getRow(
+      {
+        collection: "sourceRotation",
+        id: stale.markerId,
+        ownerPackageId: f.scope.packageId,
+      },
+      { scope: f.scope },
+    ),
+    null,
+  );
+});
 
 test("diagnostic commit rejects another target scope without storing facts", async (t) => {
   const { f, c, commit } = await fixture(t);

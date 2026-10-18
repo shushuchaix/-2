@@ -23,6 +23,7 @@ import {
 } from "../../components/ui/collapsible";
 import { validateCollectionLimits } from "../../../../public/js/validation-rules.js";
 import { FormFeedback } from "../../components/FormFeedback";
+import { toast } from "../../components/ui/toast";
 export type { CollectionActivity } from "../../lib/types";
 export const collectionStatus = activityLabels;
 const stat = (v: unknown) =>
@@ -60,6 +61,8 @@ export function CollectionProgress({
     );
   const view = deriveActivityView(activity, slice ?? null);
   const [limitErrors, setLimitErrors] = useState<Record<string, string>>({});
+  const pendingStop = useRef<"pause" | "cancel" | null>(null);
+  const [stopMessage, setStopMessage] = useState("");
   const quality = activity.quality;
   const phases: Record<string, string> = {
     collecting: "采集岗位",
@@ -69,46 +72,65 @@ export function CollectionProgress({
     evaluating: "评价岗位匹配",
     finished: "更新结束",
   };
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    live.current = true;
+    return () => {
       live.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
+  useEffect(() => {
+    const kind = pendingStop.current;
+    if (
+      !kind ||
+      p.draining ||
+      p.status !== (kind === "pause" ? "paused" : "cancelled")
+    )
+      return;
+    const message = kind === "pause" ? "活动已暂停" : "活动已取消";
+    pendingStop.current = null;
+    setStopMessage(message);
+    toast.add({ type: "success", title: message });
+  }, [p.draining, p.status]);
   const units = Object.values(p.units ?? {}),
-    sites = new Set(units.map((x) => x.siteId)),
-    actualSites = new Set(
-      units.filter((x) => x.committedPages > 0).map((x) => x.siteId),
-    ),
-    pending = units.filter((x) => x.status !== "completed").length;
+    completeLegacyUnits = p.units !== undefined && p.unitPage?.hasMore !== true,
+    siteKey = (unit: (typeof units)[number]) => JSON.stringify([unit.sourceId ?? null, unit.siteId]),
+    plannedSites = p.unitSummary?.plannedSites ?? (completeLegacyUnits ? new Set(units.map(siteKey)).size : undefined),
+    actualSites = p.unitSummary?.actualSites ?? (completeLegacyUnits ? new Set(units.filter((unit) => unit.committedPages > 0).map(siteKey)).size : undefined),
+    pending = p.unitSummary?.pendingUnits ?? (completeLegacyUnits ? units.filter((unit) => unit.status !== "completed").length : undefined);
   const prefix = "/collections/" + encodeURIComponent(activity.runId);
   async function action(kind: string, replan = false) {
     if (!scope || op.busy) return;
-    await op.run(
+    setStopMessage("");
+    if (kind === "pause" || kind === "cancel") pendingStop.current = kind;
+    const ok = await op.run(
       async () => {
-        await api.request(prefix + "/" + kind, {
-          method: "POST",
-          scope,
-          body:
-            kind === "resume"
-              ? {
-                  requestId: crypto.randomUUID(),
-                  ...(replan ? { replan: true } : {}),
-                  mode,
-                  ...(mode === "ai" && userKey ? { userApiKey: userKey } : {}),
-                }
-              : {},
-        });
+        const receipt = await api.request<Partial<CollectionActivity>>(
+          prefix + "/" + kind,
+          {
+            method: "POST",
+            scope,
+            body:
+              kind === "resume"
+                ? {
+                    requestId: crypto.randomUUID(),
+                    ...(replan ? { replan: true } : {}),
+                    mode,
+                    ...(mode === "ai" && userKey
+                      ? { userApiKey: userKey }
+                      : {}),
+                  }
+                : {},
+          },
+        );
         if (kind === "resume") onKeyUsed?.();
-        const next = await api.request<CollectionActivity>(prefix, { scope });
+        const next = receipt.collectionProgress
+          ? (receipt as CollectionActivity)
+          : await api.request<CollectionActivity>(prefix, { scope });
         if (live.current) onChanged?.(next);
       },
-      kind === "pause"
-        ? "活动已暂停"
-        : kind === "resume"
-          ? "已继续采集，沿用活动累计额度"
-          : "活动已取消",
+      kind === "resume" ? "已继续采集，沿用活动累计额度" : "",
     );
+    if (!ok) pendingStop.current = null;
   }
   return (
     <Card role="region" aria-label={readOnly ? "历史采集活动" : "当前采集活动"}>
@@ -127,10 +149,10 @@ export function CollectionProgress({
         )}
         <p>
           已提交{" "}
-          {p.metrics?.committedPages ??
-            units.reduce((n, x) => n + x.committedPages, 0)}{" "}
-          页 · 计划 {sites.size} 站 · 实际 {actualSites.size} 站 ·
-          未覆盖或未完成 {pending} 个单元
+          {stat(p.metrics?.committedPages ??
+            (completeLegacyUnits ? units.reduce((n, x) => n + x.committedPages, 0) : undefined))}{" "}
+          页 · 计划 {stat(plannedSites)} 站 · 实际 {stat(actualSites)} 站 ·
+          未覆盖或未完成 {stat(pending)} 个单元
         </p>
         <BudgetSummary
           view={budgetView({ activity })}
@@ -244,7 +266,7 @@ export function CollectionProgress({
                 />
                 <Button
                   variant="outline"
-                  disabled={op.busy || p.status !== "paused"}
+                  disabled={op.busy || p.draining || p.status !== "paused"}
                   onClick={() => {
                     const errors: Record<string, string> = {};
                     if (!/^\d+$/.test(requests))
@@ -303,14 +325,14 @@ export function CollectionProgress({
         <OperationFeedback
           busy={op.busy}
           error={op.error}
-          result={op.message}
+          result={p.draining ? view.label : stopMessage || op.message}
         />
       </CardContent>
       {!readOnly && scope && (
         <CardFooter className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={op.busy || p.status !== "collecting"}
+            disabled={op.busy || p.draining || p.status !== "collecting"}
             onClick={() => void action("pause")}
           >
             暂停采集
@@ -318,6 +340,7 @@ export function CollectionProgress({
           <Button
             disabled={
               op.busy ||
+              p.draining ||
               !["paused", "waiting_for_auth", "budget_exhausted"].includes(
                 p.status,
               )
@@ -328,7 +351,11 @@ export function CollectionProgress({
           </Button>
           <Button
             variant="outline"
-            disabled={op.busy || ["completed", "cancelled"].includes(p.status)}
+            disabled={
+              op.busy ||
+              (p.draining && p.stopIntent === "cancel") ||
+              ["completed", "cancelled"].includes(p.status)
+            }
             onClick={() => void action("cancel")}
           >
             取消活动

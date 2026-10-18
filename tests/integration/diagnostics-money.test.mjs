@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { createTempDir } from "../helpers/fixtures.mjs";
 import { createDiagnosticsLog } from "../../src/infrastructure/diagnostics/log.mjs";
 import { cleanMetadata } from "../../src/infrastructure/diagnostics/fields.mjs";
+import { createDiagnosticWriteBarrier } from "../helpers/diagnostic-write-barrier.mjs";
 
 const priceVersion = "deepseek-v4.1-flash-cny-2026-10-07";
 test("money diagnostics survive restart with counters and the verified pricing literals", async (t) => {
   const dataDir = await createTempDir(t);
-  const log = createDiagnosticsLog({ dataDir });
+  const completion = createDiagnosticWriteBarrier({ dataDir });
+  const log = createDiagnosticsLog({ dataDir, fsAdapter: completion.fsAdapter });
   await log.record({
     operation: "run.finished",
     usage: {
@@ -30,6 +32,7 @@ test("money diagnostics survive restart with counters and the verified pricing l
       },
     },
   });
+  await completion.waitForWrites(1);
   const reopened = createDiagnosticsLog({ dataDir });
   const result = await reopened.list();
   assert.deepEqual(result.entries[0].usage.model, {

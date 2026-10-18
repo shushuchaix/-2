@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto";
 import { contentHash } from "./repository.mjs";
 import { hasLiveOwner } from "./process-owner.mjs";
 import { createWorkspaceOperationGate } from "../../application/workspace-operations.mjs";
+import { recoverWorkspaceRows } from './recovery-rows.mjs';
 export async function recoverWorkspace(
   repository,
   { operationGate = createWorkspaceOperationGate({ repository }) } = {},
 ) {
+  if (typeof repository.getMeta === 'function' && await repository.getMeta('schemaVersion') === 3) return recoverWorkspaceRows(repository, { operationGate });
   await operationGate.recover();
   const w = await repository.read(),
     interruptedRunIds = [],

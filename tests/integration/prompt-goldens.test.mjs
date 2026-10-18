@@ -169,7 +169,7 @@ test("persisted legacy completed article cache is replayed under the new identit
       url: "https://example.org/n/" + i,
       bodyStatus: "complete",
       intent: "employer_recruitment",
-      description: "消防岗位" + i + "：本科要求，消防工程专业。",
+      description: "消防岗位" + i + "：本科要求，消防工程专业。负责消防设施日常维护、检查与隐患排查，具体要求以岗位原文为准。",
     }),
   );
   const provider = createPagedProvider({
@@ -205,15 +205,19 @@ test("persisted legacy completed article cache is replayed under the new identit
     }),
     ref = { scope: f.scope, activityId: start.activityId };
   await f.service.wait(ref);
-  await f.repository.mutateWorkspace((w) => {
-    for (const entry of Object.values(
-      w.runs[ref.activityId].collectionProgress.articleCache,
-    )) {
+  const { collectionPartRows } = await import("./collection-contract-rows.mjs");
+  const cachedRows = await collectionPartRows(f.repository, ref, "articleCache", "articleCache");
+  assert.equal(calls, 10);
+  assert.equal(cachedRows.length, 10);
+  await f.repository.transaction({ select: [{ collection: "articleCache", ownerPackageId: ref.scope.packageId, ids: cachedRows.map(row => row.id) }] }, tx => {
+    for (const row of cachedRows) {
+      const entry = tx.getRow({ collection: "articleCache", id: row.id });
       delete entry.record;
       delete entry.promptVersion;
       delete entry.schemaVersion;
+      tx.putRow({ collection: "articleCache", id: row.id, value: entry });
     }
-  });
+  }, { scope: ref.scope });
   await f.reopen();
   await f.service.resume({ ref, requestId: "replay" });
   await f.service.wait(ref);

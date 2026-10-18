@@ -1,6 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { registerCollectionIpc } from "../../electron/collection/ipc.mjs";
+import { createCollectionCommands } from "../../electron/backend/collection-commands.mjs";
+function registerSyntheticCommands(options) {
+  const commands = createCollectionCommands({
+    ...options,
+    forgetSession: async () => ({ forgotten: true }),
+  });
+  registerCollectionIpc({
+    ...options,
+    backend: { call: (method, input) => commands[method](input) },
+  });
+}
 
 test("Boss probe fixes its operation from the owned root and clears risk only explicitly", async () => {
   const handlers = new Map(),
@@ -15,8 +26,10 @@ test("Boss probe fixes its operation from the owned root and clears risk only ex
     ref: { scope, activityId: "root" },
     token: {},
     operationLease: {},
+    targetSnapshot: { roles: ["消防工程师"], cities: ["北京"] },
+    bossUnit: { query: { keyword: "消防工程师", city: "北京" } },
   };
-  registerCollectionIpc({
+  registerSyntheticCommands({
     ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
     getWindow: () => ({ webContents: sender }),
     getOrigin: () => mainFrame.url,
@@ -26,10 +39,9 @@ test("Boss probe fixes its operation from the owned root and clears risk only ex
     },
     context: {
       collectionService: {
-        get: async () => ({
-          targetSnapshot: { roles: ["消防工程师"], cities: ["北京"] },
-          collectionProgress: { units: {} },
-        }),
+        get: async () => {
+          throw Error("Probe must use its internal guarded context");
+        },
         withDiagnosticContext: async (_input, fn) => fn(ctx),
         resolveBossRisk: async () => calls.push("clear-root-risk"),
       },
@@ -76,7 +88,7 @@ test("collection IPC accepts only workbench root main frame and passes no creden
     mainFrame = { url: "http://127.0.0.1:31000/" },
     sender = { mainFrame },
     win = { webContents: sender };
-  registerCollectionIpc({
+  registerSyntheticCommands({
     ipcMain: { handle: (key, fn) => handlers.set(key, fn) },
     getWindow: () => win,
     getOrigin: () => mainFrame.url,
@@ -121,7 +133,7 @@ test("session status IPC exposes only scoped metadata and rejects a foreign send
     targetRevisionId: "target-one@1",
   };
   let calls = 0;
-  registerCollectionIpc({
+  registerSyntheticCommands({
     ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
     getWindow: () => ({ webContents: sender }),
     getOrigin: () => mainFrame.url,

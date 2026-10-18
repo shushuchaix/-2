@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import fsAsync from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createBackendSyntheticEnvironment } from "./backend/synthetic-environment.mjs";
+import { createHash } from "node:crypto";
 
 const marker = ".rjr-self-test";
 export const desktopPages = Object.freeze([
@@ -38,18 +38,27 @@ export async function withDesktopKeyboardFocus(debuggerApi, verify) {
   const attachedHere = !debuggerApi.isAttached();
   if (attachedHere) debuggerApi.attach("1.3");
   try {
-    await debuggerApi.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
+    await debuggerApi.sendCommand("Emulation.setFocusEmulationEnabled", {
+      enabled: true,
+    });
     return await verify();
   } finally {
     try {
-      await debuggerApi.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: false });
+      await debuggerApi.sendCommand("Emulation.setFocusEmulationEnabled", {
+        enabled: false,
+      });
     } finally {
       if (attachedHere) debuggerApi.detach();
     }
   }
 }
 
-export async function withDesktopResponses(debuggerApi, origin, pathname, verify) {
+export async function withDesktopResponses(
+  debuggerApi,
+  origin,
+  pathname,
+  verify,
+) {
   // This probe owns its CDP session so disabling Network cannot disturb another
   // observer. It observes response metadata, never response bodies or headers.
   if (debuggerApi.isAttached()) throw Error("self_test_debugger_busy");
@@ -59,7 +68,10 @@ export async function withDesktopResponses(debuggerApi, origin, pathname, verify
     try {
       const url = new URL(params.response.url);
       if (url.origin === origin && url.pathname === pathname)
-        responses.push({ status: params.response.status, requestId: params.requestId });
+        responses.push({
+          status: params.response.status,
+          requestId: params.requestId,
+        });
     } catch {}
   };
   debuggerApi.attach("1.3");
@@ -81,30 +93,58 @@ export async function withDesktopResponses(debuggerApi, origin, pathname, verify
 // finite entering/exiting transitions and stable frames without changing CSS.
 export async function settleDesktopPopups() {
   const started = performance.now();
-  let previous, stable = 0, frames = 0;
+  let previous,
+    stable = 0,
+    frames = 0;
   for (;;) {
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     frames++;
     // Closed Base UI surfaces stay mounted throughout their exit transition.
     // Backdrops have no dialog role, but their fade still changes captured pixels.
-    const popups = [...document.querySelectorAll('[role=dialog],[role=alertdialog],[role=listbox],[role=menu],[data-slot=sheet-overlay],[data-slot=dialog-overlay],[data-slot=alert-dialog-overlay]')]
-      .filter(el => el.getClientRects().length);
-    const animating = popups.some(el => el.getAnimations({ subtree: true }).some(animation =>
-      ['running','pending'].includes(animation.playState) && Number.isFinite(animation.effect?.getComputedTiming().endTime)));
-    const geometry = JSON.stringify(popups.map(el => {
-      const r = el.getBoundingClientRect();
-      return [r.left,r.top,r.right,r.bottom].map(value => Math.round(value * 1000) / 1000);
-    }));
+    const popups = [
+      ...document.querySelectorAll(
+        "[role=dialog],[role=alertdialog],[role=listbox],[role=menu],[data-slot=sheet-overlay],[data-slot=dialog-overlay],[data-slot=alert-dialog-overlay]",
+      ),
+    ].filter((el) => el.getClientRects().length);
+    const animating = popups.some((el) =>
+      el
+        .getAnimations({ subtree: true })
+        .some(
+          (animation) =>
+            ["running", "pending"].includes(animation.playState) &&
+            Number.isFinite(animation.effect?.getComputedTiming().endTime),
+        ),
+    );
+    const geometry = JSON.stringify(
+      popups.map((el) => {
+        const r = el.getBoundingClientRect();
+        return [r.left, r.top, r.right, r.bottom].map(
+          (value) => Math.round(value * 1000) / 1000,
+        );
+      }),
+    );
     stable = !animating && geometry === previous ? stable + 1 : 0;
-    if (stable >= 2) return { frames, elapsedMs: performance.now() - started, popupCount: popups.length };
-    if (performance.now() - started > 2000) throw Error("self_test_popup_animation_timeout");
+    if (stable >= 2)
+      return {
+        frames,
+        elapsedMs: performance.now() - started,
+        popupCount: popups.length,
+      };
+    if (performance.now() - started > 2000)
+      throw Error("self_test_popup_animation_timeout");
     previous = geometry;
   }
 }
 
-export async function captureDesktopFrame(webContents, { timeoutMs = 3000 } = {}) {
+export async function captureDesktopFrame(
+  webContents,
+  { timeoutMs = 3000 } = {},
+) {
   if (!webContents.isOffscreen()) throw Error("self_test_offscreen_required");
-  await webContents.executeJavaScript(`(${settleDesktopPopups.toString()})()`, true);
+  await webContents.executeJavaScript(
+    `(${settleDesktopPopups.toString()})()`,
+    true,
+  );
   let listener, timer;
   try {
     return await new Promise((resolve, reject) => {
@@ -112,12 +152,23 @@ export async function captureDesktopFrame(webContents, { timeoutMs = 3000 } = {}
         try {
           if (!image || image.isEmpty()) return;
           const { width, height } = image.getSize();
-          if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+          if (
+            !Number.isFinite(width) ||
+            !Number.isFinite(height) ||
+            width <= 0 ||
+            height <= 0
+          )
+            return;
           // Electron's paint image contains the whole frame, regardless of dirtyRect.
           resolve(image);
-        } catch (error) { reject(error); }
+        } catch (error) {
+          reject(error);
+        }
       };
-      timer = setTimeout(() => reject(Error("self_test_paint_timeout")), timeoutMs);
+      timer = setTimeout(
+        () => reject(Error("self_test_paint_timeout")),
+        timeoutMs,
+      );
       webContents.on("paint", listener);
       webContents.invalidate();
     });
@@ -128,125 +179,321 @@ export async function captureDesktopFrame(webContents, { timeoutMs = 3000 } = {}
 }
 
 export function validateDesktopMatrix(screenshots, dpr) {
-  const issues = [], keys = new Set();
-  for (const shot of screenshots.filter(shot => shot.matrix === true)) {
+  const issues = [],
+    keys = new Set();
+  for (const shot of screenshots.filter((shot) => shot.matrix === true)) {
     const key = `${shot.page}:${shot.width}`;
     if (keys.has(key)) issues.push({ code: "duplicate_matrix_cell", key });
     keys.add(key);
-    if (!desktopPages.some(item => item.page === shot.page) || !desktopWidths.includes(shot.width))
+    if (
+      !desktopPages.some((item) => item.page === shot.page) ||
+      !desktopWidths.includes(shot.width)
+    )
       issues.push({ code: "unknown_matrix_cell", key });
-    if (!(shot.width === 375 ? [374,375,376] : [shot.width]).includes(shot.actualWidth))
-      issues.push({ code: "actual_width_mismatch", key, actualWidth: shot.actualWidth });
+    if (
+      !(shot.width === 375 ? [374, 375, 376] : [shot.width]).includes(
+        shot.actualWidth,
+      )
+    )
+      issues.push({
+        code: "actual_width_mismatch",
+        key,
+        actualWidth: shot.actualWidth,
+      });
     if (!Number.isFinite(shot.dpr) || Math.abs(shot.dpr - dpr) > 0.02)
       issues.push({ code: "dpr_mismatch", key, dpr: shot.dpr });
   }
-  for (const { page } of desktopPages) for (const width of desktopWidths)
-    if (!keys.has(`${page}:${width}`)) issues.push({ code: "missing_matrix_cell", key: `${page}:${width}` });
+  for (const { page } of desktopPages)
+    for (const width of desktopWidths)
+      if (!keys.has(`${page}:${width}`))
+        issues.push({ code: "missing_matrix_cell", key: `${page}:${width}` });
   return issues;
 }
 
 export function desktopContrastRatio(first, second) {
-  const luminance = rgb => rgb.slice(0, 3).map(value => {
-    const channel = value / 255;
-    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-  }).reduce((sum, value, index) => sum + value * [0.2126,0.7152,0.0722][index], 0);
-  const a = luminance(first), b = luminance(second);
-  return (Math.max(a,b) + 0.05) / (Math.min(a,b) + 0.05);
+  const luminance = (rgb) =>
+    rgb
+      .slice(0, 3)
+      .map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045
+          ? channel / 12.92
+          : ((channel + 0.055) / 1.055) ** 2.4;
+      })
+      .reduce(
+        (sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index],
+        0,
+      );
+  const a = luminance(first),
+    b = luminance(second);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
 // Executed in Chromium. Colors come from computed styles, including alpha backgrounds;
 // this function never injects a stylesheet or substitutes theme token values.
 export function inspectDesktopUi(contrast) {
   // A closed Collapsible root still paints its trigger; closed panels/popups do not.
-  const shown = el => el.getClientRects().length > 0 &&
-    !el.closest('[data-closed]:not([data-slot=collapsible]):not([data-slot=collapsible-trigger]),[hidden],[inert],[aria-hidden=true]') &&
-    getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).opacity !== '0';
-  const iconShown = el => {
+  const shown = (el) =>
+    el.getClientRects().length > 0 &&
+    !el.closest(
+      "[data-closed]:not([data-slot=collapsible]):not([data-slot=collapsible-trigger]),[hidden],[inert],[aria-hidden=true]",
+    ) &&
+    getComputedStyle(el).visibility !== "hidden" &&
+    getComputedStyle(el).opacity !== "0";
+  const iconShown = (el) => {
     if (!el.getClientRects().length) return false;
-    for (let node=el; node; node=node.parentElement) {
+    for (let node = el; node; node = node.parentElement) {
       // Decorative SVGs remain painted even when hidden from the accessibility tree.
-      if (node.matches('[hidden],[data-closed]:not([data-slot=collapsible]):not([data-slot=collapsible-trigger]),[inert]') ||
-          (node!==el && node.getAttribute('aria-hidden')==='true')) return false;
-      const style=getComputedStyle(node);
-      if (style.display==='none' || ['hidden','collapse'].includes(style.visibility) || style.opacity==='0') return false;
+      if (
+        node.matches(
+          "[hidden],[data-closed]:not([data-slot=collapsible]):not([data-slot=collapsible-trigger]),[inert]",
+        ) ||
+        (node !== el && node.getAttribute("aria-hidden") === "true")
+      )
+        return false;
+      const style = getComputedStyle(node);
+      if (
+        style.display === "none" ||
+        ["hidden", "collapse"].includes(style.visibility) ||
+        style.opacity === "0"
+      )
+        return false;
     }
     return true;
   };
-  const label = el => (el.getAttribute('aria-label') || el.textContent || el.id || el.tagName).trim().slice(0,80);
-  const rectangle = el => {
+  const label = (el) =>
+    (el.getAttribute("aria-label") || el.textContent || el.id || el.tagName)
+      .trim()
+      .slice(0, 80);
+  const rectangle = (el) => {
     const r = el.getBoundingClientRect();
-    return { left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height };
+    return {
+      left: r.left,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+      width: r.width,
+      height: r.height,
+    };
   };
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1;
-  const painter = canvas.getContext('2d', { willReadFrequently:true });
-  const rgba = color => {
-    painter.clearRect(0,0,1,1);
+  const painter = canvas.getContext("2d", { willReadFrequently: true });
+  const rgba = (color) => {
+    painter.clearRect(0, 0, 1, 1);
     painter.fillStyle = color;
-    painter.fillRect(0,0,1,1);
-    const pixel = painter.getImageData(0,0,1,1).data;
-    return [pixel[0],pixel[1],pixel[2],pixel[3]/255];
+    painter.fillRect(0, 0, 1, 1);
+    const pixel = painter.getImageData(0, 0, 1, 1).data;
+    return [pixel[0], pixel[1], pixel[2], pixel[3] / 255];
   };
-  const blend = (front, back) => front.slice(0,3).map((value,i) => value*front[3]+back[i]*(1-front[3]));
-  const background = el => {
-    if (!el) return [255,255,255];
-    return blend(rgba(getComputedStyle(el).backgroundColor), background(el.parentElement));
+  const blend = (front, back) =>
+    front
+      .slice(0, 3)
+      .map((value, i) => value * front[3] + back[i] * (1 - front[3]));
+  const background = (el) => {
+    if (!el) return [255, 255, 255];
+    return blend(
+      rgba(getComputedStyle(el).backgroundColor),
+      background(el.parentElement),
+    );
   };
-  const samples = [], tested = new Set();
-  const text = (el, category='body') => {
-    if (!shown(el) || el.closest(':disabled') || tested.has(el)) return;
+  const samples = [],
+    tested = new Set();
+  const text = (el, category = "body") => {
+    if (!shown(el) || el.closest(":disabled") || tested.has(el)) return;
     tested.add(el);
-    const style = getComputedStyle(el), bg = background(el), fg = blend(rgba(style.color),bg);
-    const large = parseFloat(style.fontSize)>=24 || (parseFloat(style.fontSize)>=18.666 && parseInt(style.fontWeight,10)>=700);
-    const ratio = contrast(fg,bg), required = large ? 3 : 4.5;
-    samples.push({ category, label:label(el), ratio, required, foreground:fg, background:bg, fontSize:style.fontSize, fontWeight:style.fontWeight, ok:ratio+0.001>=required });
+    const style = getComputedStyle(el),
+      bg = background(el),
+      fg = blend(rgba(style.color), bg);
+    const large =
+      parseFloat(style.fontSize) >= 24 ||
+      (parseFloat(style.fontSize) >= 18.666 &&
+        parseInt(style.fontWeight, 10) >= 700);
+    const ratio = contrast(fg, bg),
+      required = large ? 3 : 4.5;
+    samples.push({
+      category,
+      label: label(el),
+      ratio,
+      required,
+      foreground: fg,
+      background: bg,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      ok: ratio + 0.001 >= required,
+    });
   };
-  const walker = document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) if (walker.currentNode.textContent.trim()) text(walker.currentNode.parentElement);
-  for (const el of document.querySelectorAll('nav [aria-current=page]')) { tested.delete(el); text(el,'navigation'); }
-  for (const el of document.querySelectorAll('main [role=alert],[data-slot=alert]')) { tested.delete(el); text(el,'warning'); }
-  for (const el of document.querySelectorAll('input,textarea,[role=combobox]')) if (shown(el) && !el.disabled) { tested.delete(el); text(el,'field'); }
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode())
+    if (walker.currentNode.textContent.trim())
+      text(walker.currentNode.parentElement);
+  for (const el of document.querySelectorAll("nav [aria-current=page]")) {
+    tested.delete(el);
+    text(el, "navigation");
+  }
+  for (const el of document.querySelectorAll(
+    "main [role=alert],[data-slot=alert]",
+  )) {
+    tested.delete(el);
+    text(el, "warning");
+  }
+  for (const el of document.querySelectorAll("input,textarea,[role=combobox]"))
+    if (shown(el) && !el.disabled) {
+      tested.delete(el);
+      text(el, "field");
+    }
   const boundaries = [];
-  for (const el of document.querySelectorAll('[data-slot=input],[data-slot=textarea],[data-slot=select-trigger],[data-slot=checkbox],[data-slot=radio-group-item],[data-slot=switch],[data-slot=button],[data-slot=collapsible-trigger]')) {
+  for (const el of document.querySelectorAll(
+    "[data-slot=input],[data-slot=textarea],[data-slot=select-trigger],[data-slot=checkbox],[data-slot=radio-group-item],[data-slot=switch],[data-slot=button],[data-slot=collapsible-trigger]",
+  )) {
     if (!shown(el) || el.disabled) continue;
-    const style = getComputedStyle(el), outside = background(el.parentElement), fill = background(el);
-    const fillRatio = contrast(fill,outside);
-    const hasBorder = parseFloat(style.borderTopWidth)>0 && style.borderTopStyle!=='none' && rgba(style.borderTopColor)[3]>0;
-    const borderRatio = hasBorder ? contrast(blend(rgba(style.borderTopColor),outside),outside) : 0;
-    const field = ['input','textarea','select-trigger','checkbox','radio-group-item','switch'].includes(el.dataset.slot);
-    if (field || hasBorder) boundaries.push({ label:label(el), fillRatio, borderRatio, required:3, ok:Math.max(fillRatio,borderRatio)+0.001>=3 });
-    if (fillRatio>=3) { tested.delete(el); text(el,'primary'); }
+    const style = getComputedStyle(el),
+      outside = background(el.parentElement),
+      fill = background(el);
+    const fillRatio = contrast(fill, outside);
+    const hasBorder =
+      parseFloat(style.borderTopWidth) > 0 &&
+      style.borderTopStyle !== "none" &&
+      rgba(style.borderTopColor)[3] > 0;
+    const borderRatio = hasBorder
+      ? contrast(blend(rgba(style.borderTopColor), outside), outside)
+      : 0;
+    const field = [
+      "input",
+      "textarea",
+      "select-trigger",
+      "checkbox",
+      "radio-group-item",
+      "switch",
+    ].includes(el.dataset.slot);
+    if (field || hasBorder)
+      boundaries.push({
+        label: label(el),
+        fillRatio,
+        borderRatio,
+        required: 3,
+        ok: Math.max(fillRatio, borderRatio) + 0.001 >= 3,
+      });
+    if (fillRatio >= 3) {
+      tested.delete(el);
+      text(el, "primary");
+    }
   }
-  const icons=[...document.querySelectorAll('[data-slot=button] svg,[data-slot=sidebar-trigger] svg,[data-slot=sheet-close] svg,[data-slot=dialog-close] svg,[data-slot=collapsible-trigger] svg')].filter(el=>iconShown(el)&&!el.closest(':disabled')).map(el=>{
-    const bg=background(el),fg=blend(rgba(getComputedStyle(el).color),bg),ratio=contrast(fg,bg);
-    return {label:label(el.closest('button,a')||el),ratio,required:3,ok:ratio+0.001>=3};
-  });
-  const hitTargets = [...document.querySelectorAll('[role=tab],[data-slot=button],[data-slot=sidebar-trigger],[data-slot=sidebar-menu-button],[data-slot=select-trigger],[data-slot=dropdown-menu-trigger],[data-slot=sheet-close],[data-slot=dialog-close],[data-slot=collapsible-trigger]')]
-    .filter(shown).map(el => ({ label:label(el), ...rectangle(el), ok:el.getBoundingClientRect().width>=43.5 && el.getBoundingClientRect().height>=43.5 }));
-  const tables = [...document.querySelectorAll('table')].filter(shown).map(el => {
-    let container = el.parentElement;
-    while (container && !['auto','scroll'].includes(getComputedStyle(container).overflowX)) container=container.parentElement;
-    return { label:label(el), tableWidth:el.scrollWidth, containerWidth:container?.clientWidth, contained:Boolean(container && container!==document.body && container!==document.documentElement && container.getBoundingClientRect().right<=innerWidth+1) };
-  });
-  const popups = [...document.querySelectorAll('[role=dialog],[role=alertdialog],[role=listbox],[role=menu]')].filter(shown).map(el => {
-    const r=rectangle(el);
-    return { label:label(el), ...r, ok:r.left>=-1 && r.right<=innerWidth+1 && r.top>=-1 && r.bottom<=innerHeight+1 };
-  });
+  const icons = [
+    ...document.querySelectorAll(
+      "[data-slot=button] svg,[data-slot=sidebar-trigger] svg,[data-slot=sheet-close] svg,[data-slot=dialog-close] svg,[data-slot=collapsible-trigger] svg",
+    ),
+  ]
+    .filter((el) => iconShown(el) && !el.closest(":disabled"))
+    .map((el) => {
+      const bg = background(el),
+        fg = blend(rgba(getComputedStyle(el).color), bg),
+        ratio = contrast(fg, bg);
+      return {
+        label: label(el.closest("button,a") || el),
+        ratio,
+        required: 3,
+        ok: ratio + 0.001 >= 3,
+      };
+    });
+  const hitTargets = [
+    ...document.querySelectorAll(
+      "[role=tab],[data-slot=button],[data-slot=sidebar-trigger],[data-slot=sidebar-menu-button],[data-slot=select-trigger],[data-slot=dropdown-menu-trigger],[data-slot=sheet-close],[data-slot=dialog-close],[data-slot=collapsible-trigger]",
+    ),
+  ]
+    .filter(shown)
+    .map((el) => ({
+      label: label(el),
+      ...rectangle(el),
+      ok:
+        el.getBoundingClientRect().width >= 43.5 &&
+        el.getBoundingClientRect().height >= 43.5,
+    }));
+  const tables = [...document.querySelectorAll("table")]
+    .filter(shown)
+    .map((el) => {
+      let container = el.parentElement;
+      while (
+        container &&
+        !["auto", "scroll"].includes(getComputedStyle(container).overflowX)
+      )
+        container = container.parentElement;
+      return {
+        label: label(el),
+        tableWidth: el.scrollWidth,
+        containerWidth: container?.clientWidth,
+        contained: Boolean(
+          container &&
+            container !== document.body &&
+            container !== document.documentElement &&
+            container.getBoundingClientRect().right <= innerWidth + 1,
+        ),
+      };
+    });
+  const popups = [
+    ...document.querySelectorAll(
+      "[role=dialog],[role=alertdialog],[role=listbox],[role=menu]",
+    ),
+  ]
+    .filter(shown)
+    .map((el) => {
+      const r = rectangle(el);
+      return {
+        label: label(el),
+        ...r,
+        ok:
+          r.left >= -1 &&
+          r.right <= innerWidth + 1 &&
+          r.top >= -1 &&
+          r.bottom <= innerHeight + 1,
+      };
+    });
   const active = document.activeElement;
-  const focusState = { documentFocused:document.hasFocus(), active:active ? {
-    tag:active.tagName, label:label(active), slot:active.getAttribute('data-slot'),
-    visible:shown(active), focusVisible:active.matches(':focus-visible'),
-    focusGuard:active.hasAttribute('data-base-ui-focus-guard'), ...rectangle(active),
-  } : null };
+  const focusState = {
+    documentFocused: document.hasFocus(),
+    active: active
+      ? {
+          tag: active.tagName,
+          label: label(active),
+          slot: active.getAttribute("data-slot"),
+          visible: shown(active),
+          focusVisible: active.matches(":focus-visible"),
+          focusGuard: active.hasAttribute("data-base-ui-focus-guard"),
+          ...rectangle(active),
+        }
+      : null,
+  };
   let focus;
-  if (active && shown(active) && active.matches(':focus-visible')) {
-    const style = getComputedStyle(active), outside=background(active.parentElement);
-    const ratio = contrast(blend(rgba(style.outlineColor),outside),outside);
-    focus={ label:label(active), ratio, outlineWidth:style.outlineWidth, outlineStyle:style.outlineStyle, ok:parseFloat(style.outlineWidth)>0 && style.outlineStyle!=='none' && ratio+0.001>=3 };
+  if (active && shown(active) && active.matches(":focus-visible")) {
+    const style = getComputedStyle(active),
+      outside = background(active.parentElement);
+    const ratio = contrast(blend(rgba(style.outlineColor), outside), outside);
+    focus = {
+      label: label(active),
+      ratio,
+      outlineWidth: style.outlineWidth,
+      outlineStyle: style.outlineStyle,
+      ok:
+        parseFloat(style.outlineWidth) > 0 &&
+        style.outlineStyle !== "none" &&
+        ratio + 0.001 >= 3,
+    };
   }
-  return { actualWidth:innerWidth, dpr:devicePixelRatio, scrollWidth:document.documentElement.scrollWidth,
-    overflow:document.documentElement.scrollWidth>innerWidth+1, samples, boundaries, icons, hitTargets, tables, popups, focus, focusState,
-    reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches };
+  return {
+    actualWidth: innerWidth,
+    dpr: devicePixelRatio,
+    scrollWidth: document.documentElement.scrollWidth,
+    overflow: document.documentElement.scrollWidth > innerWidth + 1,
+    samples,
+    boundaries,
+    icons,
+    hitTargets,
+    tables,
+    popups,
+    focus,
+    focusState,
+    reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+  };
 }
 function checkParents(directory) {
   for (let cursor = path.resolve(directory); ; cursor = path.dirname(cursor)) {
@@ -255,7 +502,7 @@ function checkParents(directory) {
     if (path.dirname(cursor) === cursor) break;
   }
 }
-export function prepareSelfTestEnvironment({
+export function prepareSelfTestDirectory({
   explicitDataDir,
   tempRoot = os.tmpdir(),
 } = {}) {
@@ -282,179 +529,8 @@ export function prepareSelfTestEnvironment({
     "isolated synthetic self-test\n",
     { flag: "wx" },
   );
-  let now = Date.parse("2026-10-09T00:00:00Z");
-  const clock = {
-    now: () => now,
-    advance: (ms) => {
-      if (!Number.isFinite(ms) || ms < 0) throw Error("invalid_clock_advance");
-      now += ms;
-    },
-  };
-  const controls = { hold: false, failCleanup: false, failCleanupRunIds: new Set() };
-  const record = {
-    sourceId: "synthetic-desktop",
-    siteId: "synthetic-desktop-1",
-    sourceRecordId: "offline-1",
-    sourceRecordIdKind: "authority",
-    urlKind: "job_detail",
-    identityScope: "synthetic-desktop-1",
-    kind: "job",
-    title: "消防工程师与机场应急保障岗位合成长中文名称用于换行检查",
-    company: "合成机场集团",
-    cities: ["合成市"],
-    jobType: "campus",
-    graduationYear: 2027,
-    degree: "本科",
-    url: "https://jobs.example.invalid/offline-1",
-    description:
-      "合成公开岗位：消防工程专业，本科，2027届。负责机场消防、应急管理与安全检查。",
-    requiredCertificates: [],
-    publishedAt: new Date(now).toISOString(),
-    parserVersion: "synthetic-desktop-1",
-    evidence: [],
-  };
-  const provider = {
-    id: "synthetic-desktop",
-    name: "合成离线来源",
-    capabilities: { category: "job_board", jobTypes: ["campus"], detail: true },
-    configSchema: { enabled: "boolean" },
-    async collect(ctx) {
-      if (controls.hold && ctx.queries?.some((q) => q.keyword))
-        await new Promise((resolve) =>
-          ctx.signal.addEventListener("abort", resolve, { once: true }),
-        );
-      ctx.signal?.throwIfAborted();
-      await ctx.onBatch?.([structuredClone(record)]);
-      return {
-        records: [structuredClone(record)],
-        issues: [],
-        coverage: [
-          {
-            sourceId: this.id,
-            siteId: "synthetic-desktop-1",
-            status: "complete",
-            queries: ["消防"],
-            cities: ["合成市"],
-            pages: 1,
-          },
-        ],
-        stats: { raw: 1, parsed: 1, accepted: 1 },
-      };
-    },
-    async fetchDetail(job) {
-      return job;
-    },
-    async probe() {
-      return { status: "ready" };
-    },
-  };
-  const cfg = {
-    deepseek: {
-      apiKey: "",
-      baseUrl: "https://api.deepseek.com",
-      model: "deepseek-flash",
-      concurrency: 1,
-      timeoutMs: 10000,
-      allowUserKey: true,
-    },
-    search: {
-      provider: "none",
-      tavilyApiKey: "",
-      serperApiKey: "",
-      bochaApiKey: "",
-    },
-    sources: {
-      zhaopin: { enabled: false, maxPages: 0 },
-      shixiseng: { enabled: false, maxPages: 0 },
-      "synthetic-desktop": { enabled: true },
-      coverageMode: "standard",
-      v2Budgets: {
-        maxSites: 1,
-        maxRequests: 10,
-        maxKeywords: 2,
-        maxPagesPerQuery: 1,
-        maxDetails: 2,
-      },
-    },
-    match: { shortlistSize: 10, enrichTopN: 0, scoreBatchSize: 5, minScore: 0 },
-    filters: {
-      graduationYear: "2027",
-      includeInternship: false,
-      strict: true,
-      yearQueryCount: 1,
-      cities: [],
-    },
-    profile: {},
-    auth: {
-      mode: "none",
-      passwordHash: "",
-      sessionTtlHours: 1,
-      maxLoginFails: 5,
-      lockMinutes: 1,
-    },
-    limits: {
-      maxConcurrent: 2,
-      maxQueue: 4,
-      dailyGlobal: 100,
-      dailyPerIp: 100,
-      perIpCooldownMs: 0,
-    },
-    server: { host: "127.0.0.1", port: 0, trustProxy: false, publicUrl: "" },
-    network: { dnsMode: "system" },
-    __searchKeys: {},
-    __activeSearchProvider: "",
-    __deepseekKeySource: "synthetic",
-  };
-  const dependencies = {
-    clock,
-    startScheduler: false,
-    fsAdapter: {
-      ...fsAsync,
-      async unlink(filename) {
-        if (
-          controls.failCleanup &&
-          /[\\/]runs-v2[\\/]/.test(filename) &&
-          controls.failCleanupRunIds.has(path.basename(filename, ".json"))
-        )
-          throw Object.assign(Error("synthetic_cleanup_failure"), {
-            code: "EIO",
-          });
-        return fsAsync.unlink(filename);
-      },
-    },
-    registry: {
-      get: (id) => (id === provider.id ? provider : undefined),
-      list: () => [provider],
-    },
-    catalog: [
-      {
-        siteId: "synthetic-desktop-1",
-        providerId: provider.id,
-        category: "job_board",
-        name: "合成离线来源",
-        origin: "https://jobs.example.invalid",
-        status: "ready",
-        verifiedAt: new Date(now).toISOString(),
-        probeEvidence: [{ hasRequirements: true }],
-      },
-    ],
-    requestFactory: () => async () => {
-      throw Error("offline_network_forbidden");
-    },
-    modelFactory: () => ({
-      synthetic: true,
-      available: true,
-      async chatJson() {
-        return [];
-      },
-    }),
-  };
   return {
     dataDir,
-    cfg,
-    dependencies,
-    clock,
-    controls,
     cleanup() {
       checkParents(dataDir);
       if (!fs.existsSync(dataDir)) return;
@@ -462,6 +538,14 @@ export function prepareSelfTestEnvironment({
         throw Error("unsafe_self_test_directory");
       fs.rmSync(dataDir, { recursive: true, force: true });
     },
+  };
+}
+
+export function prepareSelfTestEnvironment(options) {
+  const directory = prepareSelfTestDirectory(options);
+  return {
+    ...directory,
+    ...createBackendSyntheticEnvironment({ dataDir: directory.dataDir }),
   };
 }
 
@@ -495,47 +579,127 @@ export function makeSelfTestPdf(lines) {
 
 export async function runWorkspaceSelfTest({
   window,
-  context,
-  clock,
-  controls,
+  backend,
   dataDir,
   networkGuard,
   rendererErrors = [],
   externalIntents = [],
 }) {
+  const remote = (method, input = {}) =>
+    backend.call(method, input, { timeoutMs: 120000 });
+  const inspect = () => remote("synthetic.inspect");
+  let syntheticNow = (await remote("synthetic.clock")).now;
+  const clock = {
+    now: () => syntheticNow,
+    async advance(ms) {
+      syntheticNow = (await remote("synthetic.advance", { ms })).now;
+    },
+  };
   const results = [],
     screenshots = [],
     interactions = [],
     visualAudits = [],
     origin = new URL(window.webContents.getURL()).origin;
-  const js = (source) => executeDesktopFixtureScript(window.webContents, clock, source);
-  let requestedWidth = await js("innerWidth"), lastPage = "workbench";
+  const js = (source) =>
+    executeDesktopFixtureScript(window.webContents, clock, source);
+  let requestedWidth = await js("innerWidth"),
+    lastPage = "workbench";
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const observe = (name, ok, details) => results.push({ name, ok:Boolean(ok), ...(details ? {details} : {}) });
+  const observe = (name, ok, details) =>
+    results.push({ name, ok: Boolean(ok), ...(details ? { details } : {}) });
   const check = (name, ok, details) => {
-    observe(name,ok,details);
+    observe(name, ok, details);
     if (!ok) throw Error(name);
   };
-  const trace = async (action,label,details={}) => interactions.push({ action,label,page:lastPage,
-    ...(await js("({actualWidth:innerWidth,dpr:devicePixelRatio})")),...details });
-  const capture = async (file,extra={}) => {
-    const geometry=await js("({actualWidth:innerWidth,actualHeight:innerHeight,dpr:devicePixelRatio,label:document.querySelector('h1')?.textContent.trim()})");
-    const page=desktopPages.find(item=>item.label===geometry.label)?.page || lastPage;
-    fs.writeFileSync(path.join(dataDir,file),(await captureDesktopFrame(window.webContents)).toPNG());
-    screenshots.push({page,width:requestedWidth,actualWidth:geometry.actualWidth,actualHeight:geometry.actualHeight,dpr:geometry.dpr,file,...extra});
+  const trace = async (action, label, details = {}) =>
+    interactions.push({
+      action,
+      label,
+      page: lastPage,
+      ...(await js("({actualWidth:innerWidth,dpr:devicePixelRatio})")),
+      ...details,
+    });
+  const capture = async (file, extra = {}) => {
+    const geometry = await js(
+      "({actualWidth:innerWidth,actualHeight:innerHeight,dpr:devicePixelRatio,label:document.querySelector('h1')?.textContent.trim()})",
+    );
+    const page =
+      desktopPages.find((item) => item.label === geometry.label)?.page ||
+      lastPage;
+    fs.writeFileSync(
+      path.join(dataDir, file),
+      (await captureDesktopFrame(window.webContents)).toPNG(),
+    );
+    screenshots.push({
+      page,
+      width: requestedWidth,
+      actualWidth: geometry.actualWidth,
+      actualHeight: geometry.actualHeight,
+      dpr: geometry.dpr,
+      file,
+      ...extra,
+    });
   };
   const audit = async (label) => {
-    const settled=await js(`(${settleDesktopPopups.toString()})()`);
-    const value=await js(`(${inspectDesktopUi.toString()})(${desktopContrastRatio.toString()})`);
-    visualAudits.push({page:lastPage,width:requestedWidth,label,settled,...value});
-    observe(label+"：页面无横向溢出",!value.overflow,{actualWidth:value.actualWidth,scrollWidth:value.scrollWidth});
-    observe(label+"：文字对比度符合 4.5/3",value.samples.length>0 && value.samples.every(sample=>sample.ok),{sampleCount:value.samples.length,failures:value.samples.filter(sample=>!sample.ok)});
-    observe(label+"：必要控件边界对比度至少 3",value.boundaries.every(sample=>sample.ok),{sampleCount:value.boundaries.length,failures:value.boundaries.filter(sample=>!sample.ok)});
-    observe(label+"：主要按钮图标对比度至少 3",value.icons.every(sample=>sample.ok),{sampleCount:value.icons.length,failures:value.icons.filter(sample=>!sample.ok)});
-    observe(label+"：Tabs 与主要图标按钮命中至少 44px",value.hitTargets.every(target=>target.ok),{sampleCount:value.hitTargets.length,failures:value.hitTargets.filter(target=>!target.ok)});
-    observe(label+"：表格只在本地容器横滚",value.tables.every(table=>table.contained),value.tables);
-    observe(label+"：浮层位于视口内",value.popups.every(popup=>popup.ok),value.popups);
-    if(value.focus) observe(label+"：焦点边界对比度至少 3",value.focus.ok,value.focus);
+    const settled = await js(`(${settleDesktopPopups.toString()})()`);
+    const value = await js(
+      `(${inspectDesktopUi.toString()})(${desktopContrastRatio.toString()})`,
+    );
+    visualAudits.push({
+      page: lastPage,
+      width: requestedWidth,
+      label,
+      settled,
+      ...value,
+    });
+    observe(label + "：页面无横向溢出", !value.overflow, {
+      actualWidth: value.actualWidth,
+      scrollWidth: value.scrollWidth,
+    });
+    observe(
+      label + "：文字对比度符合 4.5/3",
+      value.samples.length > 0 && value.samples.every((sample) => sample.ok),
+      {
+        sampleCount: value.samples.length,
+        failures: value.samples.filter((sample) => !sample.ok),
+      },
+    );
+    observe(
+      label + "：必要控件边界对比度至少 3",
+      value.boundaries.every((sample) => sample.ok),
+      {
+        sampleCount: value.boundaries.length,
+        failures: value.boundaries.filter((sample) => !sample.ok),
+      },
+    );
+    observe(
+      label + "：主要按钮图标对比度至少 3",
+      value.icons.every((sample) => sample.ok),
+      {
+        sampleCount: value.icons.length,
+        failures: value.icons.filter((sample) => !sample.ok),
+      },
+    );
+    observe(
+      label + "：Tabs 与主要图标按钮命中至少 44px",
+      value.hitTargets.every((target) => target.ok),
+      {
+        sampleCount: value.hitTargets.length,
+        failures: value.hitTargets.filter((target) => !target.ok),
+      },
+    );
+    observe(
+      label + "：表格只在本地容器横滚",
+      value.tables.every((table) => table.contained),
+      value.tables,
+    );
+    observe(
+      label + "：浮层位于视口内",
+      value.popups.every((popup) => popup.ok),
+      value.popups,
+    );
+    if (value.focus)
+      observe(label + "：焦点边界对比度至少 3", value.focus.ok, value.focus);
     return value;
   };
   const wait = async (source, timeout = 20000) => {
@@ -560,7 +724,7 @@ export async function runWorkspaceSelfTest({
       `(()=>{const el=${find};el.scrollIntoView({block:'center'});el.focus();el.click();})()`,
     );
     await delay(80);
-    await trace("click",name);
+    await trace("click", name);
   };
   const input = async (label, value) => {
     await wait(
@@ -570,29 +734,29 @@ export async function runWorkspaceSelfTest({
       `(()=>{const label=${JSON.stringify(label)}, node=document.querySelector('[aria-label='+CSS.escape(label)+']')||[...document.querySelectorAll('input,textarea')].find(node=>node.getClientRects().length>0&&!node.closest('[data-closed],[inert],[aria-hidden=true]')&&node.id===[...document.querySelectorAll('label')].find(el=>el.getClientRects().length>0&&!el.closest('[data-closed],[inert],[aria-hidden=true]')&&el.textContent.trim()===label)?.htmlFor);if(!node)throw Error('missing field '+label);node.focus();const prototype=node.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value').set.call(node,${JSON.stringify(value)});node.dispatchEvent(new Event('input',{bubbles:true}));node.dispatchEvent(new Event('change',{bubbles:true}));})()`,
     );
     await delay(60);
-    await trace("input",label,{length:String(value).length});
+    await trace("input", label, { length: String(value).length });
   };
   const escaped = async () => {
     window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
     window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
     await delay(100);
-    await trace("key","Escape");
+    await trace("key", "Escape");
   };
   const navigate = async (label) => {
-    if (!(await js(`Boolean(${locate(label,"nav a")})`))) {
+    if (!(await js(`Boolean(${locate(label, "nav a")})`))) {
       await click("切换导航");
-      await wait(`Boolean(${locate(label,"nav a")})`);
+      await wait(`Boolean(${locate(label, "nav a")})`);
     }
     await click(label, { selector: "nav a" });
     await wait(
       `document.querySelector('h1')?.textContent.trim()===${JSON.stringify(label)}`,
     );
-    lastPage=desktopPages.find(item=>item.label===label).page;
+    lastPage = desktopPages.find((item) => item.label === label).page;
     await wait("!document.querySelector('main [data-slot=skeleton]')");
-    await trace("navigate",label);
+    await trace("navigate", label);
   };
   const resizeViewport = async (width, height = 900) => {
-    requestedWidth=width;
+    requestedWidth = width;
     let requested = width;
     const attempts = [];
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -610,7 +774,10 @@ export async function runWorkspaceSelfTest({
     }
     // Fractional Windows DPI can quantize the odd 375px viewport to 374/376.
     // Preserve the actual width and test its navigation breakpoint honestly.
-    const quantized = width===375 && (attempts.find(item=>item.actual===374)||attempts.find(item=>item.actual===376));
+    const quantized =
+      width === 375 &&
+      (attempts.find((item) => item.actual === 374) ||
+        attempts.find((item) => item.actual === 376));
     if (quantized) {
       window.setContentSize(quantized.requested, height);
       await delay(250);
@@ -663,17 +830,14 @@ export async function runWorkspaceSelfTest({
         error: String(error.message).slice(0, 500),
       });
       try {
-        await capture("failure.png",{scenario:name});
+        await capture("failure.png", { scenario: name });
       } catch {}
       throw error;
     }
   };
   const textHas = (value) =>
     `document.body.textContent.includes(${JSON.stringify(value)})`;
-  const countRecords = (workspace, pkg, key) =>
-    Object.values(workspace[key] || {})
-      .flat()
-      .filter((r) => r.ownerPackageId === pkg).length;
+  const countRecords = (snapshot, pkg, key) => snapshot.counts[pkg]?.[key] || 0;
   let a, b, profile, bossContracts;
   try {
     await wait("Boolean(document.querySelector('nav'))");
@@ -704,7 +868,7 @@ export async function runWorkspaceSelfTest({
         "错误 summary 接收焦点",
         await js("document.activeElement?.getAttribute('role')==='alert'"),
       );
-      await capture("profile-field-error.png",{scenario:"字段失败"});
+      await capture("profile-field-error.png", { scenario: "字段失败" });
       await input(
         "粘贴简历正文",
         "合成简历，姓名合成人员，2027届本科消防工程专业。掌握机场消防、应急管理和安全检查，具有合成课程项目经历。",
@@ -768,7 +932,7 @@ export async function runWorkspaceSelfTest({
       await navigate("工作台");
       await click("更新岗位");
       await wait(textHas("岗位更新完成"));
-      const w = await context.repository.read();
+      const w = await inspect();
       check(
         "当前版本采集已保存",
         countRecords(w, a.packageId, "jobs") === 1 &&
@@ -781,15 +945,17 @@ export async function runWorkspaceSelfTest({
       await navigate("岗位库");
       await click("查看岗位");
       await wait(textHas("本版本事实、评价与投递记录"));
-      await wait("Boolean(document.querySelector('[aria-label=岗位证据摘要]'))");
+      await wait(
+        "Boolean(document.querySelector('[aria-label=岗位证据摘要]'))",
+      );
       check(
         "真实岗位证据显示未知时效与未核验投递",
         (await js(textHas("招聘时效待核验"))) &&
           (await js(textHas("投递入口待核验"))),
       );
       await delay(200);
-      await capture("job-evidence.png",{scenario:"证据摘要"});
-      await click("评价依据",{selector:"[role=tab]"});
+      await capture("job-evidence.png", { scenario: "证据摘要" });
+      await click("评价依据", { selector: "[role=tab]" });
       await wait(textHas("当前评价依据"));
       check(
         "真实规则评价显示资格核对与评分组成",
@@ -814,28 +980,23 @@ export async function runWorkspaceSelfTest({
       await wait(textHas("合成机场集团"));
       check(
         "投递实际提交",
-        countRecords(
-          await context.repository.read(),
-          a.packageId,
-          "applications",
-        ) === 1,
+        countRecords(await inspect(), a.packageId, "applications") === 1,
       );
     });
     await phase("取消任务与切换版本竞态隔离", async () => {
-      clock.advance(1000);
-      controls.hold = true;
-      const originalStart = context.runService.startRun;
-      let releaseStart;
-      context.runService.startRun = async (...args) => {
-        await new Promise((resolve) => (releaseStart = resolve));
-        return originalStart(...args);
-      };
+      await clock.advance(1000);
+      await remote("synthetic.controls", { hold: true });
+      await remote("synthetic.startGate", { action: "hold" });
       try {
         await navigate("工作台");
         await click("更新岗位");
-        for (let attempt = 0; !releaseStart && attempt < 100; attempt++)
-          await delay(20);
-        if (!releaseStart) throw Error("self_test_start_not_entered");
+        let entered = false;
+        for (let attempt = 0; !entered && attempt < 100; attempt++) {
+          entered = (await remote("synthetic.startGate", { action: "status" }))
+            .entered;
+          if (!entered) await delay(20);
+        }
+        if (!entered) throw Error("self_test_start_not_entered");
         await navigate("岗位库");
         await navigate("工作台");
         check(
@@ -844,35 +1005,31 @@ export async function runWorkspaceSelfTest({
             "[...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='更新岗位')?.disabled === true",
           ),
         );
-        releaseStart();
+        await remote("synthetic.startGate", { action: "release" });
         // Root activities expose their own controls; the child cancel button is
         // intentionally hidden. Pause is enabled only while this root collects.
-        await wait(`Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`);
+        await wait(
+          `Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`,
+        );
         check("延迟提交的后台任务已在原版本恢复", true);
       } finally {
-        context.runService.startRun = originalStart;
-        releaseStart?.();
+        await remote("synthetic.startGate", { action: "release" });
       }
-      const heldRunCount = countRecords(
-        await context.repository.read(),
-        a.packageId,
-        "runs",
-      );
+      const heldRunCount = countRecords(await inspect(), a.packageId, "runs");
       await navigate("岗位库");
       await navigate("工作台");
-      await wait(`Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`);
+      await wait(
+        `Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`,
+      );
       check(
         "导航回来恢复活跃任务并禁用重复启动",
         (await js(
           "[...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='更新岗位')?.disabled === true",
         )) &&
-          countRecords(await context.repository.read(), a.packageId, "runs") ===
-            heldRunCount,
+          countRecords(await inspect(), a.packageId, "runs") === heldRunCount,
       );
       await wait(textHas("持续采集活动"));
-      const beforePause = Object.values(
-        (await context.repository.read()).runs,
-      ).find(
+      const beforePause = Object.values((await inspect()).runs).find(
         (r) =>
           r.ownerPackageId === a.packageId &&
           r.collectionProgress?.status === "collecting",
@@ -882,16 +1039,16 @@ export async function runWorkspaceSelfTest({
           scope: { packageId: a.packageId, targetRevisionId: a.revisionId },
           activityId: beforePause.runId,
         },
-        beforeUsage = (await context.collectionService.get(activityRef))
+        beforeUsage = (await remote("synthetic.activity", { ref: activityRef }))
           .collectionUsage;
       await click("暂停采集");
       await wait(textHas("活动已暂停"));
       check(
         "真实活动暂停持久化",
-        (await context.repository.read()).runs[beforePause.runId]
-          .collectionProgress.status === "paused",
+        (await inspect()).runs[beforePause.runId].collectionProgress.status ===
+          "paused",
       );
-      await capture("collection-paused.png",{scenario:"暂停采集"});
+      await capture("collection-paused.png", { scenario: "暂停采集" });
       await click("继续采集");
       await wait(textHas("已继续采集，沿用活动累计额度"));
       const priorCancellationCleared =
@@ -901,7 +1058,7 @@ export async function runWorkspaceSelfTest({
         "真实活动续采不显示上一轮取消结论",
         await js(priorCancellationCleared),
       );
-      const resumed = await context.collectionService.get(activityRef);
+      const resumed = await remote("synthetic.activity", { ref: activityRef });
       check(
         "真实活动续采沿用根编号与累计额度",
         resumed.collectionProgress.status === "collecting" &&
@@ -910,41 +1067,22 @@ export async function runWorkspaceSelfTest({
           resumed.collectionProgress.limits.maxCostCny ===
             beforePause.collectionProgress.limits.maxCostCny,
       );
-      await capture("collection-controls.png",{scenario:"恢复续采"});
+      await capture("collection-controls.png", { scenario: "恢复续采" });
       await click("取消活动");
       await wait(textHas("活动已取消"));
-      controls.hold = false;
+      await remote("synthetic.controls", { hold: false });
       await navigate("求职目标");
       await click("设为当前目标", { card: b.versionName });
       await navigate("岗位库");
       await wait(textHas("这里还没有岗位"));
       check(
         "目标B岗位没有混入目标A",
-        countRecords(await context.repository.read(), b.packageId, "jobs") ===
-          0,
+        countRecords(await inspect(), b.packageId, "jobs") === 0,
       );
       await navigate("求职目标");
       await click("设为当前目标", { card: a.versionName });
-      await context.repository.mutateWorkspace((w) => {
-        const original = Object.values(w.jobs).find(
-            (j) => j.ownerPackageId === a.packageId,
-          ),
-          clone = structuredClone(original);
-        clone.jobId = original.jobId + "-synthetic-duplicate";
-        clone.recordId = randomUUID();
-        w.jobs[clone.jobId] = clone;
-        const observation = structuredClone(
-          Object.values(w.observations).find((o) => o.jobId === original.jobId),
-        );
-        observation.jobId = clone.jobId;
-        observation.recordId = randomUUID();
-        observation.observationId += "-synthetic-duplicate";
-        w.observations[observation.observationId] = observation;
-        w.targetMembers[a.revisionId][clone.jobId] = {
-          ...structuredClone(w.targetMembers[a.revisionId][original.jobId]),
-          factRefs: [{ observationId: observation.observationId }],
-          currentObservationId: observation.observationId,
-        };
+      await remote("synthetic.duplicate", {
+        scope: { packageId: a.packageId, targetRevisionId: a.revisionId },
       });
       await navigate("岗位库");
       await click("预览所有版本去重");
@@ -953,14 +1091,9 @@ export async function runWorkspaceSelfTest({
       await wait(textHas("所选版本内重复岗位已清理"));
       check(
         "真实去重保留当前版本人工投递与其他版本",
-        countRecords(await context.repository.read(), a.packageId, "jobs") ===
-          1 &&
-          countRecords(
-            await context.repository.read(),
-            a.packageId,
-            "applications",
-          ) === 1 &&
-          Boolean((await context.repository.read()).packages[b.packageId]),
+        countRecords(await inspect(), a.packageId, "jobs") === 1 &&
+          countRecords(await inspect(), a.packageId, "applications") === 1 &&
+          Boolean((await inspect()).packages[b.packageId]),
       );
       await click("关闭预览");
       for (const width of [375, 768, 1024, 1440]) {
@@ -986,7 +1119,7 @@ export async function runWorkspaceSelfTest({
           "-" +
           String(geometry.dpr).replace(".", "_") +
           ".png";
-        await capture(file,{scenario:"岗位库宽度",sizing});
+        await capture(file, { scenario: "岗位库宽度", sizing });
         if (width === 375) {
           await click("当前目标", { selector: "[role=combobox]" });
           await wait("Boolean(document.querySelector('[role=listbox]'))");
@@ -1028,23 +1161,30 @@ export async function runWorkspaceSelfTest({
       );
     });
     await phase("来源检查、日志与生产安全桥接", async () => {
-      clock.advance(1000);
-      controls.hold = true;
+      await clock.advance(1000);
+      await remote("synthetic.controls", { hold: true });
       await navigate("工作台");
       await click("更新岗位");
-      await wait(`Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`);
+      await wait(
+        `Boolean(${locate("暂停采集", '[aria-label="当前采集活动"] button')})`,
+      );
       try {
         await navigate("招聘来源");
-        await input("搜索来源","没有匹配的合成来源");
+        await input("搜索来源", "没有匹配的合成来源");
         await wait(textHas("暂无匹配的招聘来源"));
-        check("来源搜索真实显示空结果",await js("!document.querySelector('[aria-label=\"合成离线来源来源摘要\"]')"));
-        await capture("source-search-empty.png",{scenario:"来源搜索"});
-        await input("搜索来源","合成离线来源");
+        check(
+          "来源搜索真实显示空结果",
+          await js(
+            "!document.querySelector('[aria-label=\"合成离线来源来源摘要\"]')",
+          ),
+        );
+        await capture("source-search-empty.png", { scenario: "来源搜索" });
+        await input("搜索来源", "合成离线来源");
         await wait(`Boolean(${locate("查看来源配置")})`);
         await click("查看来源配置");
         await wait(textHas("合成离线来源来源配置"));
-        await input("搜索此来源站点","合成离线来源");
-        await capture("source-detail.png",{scenario:"来源详情"});
+        await input("搜索此来源站点", "合成离线来源");
+        await capture("source-detail.png", { scenario: "来源详情" });
         await click("检查合成离线来源");
         await wait(textHas("来源检查已完成"));
         await escaped();
@@ -1052,7 +1192,7 @@ export async function runWorkspaceSelfTest({
         await navigate("工作台");
         await click("取消活动");
         await wait(textHas("活动已取消"));
-        controls.hold = false;
+        await remote("synthetic.controls", { hold: false });
       }
       await navigate("运行日志");
       check("日志页显示当前版本范围", await js(textHas(a.versionName)));
@@ -1160,48 +1300,95 @@ export async function runWorkspaceSelfTest({
         "window.__rjrSelfTestIssues=[];window.addEventListener('securitypolicyviolation',e=>window.__rjrSelfTestIssues.push({code:'csp_violation',directive:e.violatedDirective}));window.addEventListener('error',()=>window.__rjrSelfTestIssues.push({code:'renderer_error'}));window.addEventListener('unhandledrejection',()=>window.__rjrSelfTestIssues.push({code:'renderer_rejection'}));",
       );
     });
-    await phase("正常合成版本九页四宽度矩阵与 computedStyle 验收",async()=>{
-      const before=await context.repository.read();
-      check("矩阵开始前正常目标与源简历仍存在",[a,b,profile].every(item=>before.packages[item.packageId]?.state==='active'));
-      for(const width of desktopWidths) {
-        const sizing=await resizeViewport(width);
-        for(const {page,label} of desktopPages) {
+    await phase("正常合成版本九页四宽度矩阵与 computedStyle 验收", async () => {
+      const before = await inspect();
+      check(
+        "矩阵开始前正常目标与源简历仍存在",
+        [a, b, profile].every(
+          (item) => before.packages[item.packageId]?.state === "active",
+        ),
+      );
+      for (const width of desktopWidths) {
+        const sizing = await resizeViewport(width);
+        for (const { page, label } of desktopPages) {
           await navigate(label);
-          if(page==='sources') await wait(`Boolean(${locate("查看来源配置")})`);
-          if(page==='settings') await wait("Boolean(document.getElementById('model.model'))");
-          if(page==='jobs') await wait(`Boolean(${locate("查看岗位")})`);
-          await js("scrollTo(0,0);document.querySelector('main')?.scrollTo(0,0)");
+          if (page === "sources")
+            await wait(`Boolean(${locate("查看来源配置")})`);
+          if (page === "settings")
+            await wait("Boolean(document.getElementById('model.model'))");
+          if (page === "jobs") await wait(`Boolean(${locate("查看岗位")})`);
+          await js(
+            "scrollTo(0,0);document.querySelector('main')?.scrollTo(0,0)",
+          );
           await delay(80);
-          const geometry=await audit(label+" / "+width+"px");
-          const nav=await js(`({links:[...document.querySelectorAll('nav a')].filter(${visible}).length,toggle:Boolean(${locate("切换导航")})})`);
-          observe(label+"：实际视口导航断点",desktopNavigationMatches(geometry.actualWidth,nav),{...nav,actualWidth:geometry.actualWidth});
-          await capture(`matrix-${page}-${width}-${String(geometry.dpr).replace('.','_')}.png`,{matrix:true,sizing});
+          const geometry = await audit(label + " / " + width + "px");
+          const nav = await js(
+            `({links:[...document.querySelectorAll('nav a')].filter(${visible}).length,toggle:Boolean(${locate("切换导航")})})`,
+          );
+          observe(
+            label + "：实际视口导航断点",
+            desktopNavigationMatches(geometry.actualWidth, nav),
+            { ...nav, actualWidth: geometry.actualWidth },
+          );
+          await capture(
+            `matrix-${page}-${width}-${String(geometry.dpr).replace(".", "_")}.png`,
+            { matrix: true, sizing },
+          );
         }
       }
-      check("九页四宽度矩阵完整且真实",validateDesktopMatrix(screenshots,await js("devicePixelRatio")).length===0,validateDesktopMatrix(screenshots,await js("devicePixelRatio")));
-      const after=await context.repository.read();
-      check("矩阵结束仍保留正常版本和投递子集",[a,b,profile].every(item=>after.packages[item.packageId]?.state==='active') && countRecords(after,a.packageId,'applications')===1);
+      check(
+        "九页四宽度矩阵完整且真实",
+        validateDesktopMatrix(screenshots, await js("devicePixelRatio"))
+          .length === 0,
+        validateDesktopMatrix(screenshots, await js("devicePixelRatio")),
+      );
+      const after = await inspect();
+      check(
+        "矩阵结束仍保留正常版本和投递子集",
+        [a, b, profile].every(
+          (item) => after.packages[item.packageId]?.state === "active",
+        ) && countRecords(after, a.packageId, "applications") === 1,
+      );
       await resizeViewport(1440);
     });
-    await phase("高分仍显示证据不足与窄屏详情焦点",async()=>{
-      const workspace=await context.repository.read();
-      const current=(await api('/jobs?'+new URLSearchParams({packageId:a.packageId,targetRevisionId:a.revisionId}))).items[0]?.evaluation;
-      const original=current && workspace.evaluations[current.evaluationId];
-      if(!original) throw Error("synthetic_evaluation_missing");
-      const saved=structuredClone(original);
-      const syntheticId=randomUUID();
+    await phase("高分仍显示证据不足与窄屏详情焦点", async () => {
+      const current = (
+        await api(
+          "/jobs?" +
+            new URLSearchParams({
+              packageId: a.packageId,
+              targetRevisionId: a.revisionId,
+            }),
+        )
+      ).items[0]?.evaluation;
+      if (!current?.evaluationId) throw Error("synthetic_evaluation_missing");
+      const scope = { packageId: a.packageId, targetRevisionId: a.revisionId };
+      const syntheticId = (
+        await remote("synthetic.score", {
+          scope,
+          evaluationId: current.evaluationId,
+        })
+      ).evaluationId;
       try {
-        await context.repository.mutateWorkspace(w=>{w.evaluations[syntheticId]={...saved,evaluationId:syntheticId,recordId:randomUUID(),score:100,createdAt:new Date(clock.now()+60000).toISOString()};});
         await resizeViewport(375);
         await navigate("岗位库");
         await js(`void(window.__rjrReturnFocus=${locate("查看岗位")})`);
         await click("查看岗位");
         await wait(textHas("辅助评分：100 分"));
-        check("高分不隐藏待核验时效与投递入口",(await js(textHas("招聘时效待核验"))) && (await js(textHas("投递入口待核验"))) && !(await js(`Boolean(${locate("前往投递")})`)));
-        const detailAudit=await audit("375px 高分低证据详情");
-        check("岗位详情实际图标样本非空",detailAudit.icons.length>0,{sampleCount:detailAudit.icons.length});
-        await capture("job-high-score-low-evidence.png",{scenario:"高分低证据"});
-        const scrollEnd=await js(`(()=>{
+        check(
+          "高分不隐藏待核验时效与投递入口",
+          (await js(textHas("招聘时效待核验"))) &&
+            (await js(textHas("投递入口待核验"))) &&
+            !(await js(`Boolean(${locate("前往投递")})`)),
+        );
+        const detailAudit = await audit("375px 高分低证据详情");
+        check("岗位详情实际图标样本非空", detailAudit.icons.length > 0, {
+          sampleCount: detailAudit.icons.length,
+        });
+        await capture("job-high-score-low-evidence.png", {
+          scenario: "高分低证据",
+        });
+        const scrollEnd = await js(`(()=>{
           const dialog=[...document.querySelectorAll('[role=dialog]')].find(el=>(${visible})(el));
           const shown=${visible};
           const scrollable=[dialog,...dialog.querySelectorAll('*')].filter(el=>['auto','scroll'].includes(getComputedStyle(el).overflowY));
@@ -1214,111 +1401,208 @@ export async function runWorkspaceSelfTest({
           const active=focus?uncovered(focus):null;
           return {content,active,scrollContainers:scrollable.length,stickyActions:[...dialog.querySelectorAll('*')].filter(el=>['sticky','fixed'].includes(getComputedStyle(el).position)).length};
         })()`);
-        check("底部操作不遮挡最后内容与焦点",scrollEnd.content?.ok && scrollEnd.active?.ok,scrollEnd);
-        await capture("job-detail-scroll-end-content.png",{scenario:"Tab 前的底部内容"});
-        await withDesktopKeyboardFocus(window.webContents.debugger,async()=>{
-          await js("window.__rjrKeyboardEvent=null;document.addEventListener('keydown',event=>{window.__rjrKeyboardEvent={key:event.key,isTrusted:event.isTrusted};},{once:true,capture:true})");
-          window.webContents.focus();
-          window.webContents.sendInputEvent({type:"keyDown",keyCode:"Tab"});
-          window.webContents.sendInputEvent({type:"keyUp",keyCode:"Tab"});
-          await delay(80);
-          const keyboard=await audit("375px 键盘焦点");
-          const event=await js("window.__rjrKeyboardEvent");
-          await capture("job-detail-scroll-end.png",{scenario:"底部内容与焦点"});
-          check("真实键盘焦点有可读边界",Boolean(keyboard.focusState.documentFocused && event?.key==='Tab' && event.isTrusted && keyboard.focus?.ok),{focus:keyboard.focus,focusState:keyboard.focusState,event});
+        check(
+          "底部操作不遮挡最后内容与焦点",
+          scrollEnd.content?.ok && scrollEnd.active?.ok,
+          scrollEnd,
+        );
+        await capture("job-detail-scroll-end-content.png", {
+          scenario: "Tab 前的底部内容",
         });
+        await withDesktopKeyboardFocus(
+          window.webContents.debugger,
+          async () => {
+            await js(
+              "window.__rjrKeyboardEvent=null;document.addEventListener('keydown',event=>{window.__rjrKeyboardEvent={key:event.key,isTrusted:event.isTrusted};},{once:true,capture:true})",
+            );
+            window.webContents.focus();
+            window.webContents.sendInputEvent({
+              type: "keyDown",
+              keyCode: "Tab",
+            });
+            window.webContents.sendInputEvent({
+              type: "keyUp",
+              keyCode: "Tab",
+            });
+            await delay(80);
+            const keyboard = await audit("375px 键盘焦点");
+            const event = await js("window.__rjrKeyboardEvent");
+            await capture("job-detail-scroll-end.png", {
+              scenario: "底部内容与焦点",
+            });
+            check(
+              "真实键盘焦点有可读边界",
+              Boolean(
+                keyboard.focusState.documentFocused &&
+                  event?.key === "Tab" &&
+                  event.isTrusted &&
+                  keyboard.focus?.ok,
+              ),
+              { focus: keyboard.focus, focusState: keyboard.focusState, event },
+            );
+          },
+        );
         await escaped();
-        await wait("![...document.querySelectorAll('[role=dialog]')].some(el=>el.getClientRects().length&&!el.hasAttribute('data-closed'))");
-        check("岗位详情 Esc 关闭并归还触发按钮焦点",await js("document.activeElement===window.__rjrReturnFocus"));
+        await wait(
+          "![...document.querySelectorAll('[role=dialog]')].some(el=>el.getClientRects().length&&!el.hasAttribute('data-closed'))",
+        );
+        check(
+          "岗位详情 Esc 关闭并归还触发按钮焦点",
+          await js("document.activeElement===window.__rjrReturnFocus"),
+        );
       } finally {
-        await context.repository.mutateWorkspace(w=>{delete w.evaluations[syntheticId];});
+        await remote("synthetic.removeScore", {
+          scope,
+          evaluationId: syntheticId,
+        });
         await resizeViewport(1440);
       }
     });
-    await phase("回收站预览 409 保留资料包并要求重新预览",async()=>{
-      const candidate=await context.workspaceService.saveProfile({
-        versionName:"合成冲突预览简历",submissionId:"self-test-preview-conflict",
-        text:"合成预览冲突简历正文，本科消防工程专业，2027届，具有合成消防课程项目与机场应急管理经历。",
-        profile:{major:"消防工程",education:"本科",graduationYear:2027},
+    await phase("回收站预览 409 保留资料包并要求重新预览", async () => {
+      const candidate = await remote("synthetic.profile", {
+        scenario: "preview-conflict",
       });
-      await context.trashService.archive({packageId:candidate.packageId});
+      await remote("synthetic.archive", { packageId: candidate.packageId });
       await resizeViewport(375);
       await navigate("回收站");
-      await click("永久删除"+candidate.versionName);
+      await click("永久删除" + candidate.versionName);
       await wait("Boolean(document.querySelector('[role=alertdialog]'))");
-      check("单版本删除预览显示真实范围",await js(textHas("本次选择的版本及其全部子记录")));
+      check(
+        "单版本删除预览显示真实范围",
+        await js(textHas("本次选择的版本及其全部子记录")),
+      );
       await audit("375px 永久删除确认");
-      await capture("trash-preview.png",{scenario:"所选版本删除预览"});
-      await context.workspaceService.saveProfile({
-        versionName:"合成预览后新增简历",submissionId:"self-test-preview-revision",
-        text:"合成修改修订简历正文，本科消防工程专业，2027届，具有课程项目和机场应急管理的合成经历。",
-        profile:{major:"消防工程",education:"本科",graduationYear:2027},
-      });
+      await capture("trash-preview.png", { scenario: "所选版本删除预览" });
+      await remote("synthetic.profile", { scenario: "preview-revision" });
       try {
-        await withDesktopResponses(window.webContents.debugger,origin,"/api/v2/trash/purge",async responses=>{
-        await click("确认永久删除");
-        await wait(textHas("回收站内容已变化，请关闭并重新预览"));
-        for(let attempt=0;!responses.some(response=>response.status===409)&&attempt<100;attempt++) await delay(20);
-        const disabled=await js("[...document.querySelectorAll('[role=alertdialog] button')].find(el=>el.textContent.trim()==='确认永久删除')?.disabled===true");
-        check("真实 409 禁止旧预览重复提交",responses.some(response=>response.status===409) && disabled,{responses,disabled});
-        check("409 未删除合成候选包",(await context.repository.read()).packages[candidate.packageId]?.state==='trashed');
-        await trace("conflict","永久删除预览失效",{status:409});
-        await capture("trash-preview-409.png",{scenario:"409 预览失效"});
-        await click("取消");
-        await click("永久删除"+candidate.versionName);
-        await wait("Boolean(document.querySelector('[role=alertdialog]'))");
-        await click("确认永久删除");
-        await wait(textHas("永久删除完成"));
-        check("重新预览后清理所选包",!(await context.repository.read()).packages[candidate.packageId]);
-        });
+        await withDesktopResponses(
+          window.webContents.debugger,
+          origin,
+          "/api/v2/trash/purge",
+          async (responses) => {
+            await click("确认永久删除");
+            await wait(textHas("回收站内容已变化，请关闭并重新预览"));
+            for (
+              let attempt = 0;
+              !responses.some((response) => response.status === 409) &&
+              attempt < 100;
+              attempt++
+            )
+              await delay(20);
+            const disabled = await js(
+              "[...document.querySelectorAll('[role=alertdialog] button')].find(el=>el.textContent.trim()==='确认永久删除')?.disabled===true",
+            );
+            check(
+              "真实 409 禁止旧预览重复提交",
+              responses.some((response) => response.status === 409) && disabled,
+              { responses, disabled },
+            );
+            check(
+              "409 未删除合成候选包",
+              (await inspect()).packages[candidate.packageId]?.state ===
+                "trashed",
+            );
+            await trace("conflict", "永久删除预览失效", { status: 409 });
+            await capture("trash-preview-409.png", {
+              scenario: "409 预览失效",
+            });
+            await click("取消");
+            await click("永久删除" + candidate.versionName);
+            await wait("Boolean(document.querySelector('[role=alertdialog]'))");
+            await click("确认永久删除");
+            await wait(textHas("永久删除完成"));
+            check(
+              "重新预览后清理所选包",
+              !(await inspect()).packages[candidate.packageId],
+            );
+          },
+        );
       } finally {
         await resizeViewport(1440);
       }
     });
-    await phase("回收站到期移除已展开正文与恢复入口",async()=>{
+    await phase("回收站到期移除已展开正文与恢复入口", async () => {
       await navigate("设置");
-      const body="合成到期正文仅用于自测的关闭核验；本科消防工程专业，2027届，机场消防和应急管理合成课程经历。";
-      const candidate=await context.workspaceService.saveProfile({
-        versionName:"合成界面到期简历",submissionId:"self-test-ui-expiry",text:body,
-        profile:{major:"消防工程",education:"本科",graduationYear:2027},
+      const body =
+        "合成到期正文仅用于自测的关闭核验；本科消防工程专业，2027届，机场消防和应急管理合成课程经历。";
+      const candidate = await remote("synthetic.profile", {
+        scenario: "ui-expiry",
       });
-      await context.trashService.archive({packageId:candidate.packageId});
-      const deadline=Date.parse((await context.repository.read()).packages[candidate.packageId].purgeAt);
-      clock.advance(Math.max(0,deadline-clock.now()-1000));
+      await remote("synthetic.archive", { packageId: candidate.packageId });
+      const deadline = Date.parse(
+        (await inspect()).packages[candidate.packageId].purgeAt,
+      );
+      await clock.advance(Math.max(0, deadline - clock.now() - 1000));
       await navigate("回收站");
-      await click("查看内容"+candidate.versionName);
-      await wait("Boolean(document.querySelector('[aria-label=版本内容摘要]'))");
+      await click("查看内容" + candidate.versionName);
+      await wait(
+        "Boolean(document.querySelector('[aria-label=版本内容摘要]'))",
+      );
       await click("简历正文");
       await wait(textHas(body));
-      await capture("trash-before-expiry.png",{scenario:"到期前展开正文"});
-      clock.advance(Math.max(0,deadline-clock.now()));
-      await wait(textHas("已到期，不能读取正文或恢复。"),5000);
-      check("到期不保留已展开正文或恢复按钮",!(await js(textHas(body))) && (await js("!document.querySelector('[aria-label=版本内容摘要]')")) && !(await js(`Boolean(${locate("恢复"+candidate.versionName)})`)));
-      await trace("expiry","版本到期隐藏正文与恢复入口");
-      await wait("![...document.querySelectorAll('[data-slot=sheet-content],[data-slot=sheet-overlay]')].some(el=>el.getClientRects().length>0)");
-      check("到期截图前关闭 Sheet 且正文与恢复入口仍不可用",!(await js(textHas(body))) && (await js("!document.querySelector('[aria-label=版本内容摘要]')")) && !(await js(`Boolean(${locate("恢复"+candidate.versionName)})`)));
-      await capture("trash-expired.png",{scenario:"版本到期"});
+      await capture("trash-before-expiry.png", { scenario: "到期前展开正文" });
+      await clock.advance(Math.max(0, deadline - clock.now()));
+      await wait(textHas("已到期，不能读取正文或恢复。"), 5000);
+      check(
+        "到期不保留已展开正文或恢复按钮",
+        !(await js(textHas(body))) &&
+          (await js("!document.querySelector('[aria-label=版本内容摘要]')")) &&
+          !(await js(`Boolean(${locate("恢复" + candidate.versionName)})`)),
+      );
+      await trace("expiry", "版本到期隐藏正文与恢复入口");
+      await wait(
+        "![...document.querySelectorAll('[data-slot=sheet-content],[data-slot=sheet-overlay]')].some(el=>el.getClientRects().length>0)",
+      );
+      check(
+        "到期截图前关闭 Sheet 且正文与恢复入口仍不可用",
+        !(await js(textHas(body))) &&
+          (await js("!document.querySelector('[aria-label=版本内容摘要]')")) &&
+          !(await js(`Boolean(${locate("恢复" + candidate.versionName)})`)),
+      );
+      await capture("trash-expired.png", { scenario: "版本到期" });
       await escaped();
-      await context.trashScheduler.sweep();
-      check("界面到期合成包由既有服务清理",!(await context.repository.read()).packages[candidate.packageId]);
+      await remote("synthetic.sweep");
+      check(
+        "界面到期合成包由既有服务清理",
+        !(await inspect()).packages[candidate.packageId],
+      );
       await navigate("设置");
     });
-    await phase("减少动效仍显示正常合成数据",async()=>{
-      const debuggerApi=window.webContents.debugger;
-      const attachedHere=!debuggerApi.isAttached();
-      if(attachedHere)debuggerApi.attach('1.3');
+    await phase("减少动效仍显示正常合成数据", async () => {
+      const debuggerApi = window.webContents.debugger;
+      const attachedHere = !debuggerApi.isAttached();
+      if (attachedHere) debuggerApi.attach("1.3");
       try {
-        await debuggerApi.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+        await debuggerApi.sendCommand("Emulation.setEmulatedMedia", {
+          features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+        });
         await navigate("岗位库");
         await wait(`Boolean(${locate("查看岗位")})`);
-        const motion=await js(`({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,visible:document.querySelector('main').textContent.includes('合成机场集团'),durations:[...document.querySelectorAll('main button,[role=tab],nav a')].filter(${visible}).map(el=>({label:el.textContent.trim().slice(0,50),animation:getComputedStyle(el).animationDuration,transition:getComputedStyle(el).transitionDuration}))})`);
-        check("减少动效匹配且数据可见",motion.reduced && motion.visible,motion);
-        const seconds=value=>value.split(',').map(item=>parseFloat(item));
-        check("减少动效关闭非必要过渡",motion.durations.every(item=>[...seconds(item.animation),...seconds(item.transition)].every(value=>value<=0.01)),motion.durations);
-        await capture("reduced-motion.png",{scenario:"减少动效"});
+        const motion = await js(
+          `({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,visible:document.querySelector('main').textContent.includes('合成机场集团'),durations:[...document.querySelectorAll('main button,[role=tab],nav a')].filter(${visible}).map(el=>({label:el.textContent.trim().slice(0,50),animation:getComputedStyle(el).animationDuration,transition:getComputedStyle(el).transitionDuration}))})`,
+        );
+        check(
+          "减少动效匹配且数据可见",
+          motion.reduced && motion.visible,
+          motion,
+        );
+        const seconds = (value) =>
+          value.split(",").map((item) => parseFloat(item));
+        check(
+          "减少动效关闭非必要过渡",
+          motion.durations.every((item) =>
+            [...seconds(item.animation), ...seconds(item.transition)].every(
+              (value) => value <= 0.01,
+            ),
+          ),
+          motion.durations,
+        );
+        await capture("reduced-motion.png", { scenario: "减少动效" });
       } finally {
-        await debuggerApi.sendCommand('Emulation.setEmulatedMedia',{features:[]});
-        if(attachedHere)debuggerApi.detach();
+        await debuggerApi.sendCommand("Emulation.setEmulatedMedia", {
+          features: [],
+        });
+        if (attachedHere) debuggerApi.detach();
       }
     });
     const archive = async (name, kind = "求职目标") => {
@@ -1341,33 +1625,49 @@ export async function runWorkspaceSelfTest({
       await wait(
         "document.querySelector('main').textContent.includes('岗位更新完成')",
       );
-      const afterSourcePurge = await context.repository.read(),
-        ownedTarget = Object.values(afterSourcePurge.targets)
-          .flat()
-          .find((t) => t.ownerPackageId === a.packageId);
+      const afterSourcePurge = await inspect(),
+        ownedTarget = afterSourcePurge.copies[a.packageId];
       check(
         "源简历删除后目标副本保留",
         !afterSourcePurge.packages[profile.packageId] &&
-          ownedTarget?.profileSnapshot?.ownerPackageId === a.packageId &&
-          ownedTarget?.profileSnapshot?.text === profile.text &&
+          ownedTarget?.ownerPackageId === a.packageId &&
+          ownedTarget?.textHash ===
+            createHash("sha256").update(profile.text).digest("hex") &&
           Object.values(afterSourcePurge.runs).some(
             (r) => r.ownerPackageId === a.packageId && r.status === "completed",
           ),
       );
     });
     await phase("启动自动更新与来源页手动更新共用隔离任务", async () => {
-      const roots = async () => Object.values((await context.repository.read()).runs)
-        .filter(run => run.ownerPackageId === a.packageId && run.collectionRole === "collection_root");
-      const before = await roots(), beforeIds = new Set(before.map(run => run.runId));
-      const jobCount = countRecords(await context.repository.read(), a.packageId, "jobs");
+      const roots = async () =>
+        Object.values((await inspect()).runs).filter(
+          (run) =>
+            run.ownerPackageId === a.packageId &&
+            run.collectionRole === "collection_root",
+        );
+      const before = await roots(),
+        beforeIds = new Set(before.map((run) => run.runId));
+      const jobCount = countRecords(await inspect(), a.packageId, "jobs");
       const enabledUrl = new URL(window.webContents.getURL());
       enabledUrl.searchParams.delete("fixtureStartup");
-      enabledUrl.hash = "#/sources?packageId=" + encodeURIComponent(a.packageId) + "&targetRevisionId=" + encodeURIComponent(a.revisionId);
+      enabledUrl.hash =
+        "#/sources?packageId=" +
+        encodeURIComponent(a.packageId) +
+        "&targetRevisionId=" +
+        encodeURIComponent(a.revisionId);
       const completedRoots = async (count) => {
         const deadline = Date.now() + 20000;
         while (Date.now() < deadline) {
-          const created = (await roots()).filter(run => !beforeIds.has(run.runId));
-          if (created.length === count && created.every(run => run.collectionProgress.status === "completed")) return created;
+          const created = (await roots()).filter(
+            (run) => !beforeIds.has(run.runId),
+          );
+          if (
+            created.length === count &&
+            created.every(
+              (run) => run.collectionProgress.status === "completed",
+            )
+          )
+            return created;
           await delay(30);
         }
         throw Error("self_test_startup_completion_timeout");
@@ -1376,31 +1676,74 @@ export async function runWorkspaceSelfTest({
         await window.loadURL(enabledUrl.href);
         await wait(textHas("启动自动更新已开始"));
         const automatic = await completedRoots(1);
-        check("本次启动创建一个本地规则活动", automatic[0].collectionMode === "rules");
+        check(
+          "本次启动创建一个本地规则活动",
+          automatic[0].collectionMode === "rules",
+        );
         await navigate("工作台");
         await navigate("招聘来源");
-        check("导航不重复创建启动活动", (await roots()).length === before.length + 1);
+        check(
+          "导航不重复创建启动活动",
+          (await roots()).length === before.length + 1,
+        );
         await click("手动更新岗位");
         await wait(textHas("手动岗位更新已开始"));
         await completedRoots(2);
-        check("来源页手动更新实际执行且按版本去重", countRecords(await context.repository.read(), a.packageId, "jobs") === jobCount);
+        check(
+          "来源页手动更新实际执行且按版本去重",
+          countRecords(await inspect(), a.packageId, "jobs") === jobCount,
+        );
         await resizeViewport(1440);
-        await capture("startup-manual-update.png", { scenario: "启动与手动岗位更新" });
+        await capture("startup-manual-update.png", {
+          scenario: "启动与手动岗位更新",
+        });
         // Navigating to the same URL may keep the current document. Reload
         // explicitly to simulate a fresh application client on the next open.
-        const reloaded = new Promise(resolve => window.webContents.once("did-finish-load", resolve));
+        const reloaded = new Promise((resolve) =>
+          window.webContents.once("did-finish-load", resolve),
+        );
         window.webContents.reloadIgnoringCache();
         await reloaded;
         await wait(textHas("启动自动更新已开始"));
         const reopened = await completedRoots(3);
-        const workspace = await context.repository.read();
-        const children = Object.values(workspace.runs).filter(run => reopened.some(root => root.runId === run.collectionActivityId));
-        check("再次打开更新一次且活动和子任务归属正确", reopened.every(run => run.collectionMode === "rules" && run.targetSnapshot.revisionId === a.revisionId)
-          && children.length > 0 && children.every(run => run.mode === "rules" && run.ownerPackageId === a.packageId));
-        const projections = await Promise.all(reopened.map(run => context.collectionService.get({
-          scope: { packageId: a.packageId, targetRevisionId: a.revisionId }, activityId: run.runId,
-        })));
-        check("启动更新没有模型费用", projections.every(run => run.collectionUsage.costUpperBoundCny === 0 && run.collectionUsage.usedModelRequests === 0));
+        const workspace = await inspect();
+        const children = Object.values(workspace.runs).filter((run) =>
+          reopened.some((root) => root.runId === run.collectionActivityId),
+        );
+        check(
+          "再次打开更新一次且活动和子任务归属正确",
+          reopened.every(
+            (run) =>
+              run.collectionMode === "rules" &&
+              run.targetSnapshot.revisionId === a.revisionId,
+          ) &&
+            children.length > 0 &&
+            children.every(
+              (run) =>
+                run.mode === "rules" && run.ownerPackageId === a.packageId,
+            ),
+        );
+        const projections = await Promise.all(
+          reopened.map((run) =>
+            remote("synthetic.activity", {
+              ref: {
+                scope: {
+                  packageId: a.packageId,
+                  targetRevisionId: a.revisionId,
+                },
+                activityId: run.runId,
+              },
+            }),
+          ),
+        );
+        check(
+          "启动更新没有模型费用",
+          projections.every(
+            (run) =>
+              run.collectionUsage.costUpperBoundCny === 0 &&
+              run.collectionUsage.usedModelRequests === 0,
+          ),
+        );
       } finally {
         enabledUrl.searchParams.set("fixtureStartup", "disabled");
         await window.loadURL(enabledUrl.href);
@@ -1408,17 +1751,17 @@ export async function runWorkspaceSelfTest({
       }
     });
     await phase("Boss 固定协议、版本隔离与风险取消排空", async () => {
-      const { runBossSelfTest } = await import("./self-test-boss.mjs");
-      const validation = await runBossSelfTest({
-        context,
-        targets: [a, b],
-        dataDir,
+      const validation = await remote("synthetic.bossContracts", {
+        targets: [a, b].map(({ packageId, revisionId }) => ({
+          packageId,
+          revisionId,
+        })),
       });
       results.push(...validation.results);
       bossContracts = validation.summary;
     });
     await phase("归档隐藏整个版本、整包恢复保持子集", async () => {
-      const before = await context.repository.read(),
+      const before = await inspect(),
         counts = Object.fromEntries(
           ["jobs", "evaluations", "runs", "applications"].map((k) => [
             k,
@@ -1427,11 +1770,11 @@ export async function runWorkspaceSelfTest({
         );
       await archive(a.versionName);
       await navigate("回收站");
-      await capture("trash-before-restore.png",{scenario:"整包恢复前"});
+      await capture("trash-before-restore.png", { scenario: "整包恢复前" });
       await click("恢复" + a.versionName);
       await wait(textHas("已恢复整个版本"));
-      await capture("trash-restored.png",{scenario:"整包恢复"});
-      const after = await context.repository.read();
+      await capture("trash-restored.png", { scenario: "整包恢复" });
+      const after = await inspect();
       check(
         "恢复保留岗位评价检索投递完整子集",
         Object.entries(counts).every(
@@ -1442,12 +1785,10 @@ export async function runWorkspaceSelfTest({
     await phase("清空回收站部分失败与安全续清理", async () => {
       await archive(a.versionName);
       await archive(b.versionName);
-      controls.failCleanupRunIds = new Set(
-        Object.values((await context.repository.read()).runs)
-          .filter((run) => run.ownerPackageId === a.packageId)
-          .map((run) => run.runId),
-      );
-      controls.failCleanup = true;
+      await remote("synthetic.controls", {
+        failCleanup: true,
+        failCleanupPackageId: a.packageId,
+      });
       await navigate("回收站");
       await click("清空整个回收站");
       await click("确认永久删除");
@@ -1458,30 +1799,25 @@ export async function runWorkspaceSelfTest({
           "document.body.textContent.includes('失败 1')&&document.body.textContent.includes('已完成 1')",
         ),
       );
-      await capture("trash-partial-failure.png",{scenario:"部分永久删除失败"});
-      controls.failCleanup = false;
+      await capture("trash-partial-failure.png", {
+        scenario: "部分永久删除失败",
+      });
+      await remote("synthetic.controls", { failCleanup: false });
       await click("重试清理");
       await wait(textHas("回收站为空"));
       check(
         "续清理实际清除子集",
-        !Object.values((await context.repository.read()).jobs).some(
-          (j) => j.ownerPackageId === a.packageId,
-        ),
+        countRecords(await inspect(), a.packageId, "jobs") === 0,
       );
     });
     await phase("72 小时到期清理服务", async () => {
-      const p = await context.workspaceService.saveProfile({
-        versionName: "合成到期简历",
-        submissionId: "self-test-expiry",
-        text: "合成到期简历正文，消防工程专业，本科学历，合成课程与项目经历。",
-        profile: { major: "消防工程", education: "本科", graduationYear: 2027 },
-      });
-      await context.trashService.archive({ packageId: p.packageId });
-      clock.advance(72 * 3600 * 1000);
-      await context.trashScheduler.sweep();
+      const p = await remote("synthetic.profile", { scenario: "expiry" });
+      await remote("synthetic.archive", { packageId: p.packageId });
+      await clock.advance(72 * 3600 * 1000);
+      await remote("synthetic.sweep");
       check(
         "72小时到期正文与身份已清除",
-        !(await context.repository.read()).packages[p.packageId],
+        !(await inspect()).packages[p.packageId],
       );
     });
     await phase("响应式窗口、长中文与字体放大截图", async () => {
@@ -1502,7 +1838,7 @@ export async function runWorkspaceSelfTest({
           geometry,
         );
         const filename = `ui-${width}-${String(geometry.dpr).replace(".", "_")}.png`;
-        await capture(filename,{scenario:"字体与长中文",sizing});
+        await capture(filename, { scenario: "字体与长中文", sizing });
       }
       window.webContents.setZoomFactor(1.25);
       await delay(200);
@@ -1511,7 +1847,7 @@ export async function runWorkspaceSelfTest({
         await js("document.documentElement.scrollWidth<=innerWidth+1"),
       );
       const filename = "ui-font-125.png";
-      await capture(filename,{fontZoom:1.25,scenario:"字体放大125%"});
+      await capture(filename, { fontZoom: 1.25, scenario: "字体放大125%" });
       window.webContents.setZoomFactor(1);
     });
     const issues = await js("window.__rjrSelfTestIssues||[]");
@@ -1520,7 +1856,12 @@ export async function runWorkspaceSelfTest({
       issues.length === 0 && rendererErrors.length === 0,
       { issues, rendererErrors },
     );
-    check("外部网络请求为零", networkGuard.report().externalRequests === 0);
+    const backendNetwork = (await remote("backend.status")).network;
+    check(
+      "外部网络请求为零",
+      networkGuard.report().externalRequests === 0 &&
+        backendNetwork?.externalRequests === 0,
+    );
   } catch (error) {
     if (!results.some((r) => !r.ok))
       results.push({
@@ -1539,7 +1880,10 @@ export async function runWorkspaceSelfTest({
     interactions,
     visualAudits,
     bossContracts,
-    network: networkGuard.report(),
+    network: {
+      ...networkGuard.report(),
+      backend: (await remote("backend.status")).network,
+    },
     deviceScaleFactor: await js("devicePixelRatio"),
     rendererErrors,
     externalIntents,

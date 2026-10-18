@@ -46,16 +46,19 @@ test('delete intent immediately hides bodies and previous writes never resurrect
   });
   assert.equal(Object.values((await f.repository.read()).profiles).flat().length,0);
   await f.repository.mutateWorkspace(w=>{w.settings.budgets={maxCostCny:10};});
-  for(const file of ['workspace.v2.json','workspace.v2.previous.json'])assert.doesNotMatch(await fs.readFile(path.join(f.repository.dataDir,file),'utf8'),/SYNTHETIC-PRIVATE-BODY/);
+  assert.doesNotMatch(await fs.readFile(path.join(f.repository.dataDir,'workspace.v2.json'),'utf8'),/SYNTHETIC-PRIVATE-BODY/);
+  await assert.rejects(fs.stat(path.join(f.repository.dataDir,'workspace.v2.previous.json')),{code:'ENOENT'});
+  assert.doesNotMatch(JSON.stringify(await f.repository.exportWorkspace()),/SYNTHETIC-PRIVATE-BODY/);
   assert.doesNotMatch(JSON.stringify(await f.control.read()),/SYNTHETIC-PRIVATE-BODY|合成资料/);
 });
 test('maintenance callback reads reuse the held lock',async t=>{
   const f=await packageFixture(t);
+  const before=(await f.repository.read()).revision;
   await f.repository.withMaintenanceTransaction(async tx=>{
     assert.equal((await f.repository.read()).schemaVersion,3);
     await tx.commitWorkspace(tx.workspace);
   });
-  assert.equal((await f.repository.read()).revision,2);
+  assert.equal((await f.repository.read()).revision,before+1);
 });
 test('identity and version high water cannot be rolled back',async t=>{
   const f=await packageFixture(t);

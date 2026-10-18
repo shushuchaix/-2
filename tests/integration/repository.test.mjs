@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { tempRepository } from "../helpers/repository.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 import { withWorkspaceLock } from "../../src/infrastructure/storage/lock.mjs";
+import { registerTestResource } from '../helpers/fixtures.mjs';
 const writer = (dir, message) =>
   new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
@@ -82,25 +83,26 @@ test("write failures and corrupt or future schema never replace valid data", asy
   );
   const failing = await openWorkspaceRepository({allowLegacy:true,
     dataDir: repo.dataDir,
-    fsAdapter: {
-      ...fs,
-      rename: async () => {
-        throw Error("persist rename failure");
-      },
-    },
+    faultInjector: phase=>{if(phase==='sqlite.beforeImport')throw Error('persist SQLite failure');},
   });
+  registerTestResource(t,()=>failing.close());
   await assert.rejects(
     failing.mutateWorkspace((w) => (w.recoveryRecords = [])),
-    /persist rename/,
+    /persist SQLite/,
   );
   assert.equal((await repo.read()).revision, 1);
+  const marker=await fs.readFile(path.join(repo.dataDir,'workspace.v2.json'),'utf8');
+  await failing.close();await repo.close();
   await fs.writeFile(path.join(repo.dataDir, "workspace.v2.json"), "{bad");
-  await assert.rejects(repo.read(), /corrupt/i);
+  await assert.rejects(openWorkspaceRepository({dataDir:repo.dataDir,allowLegacy:true}),{code:'workspace_migration_conflict'});
   await fs.writeFile(
     path.join(repo.dataDir, "workspace.v2.json"),
     JSON.stringify({ schemaVersion: 99 }),
   );
-  await assert.rejects(repo.read(), /schema/i);
+  await assert.rejects(openWorkspaceRepository({dataDir:repo.dataDir,allowLegacy:true}), /schema/i);
+  await fs.writeFile(path.join(repo.dataDir,'workspace.v2.json'),marker);
+  const recovered=await openWorkspaceRepository({dataDir:repo.dataDir,allowLegacy:true});registerTestResource(t,()=>recovered.close());
+  assert.equal((await recovered.read()).recoveryRecords[0].message,'safe');
 });
 test("run snapshots are immutable and reject path traversal", async (t) => {
   const repo = await tempRepository(t);

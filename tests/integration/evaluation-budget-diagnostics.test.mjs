@@ -47,8 +47,9 @@ const reply = (value) =>
     ],
   });
 
-// Replace only external transport and persistence: ranking, caching, model budgets,
-// JSON parsing, diagnostic cleaning and evaluation control flow remain real.
+// This in-memory schema-2 fixture isolates the shared evaluation algorithm:
+// ranking, caching, budgets, parsing and diagnostic control flow remain real.
+// Package ownership and bounded schema-3 storage are covered by package fixtures.
 function harness({
   count = 17,
   maxRequests = 2,
@@ -66,6 +67,7 @@ function harness({
     ]),
   );
   const state = {
+    schemaVersion: 2,
     revision: 0,
     runs: {},
     jobs,
@@ -90,6 +92,10 @@ function harness({
     payloads = [];
   const repository = {
     clock: { now: () => 0 },
+    getMeta: async (key) => {
+      assert.equal(key, "schemaVersion");
+      return state.schemaVersion;
+    },
     read: async () => structuredClone(state),
     mutateWorkspace: async (action, options = {}) => {
       if (mutate && !options.operationMaintenance) await mutate();
@@ -281,6 +287,8 @@ test("282 results with 64 cached AI scores retain 148 AI and 134 rule fallbacks 
       conditionsParserVersion: CONDITIONS_PARSER_VERSION,
       ruleVersion: RULE_VERSION,
       modelFingerprint: fingerprint,
+      // Cached results must be evaluated as of this fixture's synthetic clock.
+      evaluatedAsOf: new Date(0).toISOString(),
       status: "ai",
     };
   }

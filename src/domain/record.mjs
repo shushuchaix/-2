@@ -2,6 +2,9 @@ import { JOB_KINDS, JOB_TYPES } from "./contracts.mjs";
 import { prepareRecruitmentRecord } from "./recruitment-evidence.mjs";
 export function normalizeRecord(input) {
   const record = structuredClone(input);
+  // In-process source adapters may explicitly omit optional top-level fields.
+  // Nested evidence remains subject to the storage boundary's lossless JSON check.
+  for (const key of Object.keys(record)) if (record[key] === undefined) delete record[key];
   const sourceId = record.sourceId || record.source || "manual";
   const rawType = record.jobType || "";
   const jobType = JOB_TYPES.includes(rawType)

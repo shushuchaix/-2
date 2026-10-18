@@ -24,6 +24,7 @@ import {
 } from "./collection-ledger.mjs";
 import { readProviderPage } from "../sources/collection-page.mjs";
 import { runtimeRepository } from "./package-runtime-service.mjs";
+import { createRowCollectionService } from './collection-row-service.mjs';
 import { cancellableSleep } from "../infrastructure/http/scheduler.mjs";
 import { sourceRefreshDelay } from "../sources/source-quality.mjs";
 import {
@@ -57,7 +58,7 @@ const stale = () =>
   packageError("collection_stale_epoch", "活动已停止或进度已变化，请刷新。");
 const idValid = (id) =>
   typeof id === "string" && /^[A-Za-z0-9_.-]{1,160}$/.test(id);
-export function createCollectionService({
+function createLegacyCollectionService({
   repository,
   operationGate,
   registry,
@@ -2094,5 +2095,14 @@ export function createCollectionService({
       });
     }
   }
+  return service;
+}
+export function createCollectionService(options) {
+  options = {...options, ledger: options.ledger || createCollectionLedger({repository:options.repository})};
+  const legacy = createLegacyCollectionService(options), formal = createRowCollectionService(options);
+  const isFormal = options.repository.getMeta ? options.repository.getMeta('schemaVersion').then(version => version === 3) : Promise.resolve(false);
+  const methods = ['prepare','start','get','list','listSnapshot','resume','commitCollectionPage','commitDiagnosticRecords','pause','cancel','wait','adjustLimits','cancelPackageAndWait','recover','stop','withActivityContext','withDiagnosticContext','resolveBossRisk'];
+  const service = Object.fromEntries(methods.map(name=>[name,async(...args)=>(await isFormal?formal:legacy)[name](...args)]));
+  for(const name of ['setReadService','setAttachmentService'])service[name]=value=>{formal[name](value);legacy[name](value);};
   return service;
 }

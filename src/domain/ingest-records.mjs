@@ -1,4 +1,4 @@
-import { contentHash } from "../infrastructure/storage/repository.mjs";
+import { contentHash } from "../infrastructure/storage/content-hash.mjs";
 import {
   isCalendarDate,
   inputError,
@@ -18,6 +18,12 @@ import {
   packageWorkspace,
   mergePackageWorkspace,
 } from "./package-workspace.mjs";
+export function prepareIngestRecord(input, { observedAt, normalized = false } = {}) {
+  const record = normalized ? structuredClone(input) : normalizeRecord({ ...input, retrievedAt: input.retrievedAt || observedAt });
+  for (const key of ['status', 'note', 'appliedAt', 'followUpAt', 'resumeRevisionId', 'events', 'score', 'ruleScore', 'verdict', 'reason', 'tracking', 'scoreHistory', 'matchReason', 'matchedKeywords']) delete record[key];
+  assertSourceRecord(record);
+  return record;
+}
 export function ingestRecordsDraft(w, input) {
   const { scope, runId, records, observedAt, provenanceOperationId } = input;
   const targetRevisionId = scope?.targetRevisionId || input.targetRevisionId;
@@ -50,7 +56,7 @@ export function ingestRecordsDraft(w, input) {
 
   const jobIds = [],
     observationIds = [],
-    newForTarget = [];
+    newForTarget = [], duplicateRelations = [];
   const targetId = w.runs[runId]?.targetSnapshot?.targetId;
   const revisionId =
     targetRevisionId || w.runs[runId]?.targetSnapshot?.revisionId;
@@ -61,38 +67,19 @@ export function ingestRecordsDraft(w, input) {
       .some((t) => t.revisionId === revisionId)
   )
     throw inputError({ targetRevisionId: "未找到目标版本。" });
-  for (const input of records) {
-    const record = normalizeRecord({
-      ...input,
-      retrievedAt: input.retrievedAt || observedAt,
-    });
-    for (const key of [
-      "status",
-      "note",
-      "appliedAt",
-      "followUpAt",
-      "resumeRevisionId",
-      "events",
-      "score",
-      "ruleScore",
-      "verdict",
-      "reason",
-      "tracking",
-      "scoreHistory",
-      "matchReason",
-      "matchedKeywords",
-    ])
-      delete record[key];
-    assertSourceRecord(record);
+  for (const [recordIndex, producerInput] of records.entries()) {
+    const inputRecord = producerInput;
+    const record = prepareIngestRecord(input.normalizedRecords ? input.normalizedRecords[recordIndex] : inputRecord, { observedAt, normalized: !!input.normalizedRecords });
     const identity = resolveJobIdentity(record);
+    const explicitCandidates = input.candidateJobIdsByRecord?.[recordIndex];
     const candidates = [
       ...new Set(
-        identity.aliases.flatMap((alias) => w.identityAliases[alias] || []),
+        explicitCandidates ? [...explicitCandidates, ...(input.candidateRecordIndexesByRecord?.[recordIndex] || []).map(index => jobIds[index])] : identity.aliases.flatMap((alias) => w.identityAliases[alias] || []),
       ),
     ]
       .map((id) => w.jobs[resolveJobId(w, id, { allowMissing: true })])
       .filter(Boolean);
-    for (const pair of findDuplicateCandidates({
+    if (!explicitCandidates) for (const pair of findDuplicateCandidates({
       records: [record],
       existingJobs: Object.values(w.jobs),
     })) {
@@ -100,9 +87,8 @@ export function ingestRecordsDraft(w, input) {
       if (candidate && !candidates.includes(candidate))
         candidates.push(candidate);
     }
-    const matches = candidates.filter(
-      (j) => relateJobs(j.canonical, record).relation === "same",
-    );
+    const classified = new Map(candidates.map(j => [j.jobId, relateJobs(j.canonical, record)]));
+    const matches = candidates.filter(j => classified.get(j.jobId).relation === 'same');
     let stored =
       matches.find(
         (j) => resolveJobIdentity(j.canonical).key === identity.key,
@@ -141,10 +127,10 @@ export function ingestRecordsDraft(w, input) {
         observedScopes: {},
       };
       w.jobs[jobId] = stored;
-      for (const j of Object.values(w.jobs))
+      for (const j of explicitCandidates ? candidates : Object.values(w.jobs))
         if (
           j.jobId !== jobId &&
-          relateJobs(j.canonical, record).relation === "possible"
+          (classified.get(j.jobId) || relateJobs(j.canonical, record)).relation === "possible"
         )
           group(w, j.jobId, jobId);
     }
@@ -165,6 +151,12 @@ export function ingestRecordsDraft(w, input) {
           )
         : {}),
     };
+    // Relations describe the complete persisted facts. A sparse incoming record
+    // cannot erase a conflict already known in the selected stored job.
+    for (const candidate of candidates) if (candidate.jobId !== id) {
+      const decision = relateJobs(stored.canonical, candidate.canonical);
+      duplicateRelations.push({ jobId: id, otherJobId: candidate.jobId, relation: decision.relation === 'same' ? 'confirmed' : decision.relation, reasonCodes: decision.reasons });
+    }
     stored.lastSeen =
       observedAt > stored.lastSeen ? observedAt : stored.lastSeen;
     stored.firstSeen =
@@ -188,7 +180,7 @@ export function ingestRecordsDraft(w, input) {
     stored.identityAliases = [
       ...new Set([...stored.identityAliases, ...identity.aliases]),
     ];
-    for (const alias of [...stored.identityAliases, input.id].filter(Boolean))
+    for (const alias of [...stored.identityAliases, inputRecord.id].filter(Boolean))
       w.identityAliases[alias] = [
         ...new Set([...(w.identityAliases[alias] || []), id]),
       ];
@@ -286,5 +278,5 @@ export function ingestRecordsDraft(w, input) {
     jobIds.push(id);
     observationIds.push(oid);
   }
-  return { jobIds, observationIds, newForTarget };
+  return { jobIds, observationIds, newForTarget, ...(input.candidateJobIdsByRecord ? { duplicateRelations } : {}) };
 }

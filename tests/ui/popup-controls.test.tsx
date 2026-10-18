@@ -95,8 +95,10 @@ for (const contract of [
     // Deliberately give closed elements rectangles: their state must still block them.
     window.Element.prototype.getClientRects = () =>
       [new DOMRect(0, 0, 44, 44)] as unknown as DOMRectList;
-    window.HTMLCanvasElement.prototype.getContext = (() =>
-      createCanvas(1, 1).getContext("2d")) as typeof context;
+    Object.defineProperty(window.HTMLCanvasElement.prototype, "getContext", {
+      configurable: true, writable: true,
+      value: (kind: string) => kind === "2d" ? createCanvas(1, 1).getContext("2d") : null,
+    });
     try {
       if (contract === "visibility") {
         const source = fs.readFileSync(
@@ -323,8 +325,10 @@ test("desktop inspector measures decorative close icons but excludes hidden ance
   const context = window.HTMLCanvasElement.prototype.getContext;
   window.Element.prototype.getClientRects = () =>
     [new DOMRect(0, 0, 44, 44)] as unknown as DOMRectList;
-  window.HTMLCanvasElement.prototype.getContext = (() =>
-    createCanvas(1, 1).getContext("2d")) as typeof context;
+  Object.defineProperty(window.HTMLCanvasElement.prototype, "getContext", {
+    configurable: true, writable: true,
+    value: (kind: string) => kind === "2d" ? createCanvas(1, 1).getContext("2d") : null,
+  });
   try {
     const result = vm.runInNewContext(
       `(${inspectDesktopUi.toString()})(${desktopContrastRatio.toString()})`,

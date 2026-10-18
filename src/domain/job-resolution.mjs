@@ -80,6 +80,7 @@ export const isManualApplication = (a) =>
   !!a.appliedAt ||
   !!a.followUpAt ||
   !!a.resumeRevisionId ||
+  a.manualHistory === true ||
   !!a.events?.length;
 export function findAssociatedApplication(w, id) {
   const jobId = resolveJobId(w, id, { allowMissing: true });

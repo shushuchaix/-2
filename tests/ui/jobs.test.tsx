@@ -86,6 +86,36 @@ const item = (name: string, packageId: string) => ({
   application: { applicationId: "a-" + packageId, status: "new" },
   evaluation: { score: 85, qualified: true, recommendation: "recommended" },
 });
+
+for (const mobile of [false, true])
+  test(`empty city facts show an unknown hint in the ${mobile ? "mobile card" : "desktop table"}`, async (t) => {
+    const matchMedia = window.matchMedia;
+    t.mock.method(window, "matchMedia", (query: string) => ({
+      ...matchMedia(query),
+      matches: mobile && query === "(max-width: 768px)",
+    }));
+    const row = {
+      ...item("城市未知的合成岗位", "A"),
+      job: { ...item("城市未知的合成岗位", "A").job, cities: [] },
+      recruitmentEvidence: { bodyVerified: false, openingStatus: "unknown", applicationStatus: "unknown" },
+    };
+    const f = await renderApp(t, {
+      route: "#/jobs?packageId=A&targetRevisionId=t1%401",
+      apiHandler: (path, options) => path.startsWith("/jobs?")
+        ? { items: [row], total: 1 }
+        : syntheticApi(path, options),
+    });
+    const title = await f.screen.findByText("城市未知的合成岗位");
+    const container = title.closest(mobile ? '[data-slot="card"]' : "tr");
+    assert.ok(container instanceof HTMLElement);
+    if (mobile) assert.ok(within(container).getByText("城市待核实"));
+    else assert.equal(within(container).getAllByRole("cell")[1].textContent, "待核实");
+    const evidence = within(container).getByRole("region", { name: "岗位证据摘要" });
+    for (const label of ["岗位正文", "招聘时效", "投递入口"])
+      assert.match(within(evidence).getByText(label).parentElement?.textContent ?? "", /待核验/);
+    assert.deepEqual(row.job.cities, []);
+    assert.equal(within(container).queryAllByText("合成城市").length, 0);
+  });
 test("job update date uses the latest valid application update event", async (t) => {
   const row = {
     ...item("有投递记录的岗位", "A"),
@@ -144,11 +174,9 @@ test("jobs keeps only the selected version when an old response arrives late", a
   await f.screen.findByText("B的岗位");
   resolveA({ items: [item("A的岗位", "A")], total: 1 });
   await waitFor(() => assert.equal(f.screen.queryByText("A的岗位"), null));
-  assert.equal(
-    f.apiCalls.filter((c) => c.path.startsWith("/jobs?")).at(-1)?.scope
-      ?.packageId,
-    "B",
-  );
+  const lastScope = f.apiCalls.filter((c) => c.path.startsWith("/jobs?")).at(-1)?.scope;
+  assert.ok(lastScope && "packageId" in lastScope);
+  assert.equal(lastScope.packageId, "B");
 });
 test("jobs uses 25 rows by default and debounces search for 250 ms", async (t) => {
   const f = await renderApp(t, {

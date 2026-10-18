@@ -103,7 +103,7 @@ function scopeOf({ packageIds, emptyAll = false, expiredOnly = false } = {}) {
       : {}),
   };
 }
-function buildPreview(w, control, scope, now) {
+function buildPreview(w, control, scope, now, countsByPackage) {
   const selected = scope.packageIds
     ? scope.packageIds.map((id) => {
         const p = w.packages[id];
@@ -135,7 +135,7 @@ function buildPreview(w, control, scope, now) {
       counts:
         p.state === "purge_pending"
           ? sum([control.deletionLedger[p.packageId]?.counts || {}])
-          : countPackageRecords(w, p.packageId),
+          : (countsByPackage?.[p.packageId] || countPackageRecords(w, p.packageId)),
     }));
   const preview = {
     workspaceRevision: w.revision,
@@ -155,111 +155,82 @@ export function createTrashService({
 }) {
   let purge = purgeService;
   const at = () => new Date(clock.now()).toISOString();
-  const reads = (action) =>
-    repository.withMaintenanceTransaction(action, {
-      operationMaintenance: true,
+  async function packageMetadataRows(){
+    const result=[];let afterId;
+    do{const page=await repository.queryRows({collection:'packages',limit:200,...(afterId?{afterId}:{})});result.push(...page.rows.map(r=>r.value));afterId=page.hasMore?page.nextCursor:null;}while(afterId);
+    const control=await repository.readControl();
+    return result.filter(p=>control.deletionLedger[p.packageId]?.phase!=='purged').map(p=>{
+      const ledger=control.deletionLedger[p.packageId];
+      return ledger?{...p,state:'purge_pending',archiveId:ledger.archiveId,archivedAt:ledger.archivedAt,purgeAt:ledger.purgeAt}:p;
     });
-  function metadata(w, p) {
-    const r = Object.values(w.profiles)
-      .flat()
-      .concat(Object.values(w.targets).flat())
-      .find((r) => r.ownerPackageId === p.packageId);
-    return r ? w.versionMetadata[r.revisionId] : null;
+  }
+  async function finishArchive(packageId){
+    const task=(await repository.readControl()).migrationJournal.archives?.[packageId];if(!task||task.phase!=='prepared')return;
+    if(cleanupPackage){const cleaned=await cleanupPackage(packageId);if(cleaned?.status==='cleanup_pending')throw packageError('attachment_cleanup_pending','临时文件仍被占用，请重试归档。',503);}
+    return repository.withWriteFence(async fence=>{
+      const p=fence.getRow({collection:'packages',id:packageId}),current=fence.control.migrationJournal.archives?.[packageId];
+      if(!p||!current||current.phase!=='prepared')throw packageError('package_not_found','归档版本不存在。',404);
+      if(p.state!=='trashed'){
+        const state=fence.readOperationState();if(state.hasMore||state.runs.some(r=>r.ownerPackageId===packageId)||state.leases.some(l=>(l.packageIds||[]).includes(packageId)))throw packageError('workspace_operation_busy','该版本仍有活动操作。');
+        const roots=fence.queryRows({collection:'runs',ownerPackageId:packageId,where:{kind:'collection_root'},limit:200});if(roots.hasMore)throw packageError('workspace_operation_busy','活动数量超过安全上限。');
+        Object.assign(p,current.episode,{state:'trashed'});if(p.collectionSettings){p.collectionSettings.sessionRefs={};p.collectionSettings.refreshEnabled=false;}
+        const meta=fence.getRow({collection:'versionMetadata',id:p.versionId});
+        fence.transaction({select:[{collection:'packages',ids:[packageId]},{collection:'versionMetadata',ids:[p.versionId]},{collection:'runs',ownerPackageId:packageId,ids:roots.rows.map(r=>r.id)}]},tx=>{
+          tx.putRow({collection:'packages',id:packageId,value:p});if(meta)tx.putRow({collection:'versionMetadata',id:p.versionId,ownerPackageId:packageId,value:{...meta,archivedAt:p.archivedAt,updatedAt:p.archivedAt}});
+          for(const row of roots.rows){const run=normalizeCollectionRun(row.value,{restored:true});run.collectionProgress.refreshReady=false;run.collectionProgress.manualPaused=true;run.collectionProgress.resumeRequests={};tx.putRow({collection:'runs',id:row.id,ownerPackageId:packageId,value:run});}
+        });
+      }
+      const completed=fence.control;completed.migrationJournal.archives[packageId].phase='complete';await fence.commitControl(completed);return structuredClone(p);
+    },{operationMaintenance:true,access:'management'});
   }
   const service = {
     setPurgeService(value) {
       purge = value;
     },
-    async archive({ packageId, cancelActive = false }) {
-      if (typeof cancelActive !== "boolean")
-        throw packageError("validation_failed", "取消活动任务选项无效。", 400);
-      const initial = await repository.read();
-      requirePackage(initial, packageId, {
-        access: "management",
-        now: clock.now(),
-      });
-      if (initial.packages[packageId].state === "trashed")
-        return initial.packages[packageId];
-      if (activePackageOperations(initial, packageId).busy) {
-        if (!cancelActive || !cancelPackageAndWait)
-          throw packageError(
-            "workspace_operation_busy",
-            "该版本仍有检索、评分或导入操作，请等待结束或取消后归档。",
-          );
-        await cancelPackageAndWait(packageId);
-      }
-      if (cleanupPackage) {
-        const cleaned = await cleanupPackage(packageId);
-        if (cleaned?.status === "cleanup_pending")
-          throw packageError(
-            "attachment_cleanup_pending",
-            "临时文件仍被占用，请重试归档。",
-            503,
-          );
-      }
-      return repository.withMaintenanceTransaction(async (tx) => {
-        const w = structuredClone(tx.workspace),
-          p = requirePackage(w, packageId, {
-            access: "management",
-            now: clock.now(),
-          });
-        if (p.state === "trashed") return p;
-        if (activePackageOperations(w, packageId).busy)
-          throw packageError(
-            "workspace_operation_busy",
-            "该版本的活动操作尚未结束，请重试。",
-          );
-        const c = structuredClone(tx.control),
-          archivedAt = at(),
-          archiveId = randomUUID(),
-          episode = {
-            packageId,
-            archiveId,
-            archivedAt,
-            purgeAt: archiveDeadline(archivedAt),
-            legacy: false,
-          };
-        c.archiveEpisodes[archiveId] = episode;
-        await tx.commitControl(c);
-        Object.assign(p, episode, { state: "trashed" });
-        pauseOwnedCollections(w, packageId);
-        const m = metadata(w, p);
-        if (m) {
-          m.archivedAt = archivedAt;
-          m.updatedAt = archivedAt;
-        }
-        await tx.commitWorkspace(w);
-        return structuredClone(tx.workspace.packages[packageId]);
-      });
+    async archive({packageId,cancelActive=false}) {
+      if(typeof cancelActive!=='boolean')throw packageError('validation_failed','取消活动任务选项无效。',400);
+      const initial=await repository.withWriteFence(fence=>{
+        const p=fence.getRow({collection:'packages',id:packageId});requirePackage({packages:p?{[packageId]:p}:{}},packageId,{access:'management',now:clock.now()});
+        const state=fence.readOperationState();if(state.hasMore)throw packageError('workspace_operation_busy','活动操作超过安全上限。');
+        return {p,busy:state.runs.some(r=>r.ownerPackageId===packageId)||state.leases.some(l=>(l.packageIds||[]).includes(packageId)||['restore','upgrade','cleanup','permanent-delete'].includes(l.kind))};
+      },{operationMaintenance:true,access:'management'});
+      if(initial.p.state==='trashed')return initial.p;
+      if(initial.busy){if(!cancelActive||!cancelPackageAndWait)throw packageError('workspace_operation_busy','该版本仍有检索、评分或导入操作。');await cancelPackageAndWait(packageId);}
+      await repository.withWriteFence(async fence=>{
+        const p=fence.getRow({collection:'packages',id:packageId});requirePackage({packages:{[packageId]:p}},packageId,{access:'management',now:clock.now()});
+        const state=fence.readOperationState();if(state.hasMore||state.runs.some(r=>r.ownerPackageId===packageId)||state.leases.some(l=>(l.packageIds||[]).includes(packageId)||['restore','upgrade','cleanup','permanent-delete'].includes(l.kind)))throw packageError('workspace_operation_busy','版本活动操作尚未结束。');
+        const c=fence.control;c.migrationJournal.archives||={};
+        if(c.migrationJournal.archives[packageId]?.phase==='prepared')return;
+        const archivedAt=at(),archiveId=randomUUID(),episode={packageId,archiveId,archivedAt,purgeAt:archiveDeadline(archivedAt),legacy:false};
+        c.archiveEpisodes[archiveId]=episode;c.migrationJournal.archives[packageId]={phase:'prepared',episode};await fence.commitControl(c);
+      },{operationMaintenance:true,access:'management'});
+      // File/window/attachment draining never holds the fence: reverse ledger RPC
+      // remains able to settle while the persisted archive intent blocks new work.
+      return finishArchive(packageId);
     },
-    async restore({ packageId, archiveId }) {
-      return repository.withMaintenanceTransaction(async (tx) => {
-        const w = structuredClone(tx.workspace),
-          p = requirePackage(w, packageId, {
-            access: "trash_read",
-            now: clock.now(),
-          });
-        if (p.archiveId !== archiveId) throw stale();
-        if (activePackageOperations(w, packageId).busy)
-          throw packageError(
-            "workspace_operation_busy",
-            "该版本仍有活动操作。",
-          );
-        Object.assign(p, {
-          state: "active",
-          archiveId: null,
-          archivedAt: null,
-          purgeAt: null,
-        });
-        pauseOwnedCollections(w, packageId);
-        const m = metadata(w, p);
-        if (m) {
-          m.archivedAt = null;
-          m.updatedAt = at();
-        }
-        await tx.commitWorkspace(w);
-        return structuredClone(tx.workspace.packages[packageId]);
-      });
+    async restore({packageId,archiveId}){
+      return repository.withWriteFence(async fence=>{
+        const p=fence.getRow({collection:'packages',id:packageId});requirePackage({packages:p?{[packageId]:p}:{}},packageId,{access:'trash_read',now:clock.now()});
+        if(p.archiveId!==archiveId)throw stale();
+        const state=fence.readOperationState();if(state.hasMore||state.runs.some(r=>r.ownerPackageId===packageId)||state.leases.some(l=>(l.packageIds||[]).includes(packageId)))throw packageError('workspace_operation_busy','该版本仍有活动操作。');
+        const roots=fence.queryRows({collection:'runs',ownerPackageId:packageId,where:{kind:'collection_root'},limit:200});if(roots.hasMore)throw packageError('workspace_operation_busy','活动数量超过安全上限。');
+        const meta=fence.getRow({collection:'versionMetadata',id:p.versionId});
+        Object.assign(p,{state:'active',archiveId:null,archivedAt:null,purgeAt:null});
+        if(p.collectionSettings){p.collectionSettings.sessionRefs={};p.collectionSettings.refreshEnabled=false;}
+        const selection={select:[{collection:'packages',ids:[packageId]},{collection:'versionMetadata',ids:[p.versionId]},
+          {collection:'runs',ownerPackageId:packageId,ids:roots.rows.map(r=>r.id)}]};
+        fence.transaction(selection,tx=>{
+          tx.putRow({collection:'packages',id:packageId,value:p});
+          if(meta)tx.putRow({collection:'versionMetadata',id:p.versionId,ownerPackageId:packageId,value:{...meta,archivedAt:null,updatedAt:at()}});
+          for(const row of roots.rows){const run=normalizeCollectionRun(row.value,{restored:true});run.collectionProgress.refreshReady=false;run.collectionProgress.manualPaused=true;run.collectionProgress.resumeRequests={};tx.putRow({collection:'runs',id:row.id,ownerPackageId:packageId,value:run});}
+        });return structuredClone(p);
+      },{operationMaintenance:true,access:'trash_read'});
+    },
+    async resumePending(){
+      const control=await repository.readControl(),pending=[];
+      for(const [id,task]of Object.entries(control.migrationJournal.archives||{}))if(task.phase==='prepared'){
+        try{await finishArchive(id);}catch{pending.push(id);}
+      }return {pending};
     },
     async list({ kind, search = "", sort = "purgeAt" } = {}) {
       if (kind && !PACKAGE_KINDS.includes(kind))
@@ -270,90 +241,36 @@ export function createTrashService({
         !["purgeAt", "archivedAt", "name"].includes(sort)
       )
         throw packageError("validation_failed", "回收站筛选条件无效。", 400);
-      return reads((tx) =>
-        Object.values(tx.workspace.packages)
-          .filter((p) => ["trashed", "purge_pending"].includes(p.state))
-          .filter((p) => !kind || p.kind === kind)
-          .filter(
-            (p) =>
-              p.state === "purge_pending" ||
-              p.versionName.toLowerCase().includes(search.trim().toLowerCase()),
-          )
-          .map((p) => {
-            if (p.state === "purge_pending") {
-              const ledger = tx.control.deletionLedger[p.packageId],
-                task = tx.control.purgeTasks[ledger?.operationId];
-              return {
-                packageId: p.packageId,
-                kind: p.kind,
-                state: p.state,
-                status: "purge_pending",
-                operationId: ledger?.operationId,
-                phase: task?.phase || "purge_pending",
-                counts: sum([ledger?.counts || {}]),
-                code: task?.code || ledger?.code || null,
-                canReadBody: false,
-                canRestore: false,
-              };
-            }
-            const expired = isExpired(p, clock.now());
-            return {
-              ...p,
-              status: expired ? "expired" : "trashed",
-              counts: countPackageRecords(tx.workspace, p.packageId),
-              canReadBody: !expired,
-              canRestore: !expired,
-            };
-          })
-          .sort((a, b) =>
-            String(
-              a[sort === "name" ? "versionName" : sort] || "",
-            ).localeCompare(
-              String(b[sort === "name" ? "versionName" : sort] || ""),
-            ),
-          ),
-      );
+      const packages=await packageMetadataRows(),control=await repository.readControl(),result=[];
+      for(const p of packages.filter(p=>['trashed','purge_pending'].includes(p.state)).filter(p=>!kind||p.kind===kind).filter(p=>p.state==='purge_pending'||p.versionName.toLowerCase().includes(search.trim().toLowerCase()))){
+        if(p.state==='purge_pending'){
+          const ledger=control.deletionLedger[p.packageId],task=control.purgeTasks[ledger?.operationId];
+          result.push({packageId:p.packageId,kind:p.kind,state:p.state,status:'purge_pending',operationId:ledger?.operationId,phase:task?.phase||'purge_pending',counts:sum([ledger?.counts||{}]),code:task?.code||ledger?.code||null,canReadBody:false,canRestore:false});
+        }else{
+          const expired=isExpired(p,clock.now());
+          result.push({packageId:p.packageId,kind:p.kind,versionId:p.versionId,versionName:p.versionName,enabled:p.enabled,state:p.state,archiveId:p.archiveId,archivedAt:p.archivedAt,purgeAt:p.purgeAt,
+            status:expired?'expired':'trashed',counts:await repository.getPackageCounts(p.packageId),canReadBody:!expired,canRestore:!expired});
+        }
+      }
+      return result.sort((a,b)=>String(a[sort==='name'?'versionName':sort]||'').localeCompare(String(b[sort==='name'?'versionName':sort]||'')));
     },
-    async get(packageId) {
-      return reads(async (tx) => {
-        const p = requirePackage(tx.workspace, packageId, {
-          access: "trash_read",
-          now: clock.now(),
-        });
-        const result = {
-          package: structuredClone(p),
-          counts: countPackageRecords(tx.workspace, packageId),
-        };
-        for (const key of COUNT_KEYS)
-          result[key] =
-            key === "profiles" || key === "targets"
-              ? Object.values(tx.workspace[key])
-                  .flat()
-                  .filter((r) => r.ownerPackageId === packageId)
-              : Object.values(tx.workspace[key] || {}).filter(
-                  (r) => r.ownerPackageId === packageId,
-                );
-        result.snapshots = [];
-        for (const run of result.runs)
-          if (run.snapshotRef) {
-            const snapshot = await tx.readSnapshot(run.runId);
-            assertOwned(tx.workspace, snapshot, packageId);
-            if (contentHash(snapshot) !== run.snapshotRef.hash)
-              throw packageError(
-                "snapshot_integrity_failed",
-                "检索快照校验失败。",
-                503,
-              );
-            result.snapshots.push(snapshot);
-          }
-        return structuredClone(result);
-      });
+    async get(packageId){
+      const workspace=await repository.exportPackage(packageId,{access:'trash_read'}),p=workspace.packages[packageId];
+      requirePackage(workspace,packageId,{access:'trash_read',now:clock.now()});
+      const result={package:{packageId:p.packageId,kind:p.kind,versionId:p.versionId,versionName:p.versionName,enabled:p.enabled,state:p.state,archiveId:p.archiveId,archivedAt:p.archivedAt,purgeAt:p.purgeAt},counts:await repository.getPackageCounts(packageId)};
+      for(const key of COUNT_KEYS)result[key]=key==='profiles'||key==='targets'?Object.values(workspace[key]).flat():Object.values(workspace[key]||{});
+      result.snapshots=[];
+      for(const run of result.runs)if(run.snapshotRef){
+        const snapshot=await repository.readRunSnapshot(run.runId,{ownerPackageId:packageId,access:'trash_read'});
+        assertOwned(workspace,snapshot,packageId);if(contentHash(snapshot)!==run.snapshotRef.hash)throw packageError('snapshot_integrity_failed','检索快照校验失败。',503);result.snapshots.push(snapshot);
+      }
+      await repository.getRow({collection:'packages',id:packageId},{access:'trash_read'});return result;
     },
-    async preview(options) {
-      const scope = scopeOf(options);
-      return reads((tx) =>
-        buildPreview(tx.workspace, tx.control, scope, clock.now()),
-      );
+    async preview(options){
+      const scope=scopeOf(options),packages=await packageMetadataRows(),control=await repository.readControl(),counts={};
+      for(const p of packages)if(['trashed','purge_pending'].includes(p.state))counts[p.packageId]=await repository.getPackageCounts(p.packageId);
+      const empty={profiles:{},targets:{},jobs:{},observations:{},evaluations:{},runs:{},applications:{},events:{},files:{}};
+      return buildPreview({...empty,revision:await repository.getMeta('revision'),packages:Object.fromEntries(packages.map(p=>[p.packageId,p]))},control,scope,clock.now(),counts);
     },
     validatePreview(tx, preview, now = clock.now()) {
       if (

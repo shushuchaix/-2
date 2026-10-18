@@ -111,16 +111,24 @@ export function createPurgeService({
         await fsAdapter.readFile(layout.previous, "utf8"),
       );
       // The previous copy has no embedded snapshots. Its run references remain valid managed paths.
-      if (previous.schemaVersion !== 3)
+      if (previous.schemaVersion === 2) {
+        const filtered=filterBackup({workspace:previous,control:tx.control,now:clock.now(),currentWorkspace:tx.workspace});
+        // The previous JSON is a managed historical copy. Reserve every stable
+        // legacy identity before replacing it; never make it a business writer.
+        await tx.commitControl(filtered.control);
+        await writeAtomicJson(layout.previous,filtered.workspace,{fsAdapter});
+      } else if (previous.schemaVersion !== 3)
         throw packageError(
           "backup_integrity_failed",
           "上一版本未完成归属升级。",
           503,
         );
-      const clean = applyDeletionLedger(previous, tx.control);
-      for (const id of Object.keys(tx.control.deletionLedger))
-        delete clean.packages[id];
-      await writeAtomicJson(layout.previous, clean, { fsAdapter });
+      else {
+        const clean = applyDeletionLedger(previous, tx.control);
+        for (const id of Object.keys(tx.control.deletionLedger))
+          delete clean.packages[id];
+        await writeAtomicJson(layout.previous, clean, { fsAdapter });
+      }
     } catch (e) {
       if (e.code !== "ENOENT") throw e;
     }
@@ -182,6 +190,8 @@ export function createPurgeService({
         task.files = filePlan.files;
       }
       await tx.commitWorkspace(applyDeletionLedger(tx.workspace, tx.control));
+      const compacted=await repository.compact();
+      if(!compacted.complete)throw packageError('purge_sqlite_busy','数据库仍有读取者，物理清理保持待处理。',503);
       await removeManagedFiles({
         layout,
         filePlan: { packageId: task.packageId, files: task.files },
@@ -238,7 +248,7 @@ export function createPurgeService({
       const c = structuredClone(tx.control),
         t = c.purgeTasks[operationId];
       t.phase = "purge_pending";
-      t.code = error.code?.startsWith("backup_")
+      t.code = error.code==='purge_sqlite_busy'?'purge_sqlite_busy':error.code?.startsWith("backup_")
         ? error.code
         : "purge_file_failed";
       t.attempts = (t.attempts || 0) + 1;
@@ -249,19 +259,30 @@ export function createPurgeService({
   }
   async function runTasks(ids, lease) {
     const result = empty();
-    for (const id of ids)
-      await repository.withMaintenanceTransaction(
-        async (tx) => {
-          const task = tx.control.purgeTasks[id];
-          if (!task) return;
-          if (await finish(tx, id)) result.completed.push(task.packageId);
-          else {
-            result.pending.push(task.packageId);
-            result.failed.push(view(tx.control.purgeTasks[id]));
-          }
+    for (const id of ids) {
+      // Long file scans and reverse browser/attachment cleanup run between short
+      // fenced commits. The exclusive durable lease protects this maintenance
+      // task; it does not occupy the lock needed by reverse ledger settlement.
+      let control=await repository.readControl(),workspace=await repository.exportWorkspace();
+      const task=control.purgeTasks[id];if(!task)continue;
+      const tx={
+        get workspace(){return workspace;},get control(){return control;},
+        async commitControl(next){
+          const previous=contentHash(control);
+          await repository.withMaintenanceTransaction(async current=>{
+            if(contentHash(current.control)!==previous)throw packageError('purge_state_changed','清理控制状态已变化，将从持久阶段重试。',503);
+            await current.commitControl(next);control=structuredClone(current.control);
+          },{operationLease:lease});
         },
-        { operationLease: lease },
-      );
+        async commitWorkspace(next){
+          await repository.withMaintenanceTransaction(async current=>{
+            await current.commitWorkspace(next);workspace=structuredClone(current.workspace);control=structuredClone(current.control);
+          },{operationLease:lease});
+        },
+      };
+      if(await finish(tx,id))result.completed.push(task.packageId);
+      else{result.pending.push(task.packageId);result.failed.push(view(tx.control.purgeTasks[id]));}
+    }
     return result;
   }
   const service = {
@@ -374,13 +395,9 @@ export function createPurgeService({
       return runTasks(ids, operationLease);
     },
     async resumePending({ operationLease } = {}) {
-      const pending = await repository.withMaintenanceTransaction(
-        (tx) =>
-          Object.values(tx.control.purgeTasks)
+      const pending = Object.values((await repository.readControl()).purgeTasks)
             .filter((t) => t.phase !== "completed")
-            .map((t) => t.operationId),
-        { operationMaintenance: true },
-      );
+            .map((t) => t.operationId);
       if (!pending.length) return empty();
       if (!operationLease)
         return operationGate.withOperation("permanent-delete", {}, (lease) =>
@@ -389,9 +406,7 @@ export function createPurgeService({
       return runTasks(pending, operationLease);
     },
     async getStatus(operationId) {
-      return repository.withMaintenanceTransaction(
-        (tx) => {
-          const t = tx.control.purgeTasks[operationId];
+          const t = (await repository.readControl()).purgeTasks[operationId];
           if (!t)
             throw packageError(
               "purge_operation_not_found",
@@ -399,9 +414,6 @@ export function createPurgeService({
               404,
             );
           return view(t);
-        },
-        { operationMaintenance: true },
-      );
     },
   };
   return service;

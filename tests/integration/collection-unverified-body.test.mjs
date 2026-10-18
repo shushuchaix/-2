@@ -38,8 +38,20 @@ test("a long unverified list summary still obtains detail evidence before ingest
     true,
   );
   assert.equal(
-    Object.keys((await f.service.get(ref)).collectionProgress.pendingBodies)
-      .length,
+    (
+      await f.repository.queryRows(
+        {
+          collection: "contentBodies",
+          ownerPackageId: f.scope.packageId,
+          where: {
+            parentId: ref.activityId,
+            path: "collectionProgress.pendingBodies",
+          },
+          limit: 200,
+        },
+        { scope: f.scope },
+      )
+    ).rows.length,
     0,
   );
 });

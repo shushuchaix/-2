@@ -94,10 +94,21 @@ CREATE TABLE IF NOT EXISTS changes (
   owner_id TEXT, topic TEXT NOT NULL, action TEXT NOT NULL CHECK(action IN ('put','delete','meta','replace'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS rows_owner ON rows(collection,owner_id,id);
+CREATE INDEX IF NOT EXISTS rows_collection_heads ON rows(owner_id,target_revision_id,sort_at DESC,id) WHERE collection='runs' AND kind='collection_root';
+CREATE INDEX IF NOT EXISTS rows_collection_heads_all ON rows(sort_at DESC,id) WHERE collection='runs' AND kind='collection_root';
+CREATE INDEX IF NOT EXISTS rows_legacy_alias_routing ON rows(resource_key,owner_id,job_id) WHERE collection='jobIdentityKeys' AND kind='alias';
 CREATE INDEX IF NOT EXISTS rows_parent ON rows(collection,parent_collection,parent_id,part_path,ordinal,id);
+-- Foreign-key child lookups start with the referenced key, independently of a
+-- business collection filter. These must be seekable during every row upsert.
+CREATE INDEX IF NOT EXISTS rows_owner_fk ON rows(owner_id);
+CREATE INDEX IF NOT EXISTS rows_parent_fk ON rows(parent_collection,parent_id);
+CREATE INDEX IF NOT EXISTS row_refs_target_fk ON row_refs(target_collection,target_id,owner_id);
+CREATE INDEX IF NOT EXISTS rows_part_owner ON rows(collection,owner_id,parent_id,part_path,ordinal,id);
+CREATE INDEX IF NOT EXISTS rows_part_resource ON rows(collection,owner_id,parent_id,part_path,resource_key,id);
 CREATE INDEX IF NOT EXISTS rows_job ON rows(collection,owner_id,job_id,sort_at,id);
 CREATE INDEX IF NOT EXISTS rows_run ON rows(collection,owner_id,run_id,id);
 CREATE INDEX IF NOT EXISTS rows_target ON rows(collection,owner_id,target_revision_id,job_id,id);
+CREATE INDEX IF NOT EXISTS rows_identity_candidate ON rows(collection,owner_id,kind,resource_key,job_id);
 CREATE INDEX IF NOT EXISTS rows_evaluation ON rows(collection,owner_id,job_id,target_revision_id,profile_revision_id,fact_hash,rule_version,id);
 CREATE INDEX IF NOT EXISTS rows_due ON rows(collection,owner_id,status,next_due_at,id);
 CREATE INDEX IF NOT EXISTS rows_status_sort ON rows(collection,owner_id,status,sort_at,id);
@@ -106,6 +117,9 @@ CREATE INDEX IF NOT EXISTS rows_source ON rows(collection,owner_id,source_id,sit
 CREATE INDEX IF NOT EXISTS rows_events ON rows(collection,owner_id,run_id,event_seq,id);
 CREATE INDEX IF NOT EXISTS rows_recommendation ON rows(collection,owner_id,recommendation,score,id);
 CREATE INDEX IF NOT EXISTS changes_owner ON changes(owner_id,seq);
+CREATE INDEX IF NOT EXISTS changes_job_owner ON changes(collection,owner_id,seq);
+CREATE INDEX IF NOT EXISTS changes_job_id ON changes(collection,id,seq);
+CREATE INDEX IF NOT EXISTS changes_job_collection ON changes(collection,seq);
 CREATE UNIQUE INDEX IF NOT EXISTS reservation_resource ON rows(owner_id,run_id,kind,resource_key)
   WHERE collection='reservations' AND kind IN ('detail_credit','attachment_credit') AND resource_key IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS reservation_identity ON rows(run_id,json_extract(value,'$.reservationId'))
@@ -143,4 +157,12 @@ WHEN OLD.collection='reservations' AND (
  json_extract(OLD.value,'$.costUpperBoundCny') IS NOT json_extract(NEW.value,'$.costUpperBoundCny') OR
  json_extract(OLD.value,'$.resourceKey') IS NOT json_extract(NEW.value,'$.resourceKey'))
 BEGIN SELECT RAISE(ABORT,'reservation identity constraint'); END;
+CREATE TRIGGER IF NOT EXISTS job_projection_generation_insert BEFORE INSERT ON rows
+WHEN NEW.collection='jobProjections' AND json_extract(NEW.value,'$.version') <
+  CAST((SELECT value FROM store_meta WHERE key='jobReadModelVersion') AS INTEGER)
+BEGIN SELECT RAISE(ABORT,'job projection generation constraint'); END;
+CREATE TRIGGER IF NOT EXISTS job_projection_generation_update BEFORE UPDATE ON rows
+WHEN NEW.collection='jobProjections' AND json_extract(NEW.value,'$.version') <
+  CAST((SELECT value FROM store_meta WHERE key='jobReadModelVersion') AS INTEGER)
+BEGIN SELECT RAISE(ABORT,'job projection generation constraint'); END;
 `;

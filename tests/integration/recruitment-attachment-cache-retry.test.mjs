@@ -8,6 +8,7 @@ import { createConditionalCache } from "../../src/infrastructure/http/conditiona
 import { createAttachmentService } from "../../src/attachments/service.mjs";
 import { createDocConverter } from "../../src/attachments/doc-converter.mjs";
 import { makeDocx } from "../helpers/resume-files.mjs";
+import { assessRecruitmentEvidence } from "../../src/domain/recruitment-evidence.mjs";
 
 const url = "https://jobs.example.org/synthetic-recruitment.doc";
 const doc = Buffer.concat([
@@ -158,6 +159,50 @@ test("successful DOC prior slice extraction still reuses conditional response ev
   assert.equal(usage.usedRequests, 2);
   assert.equal(usage.usedAttachments, 1);
   assert.equal(usage.usedBytes, doc.length);
+});
+
+test("200 then 304 preserves attachment evidence time across the 72 hour boundary", async (t) => {
+  const f = await fixture(t),
+    service = f.service({ convert: async () => docx }),
+    first = await service.extract(f.context),
+    originalAt = first.observedAt;
+  f.clock.advance(71 * 3600000);
+  await f.priorSlice();
+  const reused = await service.extract(f.context);
+  assert.equal(reused.cacheReused, true);
+  assert.equal(reused.observedAt, originalAt);
+  const evidence = await f.cache.get({
+    scope: f.ref.scope,
+    resourceKey: "attachment:" + url,
+  });
+  assert.equal(evidence.evidenceCheckedAt, originalAt);
+  assert.equal(evidence.checkedAt, new Date(f.clock.now()).toISOString());
+  const record = {
+    description: "合成岗位完整要求",
+    detailStatus: "complete",
+    applyUrl: "https://jobs.example.org/apply",
+    applicationVerification: {
+      status: 200,
+      formVerified: true,
+      checkedAt: reused.observedAt,
+    },
+  };
+  assert.equal(
+    assessRecruitmentEvidence({ record, now: f.clock.now() }).applicationStatus,
+    "available",
+  );
+  f.clock.advance(3600000 + 1);
+  await f.priorSlice();
+  const expired = await service.extract(f.context);
+  assert.equal(expired.observedAt, originalAt);
+  assert.equal(
+    assessRecruitmentEvidence({ record, now: f.clock.now() }).applicationStatus,
+    "unknown",
+  );
+  assert.equal(f.calls.length, 3);
+  const usage = await f.ledger.snapshot(f.ref);
+  assert.equal(usage.knownPhysicalRequests, 3);
+  assert.equal(usage.usedAttachments, 1);
 });
 
 test("retrying pending DOC cannot bypass the original request allowance", async (t) => {

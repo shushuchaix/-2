@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createTempDir } from "../helpers/fixtures.mjs";
+import { createTempDir, registerTestResource } from "../helpers/fixtures.mjs";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { writeAtomicJson } from "../../src/infrastructure/storage/atomic.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 import { createDiagnosticsLog } from "../../src/infrastructure/diagnostics/log.mjs";
@@ -159,31 +160,85 @@ test("recovery observer failure cannot undo a successful atomic save", async (t)
 });
 
 test(
-  "Windows repository retries replacement once per transaction and logs recovery",
+  "Windows control replacement retries once without repeating the SQLite business action and logs recovery",
   { skip: process.platform !== "win32" },
   async (t) => {
     const dir = await createTempDir(t),
       diagnostics = createDiagnosticsLog({ dataDir: dir });
     let attempts = 0,
-      mutations = 0;
-    const repo = await openWorkspaceRepository({allowLegacy:true,
+      mutations = 0,
+      armed = false,
+      beforeControl;
+    const businessJsonRenames = [];
+    const repo = await openWorkspaceRepository({
       dataDir: dir,
       diagnostics,
       fsAdapter: {
         ...fs,
         rename: async (...args) => {
-          if (++attempts === 1)
-            throw Object.assign(Error("busy"), { code: "EPERM" });
+          if (
+            armed &&
+            ["workspace.v2.json", "workspace.v2.previous.json"].includes(
+              path.basename(args[1]),
+            )
+          )
+            businessJsonRenames.push(path.basename(args[1]));
+          if (armed && args[1] === path.join(dir, "control", "state.json")) {
+            assert.equal(await fs.readFile(args[1], "utf8"), beforeControl);
+            assert.equal(
+              JSON.parse(await fs.readFile(args[0], "utf8")).versionHighWater
+                .syntheticRetry,
+              1,
+            );
+            if (++attempts === 1)
+              throw Object.assign(Error("busy private synthetic path " + dir), {
+                code: "EPERM",
+              });
+          }
           return fs.rename(...args);
         },
       },
     });
-    await repo.mutateWorkspace((w) => {
+    registerTestResource(t, () => repo.close());
+    beforeControl = await fs.readFile(
+      path.join(dir, "control", "state.json"),
+      "utf8",
+    );
+    const readOptional = async (name) =>
+      fs.readFile(path.join(dir, name), "utf8").catch((error) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+    const oldCurrent = await readOptional("workspace.v2.json"),
+      oldPrevious = await readOptional("workspace.v2.previous.json");
+    armed = true;
+    await repo.withWriteFence(async (fence) => {
       mutations++;
-      w.recoveryRecords.push({ message: "synthetic" });
+      const next = fence.control;
+      next.versionHighWater.syntheticRetry = 1;
+      await fence.commitControl(next);
+      return fence.transaction(
+        { select: [{ collection: "settings", ids: ["syntheticRetry"] }] },
+        (tx) => {
+          tx.putRow({
+            collection: "settings",
+            id: "syntheticRetry",
+            value: { saved: true },
+          });
+        },
+      );
     });
     assert.equal(mutations, 1);
-    assert.equal((await repo.read()).revision, 1);
+    assert.equal(attempts, 2);
+    assert.equal((await repo.readControl()).versionHighWater.syntheticRetry, 1);
+    assert.deepEqual(
+      await repo.getRow({ collection: "settings", id: "syntheticRetry" }),
+      { saved: true },
+    );
+    assert.deepEqual(businessJsonRenames, []);
+    assert.equal(await readOptional("workspace.v2.json"), oldCurrent);
+    assert.equal(await readOptional("workspace.v2.previous.json"), oldPrevious);
+    await nextTurn();
     const entries = (await diagnostics.list()).entries.filter(
       (entry) => entry.operation === "storage.recovered",
     );
@@ -192,7 +247,8 @@ test(
     assert.equal(entries[0].level, "info");
     assert.equal(entries[0].code, "EPERM");
     assert.equal(entries[0].retryCount, 1);
-    assert.equal(entries[0].resource, "workspace.v2.json");
+    assert.equal(entries[0].resource, "control/state.json");
+    assert.equal(entries[0].recoveredWrites, 1);
     assert.ok(!JSON.stringify(entries).includes(dir));
   },
 );

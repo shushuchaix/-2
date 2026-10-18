@@ -37,7 +37,7 @@ export function createWorkspaceService({
     modelConfig,
     trashService,
   });
-  const isOwned = async () => (await repository.read()).schemaVersion === 3;
+  const isOwned = async () => (await repository.getMeta('schemaVersion')) === 3;
   const now = () => new Date(clock.now()).toISOString();
   const revision = (w, key, id) =>
     Object.values(w[key])

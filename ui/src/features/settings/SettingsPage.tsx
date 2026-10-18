@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient, ApiError, DesktopAdapter } from "../../lib/types";
 import { useVersionContext } from "../../app/VersionContext";
 import { useOperation } from "../../lib/hooks";
@@ -36,8 +36,45 @@ import { BudgetSummary } from "../../components/BudgetSummary";
 import { budgetView } from "../../lib/budget-view";
 
 type Settings = {
-  model?: { baseUrl?: string; model?: string; configured?: boolean };
+  model?: {
+    baseUrl?: string;
+    model?: string;
+    configured?: boolean;
+    credentialStatus?: "configured" | "not_configured" | "needs_configuration";
+    credentialMessage?: string;
+  };
   budgets?: { maxCostCny?: number | null; maxModelRequests?: number };
+};
+const credentialMessages = {
+  configured: "已配置模型访问。",
+  not_configured: "尚未配置密钥，规则模式可正常使用。",
+  needs_configuration:
+    "本地模型凭据与当前配置尚未核对，请重新填写密钥并保存；规则分析仍可使用。",
+};
+function credentialDescription(settings: Settings | null, stale: boolean) {
+  if (stale) return "配置状态待刷新，请刷新后确认模型是否可用。";
+  if (!settings) return "正在读取模型配置状态。";
+  const status = settings.model?.credentialStatus;
+  return credentialMessages[
+    status === "configured" ||
+    status === "not_configured" ||
+    status === "needs_configuration"
+      ? status
+      : settings.model?.configured
+        ? "configured"
+        : "not_configured"
+  ];
+}
+function statusRefreshError(message: string) {
+  return Object.assign(Error(message), {
+    code: "settings_status_refresh_failed",
+  });
+}
+type SettingsMutation = {
+  refresh: () => Promise<boolean>;
+  begin: () => boolean;
+  finish: () => void;
+  busy: boolean;
 };
 const locations: [string, string][] = [
   ["data", "工作区数据"],
@@ -50,9 +87,13 @@ const locations: [string, string][] = [
 function ModelSettings({
   api,
   settings,
+  stale,
+  mutation,
 }: {
   api: ApiClient;
   settings: Settings;
+  stale: boolean;
+  mutation: SettingsMutation;
 }) {
   const [model, setModel] = useState({
     baseUrl: settings.model?.baseUrl || "https://api.deepseek.com",
@@ -72,6 +113,17 @@ function ModelSettings({
   );
   const currentDraft = JSON.stringify({ model, cost, requests });
   const op = useOperation();
+  useEffect(() => {
+    if (!stale && op.error?.code === "settings_status_refresh_failed")
+      op.clear();
+  }, [stale, op.error?.code, op.clear]);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   const fieldErrors = { ...errors, ...op.error?.fieldErrors };
   const change = (action: () => void) => {
     action();
@@ -94,9 +146,10 @@ function ModelSettings({
     const invalid = validateInput("settings", input) as Record<string, string>;
     setErrors(invalid);
     if (Object.keys(invalid).length) return;
-    const committed = await op.run(
-      () =>
-        api.request("/settings", {
+    if (!mutation.begin()) return;
+    try {
+      await op.run(async () => {
+        await api.request("/settings", {
           method: "PUT",
           body: {
             ...input,
@@ -109,19 +162,25 @@ function ModelSettings({
                   : {}),
             },
           },
-        }),
-      "设置已保存",
-    );
-    if (committed) setSavedDraft(currentDraft);
+        });
+        if (!live.current) return;
+        // The write has committed even if its following read fails.
+        setSavedDraft(currentDraft);
+        if (!(await mutation.refresh()))
+          throw statusRefreshError(
+            "设置已保存，但配置状态刷新失败。请点击“刷新配置状态”重试。",
+          );
+      }, "设置已保存");
+    } finally {
+      mutation.finish();
+    }
   }
   return (
     <Card>
       <CardHeader>
         <CardTitle>模型与每任务预算</CardTitle>
         <CardDescription>
-          {settings.model?.configured
-            ? "已配置模型访问。"
-            : "尚未配置密钥，规则模式可正常使用。"}
+          {credentialDescription(settings, stale)}
           费用填写元，当前模型 v4.1 的 API 标识为 deepseek-flash。
         </CardDescription>
       </CardHeader>
@@ -206,7 +265,7 @@ function ModelSettings({
           <OperationFeedback busy={op.busy} result={op.message} />
         </CardContent>
         <CardFooter>
-          <Button type="submit" disabled={op.busy}>
+          <Button type="submit" disabled={op.busy || mutation.busy}>
             保存模型与预算设置
           </Button>
         </CardFooter>
@@ -215,30 +274,42 @@ function ModelSettings({
   );
 }
 
-function DesktopKey({ desktop }: { desktop: DesktopAdapter }) {
+function DesktopKey({
+  desktop,
+  settings,
+  stale,
+  mutation,
+}: {
+  desktop: DesktopAdapter;
+  settings: Settings | null;
+  stale: boolean;
+  mutation: SettingsMutation;
+}) {
   const [key, setKey] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [configured, setConfigured] = useState(false);
   const op = useOperation();
   useEffect(() => {
-    if (!desktop.available) return;
-    let live = true;
-    desktop
-      .getKeyStatus("deepseek")
-      .then((result) => {
-        if (live && result && typeof result === "object")
-          setConfigured(
-            Boolean(
-              (result as { configured?: boolean; saved?: boolean })
-                .configured || (result as { saved?: boolean }).saved,
-            ),
-          );
-      })
-      .catch(() => undefined);
+    if (!stale && op.error?.code === "settings_status_refresh_failed")
+      op.clear();
+  }, [stale, op.error?.code, op.clear]);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
     return () => {
-      live = false;
+      live.current = false;
     };
-  }, [desktop]);
+  }, []);
+  const confirmed = (receipt: unknown, action: "保存" | "清除") => {
+    if (
+      !receipt ||
+      typeof receipt !== "object" ||
+      (receipt as { cancelled?: unknown }).cancelled === true ||
+      (receipt as { success?: unknown }).success === false ||
+      typeof (receipt as { configured?: unknown }).configured !== "boolean"
+    )
+      throw Error(`未收到桌面密钥${action}确认，请检查配置状态后重试。`);
+    return (receipt as { configured: boolean }).configured;
+  };
   async function save() {
     const invalid = validateInput(
       "key",
@@ -247,13 +318,47 @@ function DesktopKey({ desktop }: { desktop: DesktopAdapter }) {
     ) as Record<string, string>;
     setErrors(invalid);
     if (Object.keys(invalid).length) return;
-    await op.run(async () => {
-      if (!(await desktop.isAvailable()))
-        throw new Error("系统加密不可用，不能保存密钥。");
-      await desktop.saveKey("deepseek", key.trim());
-      setKey("");
-      setConfigured(true);
-    }, "桌面密钥已加密保存");
+    if (!mutation.begin()) return;
+    try {
+      await op.run(async () => {
+        if (!(await desktop.isAvailable()))
+          throw new Error("系统加密不可用，不能保存密钥。");
+        if (!live.current) return;
+        const receipt = await desktop.saveKey("deepseek", key.trim());
+        if (!live.current) return;
+        if (!confirmed(receipt, "保存")) {
+          await mutation.refresh();
+          throw Error("桌面密钥尚未配置成功，请检查模型设置后重试。");
+        }
+        setKey("");
+        if (!(await mutation.refresh()))
+          throw statusRefreshError(
+            "桌面密钥已加密保存，但配置状态刷新失败。请点击“刷新配置状态”重试。",
+          );
+      }, "桌面密钥已加密保存");
+    } finally {
+      mutation.finish();
+    }
+  }
+  async function remove() {
+    if (!mutation.begin()) return;
+    try {
+      await op.run(async () => {
+        const receipt = await desktop.deleteKey("deepseek");
+        if (!live.current) return;
+        if (confirmed(receipt, "清除")) {
+          await mutation.refresh();
+          throw Error("桌面密钥尚未清除，请刷新配置状态后重试。");
+        }
+        setKey("");
+        if (!(await mutation.refresh()))
+          throw statusRefreshError(
+            "桌面密钥已清除，但配置状态刷新失败。请点击“刷新配置状态”重试。",
+          );
+      }, "桌面密钥已清除");
+    } finally {
+      mutation.finish();
+    }
   }
   return (
     <Card>
@@ -261,9 +366,10 @@ function DesktopKey({ desktop }: { desktop: DesktopAdapter }) {
         <CardTitle>桌面密钥</CardTitle>
         <CardDescription>
           {desktop.available
-            ? configured
-              ? "已保存加密密钥，不显示原文。"
-              : "可保存兼容服务商密钥，未配置时仍可使用规则模式。"
+            ? credentialDescription(settings, stale) ===
+              credentialMessages.configured
+              ? "已保存加密密钥，模型访问已配置，不显示原文。"
+              : credentialDescription(settings, stale)
             : "浏览器不保存桌面密钥，模型任务可使用任务页面的临时输入。"}
         </CardDescription>
       </CardHeader>
@@ -290,21 +396,15 @@ function DesktopKey({ desktop }: { desktop: DesktopAdapter }) {
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
         <Button
-          disabled={op.busy || !desktop.available}
+          disabled={op.busy || mutation.busy || !desktop.available}
           onClick={() => void save()}
         >
           加密保存桌面 Key
         </Button>
         <Button
           variant="outline"
-          disabled={op.busy || !desktop.available}
-          onClick={() =>
-            void op.run(async () => {
-              await desktop.deleteKey("deepseek");
-              setKey("");
-              setConfigured(false);
-            }, "桌面密钥已清除")
-          }
+          disabled={op.busy || mutation.busy || !desktop.available}
+          onClick={() => void remove()}
         >
           清除桌面 Key
         </Button>
@@ -398,8 +498,7 @@ function DataLocations({ desktop }: { desktop: DesktopAdapter }) {
       </CardContent>
       <CardFooter>
         <p className="text-muted-foreground">
-          不要手动移动正在使用的工作区。工作区数据文件使用
-          workspace.v2.json，内容为 schema3。
+          请通过软件备份恢复，不要手动移动正在使用的目录。
         </p>
       </CardFooter>
     </Card>
@@ -532,22 +631,74 @@ export function SettingsPage({
   const [tab, setTab] = useState("model");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<unknown>(null);
-  useEffect(() => {
+  const [stale, setStale] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [mutationBusy, setMutationBusy] = useState(false);
+  const activeMutation = useRef(false);
+  const live = useRef(true);
+  const generation = useRef(0);
+  const request = useRef<AbortController | null>(null);
+  const refresh = useCallback(async () => {
+    if (!live.current) return false;
+    const token = ++generation.current;
+    request.current?.abort();
     const controller = new AbortController();
-    let live = true;
-    api
-      .request<Settings>("/settings", { signal: controller.signal })
-      .then((value) => {
-        if (live) setSettings(value);
-      })
-      .catch((e) => {
-        if (live && !controller.signal.aborted) setError(e);
+    request.current = controller;
+    setRefreshing(true);
+    try {
+      const value = await api.request<Settings>("/settings", {
+        signal: controller.signal,
       });
-    return () => {
-      live = false;
-      controller.abort();
-    };
+      if (
+        !live.current ||
+        token !== generation.current ||
+        controller.signal.aborted
+      )
+        return false;
+      setSettings(value);
+      setError(null);
+      setStale(false);
+      return true;
+    } catch (e) {
+      if (
+        live.current &&
+        token === generation.current &&
+        !controller.signal.aborted
+      ) {
+        setError(e);
+        setStale(true);
+      }
+      return false;
+    } finally {
+      if (live.current && token === generation.current) setRefreshing(false);
+    }
   }, [api]);
+  useEffect(() => {
+    live.current = true;
+    setSettings(null);
+    setError(null);
+    setStale(false);
+    void refresh();
+    return () => {
+      live.current = false;
+      generation.current++;
+      request.current?.abort();
+    };
+  }, [refresh]);
+  const mutation: SettingsMutation = {
+    refresh,
+    busy: mutationBusy,
+    begin() {
+      if (!live.current || activeMutation.current) return false;
+      activeMutation.current = true;
+      setMutationBusy(true);
+      return true;
+    },
+    finish() {
+      activeMutation.current = false;
+      if (live.current) setMutationBusy(false);
+    },
+  };
   return (
     <section className="flex flex-col gap-6">
       <header>
@@ -557,20 +708,39 @@ export function SettingsPage({
         </p>
       </header>
       <OperationFeedback error={error} />
+      {stale && (
+        <Button
+          variant="outline"
+          disabled={refreshing || mutationBusy}
+          onClick={() => void refresh()}
+        >
+          刷新配置状态
+        </Button>
+      )}
       <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="model">模型与预算</TabsTrigger>
           <TabsTrigger value="data">数据与备份</TabsTrigger>
           <TabsTrigger value="versions">版本维护</TabsTrigger>
         </TabsList>
-        <TabsContent value="model">
+        <TabsContent value="model" keepMounted>
           <div className="flex flex-col gap-6">
             {settings ? (
-              <ModelSettings api={api} settings={settings} />
+              <ModelSettings
+                api={api}
+                settings={settings}
+                stale={stale}
+                mutation={mutation}
+              />
             ) : (
               !error && <Skeleton className="h-40 w-full" />
             )}
-            <DesktopKey desktop={desktop} />
+            <DesktopKey
+              desktop={desktop}
+              settings={settings}
+              stale={stale}
+              mutation={mutation}
+            />
           </div>
         </TabsContent>
         <TabsContent value="data">

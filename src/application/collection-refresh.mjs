@@ -12,6 +12,11 @@ export function createCollectionRefresh({
     async tick() {
       if (running) return running;
       running = (async () => {
+        if (
+          repository.getMeta &&
+          (await repository.getMeta("schemaVersion")) === 3
+        )
+          return tickRows();
         const w = await repository.read(),
           results = [];
         for (const root of Object.values(w.runs).filter(
@@ -97,5 +102,121 @@ export function createCollectionRefresh({
       if (running) await running;
     },
   };
+  async function tickRows() {
+    const results = [];
+    let packageCursor;
+    do {
+      const packages = await repository.queryRows({
+        collection: "packages",
+        where: { kind: "target", status: "active" },
+        limit: 200,
+        ...(packageCursor ? { afterId: packageCursor } : {}),
+      });
+      for (const { value: metadata } of packages.rows) {
+        const pkg = await repository.getRow(
+          { collection: "packages", id: metadata.packageId },
+          {
+            scope: {
+              packageId: metadata.packageId,
+              targetRevisionId: metadata.versionId,
+            },
+          },
+        );
+        if (!pkg.enabled || !pkg.collectionSettings?.refreshEnabled) continue;
+        const scope = {
+          packageId: pkg.packageId,
+          targetRevisionId: pkg.versionId,
+        };
+        let rootCursor;
+        do {
+          const roots = await repository.queryRows(
+            {
+              collection: "runs",
+              ownerPackageId: pkg.packageId,
+              where: { kind: "collection_root", status: "paused" },
+              limit: 200,
+              ...(rootCursor ? { afterId: rootCursor } : {}),
+            },
+            { scope },
+          );
+          for (const { value: root } of roots.rows) {
+            const p = root.collectionProgress;
+            if (
+              !p.refreshReady ||
+              p.manualPaused ||
+              p.activeSliceRunId ||
+              p.draining ||
+              p.stopIntent
+            )
+              continue;
+            const view = await repository.readView(
+              {
+                select: [
+                  {
+                    collection: "activityUnits",
+                    ownerPackageId: pkg.packageId,
+                    where: {
+                      parentId: root.runId,
+                      status: { in: ["pending", "page_limited"] },
+                      nextDueAt: null,
+                    },
+                    limit: 1,
+                  },
+                  {
+                    collection: "activityUnits",
+                    ownerPackageId: pkg.packageId,
+                    where: {
+                      parentId: root.runId,
+                      status: { in: ["pending", "page_limited"] },
+                      nextDueAt: { lte: new Date(clock.now()).toISOString() },
+                    },
+                    limit: 1,
+                  },
+                  {
+                    collection: "contentBodies",
+                    ownerPackageId: pkg.packageId,
+                    where: {
+                      parentId: root.runId,
+                      status: "pending",
+                      nextDueAt: { lte: new Date(clock.now()).toISOString() },
+                    },
+                    limit: 10,
+                  },
+                ],
+              },
+              { scope },
+            );
+            if (
+              !Object.keys(view.rows.activityUnits || {}).length &&
+              !Object.values(view.rows.contentBodies || {}).some(
+                (body) =>
+                  !body.riskBlocked &&
+                  (body.automaticAttempts || 0) < 3 &&
+                  body.record?.retryEligible !== false,
+              )
+            )
+              continue;
+            try {
+              results.push(
+                await service.resume({
+                  ref: { activityId: root.runId, scope },
+                  requestId: "refresh-" + root.runId + "-" + p.revision,
+                  automatic: true,
+                }),
+              );
+            } catch (error) {
+              results.push({
+                activityId: root.runId,
+                code: error.code || "collection_refresh_failed",
+              });
+            }
+          }
+          rootCursor = roots.hasMore ? roots.nextCursor : null;
+        } while (rootCursor);
+      }
+      packageCursor = packages.hasMore ? packages.nextCursor : null;
+    } while (packageCursor);
+    return results;
+  }
   return refresh;
 }

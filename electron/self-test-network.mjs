@@ -153,13 +153,19 @@ export function installSelfTestNetworkGuard({
     });
   }
   const sessionDisposers = new Map();
+  const startupFiles = new Set([
+    new URL("./startup.html", import.meta.url).href,
+    new URL("./startup.css", import.meta.url).href,
+  ]);
   const attachSession = (value) => {
     if (sessionDisposers.has(value)) return;
     sessionDisposers.set(
       value,
       attachNetworkPolicy(value, "offline-self-test", {
         async authorize(details) {
-          const local = /^(?:about:blank|data:|blob:)/.test(details.url),
+          const local =
+              /^(?:about:blank|data:|blob:)/.test(details.url) ||
+              startupFiles.has(details.url),
             cancel = !local && !allows(details.url);
           if (cancel) blocked.push({ code: "renderer_network_forbidden" });
           return { cancel };

@@ -155,17 +155,22 @@ export function registerCredentialIpc({
   ipcMain.handle(
     "credentials:save",
     guarded("credential_save", async (p, key) => {
-      const result = await service.save(p, key);
-      onKey(key);
-      return result;
+      if(p!=='deepseek')throw Error('Invalid credential provider');
+      assertInput('key',{userApiKey:key},{required:true});
+      // The backend commits credential + SQL binding through one settings queue.
+      // Its reverse host capability owns the sole encrypted-file mutation.
+      const result=await onKey(key);
+      if(typeof result?.configured!=='boolean')throw Error('Invalid credential commit receipt');
+      return {configured:result.configured};
     }),
   );
   ipcMain.handle(
     "credentials:delete",
     guarded("credential_delete", async (p) => {
-      const result = await service.delete(p);
-      onKey("");
-      return result;
+      if(p!=='deepseek')throw Error('Invalid credential provider');
+      const result=await onKey('');
+      if(typeof result?.configured!=='boolean')throw Error('Invalid credential commit receipt');
+      return {configured:result.configured};
     }),
   );
 }

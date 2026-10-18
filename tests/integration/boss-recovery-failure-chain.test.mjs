@@ -2,6 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCollectionBrowser } from "../../electron/collection/browser.mjs";
 import { registerCollectionIpc } from "../../electron/collection/ipc.mjs";
+import { createCollectionCommands } from "../../electron/backend/collection-commands.mjs";
+function registerSyntheticCommands(options) {
+  const commands = createCollectionCommands({
+    ...options,
+    forgetSession: async () => ({ forgotten: true }),
+  });
+  registerCollectionIpc({
+    ...options,
+    backend: { call: (method, input) => commands[method](input) },
+  });
+}
 import { buildBossOperation } from "../../src/sources/boss/protocol.mjs";
 import { collectionBrowserFixture } from "../helpers/collection-browser-fixture.mjs";
 const scope = {
@@ -84,7 +95,7 @@ for (const code of [
         requestId: wireRequestId,
       });
 
-      registerCollectionIpc({
+      registerSyntheticCommands({
         ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
         getWindow: () => ({ webContents: sender }),
         getOrigin: () => mainFrame.url,
@@ -110,7 +121,16 @@ for (const code of [
               collectionProgress: { units: {} },
             }),
             withDiagnosticContext: async (_input, fn) =>
-              fn({ ref, signal: new AbortController().signal }),
+              fn({
+                ref,
+                targetSnapshot: { roles: ["消防"] },
+                operationLease: {
+                  operationId: "synthetic-live",
+                  token: "synthetic-token",
+                },
+                token: { epoch: 1, sliceRunId: "synthetic-slice" },
+                signal: new AbortController().signal,
+              }),
             resolveBossRisk: async () =>
               assert.fail("failed recovery cannot clear the activity latch"),
           },
@@ -142,7 +162,7 @@ for (const code of [
       assert.equal(events.length, 1);
       assert.doesNotMatch(JSON.stringify(result), /private upstream|account/);
       assert.equal(health.length, 1);
-      const { signal, collectionGuard, ...saved } = health[0];
+      const { signal, collectionGuard, operationLease, ...saved } = health[0];
       assert.equal(signal.aborted, false);
       assert.deepEqual(saved, {
         scope,
@@ -165,7 +185,7 @@ for (const boundary of ["status", "log"])
       controller.abort(
         Object.assign(Error("cancelled"), { name: "AbortError" }),
       );
-    registerCollectionIpc({
+    registerSyntheticCommands({
       ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
       getWindow: () => ({ webContents: sender }),
       getOrigin: () => mainFrame.url,
@@ -196,7 +216,16 @@ for (const boundary of ["status", "log"])
             collectionProgress: { units: {} },
           }),
           withDiagnosticContext: async (_input, fn) =>
-            fn({ ref, signal: controller.signal }),
+            fn({
+              ref,
+              targetSnapshot: { roles: ["消防"] },
+              operationLease: {
+                operationId: "synthetic-live",
+                token: "synthetic-token",
+              },
+              token: { epoch: 1, sliceRunId: "synthetic-slice" },
+              signal: controller.signal,
+            }),
         },
         sourceService: {
           recordScopedBossProbeFailure: async () => {

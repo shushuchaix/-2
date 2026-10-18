@@ -7,7 +7,20 @@ import { isHpuPublicTemplateConfigured } from "../src/sources/adapters/hpu-publi
 import { isNjuPublicTemplateConfigured } from "../src/sources/adapters/nju-public-career.mjs";
 import { isMeituanPublicTemplateConfigured } from "../src/sources/adapters/meituan-public-career.mjs";
 import { assertSourceRecord } from "../src/domain/contracts.mjs";
-import { assertCollectionWrite } from "../src/domain/collection.mjs";
+import {
+  collectionPartId,
+  collectionRoot,
+  collectionLease,
+  collectionToken,
+  leaseSelector,
+  rowSelector,
+} from "../src/application/collection-row-access.mjs";
+import {
+  prepareCollectionArrayAppends,
+  assertCollectionArrayAppends,
+  collectionWriteSelectors,
+} from "../src/application/collection-page-commit.mjs";
+import { loadJobClosure } from "../src/application/job-row-access.mjs";
 import { evaluateRules } from "../src/domain/ranking.mjs";
 import {
   selectVersionJobFact,
@@ -323,6 +336,64 @@ function detailSampleIndex(records, root, now) {
   return candidates[0]?.index ?? -1;
 }
 
+async function diagnosticWrite(context, ref, ctx, select, write) {
+  return context.repository.transaction(
+    { select: [
+      rowSelector("runs", ref.scope, [ref.activityId, ctx.token.sliceRunId]),
+      leaseSelector(ctx.operationLease),
+      ...select,
+    ] },
+    (tx) => {
+      ctx.signal.throwIfAborted();
+      const root = collectionRoot(tx.view, ref);
+      collectionToken(root.collectionProgress, ctx.token);
+      collectionLease(tx.view, ref.scope, ctx.operationLease);
+      if (root.collectionProgress.operationId !== ctx.operationLease.operationId)
+        throw fail("invalid_operation_lease");
+      const child = tx.getRow({ collection: "runs", id: ctx.token.sliceRunId });
+      if (child?.collectionActivityId !== ref.activityId ||
+          tx.view.indexes.runs[ctx.token.sliceRunId]?.targetRevisionId !== ref.scope.targetRevisionId)
+        throw fail("collection_scope");
+      return write(tx);
+    },
+    { scope: ref.scope, operationLease: ctx.operationLease },
+  );
+}
+
+async function recordRisk(context, ref, ctx, unit, code) {
+  const id = collectionPartId(ref.activityId, "collectionProgress.units", unit.unitId);
+  await diagnosticWrite(context, ref, ctx,
+    [rowSelector("activityUnits", ref.scope, [id])],
+    (tx) => {
+      const current = tx.getRow({ collection: "activityUnits", id });
+      if (!current || current.sourceId !== unit.sourceId || current.siteId !== unit.siteId)
+        throw fail("collection_scope");
+      current.riskBlocked = true;
+      current.lastErrorCode = code;
+      tx.putRow({ collection: "activityUnits", id, value: current });
+    });
+}
+
+async function appendEvaluations(context, ref, ctx, evaluations) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const append = await prepareCollectionArrayAppends(context.repository, {
+      ref, token: ctx.token,
+      evaluationIds: evaluations.map((evaluation) => evaluation.evaluationId),
+    });
+    try {
+      await diagnosticWrite(context, ref, ctx,
+        [...append.select, ...collectionWriteSelectors(append.records)],
+        (tx) => {
+          assertCollectionArrayAppends(tx, append);
+          for (const record of append.records) tx.putRow(record);
+        });
+      return;
+    } catch (error) {
+      if (error.code !== "collection_queue_conflict" || attempt === 2) throw error;
+    }
+  }
+}
+
 function projectQuality(workspace, root, committed, row, now, seen) {
   const newIds = new Set(committed.newForTarget || []);
   for (const jobId of new Set(committed.jobIds || [])) {
@@ -470,13 +541,6 @@ export async function validateSources({
       row.skipReason = "already_committed";
       continue;
     }
-    if (
-      root.targetSnapshot.sourceIds?.length &&
-      !root.targetSnapshot.sourceIds.includes(site.providerId)
-    ) {
-      blocked(row, "source_not_selected");
-      continue;
-    }
     const provider = context.registry.get(site.providerId);
     if (!provider) {
       blocked(row, "provider_missing");
@@ -496,6 +560,17 @@ export async function validateSources({
           requestId: requestIdPrefix + "-" + digest(site.siteId).slice(0, 20),
         },
         async (ctx) => {
+          // Diagnostic snapshots stay local; get() intentionally returns only IDs.
+          const ownedRoot = {
+            ...root,
+            targetSnapshot: ctx.targetSnapshot,
+            profileSnapshot: ctx.profileRevision,
+          };
+          if (ownedRoot.targetSnapshot.sourceIds?.length &&
+              !ownedRoot.targetSnapshot.sourceIds.includes(site.providerId)) {
+            blocked(row, "source_not_selected");
+            return;
+          }
           let captured;
           const capture =
             (method) =>
@@ -518,7 +593,9 @@ export async function validateSources({
           };
           let activeEndpoint = "list";
           const providerContext = {
-            ...ctx,
+            signal: ctx.signal,
+            budget: ctx.budget,
+            conditionalCache: ctx.conditionalCache,
             scope: ref.scope,
             runId: ctx.token.sliceRunId,
             sites: [site],
@@ -535,6 +612,16 @@ export async function validateSources({
             config: cfg,
             clock: context.repository.clock,
             readService: ctx.readService || context.contentReadService,
+            // Browser adapters require the existing activity authority locally.
+            ...(["boss", "wechat", "weibo"].includes(site.providerId) ? {
+              ref: { scope: ref.scope, activityId: ref.activityId },
+              token: {
+                epoch: ctx.token.epoch,
+                expectedRevision: ctx.token.expectedRevision,
+                sliceRunId: ctx.token.sliceRunId,
+              },
+              operationLease: ctx.operationLease,
+            } : {}),
             sessionRefs:
               site.providerId === "boss"
                 ? { boss: scoped.get("boss").sessionRef }
@@ -593,18 +680,7 @@ export async function validateSources({
               });
             } catch (error) {
               if (bossRiskCodes.has(error.code))
-                await context.repository.mutateWorkspace(
-                  (w) => {
-                    assertCollectionWrite(w, ctx.collectionGuard);
-                    const current =
-                      w.runs[ref.activityId].collectionProgress.units[
-                        unit.unitId
-                      ];
-                    current.riskBlocked = true;
-                    current.lastErrorCode = error.code;
-                  },
-                  { operationLease: ctx.operationLease },
-                );
+                await recordRisk(context, ref, ctx, unit, error.code);
               throw error;
             }
             const lineage = rawLineage(site, cfg, captured, page);
@@ -668,7 +744,7 @@ export async function validateSources({
               else {
                 const selectedIndex = detailSampleIndex(
                   records,
-                  root,
+                  ownedRoot,
                   nowFor(context),
                 );
                 const selectedRecord = records[selectedIndex];
@@ -708,18 +784,7 @@ export async function validateSources({
                     httpStatus(error) ?? row.detailHttpStatus;
                   if (bossStopCodes.has(error.code)) {
                     if (bossRiskCodes.has(error.code))
-                      await context.repository.mutateWorkspace(
-                        (w) => {
-                          assertCollectionWrite(w, ctx.collectionGuard);
-                          const current =
-                            w.runs[ref.activityId].collectionProgress.units[
-                              unit.unitId
-                            ];
-                          current.riskBlocked = true;
-                          current.lastErrorCode = error.code;
-                        },
-                        { operationLease: ctx.operationLease },
-                      );
+                      await recordRisk(context, ref, ctx, unit, error.code);
                     throw error;
                   }
                   if (
@@ -780,23 +845,12 @@ export async function validateSources({
                 collectionGuard: ctx.collectionGuard,
                 modelClient: { available: false, budget: ctx.modelBudget },
               });
-              await context.repository.mutateWorkspace(
-                (w) => {
-                  assertCollectionWrite(w, ctx.collectionGuard);
-                  const child = w.runs[ctx.token.sliceRunId];
-                  child.evaluationIds = [
-                    ...new Set([
-                      ...(child.evaluationIds || []),
-                      ...evaluated.evaluations.map((e) => e.evaluationId),
-                    ]),
-                  ];
-                },
-                { operationLease: ctx.operationLease },
-              );
+              await appendEvaluations(context, ref, ctx, evaluated.evaluations);
             }
+            const closed = await loadJobClosure(context.repository, ref.scope, committed.jobIds);
             projectQuality(
-              await context.repository.read(),
-              root,
+              closed.workspace,
+              ownedRoot,
               committed,
               row,
               nowFor(context),

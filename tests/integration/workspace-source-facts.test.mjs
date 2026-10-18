@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { tempRepository } from "../helpers/repository.mjs";
-import { job } from "../helpers/fixtures.mjs";
+import { job, registerTestResource } from "../helpers/fixtures.mjs";
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 
 test("malformed canonical mutation is rejected before replacing a committed workspace", async (t) => {
@@ -38,6 +38,7 @@ test("malformed canonical mutation is rejected before replacing a committed work
     allowLegacy: true,
     dataDir: repository.dataDir,
   });
+  registerTestResource(t, () => reopened.close());
   assert.deepEqual(await reopened.read(), before);
   assert.deepEqual((await reopened.read()).jobs.stub.canonical, {
     title: "合成历史稀疏记录",

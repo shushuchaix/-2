@@ -84,12 +84,12 @@ export function recordMetadata(collection, id, value, routing = {}) {
     recordId: recordCollections.has(collection) || (collection === 'recoveryRecords' && (routing.ownerPackageId || v.ownerPackageId)) ? v.recordId ?? null : null,
     parentCollection: parent?.collection ?? null, parentId: parent?.id ?? null,
     path: parent?.path ?? null, ordinal: routing.ordinal ?? 0,
-    jobId: str(v.jobId ?? routing.jobId), runId: str(runId),
+    jobId: str(collection==='activityJobIds'&&typeof value==='string'?value:v.jobId ?? routing.jobId), runId: str(runId),
     targetRevisionId: str(v.targetRevisionId ?? v.targetSnapshot?.revisionId ?? routing.targetRevisionId),
     profileRevisionId: str(v.profileRevisionId ?? routing.profileRevisionId),
     observationId: str(v.observationId), factContentHash: str(v.factContentHash),
-    ruleVersion: str(v.ruleVersion), status: str(v.collectionRole === 'collection_root' ? v.collectionProgress?.status : v.status),
-    kind: str(v.kind ?? v.collectionRole), nextDueAt: str(v.nextDueAt), resourceKey: str(v.resourceKey),
+    ruleVersion: str(v.ruleVersion), status: str(collection==='packages'?v.state:v.collectionRole === 'collection_root' ? v.collectionProgress?.status : v.status),
+    kind: str(collection==='jobRedirects'?'job_redirect':v.kind ?? v.collectionRole), nextDueAt: str(v.nextDueAt), resourceKey: str(collection==='jobRedirects'?v.toJobId:collection==='runEvaluationIds'&&typeof value==='string'?value:v.resourceKey),
     checkedAt: str(v.checkedAt), sortAt: str(v.observedAt ?? v.createdAt ?? v.lastSeen ?? f.publishedAt),
     title: str(f.title), company: str(f.company), jobType: str(f.jobType),
     score: typeof v.score === 'number' && Number.isFinite(v.score) ? v.score : null,
@@ -118,6 +118,7 @@ export const SPLIT_PARTS = Object.freeze({
     ['collectionProgress.pendingOfficialLinks', 'contentLinks', 'map'],
     ['collectionProgress.officialLinkCache', 'officialLinkCache', 'map'],
     ['collectionProgress.newJobIds', 'activityJobIds', 'array'],
+    ['jobIds', 'activityJobIds', 'array'],
   ],
 });
 export function hasPath(value, dotted) {

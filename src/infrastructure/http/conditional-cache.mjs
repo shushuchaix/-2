@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
 import { assertScope, packageError } from "../../domain/packages.mjs";
 import { assertOperationWriteAllowed } from "../../application/workspace-operations.mjs";
+import { rowKey } from "../storage/sqlite-records.mjs";
+import {
+  collectionRoot,
+  collectionToken,
+  collectionLease,
+  leaseSelector,
+  rowSelector,
+} from "../../application/collection-row-access.mjs";
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const keyFor = (value) => {
   if (typeof value !== "string" || !value.length || value.length > 16384)
@@ -47,6 +55,18 @@ export function createConditionalCache({
   }
   const cache = {
     async get({ scope, resourceKey }) {
+      if (
+        repository.getMeta &&
+        (await repository.getMeta("schemaVersion")) === 3
+      )
+        return repository.getRow(
+          {
+            collection: "conditionalCache",
+            id: rowKey(scope.packageId, "collectionCache", keyFor(resourceKey)),
+            ownerPackageId: scope.packageId,
+          },
+          { scope },
+        );
       const w = await repository.read(),
         p = assertScope(w, scope, clock.now());
       return structuredClone(p.collectionCache?.[keyFor(resourceKey)] || null);
@@ -60,6 +80,7 @@ export function createConditionalCache({
       parsedEvidence,
       checkedAt = new Date(clock.now()).toISOString(),
       parserVersion = "v1",
+      evidenceCheckedAt = checkedAt,
       operationLease,
       ref,
       token,
@@ -90,8 +111,67 @@ export function createConditionalCache({
         parsedEvidence: JSON.parse(encoded),
         checkedAt,
         parserVersion,
+        evidenceCheckedAt,
       };
       const id = keyFor(resourceKey);
+      if (
+        repository.getMeta &&
+        (await repository.getMeta("schemaVersion")) === 3
+      ) {
+        const rowId = rowKey(scope.packageId, "collectionCache", id);
+        await repository.transaction(
+          {
+            select: [
+              rowSelector("conditionalCache", scope, [rowId]),
+              {
+                collection: "conditionalCache",
+                ownerPackageId: scope.packageId,
+                where: { parentId: scope.packageId, path: "collectionCache" },
+                orderBy: "checkedAt",
+                direction: "asc",
+                limit: 1,
+                total: true,
+              },
+              leaseSelector(operationLease),
+              ...(ref ? [rowSelector("runs", scope, [ref.activityId])] : []),
+            ],
+          },
+          (tx) => {
+            collectionLease(tx.view, scope, operationLease);
+            if (ref)
+              collectionToken(
+                collectionRoot(tx.view, ref).collectionProgress,
+                token,
+              );
+            const current = tx.getRow({
+                collection: "conditionalCache",
+                id: rowId,
+              }),
+              page = tx.view.pageInfo[1];
+            if (!current && page.total >= maxEntries) {
+              const oldest = Object.keys(
+                tx.view.rows.conditionalCache || {},
+              ).find((key) => key !== rowId);
+              if (oldest)
+                tx.deleteRow({ collection: "conditionalCache", id: oldest });
+            }
+            tx.putRow({
+              collection: "conditionalCache",
+              id: rowId,
+              ownerPackageId: scope.packageId,
+              parent: {
+                collection: "packages",
+                id: scope.packageId,
+                path: "collectionCache",
+              },
+              targetRevisionId: scope.targetRevisionId,
+              value: entry,
+            });
+          },
+          { scope, operationLease },
+        );
+        return structuredClone(entry);
+      }
       await repository.mutateWorkspace(
         (w) => {
           const p = assertScope(w, scope, clock.now());
@@ -123,6 +203,24 @@ export function createConditionalCache({
         url,
         parse,
       } = input;
+      const method = String(
+        input.requestOptions?.method || "GET",
+      ).toUpperCase();
+      const identity = new URL(url);
+      if (
+        method !== "GET" ||
+        input.requestOptions?.body !== undefined ||
+        identity.username ||
+        identity.password ||
+        Object.keys(input.requestOptions?.headers || {}).some((name) =>
+          /^(authorization|cookie)$/i.test(name),
+        )
+      )
+        throw packageError(
+          "collection_cache_invalid",
+          "条件缓存只允许无请求体的安全GET。",
+          400,
+        );
       const previous = await cache.get({ scope, resourceKey }),
         matching =
           previous?.parserVersion === parserVersion &&
@@ -148,6 +246,7 @@ export function createConditionalCache({
           reused: true,
           needsBody: false,
           checkedAt,
+          evidenceCheckedAt: previous.evidenceCheckedAt || previous.checkedAt,
         };
       }
       if (response.status !== 200)
@@ -185,6 +284,9 @@ export function createConditionalCache({
         etag: response.headers?.etag,
         lastModified: response.headers?.["last-modified"],
         parserVersion,
+        evidenceCheckedAt: reused
+          ? previous.evidenceCheckedAt || previous.checkedAt
+          : checkedAt,
       });
       return {
         status: 200,
@@ -193,6 +295,9 @@ export function createConditionalCache({
         reused,
         needsBody: false,
         checkedAt,
+        evidenceCheckedAt: reused
+          ? previous.evidenceCheckedAt || previous.checkedAt
+          : checkedAt,
       };
     },
   };

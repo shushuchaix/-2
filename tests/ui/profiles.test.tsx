@@ -4,6 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { act, waitFor } from "@testing-library/react";
 import { renderApp } from "../helpers/react-fixture";
 
+function assertRecord(value: unknown): asserts value is Record<string, unknown> {
+  assert.ok(value !== null && typeof value === "object" && !Array.isArray(value));
+}
+
 const text =
   "合成简历正文用于离线界面验证。学历本科，安全工程专业，具有合成项目经历与可核实的技能。";
 const preview = {
@@ -59,9 +63,14 @@ test("corrected profile facts and original parser metadata are saved as a named 
   await f.user.type(f.screen.getByLabelText("版本名称"), "合成简历版本");
   await f.user.click(f.screen.getByRole("button", { name: "保存简历" }));
   await f.screen.findByText(/简历已保存：/);
-  const saved = f.apiCalls.find(
+  const call = f.apiCalls.find(
     (c: any) => c.path === "/profiles" && c.options.method === "POST",
-  ).options.body;
+  );
+  assert.ok(call);
+  const saved = call.options.body;
+  assertRecord(saved);
+  assertRecord(saved.profile);
+  assertRecord(saved.overrides);
   assert.equal(saved.profile.major, "消防工程");
   assert.equal(saved.overrides.major, "消防工程");
   assert.equal(saved.parserVersion, "preview-2");
@@ -207,6 +216,8 @@ test("duplicate profile name preserves draft and unchanged retry uses the same s
     (c: any) => c.path === "/profiles" && c.options.method === "POST",
   );
   assert.equal(calls.length, 2);
+  assertRecord(calls[0].options.body);
+  assertRecord(calls[1].options.body);
   assert.equal(
     calls[0].options.body.submissionId,
     calls[1].options.body.submissionId,

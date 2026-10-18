@@ -4,6 +4,7 @@ import {
   recordDiagnostic,
 } from "../src/infrastructure/diagnostics/log.mjs";
 import { safeApiRoute } from "../public/js/diagnostic-rules.js";
+import { identifier } from "../src/infrastructure/diagnostics/fields.mjs";
 
 const operations = new Set([
   "renderer.request",
@@ -77,10 +78,19 @@ export function registerDiagnosticIpc({
               stack: report.error.stack,
             })
           : undefined;
-      const result = await recordDiagnostic(diagnostics, event, error);
-      return result?.diagnosticId
-        ? { diagnosticId: result.diagnosticId }
-        : undefined;
+      try {
+        // The main-process host sink already bounds record() observation. An
+        // additional optional-observer deadline can discard its accepted ID.
+        // A receipt identifies the record; it does not assert disk durability.
+        const result = await diagnostics.record(event, error);
+        const diagnosticId = identifier(result?.diagnosticId, "d");
+        if (!diagnosticId) throw Error("Missing diagnostic receipt");
+        return { diagnosticId };
+      } catch {
+        throw Object.assign(Error("诊断记录未能接收，请稍后重试。"), {
+          code: "diagnostic_report_failed",
+        });
+      }
     }),
   );
 }

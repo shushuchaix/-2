@@ -8,6 +8,8 @@ import path from "node:path";
 import { createApplicationContext } from "../../src/application/context.mjs";
 import { DEFAULT_CONFIG } from "../../src/config.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
+import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
+import { createModelCredentialBinding } from "../../src/application/model-credential-binding.mjs";
 
 async function settingsFixture(t, { existingConfig = true } = {}) {
   const cacheRoot = path.resolve(".cache");
@@ -21,7 +23,7 @@ async function settingsFixture(t, { existingConfig = true } = {}) {
   cfg.deepseek.apiKey = "synthetic-old-settings-key";
   const oldModel = structuredClone(cfg.deepseek);
   const oldConfig = {
-    deepseek: structuredClone(oldModel),
+    deploymentNote: "synthetic deployment settings",
     sources: { synthetic: { enabled: true } },
   };
   if (existingConfig)
@@ -33,43 +35,32 @@ async function settingsFixture(t, { existingConfig = true } = {}) {
     rejectConfigRemoval: false,
     beforeWorkspaceRename: null,
   };
-  const fsAdapter = {
-    ...fs,
-    async rename(from, to) {
-      if (to === path.join(dataDir, "workspace.v2.json")) {
-        if (faults.workspaceFailures > 0) {
-          faults.workspaceFailures--;
-          throw Object.assign(Error("synthetic workspace write failed"), {
-            code: "ENOSPC",
-          });
-        }
-        await faults.beforeWorkspaceRename?.();
-      }
-      if (
-        to === filename &&
-        ++faults.configReplacements === 2 &&
-        faults.rejectRollback
-      )
-        throw Object.assign(Error("synthetic config restore failed"), {
-          code: "EIO",
-        });
-      return fs.rename(from, to);
-    },
-    async unlink(file) {
-      if (file === filename && faults.rejectConfigRemoval)
-        throw Object.assign(Error("synthetic config removal failed"), {
-          code: "EIO",
-        });
-      return fs.unlink(file);
-    },
-  };
+  const credential={apiKey:oldModel.apiKey},credentialCalls=[];
+  const fsAdapter=fs;
+  const seed=await openWorkspaceRepository({dataDir});
+  try{await seed.transaction({select:[{collection:"settings",ids:["model","apiKeyBinding"]}]},tx=>{
+    tx.putRow({collection:"settings",id:"model",value:{baseUrl:oldModel.baseUrl,model:oldModel.model}});
+    tx.putRow({collection:"settings",id:"apiKeyBinding",value:createModelCredentialBinding(oldModel.apiKey,oldModel)});
+  });}finally{await seed.close();}
   const context = await createApplicationContext({
     cfg,
     dataDir,
     dependencies: {
-      legacySchema: true,
+      legacySchema: false,
       startScheduler: false,
       fsAdapter,
+      storageFaultInjector(phase){
+        if(phase==='sqlite.beforeWrite'){
+          faults.onBeforeSqlWrite?.();
+          if(faults.workspaceFailures>0){faults.workspaceFailures--;throw Object.assign(Error('synthetic SQLite write failed'),{code:'ENOSPC'});}
+        }
+      },
+      async saveModelCredential({apiKey}){
+        await faults.beforeWorkspaceRename?.();
+        credentialCalls.push(apiKey);
+        if(credentialCalls.length===2&&(faults.rejectRollback||faults.rejectConfigRemoval))throw Object.assign(Error('synthetic credential compensation failed'),{code:'EIO'});
+        credential.apiKey=apiKey;return {configured:!!apiKey};
+      },
       registry: createSourceRegistry([]),
       catalog: [],
       requestFactory: () => async () => {
@@ -84,7 +75,7 @@ async function settingsFixture(t, { existingConfig = true } = {}) {
     assert.ok(path.resolve(dataDir).startsWith(cacheRoot + path.sep));
     await fs.rm(dataDir, { recursive: true });
   });
-  return { context, cfg, faults, filename, dataDir, oldModel, oldConfig };
+  return { context, cfg, faults, filename, dataDir, oldModel, oldConfig, credential, credentialCalls };
 }
 
 const settingsChange = () => ({
@@ -96,7 +87,7 @@ const settingsChange = () => ({
   budgets: { maxModelRequests: 7 },
 });
 
-test("workspace write failure restores an existing config and leaves the runtime model unchanged", async (t) => {
+test("SQLite write failure restores the local credential and leaves deployment config and runtime unchanged", async (t) => {
   const f = await settingsFixture(t);
   const before = await f.context.repository.read();
   f.faults.workspaceFailures = 1;
@@ -107,14 +98,14 @@ test("workspace write failure restores an existing config and leaves the runtime
     JSON.parse(await fs.readFile(f.filename, "utf8")),
     f.oldConfig,
   );
-  assert.deepEqual(f.cfg.deepseek, f.oldModel);
+  assert.equal(JSON.stringify(f.cfg.deepseek)===JSON.stringify(f.oldModel),true);
   assert.deepEqual(
     (await f.context.repository.read()).settings,
     before.settings,
   );
 });
 
-test("workspace write failure removes a newly created config", async (t) => {
+test("SQLite write failure never creates business config JSON", async (t) => {
   const f = await settingsFixture(t, { existingConfig: false });
   const before = await f.context.repository.read();
   f.faults.workspaceFailures = 1;
@@ -122,7 +113,7 @@ test("workspace write failure removes a newly created config", async (t) => {
     code: "ENOSPC",
   });
   await assert.rejects(fs.access(f.filename), { code: "ENOENT" });
-  assert.deepEqual(f.cfg.deepseek, f.oldModel);
+  assert.equal(JSON.stringify(f.cfg.deepseek)===JSON.stringify(f.oldModel),true);
   assert.deepEqual(
     (await f.context.repository.read()).settings,
     before.settings,
@@ -138,6 +129,7 @@ test("the runtime model is published only after the workspace settings commit", 
   const held = new Promise((resolve) => {
     release = resolve;
   });
+  f.faults.onBeforeSqlWrite = () => assert.equal(JSON.stringify(f.cfg.deepseek)===JSON.stringify(f.oldModel),true);
   f.faults.beforeWorkspaceRename = async () => {
     entered();
     await held;
@@ -145,14 +137,15 @@ test("the runtime model is published only after the workspace settings commit", 
   const pending = f.context.saveSettings(settingsChange());
   await atCommit;
   try {
-    assert.deepEqual(f.cfg.deepseek, f.oldModel);
+    assert.equal(JSON.stringify(f.cfg.deepseek)===JSON.stringify(f.oldModel),true);
   } finally {
     release();
   }
   const saved = await pending;
+  f.faults.onBeforeSqlWrite=null;
   assert.equal(saved.model.model, "synthetic-next-model");
   assert.equal(saved.budgets.maxModelRequests, 7);
-  assert.equal(f.cfg.deepseek.apiKey, "synthetic-next-settings-key");
+  assert.equal(f.cfg.deepseek.apiKey==="synthetic-next-settings-key",true);
   const privateFree = JSON.stringify({
     saved,
     workspace: await f.context.repository.read(),
@@ -179,12 +172,21 @@ test("a failed settings patch is fully compensated before the next queued patch"
   assert.equal(results[1].status, "fulfilled");
   assert.deepEqual(f.cfg.deepseek, {
     ...f.oldModel,
+    apiKey: "",
     model: "synthetic-final-model",
   });
-  assert.deepEqual(JSON.parse(await fs.readFile(f.filename, "utf8")), {
-    ...f.oldConfig,
-    deepseek: { ...f.oldModel, model: "synthetic-final-model" },
-  });
+  assert.equal(f.credential.apiKey, f.oldModel.apiKey);
+  assert.deepEqual(f.credentialCalls, ["synthetic-next-settings-key", f.oldModel.apiKey]);
+  assert.equal((await f.context.getSettings()).model.credentialStatus, "needs_configuration");
+  let sent = 0;
+  const model = f.context.modelFactory({ transport: async () => { sent++; throw Error("must not send an unbound credential"); } });
+  assert.equal(model.available, false);
+  await assert.rejects(model.chatJson("", "synthetic model call"), /未配置模型 API Key/);
+  assert.equal(sent, 0);
+  const stored = await f.context.repository.read();
+  assert.equal(stored.settings.model.model, "synthetic-final-model");
+  assert.doesNotMatch(JSON.stringify({ results, stored, diagnostics: await f.context.diagnostics.list() }), /synthetic-next-settings-key|synthetic-old-settings-key/);
+  assert.deepEqual(JSON.parse(await fs.readFile(f.filename, "utf8")),f.oldConfig);
   assert.deepEqual((await f.context.repository.read()).settings.budgets, {
     ...before.settings.budgets,
     maxDetails: 7,
@@ -210,15 +212,14 @@ for (const existingConfig of [true, false]) {
         code: "settings_rollback_failed",
       },
     );
-    assert.deepEqual(f.cfg.deepseek, f.oldModel);
+    assert.equal(JSON.stringify(f.cfg.deepseek)===JSON.stringify(f.oldModel),true);
     assert.deepEqual(
       (await f.context.repository.read()).settings,
       before.settings,
     );
-    assert.equal(
-      JSON.parse(await fs.readFile(f.filename, "utf8")).deepseek.model,
-      "synthetic-next-model",
-    );
+    assert.equal(f.credential.apiKey==="synthetic-next-settings-key",true);
+    if(existingConfig)assert.deepEqual(JSON.parse(await fs.readFile(f.filename,"utf8")),f.oldConfig);
+    else await assert.rejects(fs.access(f.filename),{code:"ENOENT"});
     const diagnostics = JSON.stringify(await f.context.diagnostics.list());
     assert.equal(diagnostics.includes("synthetic-next-settings-key"), false);
     assert.equal(diagnostics.includes("synthetic-old-settings-key"), false);

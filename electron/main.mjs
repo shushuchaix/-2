@@ -20,27 +20,24 @@ import {
   safeStorage,
   clipboard,
   session,
+  utilityProcess,
 } from "electron";
 import path from "node:path";
 import { installClosedPipeGuard } from "./process-output.mjs";
 installClosedPipeGuard();
 import { createCollectionSessions } from "./collection/sessions.mjs";
-import { createCollectionBrowser } from "./collection/browser.mjs";
+import { createDesktopBackend } from "./backend/host.mjs";
 import { registerCollectionIpc } from "./collection/ipc.mjs";
-import { createEgressProxy } from "../src/infrastructure/collection/egress-proxy.mjs";
-import { createCollectionLedger } from "../src/application/collection-ledger.mjs";
 import { createResourceShutdown } from "../src/infrastructure/lifecycle/resource-shutdown.mjs";
-import { assertScope } from "../src/domain/packages.mjs";
 import { resolveDataLayout } from "../src/infrastructure/storage/layout.mjs";
 import { registerDirectoryIpc } from "./directories.mjs";
-import { awaitDesktopContext, presentDesktopWindow } from "./startup.mjs";
+import { presentDesktopWindow, setDesktopStartupState } from "./startup.mjs";
 import os from "node:os";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import {
-  createDiagnosticsLog,
-  recordDiagnostic,
-} from "../src/infrastructure/diagnostics/log.mjs";
+import { createRuntimePerformance } from "../src/infrastructure/runtime/performance.mjs";
+import { recordDiagnostic } from "../src/infrastructure/diagnostics/log.mjs";
+import { createHostDiagnostics as createDiagnosticsLog } from "../src/infrastructure/diagnostics/host-log.mjs";
 import {
   registerDiagnosticIpc,
   attachWindowDiagnostics,
@@ -55,7 +52,7 @@ const APP_TITLE = "简历岗位雷达";
 // 自检模式：使用隐藏窗口验证内置服务、真实渲染器和预加载桥接。
 const SELF_TEST = process.argv.includes("--self-test");
 const selfTestEnvironment = SELF_TEST
-  ? (await import("./self-test.mjs")).prepareSelfTestEnvironment({
+  ? (await import("./self-test.mjs")).prepareSelfTestDirectory({
       explicitDataDir: process.env.RJR_DATA_DIR,
     })
   : null;
@@ -68,6 +65,7 @@ if (SELF_TEST) {
   app.disableHardwareAcceleration();
   process.env.RJR_DATA_DIR = selfTestEnvironment.dataDir;
   process.env.RJR_DESKTOP = "1";
+  process.env.RJR_DISABLE_LOCAL_CREDENTIALS = "1";
   for (const name of [
     "AUTH_PASSWORD",
     "DEEPSEEK_API_KEY",
@@ -95,20 +93,13 @@ function resolveDataDir() {
 // seedConfig 已移入 src/config.mjs（由 ensureDataDirs 调用），
 // 这样 Node 侧的自检 tools/test-desktop.mjs 也能覆盖到「首次运行生成配置」这条路径。
 
-function listen(server) {
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => resolve(server.address().port));
-  });
-}
-
 let mainWindow = null;
-let httpServer = null;
 let dataDir = "";
 let appUrl = "";
 let diagnostics;
-let applicationContext;
+let backend;
 let startupPhase = "started";
+const runtimePerformance = createRuntimePerformance();
 const runtime = {
   appVersion: app.getVersion(),
   nodeVersion: process.versions.node,
@@ -118,7 +109,19 @@ const runtime = {
   arch: process.arch,
   osRelease: os.release(),
   packaged: app.isPackaged,
+  hostRole: "main",
+  ...readBuildIdentity(),
 };
+
+function readBuildIdentity() {
+  try {
+    const value = JSON.parse(
+      fs.readFileSync(path.join(APP_ROOT, "build-info.json"), "utf8"),
+    );
+    if (/^[a-f0-9]{40}$/.test(value.buildId)) return { buildId: value.buildId };
+  } catch {}
+  return {};
+}
 
 // Observe fatal errors without changing Node's default termination behavior.
 process.on("uncaughtExceptionMonitor", (error) => {
@@ -306,6 +309,11 @@ async function createWindow() {
   });
 
   mainWindow.webContents.on("will-navigate", (e, url) => {
+    if (url === "rjr-startup:logs") {
+      e.preventDefault();
+      if (!SELF_TEST) void shell.openPath(path.join(dataDir, "logs"));
+      return;
+    }
     if (appUrl && new URL(url).origin === appUrl) return;
     e.preventDefault();
     if (/^https?:/i.test(url)) {
@@ -321,10 +329,7 @@ async function createWindow() {
       selfTestRendererErrors.push({ code: "renderer_load_failed" });
       return;
     }
-    dialog.showErrorBox(
-      "页面加载失败",
-      `无法加载 ${url}\n\n${desc}（${code}）`,
-    );
+    void showStartupFailure("renderer_load_failed");
   });
 
   let startupWindowPresented = false;
@@ -356,6 +361,11 @@ async function createWindow() {
         });
     });
   }
+  if (!appUrl) {
+    await mainWindow.loadFile(path.join(APP_ROOT, "electron", "startup.html"));
+    presentDesktopWindow(mainWindow, { selfTest: SELF_TEST });
+    return;
+  }
   // The offline self-test controls task mutations in its synthetic workspace.
   await mainWindow.loadURL(
     SELF_TEST ? appUrl + "?fixtureStartup=disabled" : appUrl,
@@ -372,15 +382,13 @@ async function createWindow() {
 
 /* ---------------------------- 自检模式 ---------------------------- */
 async function runSelfTest() {
-  await createWindow();
+  if (!mainWindow) await createWindow();
   const { runWorkspaceSelfTest } = await import("./self-test.mjs");
   let report;
   try {
     report = await runWorkspaceSelfTest({
       window: mainWindow,
-      context: applicationContext,
-      clock: selfTestEnvironment.clock,
-      controls: selfTestEnvironment.controls,
+      backend,
       dataDir,
       networkGuard: selfTestNetwork,
       rendererErrors: selfTestRendererErrors,
@@ -419,78 +427,62 @@ async function runSelfTest() {
       JSON.stringify(report, null, 2),
     );
   } finally {
-    await applicationContext?.close?.();
-    httpServer?.closeAllConnections();
-    if (httpServer?.listening)
-      await new Promise((resolve) => httpServer.close(resolve));
+    await backend?.close();
     selfTestNetwork.dispose();
   }
   app.exit(report?.failed ? 1 : 0);
 }
 
 /* ------------------------------ 启动 ------------------------------ */
+async function showStartupFailure(code, diagnosticId) {
+  if (!mainWindow || mainWindow.isDestroyed()) await createWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  appUrl = "";
+  await mainWindow.loadFile(path.join(APP_ROOT, "electron", "startup.html"));
+  await setDesktopStartupState(mainWindow, {
+    state: "failed",
+    code,
+    diagnosticId,
+  });
+  presentDesktopWindow(mainWindow, { selfTest: SELF_TEST });
+}
+
 async function boot() {
   const started = Date.now();
   dataDir = resolveDataDir();
+  process.env.RJR_DESKTOP = "1";
+  process.env.RJR_DATA_DIR = dataDir;
   diagnostics = createDiagnosticsLog({ dataDir, runtime });
   await recordDiagnostic(diagnostics, {
     operation: "desktop.start",
     stage: "startup",
     phase: "started",
     outcome: "success",
+    hostRole: "main",
   });
-  process.env.RJR_DESKTOP = "1";
-  process.env.RJR_DATA_DIR = dataDir;
-
-  // 必须在 import src/ 之前设好环境变量（config.mjs 在模块加载时就定了 DATA_ROOT）
-  startupPhase = "parse";
-  await recordDiagnostic(diagnostics, {
-    operation: "desktop.start",
-    stage: "startup",
-    phase: startupPhase,
-    code: "config_loading",
-    outcome: "success",
-  });
-  const configuration = SELF_TEST ? null : await import("../src/config.mjs");
-  const { createServer } = await import("../src/server.mjs");
-
-  // ensureDataDirs 内部会 seedConfig：把 config.example.json 复制到可写数据目录
-  if (!SELF_TEST) configuration.ensureDataDirs();
-  else
-    fs.writeFileSync(
-      path.join(dataDir, "config.json"),
-      JSON.stringify(selfTestEnvironment.cfg),
-    );
-
-  const cfg = SELF_TEST
-    ? selfTestEnvironment.cfg
-    : configuration.loadConfig({ quiet: true });
-  cfg.server.host = "127.0.0.1";
-  cfg.server.port = 0; // 交给系统分配空闲端口，避免与已装的服务冲突
-  cfg.server.trustProxy = false;
-  // 桌面外壳只监听本机，不会被外部访问，因此不需要登录流程
-  if (!process.env.AUTH_PASSWORD && !cfg.auth.passwordHash)
-    cfg.auth.mode = "none";
-
+  // Present a responsive native surface before importing or recovering business
+  // storage. All application construction happens in the formal utility child.
+  await createWindow();
+  if (!SELF_TEST) Menu.setApplicationMenu(buildMenu());
   const credentials = createCredentialService({ dataDir, safeStorage });
   const collectionSessions = createCollectionSessions({ dataDir, safeStorage });
-  startupPhase = "read";
-  try {
-    const key = SELF_TEST ? "" : await credentials.readForModel("deepseek");
-    if (key) cfg.deepseek.apiKey = key;
-  } catch (error) {
-    await recordDiagnostic(
-      diagnostics,
-      {
-        operation: "desktop.credentials",
-        stage: "startup",
-        phase: "read",
-        outcome: "failed",
-        code: "credential_read_failed",
-      },
-      error,
-    );
-    console.error("[desktop] 加密密钥无法读取，请重新设置。");
+  let modelKey = "";
+  if (!SELF_TEST) {
+    try {
+      modelKey = await credentials.readForModel("deepseek");
+    } catch (error) {
+      await recordDiagnostic(
+        diagnostics,
+        {
+          operation: "desktop.credentials",
+          stage: "startup",
+          phase: "read",
+          outcome: "failed",
+          code: "credential_read_failed",
+        },
+        error,
+      );
+    }
   }
   registerCredentialIpc({
     ipcMain,
@@ -498,9 +490,7 @@ async function boot() {
     diagnostics,
     getWindow: () => mainWindow,
     getOrigin: () => appUrl,
-    onKey: (key) => {
-      cfg.deepseek.apiKey = key;
-    },
+    onKey: (key) => backend.call("backend.modelKey", { key }),
   });
   registerDiagnosticIpc({
     ipcMain,
@@ -525,116 +515,66 @@ async function boot() {
     diagnostics,
   });
   startupPhase = "load";
-  const { server, ready } = createServer(cfg, {
+  backend = createDesktopBackend({
+    utilityProcess,
+    BrowserWindow,
+    session,
+    sessionStore: collectionSessions,
+    credentialService: credentials,
+    diagnostics,
     dataDir,
-    dependencies: {
-      ...(selfTestEnvironment?.dependencies || {}),
-      ...(app.isPackaged
-        ? {
-            ocr: (await import("../src/attachments/ocr.mjs")).createLocalOcr({
-              resourceDir: path.join(process.resourcesPath, "ocr"),
-            }),
-          }
-        : {}),
-      ...(!SELF_TEST
-        ? {
-            collectionRuntimeRoot: app.isPackaged
-              ? path.join(process.resourcesPath, "collection-runtime")
-              : path.join(APP_ROOT, ".cache/collection-runtime-dev"),
-          }
-        : { collectionRuntime: { verified: false, capabilities: {} } }),
-      diagnostics,
-      recoverOwnedResources: () => collectionSessions.resumePending(),
-      cleanupOwnedResources: (id) =>
-        collectionBrowser
-          ? collectionBrowser.closePackage(id)
-          : collectionSessions.cleanupPackage(id),
-      stopOwnedResources: () => collectionBrowser?.stop(),
+    appRoot: APP_ROOT,
+    resourcesRoot: process.resourcesPath,
+    packaged: app.isPackaged,
+    selfTest: SELF_TEST,
+    offlineGuard: selfTestNetwork,
+    runtime,
+    onStage: async (value) => {
+      if (value.origin && !appUrl) {
+        appUrl = value.origin;
+        selfTestNetwork?.setAllowedOrigin(appUrl);
+        await mainWindow.loadURL(
+          SELF_TEST ? appUrl + "?fixtureStartup=disabled" : appUrl,
+        );
+        presentDesktopWindow(mainWindow, { selfTest: SELF_TEST });
+      } else if (!appUrl) await setDesktopStartupState(mainWindow, value);
+    },
+    onExit: async (value) => {
+      const entry = await recordDiagnostic(diagnostics, {
+        operation: "desktop.failure",
+        phase: "finished",
+        hostRole: "main",
+        code: value.code,
+        outcome: "failed",
+        exitCode: value.exitCode,
+      });
+      await showStartupFailure(value.code, entry?.diagnosticId);
     },
   });
-  applicationContext = await awaitDesktopContext(ready, {
-    selfTest: SELF_TEST,
+  registerCollectionIpc({
+    ipcMain,
+    backend,
+    getWindow: () => mainWindow,
+    getOrigin: () => appUrl,
   });
-  const port = await listen(server);
-  httpServer = server;
-  appUrl = `http://127.0.0.1:${port}`;
-  selfTestNetwork?.setAllowedOrigin(appUrl);
-  if (applicationContext?.collectionService) {
-    collectionBrowser = createCollectionBrowser({
-      BrowserWindow,
-      session,
-      ledger: createCollectionLedger({
-        repository: applicationContext.repository,
-      }),
-      egressProxy: createEgressProxy({
-        offlineAllows: selfTestNetwork?.allows,
-      }),
-      sessionStore: collectionSessions,
-      diagnostics: applicationContext.diagnostics,
-      dnsMode: cfg.network?.dnsMode || "auto",
-      offlineAllows: selfTestNetwork?.allows,
-      assertScope: async (scope) =>
-        assertScope(
-          await applicationContext.repository.read(),
-          scope,
-          applicationContext.repository.clock.now(),
-        ),
-      rememberSession: async ({ scope, platform, sessionRef }) =>
-        applicationContext.repository.mutateWorkspace((w) => {
-          const pkg = assertScope(
-            w,
-            scope,
-            applicationContext.repository.clock.now(),
-          );
-          pkg.collectionSettings ||= {
-            sourceOverrides: {},
-            sessionRefs: {},
-            refreshEnabled: false,
-          };
-          pkg.collectionSettings.sessionRefs[platform] = sessionRef;
-        }),
-    });
-    applicationContext.collectionBrowser = collectionBrowser;
-    applicationContext.contentReadService?.setBrowser(collectionBrowser);
-    registerCollectionIpc({
-      ipcMain,
-      browser: collectionBrowser,
-      sessionStore: collectionSessions,
-      context: applicationContext,
-      getWindow: () => mainWindow,
-      getOrigin: () => appUrl,
-    });
-  }
+  const state = await backend.start(modelKey);
   await recordDiagnostic(diagnostics, {
     operation: "desktop.ready",
     stage: "startup",
     phase: "load",
-    outcome: "success",
-    code: applicationContext ? "server_ready" : "server_maintenance",
+    hostRole: "main",
+    outcome: state.state === "ready" ? "success" : "partial",
+    code: state.state === "ready" ? "server_ready" : "server_maintenance",
     durationMs: Date.now() - started,
+    ...runtimePerformance.snapshot(),
   });
-
-  console.log(`[desktop] 数据目录 ${dataDir}`);
-  console.log(`[desktop] 内置服务 ${appUrl}`);
 }
 
 /* --------------------------- 应用生命周期 --------------------------- */
-let collectionBrowser,
-  shutdownPromise,
+let shutdownPromise,
   shutdownComplete = false;
 const desktopShutdown = createResourceShutdown({
-  resources: () => [
-    { id: "application", stop: () => applicationContext?.close?.() },
-    { id: "browser", stop: () => collectionBrowser?.stop() },
-    {
-      id: "server",
-      stop: async () => {
-        httpServer?.closeAllConnections?.();
-        if (httpServer?.listening)
-          await new Promise((resolve) => httpServer.close(resolve));
-      },
-    },
-  ],
+  resources: () => [{ id: "application", stop: () => backend?.close() }],
   onError: (shutdownResource, error) =>
     recordDiagnostic(
       diagnostics,
@@ -682,7 +622,7 @@ if (!gotLock) {
       }
       startupPhase = "render";
       Menu.setApplicationMenu(buildMenu());
-      await createWindow();
+      presentDesktopWindow(mainWindow, { selfTest: SELF_TEST });
       startupPhase = "finished";
       await recordDiagnostic(diagnostics, {
         operation: "desktop.ready",
@@ -731,11 +671,10 @@ if (!gotLock) {
         app.exit(1);
         return;
       }
-      dialog.showErrorBox(
-        "启动失败",
-        `启动未完成，请检查数据目录的写入权限和磁盘空间。\n\n${diagnostic?.diagnosticId ? "错误编号：" + diagnostic.diagnosticId + "\n" : ""}日志目录：${path.join(resolveDataDir(), "logs")}\n请保留数据目录以便排查。`,
+      await showStartupFailure(
+        "backend_start_failed",
+        diagnostic?.diagnosticId,
       );
-      app.quit();
       return;
     }
   });

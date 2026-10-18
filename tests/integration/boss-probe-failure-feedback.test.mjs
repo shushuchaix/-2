@@ -5,6 +5,17 @@ import { fakeProvider } from "../helpers/fake-sources.mjs";
 import { createSourceRegistry } from "../../src/sources/registry.mjs";
 import { createSourceService } from "../../src/application/source-service.mjs";
 import { registerCollectionIpc } from "../../electron/collection/ipc.mjs";
+import { createCollectionCommands } from "../../electron/backend/collection-commands.mjs";
+function registerSyntheticCommands(options) {
+  const commands = createCollectionCommands({
+    ...options,
+    forgetSession: async () => ({ forgotten: true }),
+  });
+  registerCollectionIpc({
+    ...options,
+    backend: { call: (method, input) => commands[method](input) },
+  });
+}
 const diagnosticId = "d-12345678-1234-1234-1234-123456789abc";
 async function sourceFixture(t, code, { detail = false, mixed = false } = {}) {
   const f = await collectionFixture(t),
@@ -88,70 +99,95 @@ test("early Boss recovery failure persists current owned health while preserving
       },
     };
   });
-  await h.service.recordScopedBossProbeFailure({
-    scope: h.f.scope,
-    sessionRef: "owned-session",
-    code: "boss_transport_failed",
-    diagnosticId,
-  });
-  const w = await h.f.repository.read(),
-    saved =
-      w.packages[h.f.scope.packageId].collectionSettings.sourceVerification[
-        "boss/boss"
-      ];
-  assert.equal(saved.status, "unavailable");
-  assert.equal(saved.sampleCount, 0);
-  assert.deepEqual(saved.issues, [
-    {
-      code: "boss_transport_failed",
-      sourceId: "boss",
-      siteId: "boss",
-      diagnosticId,
+  let retired;
+  await h.f.service.withDiagnosticContext(
+    { ref: h.c.ref, requestId: "early-recovery-failure" },
+    async (ctx) => {
+      const authority = {
+        operationLease: ctx.operationLease,
+        collectionGuard: ctx.collectionGuard,
+      };
+      retired = authority;
+      await h.service.recordScopedBossProbeFailure({
+        ...authority,
+        scope: h.f.scope,
+        sessionRef: "owned-session",
+        code: "boss_transport_failed",
+        diagnosticId,
+      });
+      const w = await h.f.repository.read(),
+        saved =
+          w.packages[h.f.scope.packageId].collectionSettings.sourceVerification[
+            "boss/boss"
+          ];
+      assert.equal(saved.status, "unavailable");
+      assert.equal(saved.sampleCount, 0);
+      assert.deepEqual(saved.issues, [
+        {
+          code: "boss_transport_failed",
+          sourceId: "boss",
+          siteId: "boss",
+          diagnosticId,
+        },
+      ]);
+      assert.equal(saved.capabilities.body, "verified");
+      assert.equal(Date.parse(saved.checkedAt), Number(h.f.clock.now()));
+      assert.equal(w.sourceHealth["boss/boss"], undefined);
+      await assert.rejects(
+        h.service.recordScopedBossProbeFailure({
+          ...authority,
+          scope: h.f.scope,
+          sessionRef: "revoked",
+          code: "boss_transport_failed",
+          diagnosticId,
+        }),
+        { code: "collection_session_scope" },
+      );
+      assert.deepEqual(
+        (await h.f.repository.read()).packages[h.f.scope.packageId]
+          .collectionSettings.sourceVerification["boss/boss"],
+        saved,
+      );
+      const controller = new AbortController();
+      controller.abort(Object.assign(Error("cancel"), { name: "AbortError" }));
+      await assert.rejects(
+        h.service.recordScopedBossProbeFailure({
+          ...authority,
+          scope: h.f.scope,
+          sessionRef: "owned-session",
+          code: "boss_transport_failed",
+          diagnosticId,
+          signal: controller.signal,
+        }),
+        { name: "AbortError" },
+      );
+      await assert.rejects(
+        h.service.recordScopedBossProbeFailure({
+          ...authority,
+          scope: h.f.scope,
+          sessionRef: "owned-session",
+          code: "boss_transport_failed",
+          diagnosticId,
+          collectionGuard: { ref: h.c.ref, token: { epoch: -1 } },
+        }),
+        { code: "collection_stale_epoch" },
+      );
+      assert.deepEqual(
+        (await h.f.repository.read()).packages[h.f.scope.packageId]
+          .collectionSettings.sourceVerification["boss/boss"],
+        saved,
+      );
     },
-  ]);
-  assert.equal(saved.capabilities.body, "verified");
-  assert.equal(Date.parse(saved.checkedAt), Number(h.f.clock.now()));
-  assert.equal(w.sourceHealth["boss/boss"], undefined);
+  );
   await assert.rejects(
     h.service.recordScopedBossProbeFailure({
-      scope: h.f.scope,
-      sessionRef: "revoked",
-      code: "boss_transport_failed",
-      diagnosticId,
-    }),
-    { code: "collection_session_scope" },
-  );
-  assert.deepEqual(
-    (await h.f.repository.read()).packages[h.f.scope.packageId]
-      .collectionSettings.sourceVerification["boss/boss"],
-    saved,
-  );
-  const controller = new AbortController();
-  controller.abort(Object.assign(Error("cancel"), { name: "AbortError" }));
-  await assert.rejects(
-    h.service.recordScopedBossProbeFailure({
+      ...retired,
       scope: h.f.scope,
       sessionRef: "owned-session",
       code: "boss_transport_failed",
       diagnosticId,
-      signal: controller.signal,
     }),
-    { name: "AbortError" },
-  );
-  await assert.rejects(
-    h.service.recordScopedBossProbeFailure({
-      scope: h.f.scope,
-      sessionRef: "owned-session",
-      code: "boss_transport_failed",
-      diagnosticId,
-      collectionGuard: { ref: h.c.ref, token: { epoch: -1 } },
-    }),
-    { code: "collection_stale_epoch" },
-  );
-  assert.deepEqual(
-    (await h.f.repository.read()).packages[h.f.scope.packageId]
-      .collectionSettings.sourceVerification["boss/boss"],
-    saved,
+    { code: "invalid_operation_lease" },
   );
 });
 
@@ -193,7 +229,7 @@ test("real diagnostic teardown retains the epoch guard for an early recovery hea
   const handlers = new Map(),
     mainFrame = { url: "http://127.0.0.1:31000/" },
     sender = { mainFrame };
-  registerCollectionIpc({
+  registerSyntheticCommands({
     ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
     getWindow: () => ({ webContents: sender }),
     getOrigin: () => mainFrame.url,
@@ -242,7 +278,7 @@ test("risk recovery failure gets a diagnostic ID without probing again or cleari
     events = [],
     mainFrame = { url: "http://127.0.0.1:31000/" },
     sender = { mainFrame };
-  registerCollectionIpc({
+  registerSyntheticCommands({
     ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
     getWindow: () => ({ webContents: sender }),
     getOrigin: () => mainFrame.url,
@@ -299,7 +335,7 @@ test("cancelling a pending recovery wins over its late risk error", async (t) =>
   let release, entered, ownerSignal;
   const gate = new Promise((r) => (release = r)),
     ready = new Promise((r) => (entered = r));
-  registerCollectionIpc({
+  registerSyntheticCommands({
     ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
     getWindow: () => ({ webContents: sender }),
     getOrigin: () => mainFrame.url,
@@ -444,7 +480,7 @@ test("desktop normalization cannot hide a fatal error even when it also carries 
     code: "boss_environment_risk",
     runFatal: true,
   });
-  registerCollectionIpc({
+  registerSyntheticCommands({
     ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
     getWindow: () => ({ webContents: sender }),
     getOrigin: () => mainFrame.url,
@@ -492,7 +528,7 @@ for (const [code, riskBlocked, state] of [
         mainFrame = { url: "http://127.0.0.1:31000/" },
         sender = { mainFrame };
       let statusReads = 0;
-      registerCollectionIpc({
+      registerSyntheticCommands({
         ipcMain: { handle: (k, fn) => handlers.set(k, fn) },
         getWindow: () => ({ webContents: sender }),
         getOrigin: () => mainFrame.url,

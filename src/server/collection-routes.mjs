@@ -15,13 +15,17 @@ export async function handleCollectionRequest(req, res, context) {
     send = (status, value) => context.http.json(req, res, status, value);
   if (url.pathname === "/api/v2/collections") {
     if (req.method === "GET")
-      send(200, {
-        collections: await service.list(
-          params.allTargets === "true"
+      send(
+        200,
+        await service.listSnapshot({
+          ...(params.afterSeq === undefined
+            ? {}
+            : { afterSeq: Number(params.afterSeq) }),
+          ...(params.allTargets === "true"
             ? { allTargets: true }
-            : { scope: businessScope(params) },
-        ),
-      });
+            : { scope: businessScope(params) }),
+        }),
+      );
     else if (req.method === "POST") {
       const input = await context.http.readJson(req),
         mode = input.mode || "rules";

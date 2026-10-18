@@ -20,6 +20,13 @@ async function fixture(
   const base = collectionBrowserFixture({
     executeJavaScript: execute || (async () => JSON.stringify(response)),
   });
+  const fromPartition = base.session.fromPartition;
+  base.session.fromPartition = (partition) => {
+    const ses = fromPartition(partition);
+    for (const [hook, callback] of [["onCompleted", "completed"], ["onErrorOccurred", "failed"], ["onBeforeRedirect", "redirected"]])
+      ses.webRequest[hook] = (filter, listener) => { ses[callback] = filter === null ? null : listener; };
+    return ses;
+  };
   const counts = {
     navigations: 0,
     reserves: 0,
@@ -218,18 +225,18 @@ test("exhausted manual wire allowance retains the original page with network dis
 test("operation lease never resets the manual request allowance", async (t) => {
   const h = await fixture(t);
   const ses = h.win.webContents.session;
-  const request = () =>
-    new Promise((resolve) =>
+  let requestId = 0;
+  const request = async () => {
+    const details = { id: ++requestId, url: "https://www.zhipin.com/favicon.ico", method: "GET", resourceType: "image", webContentsId: h.win.webContents.id };
+    const result = await new Promise((resolve) =>
       ses.before(
-        {
-          url: "https://www.zhipin.com/favicon.ico",
-          method: "GET",
-          resourceType: "image",
-          webContentsId: h.win.webContents.id,
-        },
+        details,
         resolve,
       ),
     );
+    if (!result.cancel) ses.completed({ ...details, statusCode: 200 });
+    return result;
+  };
   // The initial navigation has consumed one of the fixed 60 manual requests.
   for (let i = 0; i < 2; i++) assert.equal((await request()).cancel, false);
   await h.read();

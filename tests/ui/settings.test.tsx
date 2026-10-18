@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { within } from "@testing-library/react";
+import { act, waitFor, within } from "@testing-library/react";
 import { renderApp, syntheticApi } from "../helpers/react-fixture";
+import type { DesktopBridge } from "../../ui/src/lib/types";
 
 const settings = {
   model: {
@@ -11,6 +12,439 @@ const settings = {
   },
   budgets: { maxCostCny: 10, maxModelRequests: 1000 },
 };
+
+const credentialMessage =
+  "本地模型凭据与当前配置尚未核对，请重新填写密钥并保存；规则分析仍可使用。";
+function desktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
+  return {
+    isAvailable: async () => true,
+    getKeyStatus: async () => ({ configured: true, saved: true }),
+    saveKey: async () => ({ configured: true }),
+    deleteKey: async () => ({ configured: false }),
+    getDataLocations: async () => ({ data: "C:/synthetic/workspace" }),
+    openDataLocation: async () => undefined,
+    copyDataLocation: async () => undefined,
+    ...overrides,
+  };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+test("public credential status overrides an encrypted file that still exists", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge(),
+    apiHandler: (path) =>
+      path === "/settings"
+        ? {
+            ...settings,
+            model: {
+              ...settings.model,
+              credentialStatus: "needs_configuration",
+              credentialMessage,
+            },
+          }
+        : undefined,
+  });
+  await f.screen.findByLabelText("模型名称");
+  assert.ok(f.screen.getAllByText(new RegExp(credentialMessage)).length >= 2);
+  assert.equal(f.screen.queryByText("已保存加密密钥，不显示原文。"), null);
+  assert.equal(f.screen.queryByText(/已配置模型访问/), null);
+});
+
+test("desktop save refreshes public settings and clears only the submitted password", async (t) => {
+  let configured = false;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({
+      saveKey: async (_provider, key) => {
+        assert.equal(key, "sk-synthetic-settings");
+        configured = true;
+        return { configured: true };
+      },
+    }),
+    apiHandler: (path) =>
+      path === "/settings"
+        ? {
+            ...settings,
+            model: {
+              ...settings.model,
+              configured,
+              credentialStatus: configured ? "configured" : "not_configured",
+            },
+          }
+        : undefined,
+  });
+  const password = await f.screen.findByLabelText("桌面密钥");
+  await f.user.type(password, "sk-synthetic-settings");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.screen.findByText(/已配置模型访问/);
+  assert.equal((password as HTMLInputElement).value, "");
+  assert.ok(f.apiCalls.filter((c) => c.path === "/settings").length >= 2);
+  assert.equal(
+    JSON.stringify(f.apiCalls).includes("sk-synthetic-settings"),
+    false,
+  );
+  assert.equal(
+    f.apiCalls.some((c) => c.options.method === "PUT"),
+    false,
+  );
+});
+
+test("a false desktop save receipt never advertises configured or a success toast", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({
+      saveKey: async () => ({ configured: false }),
+    }),
+    apiHandler: (path) => (path === "/settings" ? settings : undefined),
+  });
+  const password = await f.screen.findByLabelText("桌面密钥");
+  await f.user.type(password, "sk-synthetic-false");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.screen.findByText(/桌面密钥尚未配置成功/);
+  assert.equal((password as HTMLInputElement).value, "sk-synthetic-false");
+  assert.equal(f.screen.queryByText("桌面密钥已加密保存"), null);
+  assert.equal(f.screen.queryByText(/已配置模型访问/), null);
+  assert.ok(f.apiCalls.filter((c) => c.path === "/settings").length >= 2);
+});
+
+test("desktop delete refreshes the model status even when local status reported saved", async (t) => {
+  let configured = true;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({
+      deleteKey: async () => {
+        configured = false;
+        return { configured: false };
+      },
+    }),
+    apiHandler: (path) =>
+      path === "/settings"
+        ? {
+            ...settings,
+            model: {
+              ...settings.model,
+              configured,
+              credentialStatus: configured ? "configured" : "not_configured",
+            },
+          }
+        : undefined,
+  });
+  await f.screen.findByText(/已配置模型访问/);
+  await f.user.click(f.screen.getByRole("button", { name: "清除桌面 Key" }));
+  await f.screen.findAllByText(/尚未配置密钥，规则模式可正常使用/);
+  assert.equal(f.screen.queryByText(/已配置模型访问/), null);
+  assert.ok(f.apiCalls.filter((c) => c.path === "/settings").length >= 2);
+});
+
+test("saving endpoint refreshes the binding status without replacing form drafts", async (t) => {
+  let saved = false;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge(),
+    apiHandler: (path, options) => {
+      if (path !== "/settings") return undefined;
+      if (options.method === "PUT") {
+        saved = true;
+        return { saved: true };
+      }
+      return {
+        ...settings,
+        model: {
+          ...settings.model,
+          configured: !saved,
+          credentialStatus: saved ? "needs_configuration" : "configured",
+          ...(saved ? { credentialMessage } : {}),
+        },
+      };
+    },
+  });
+  const endpoint = await f.screen.findByLabelText("兼容 API endpoint");
+  const password = f.screen.getByLabelText("桌面密钥");
+  await f.user.clear(endpoint);
+  await f.user.type(endpoint, "https://model.example.invalid/v1");
+  await f.user.clear(f.screen.getByLabelText("每任务模型费用上限（元）"));
+  await f.user.type(password, "sk-unsaved-password");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "保存模型与预算设置" }),
+  );
+  await waitFor(() =>
+    assert.ok(f.screen.getAllByText(new RegExp(credentialMessage)).length >= 2),
+  );
+  assert.equal(f.screen.getByLabelText("兼容 API endpoint"), endpoint);
+  assert.equal(
+    (endpoint as HTMLInputElement).value,
+    "https://model.example.invalid/v1",
+  );
+  assert.equal((password as HTMLInputElement).value, "sk-unsaved-password");
+});
+
+test("credential refresh and tab navigation preserve unsaved model and budget drafts", async (t) => {
+  let configured = false;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({
+      saveKey: async () => {
+        configured = true;
+        return { configured: true };
+      },
+    }),
+    apiHandler: (path) =>
+      path === "/settings"
+        ? {
+            ...settings,
+            model: { ...settings.model, configured },
+          }
+        : undefined,
+  });
+  const model = await f.screen.findByLabelText("模型名称");
+  const budget = f.screen.getByLabelText("每任务模型费用上限（元）");
+  await f.user.clear(model);
+  await f.user.type(model, "unsaved-model");
+  await f.user.clear(budget);
+  await f.user.type(budget, "3");
+  await f.user.type(f.screen.getByLabelText("桌面密钥"), "sk-synthetic-draft");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.screen.findByText(/已配置模型访问/);
+  assert.equal(f.screen.getByLabelText("模型名称"), model);
+  await f.user.click(f.screen.getByRole("tab", { name: "数据与备份" }));
+  assert.equal(f.screen.queryByText(/workspace\.v2\.json.*schema3/), null);
+  await f.user.click(f.screen.getByRole("tab", { name: "模型与预算" }));
+  assert.equal(
+    (f.screen.getByLabelText("模型名称") as HTMLInputElement).value,
+    "unsaved-model",
+  );
+  assert.equal(
+    (f.screen.getByLabelText("每任务模型费用上限（元）") as HTMLInputElement)
+      .value,
+    "3",
+  );
+  assert.ok(f.screen.getByRole("region", { name: "预算设置（待保存）" }));
+});
+
+test("committed model settings with failed refresh remain saved and can retry status", async (t) => {
+  let committed = false,
+    failRefresh = true;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    apiHandler: (path, options) => {
+      if (path !== "/settings") return undefined;
+      if (options.method === "PUT") {
+        committed = true;
+        return { saved: true };
+      }
+      if (committed && failRefresh) throw Error("合成状态读取失败");
+      return {
+        ...settings,
+        model: { ...settings.model, configured: committed },
+      };
+    },
+  });
+  const budget = await f.screen.findByLabelText("每任务模型费用上限（元）");
+  await f.user.clear(budget);
+  await f.user.type(budget, "2");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "保存模型与预算设置" }),
+  );
+  await f.screen.findByText(/设置已保存，但配置状态刷新失败/);
+  assert.ok(f.screen.getByRole("region", { name: "已保存预算设置" }));
+  assert.equal(f.screen.queryByText("设置已保存"), null);
+  assert.equal((budget as HTMLInputElement).value, "2");
+  failRefresh = false;
+  await f.user.click(f.screen.getByRole("button", { name: "刷新配置状态" }));
+  await f.screen.findByText(/已配置模型访问/);
+  assert.equal((budget as HTMLInputElement).value, "2");
+  await waitFor(() =>
+    assert.equal(f.screen.queryByText(/设置已保存，但配置状态刷新失败/), null),
+  );
+});
+
+test("committed desktop key with failed refresh clears the password and reports pending status", async (t) => {
+  let committed = false;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({
+      saveKey: async () => {
+        committed = true;
+        return { configured: true };
+      },
+    }),
+    apiHandler: (path) => {
+      if (path !== "/settings") return undefined;
+      if (committed) throw Error("合成状态读取失败");
+      return settings;
+    },
+  });
+  const password = await f.screen.findByLabelText("桌面密钥");
+  await f.user.type(password, "sk-synthetic-pending");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.screen.findByText(/桌面密钥已加密保存，但配置状态刷新失败/);
+  assert.equal((password as HTMLInputElement).value, "");
+  assert.equal(f.screen.queryByText("桌面密钥已加密保存"), null);
+  assert.equal(f.screen.queryByText(/已配置模型访问/), null);
+  assert.ok(f.screen.getByRole("button", { name: "刷新配置状态" }));
+});
+
+test("cancelled desktop receipt and rejected deletion never show success", async (t) => {
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({
+      saveKey: async () => ({ configured: true, cancelled: true }),
+      deleteKey: async () => {
+        throw Error("合成删除失败");
+      },
+    }),
+    apiHandler: (path) => (path === "/settings" ? settings : undefined),
+  });
+  const password = await f.screen.findByLabelText("桌面密钥");
+  await f.user.type(password, "sk-synthetic-cancelled");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.screen.findByText(/未收到桌面密钥保存确认/);
+  assert.equal((password as HTMLInputElement).value, "sk-synthetic-cancelled");
+  await f.user.click(f.screen.getByRole("button", { name: "清除桌面 Key" }));
+  await f.screen.findByText("合成删除失败");
+  assert.equal(f.screen.queryByText("桌面密钥已加密保存"), null);
+  assert.equal(f.screen.queryByText("桌面密钥已清除"), null);
+});
+
+test("a late mount read cannot overwrite the refresh after desktop commit", async (t) => {
+  const initial = deferred<typeof settings>();
+  let reads = 0;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    strictMode: true,
+    desktopBridge: desktopBridge(),
+    apiHandler: (path, options) => {
+      if (path !== "/settings") return undefined;
+      if (!reads++) return initial.promise;
+      if (!options.signal?.aborted && reads === 2) return initial.promise;
+      return {
+        ...settings,
+        model: {
+          ...settings.model,
+          configured: true,
+          credentialStatus: "configured",
+        },
+      };
+    },
+  });
+  const password = await f.screen.findByLabelText("桌面密钥");
+  await f.user.type(password, "sk-synthetic-late");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.screen.findByText(/已配置模型访问/);
+  await act(async () => initial.resolve(settings));
+  assert.ok(f.screen.getByText(/已配置模型访问/));
+  assert.equal(f.screen.queryByText(/尚未配置密钥，规则模式可正常使用/), null);
+});
+
+test("model edits entered while a desktop refresh waits survive its response", async (t) => {
+  const refresh = deferred<typeof settings>();
+  let saved = false;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({
+      saveKey: async () => {
+        saved = true;
+        return { configured: true };
+      },
+    }),
+    apiHandler: (path) =>
+      path === "/settings" ? (saved ? refresh.promise : settings) : undefined,
+  });
+  const model = await f.screen.findByLabelText("模型名称");
+  await f.user.type(
+    f.screen.getByLabelText("桌面密钥"),
+    "sk-synthetic-waiting",
+  );
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.user.clear(model);
+  await f.user.type(model, "draft-during-refresh");
+  await act(async () =>
+    refresh.resolve({
+      ...settings,
+      model: { ...settings.model, configured: true },
+    }),
+  );
+  await f.screen.findByText(/已配置模型访问/);
+  assert.equal(f.screen.getByLabelText("模型名称"), model);
+  assert.equal((model as HTMLInputElement).value, "draft-during-refresh");
+});
+
+test("an old desktop completion after unmount cannot refresh or toast in a new page", async (t) => {
+  const receipt = deferred<{ configured: boolean }>();
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({ saveKey: () => receipt.promise }),
+    apiHandler: (path) => (path === "/settings" ? settings : undefined),
+  });
+  await f.user.type(
+    await f.screen.findByLabelText("桌面密钥"),
+    "sk-synthetic-old-page",
+  );
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.remount();
+  const password = await f.screen.findByLabelText("桌面密钥");
+  await f.user.type(password, "sk-new-page-draft");
+  const reads = f.apiCalls.filter((c) => c.path === "/settings").length;
+  await act(async () => receipt.resolve({ configured: true }));
+  assert.equal(f.apiCalls.filter((c) => c.path === "/settings").length, reads);
+  assert.equal((password as HTMLInputElement).value, "sk-new-page-draft");
+  assert.equal(f.screen.queryByText("桌面密钥已加密保存"), null);
+  assert.equal(f.screen.queryByText(/已配置模型访问/), null);
+});
+
+test("unavailable OS encryption and an inconsistent deletion receipt cannot claim success", async (t) => {
+  let saves = 0;
+  const f = await renderApp(t, {
+    route: "#/settings",
+    desktopBridge: desktopBridge({
+      isAvailable: async () => false,
+      saveKey: async () => {
+        saves++;
+        return { configured: true };
+      },
+      deleteKey: async () => ({ configured: true }),
+    }),
+    apiHandler: (path) => (path === "/settings" ? settings : undefined),
+  });
+  const password = await f.screen.findByLabelText("桌面密钥");
+  await f.user.type(password, "sk-synthetic-no-encryption");
+  await f.user.click(
+    f.screen.getByRole("button", { name: "加密保存桌面 Key" }),
+  );
+  await f.screen.findByText("系统加密不可用，不能保存密钥。");
+  assert.equal(saves, 0);
+  await f.user.click(f.screen.getByRole("button", { name: "清除桌面 Key" }));
+  await f.screen.findByText(/桌面密钥尚未清除/);
+  assert.equal(
+    (password as HTMLInputElement).value,
+    "sk-synthetic-no-encryption",
+  );
+  assert.equal(f.screen.queryByText("桌面密钥已加密保存"), null);
+  assert.equal(f.screen.queryByText("桌面密钥已清除"), null);
+});
 
 test("legacy assignment explains the actual record and whitelisted move counts", async (t) => {
   const f = await renderApp(t, {

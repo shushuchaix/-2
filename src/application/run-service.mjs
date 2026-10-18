@@ -1084,200 +1084,21 @@ function createLegacyRunService({
   return service;
 }
 export function createRunService(options) {
+  const repository=options.repository,legacy=createLegacyRunService(options);
+  const formal=repository.getMeta?repository.getMeta('schemaVersion').then(value=>value===3):Promise.resolve(false);
   let collectionService;
-  const legacy = createLegacyRunService(options),
-    instances = new Map();
-  const repository = options.repository,
-    gate =
-      options.operationGate || createWorkspaceOperationGate({ repository });
-  async function instance(scope, runId) {
-    const w = await repository.read();
-    assertScope(w, scope, repository.clock.now());
-    if (runId) assertOwned(w, w.runs[runId], scope.packageId);
-    const selected = exactScope(scope);
-    if (!instances.has(selected.packageId)) {
-      const repo = runtimeRepository(repository, selected);
-      const workspaceService = {
-        ...options.workspaceService,
-        async getTargetRevision(id) {
-          const v = await repo.read();
-          return Object.values(v.targets)
-            .flat()
-            .find((t) => t.revisionId === id);
-        },
-        async getProfileRevision(id) {
-          const v = await repo.read();
-          return Object.values(v.profiles)
-            .flat()
-            .find((p) => p.revisionId === id);
-        },
-      };
-      const jobService = {
-        ...options.jobService,
-        ingestRecords: (input) =>
-          options.jobService.ingestRecords({ ...input, scope: selected }),
-        finalizeCoverage: (input) =>
-          options.jobService.finalizeCoverage({ ...input, scope: selected }),
-      };
-      const evaluationService = {
-        ...options.evaluationService,
-        evaluate: (input) =>
-          options.evaluationService.evaluate({ ...input, scope: selected }),
-      };
-      const eventHub = options.eventHub
-        ? {
-            publish: (id, type, payload) =>
-              options.eventHub.publish(id, type, payload, selected),
-          }
-        : null;
-      instances.set(
-        selected.packageId,
-        createLegacyRunService({
-          ...options,
-          repository: repo,
-          workspaceService,
-          jobService,
-          evaluationService,
-          eventHub,
-          operationGate: runtimeGate(gate, selected),
-        }),
-      );
-    }
-    return instances.get(selected.packageId);
-  }
-  const api = {
-    setCollectionService(value) {
-      collectionService = value;
-    },
-    async startRun(input) {
-      if ((await repository.read()).schemaVersion !== 3)
-        return legacy.startRun(input);
-      if (collectionService)
-        return collectionService.start({
-          scope: input.scope,
-          options: { mode: input.mode || "rules",coverageMode:input.coverageMode },
-          credentials: { ...input.credentials, sourceConfig: options.config },
-        });
-      const service = await instance(input.scope);
-      return service.startRun({
-        ...input,
-        targetRevisionId: input.scope.targetRevisionId,
-      });
-    },
-    async getRun(id, scope) {
-      if ((await repository.read()).schemaVersion !== 3)
-        return legacy.getRun(id);
-      return (await instance(scope, id)).getRun(id);
-    },
-    async listRuns(filters = {}) {
-      const w = await repository.read();
-      if (w.schemaVersion !== 3) return legacy.listRuns(filters);
-      if (!filters.allTargets)
-        return (await instance(filters)).listRuns(filters);
-      return Object.values(w.runs)
-        .filter(
-          (r) =>
-            w.packages[r.ownerPackageId]?.kind === "target" &&
-            r.collectionRole !== "collection_root" &&
-            w.packages[r.ownerPackageId]?.state === "active" &&
-            (!filters.status || r.status === filters.status) &&
-            !r.deletedAt,
-        )
-        .map((r) => ({
-          ...r,
-          scope: {
-            packageId: r.ownerPackageId,
-            targetRevisionId: w.packages[r.ownerPackageId].versionId,
-          },
-          versionName: w.packages[r.ownerPackageId].versionName,
-        }))
-        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    },
-    async cancelRun(id, scope) {
-      if ((await repository.read()).schemaVersion !== 3)
-        return legacy.cancelRun(id);
-      const run = (await repository.read()).runs[id];
-      if (run?.collectionRole === "collection_root") {
-        const w = await repository.read();
-        assertScope(w, scope, repository.clock.now());
-        assertOwned(w, run, scope.packageId);
-        throw packageError(
-          "collection_control_required",
-          "请使用采集活动的暂停或取消操作。",
-        );
-      }
-      if (collectionService && run?.collectionRole === "collection_slice") {
-        assertScope(await repository.read(), scope, repository.clock.now());
-        assertOwned(await repository.read(), run, scope.packageId);
-        await collectionService.cancel({
-          scope,
-          activityId: run.collectionActivityId,
-        });
-        return api.getRun(id, scope);
-      }
-      return (await instance(scope, id)).cancelRun(id);
-    },
-    async waitForRun(id, scope) {
-      if ((await repository.read()).schemaVersion !== 3)
-        return legacy.waitForRun(id);
-      const run = (await repository.read()).runs[id];
-      if (collectionService && run?.collectionRole === "collection_slice") {
-        assertScope(await repository.read(), scope, repository.clock.now());
-        assertOwned(await repository.read(), run, scope.packageId);
-        await collectionService.wait({
-          scope,
-          activityId: run.collectionActivityId,
-        });
-        const current = (await repository.read()).runs[id];
-        if (current.snapshotRef)
-          return {
-            ...(await runtimeRepository(repository, scope).readRunSnapshot(id)),
-            run: current,
-          };
-        if (current.issues.some((i) => i.code === "snapshot_failed"))
-          throw packageError(
-            "snapshot_failed",
-            "运行快照未保存，请查看安全诊断日志。",
-            503,
-          );
-        return {
-          run: current,
-          jobs: [],
-          evaluations: [],
-          events: current.events,
-        };
-      }
-      return (await instance(scope, id)).waitForRun(id);
-    },
-    async cancelPackageAndWait(packageId) {
-      await collectionService?.cancelPackageAndWait(packageId);
-      const w = await repository.read(),
-        pkg = requirePackage(w, packageId, { now: repository.clock.now() });
-      if (pkg.kind !== "target") return;
-      const scope = { packageId, targetRevisionId: pkg.versionId },
-        ids = Object.values(w.runs)
-          .filter(
-            (r) => r.ownerPackageId === packageId && !terminal.has(r.status),
-          )
-          .map((r) => r.runId);
-      for (const id of ids) await api.cancelRun(id, scope);
-      for (const id of ids)
-        if (instances.has(packageId)) await api.waitForRun(id, scope);
-      await gate.recover();
-      for (;;) {
-        const current = await repository.read();
-        if (
-          !Object.values(current.runs).some(
-            (r) => r.ownerPackageId === packageId && !terminal.has(r.status),
-          ) &&
-          !Object.values(current.operationLeases || {}).some((l) =>
-            l.packageIds?.includes(packageId),
-          )
-        )
-          break;
-        await delay(50);
-      }
-    },
+  const getHead=async(id,scope)=>{
+    if(!scope?.packageId||!scope?.targetRevisionId)throw packageError('version_scope_required','请选择准确的目标版本。');
+    const view=await repository.readView({select:[{collection:'runs',ownerPackageId:scope?.packageId,ids:[id]}]},{scope});
+    const run=view.rows.runs?.[id];if(!run||view.indexes.runs?.[id]?.targetRevisionId!==scope?.targetRevisionId)throw packageError('package_scope_mismatch','运行不属于此目标版本。');return {...run,targetSnapshot:{revisionId:view.indexes.runs[id].targetRevisionId}};
   };
-  return api;
+  const api={
+    setCollectionService(value){collectionService=value;},
+    async startRun(input){if(!await formal)return legacy.startRun(input);if(!collectionService)throw packageError('collection_unavailable','持续采集执行器尚未就绪。',503);return collectionService.start({scope:input.scope,options:{mode:input.mode||'rules',coverageMode:input.coverageMode},credentials:{...input.credentials,sourceConfig:options.config}});},
+    async getRun(id,scope){if(!await formal)return legacy.getRun(id);const run=await getHead(id,scope);const view=await repository.readView({select:[{collection:'runIssues',ownerPackageId:scope.packageId,where:{runId:id},limit:50},{collection:'runCoverage',ownerPackageId:scope.packageId,where:{runId:id},limit:200}]},{scope});return {...run,issues:Object.values(view.rows.runIssues||{}),coverage:Object.values(view.rows.runCoverage||{}),scope};},
+    async listRuns(filters={}){if(!await formal)return legacy.listRuns(filters);const scope=filters.scope||(filters.allTargets?undefined:{packageId:filters.packageId,targetRevisionId:filters.targetRevisionId});return (await repository.queryRunHeads({scope,allTargets:filters.allTargets===true,status:filters.status,limit:Math.min(200,filters.limit||200),offset:filters.offset||0})).runs;},
+    async cancelRun(id,scope){if(!await formal)return legacy.cancelRun(id);const run=await getHead(id,scope);if(run.collectionRole==='collection_root')throw packageError('collection_control_required','请使用采集活动的暂停或取消操作。');if(collectionService&&run.collectionRole==='collection_slice'){const response=await collectionService.cancel({scope,activityId:run.collectionActivityId});return {...await api.getRun(id,scope),accepted:response.accepted,draining:response.draining};}if(!terminal.has(run.status))await repository.transaction({select:[{collection:'runs',ownerPackageId:scope.packageId,ids:[id]}]},tx=>{const value=tx.getRow({collection:'runs',id});if(!hasLiveOwner(value)){value.status='interrupted';value.stage='finished';value.finishedAt=new Date(repository.clock.now()).toISOString();tx.putRow({collection:'runs',id,value});}},{scope});return api.getRun(id,scope);},
+    async waitForRun(id,scope){if(!await formal)return legacy.waitForRun(id);const run=await getHead(id,scope);if(collectionService&&run.collectionRole==='collection_slice')await collectionService.wait({scope,activityId:run.collectionActivityId});const current=await api.getRun(id,scope);if(current.snapshotRef){const snapshot=await repository.readRunSnapshot(id,{scope});return {...snapshot,run:{...snapshot.run,...current,targetSnapshot:snapshot.run.targetSnapshot}};}if(current.issues.some(issue=>issue.code==='snapshot_failed'))throw packageError('snapshot_failed','运行快照未保存，请查看安全诊断日志。',503);return {run:current,jobs:[],evaluations:[],events:[]};},
+    async cancelPackageAndWait(packageId){if(!await formal)return;await collectionService?.cancelPackageAndWait(packageId);},
+  };return api;
 }

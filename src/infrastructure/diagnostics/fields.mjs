@@ -74,6 +74,7 @@ const countKeys = [
   "issues",
 ];
 const enums = {
+  hostRole: ["main", "backend", "renderer", "web", "cli", "worker"],
   requestPurpose: [
     "login",
     "login_poll",
@@ -109,6 +110,7 @@ const enums = {
     "ocr",
     "worker",
     "owned",
+    "repository",
   ],
   engine: ["http", "browser", "static", "dynamic", "enhanced"],
   stage: [
@@ -121,6 +123,9 @@ const enums = {
     "finished",
     "startup",
     "interrupted",
+    "storage-opening",
+    "storage-recovering",
+    "business-ready",
   ],
   phase: [
     "started",
@@ -268,6 +273,7 @@ export function cleanRuntime(value) {
   if (typeof value.packaged === "boolean") result.packaged = value.packaged;
   if (/^[a-f0-9]{40}$/.test(String(value.buildId)))
     result.buildId = value.buildId;
+  if (enums.hostRole.includes(value.hostRole)) result.hostRole = value.hostRole;
   return Object.keys(result).length ? result : undefined;
 }
 export function defaultRuntime() {
@@ -279,6 +285,8 @@ export function defaultRuntime() {
     platform: process.platform,
     arch: process.arch,
     osRelease: os.release(),
+    buildId: process.env.RJR_BUILD_ID,
+    hostRole: process.env.RJR_HOST_ROLE || "web",
   });
 }
 export function cleanMetadata(value) {
@@ -303,7 +311,42 @@ export function cleanMetadata(value) {
       "batchSize",
       "revision",
       "errorNumber",
+      "queueDepth",
+      "sqlMs",
+      "lockMs",
+      "storeMs",
+      "transactionReadMs",
+      "transactionStageMs",
+      "transactionWriteRowsMs",
+      "transactionRefsMs",
+      "transactionCommitMs",
+      "maintenanceFlattenMs",
+      "maintenanceBuildMs",
+      "maintenanceWriteRowsMs",
+      "maintenanceRefsMs",
+      "maintenanceCommitMs",
+      "sqlTransactions",
+      "sqlCommits",
+      "sqlRollbacks",
+      "statements",
+      "prepares",
+      "statementCacheHits",
+      "readRows",
+      "writeRows",
+      "decodedRows",
+      "metaReadRows",
+      "metaReadBytes",
+      "serializedRows",
+      "recoveredWrites",
+      "readBytes",
+      "writeBytes",
+      "eventLoopDelayMs",
+      "rssBytes",
+      "pendingRequests",
+      "startupMs",
     ]) || {};
+  if (/^[a-f0-9]{40}$/.test(String(value.buildId)))
+    result.buildId = value.buildId;
   if (
     Number.isInteger(value.httpStatus) &&
     value.httpStatus >= 100 &&
@@ -313,6 +356,7 @@ export function cleanMetadata(value) {
   if (Number.isSafeInteger(value.exitCode)) result.exitCode = value.exitCode;
   if (Number.isSafeInteger(value.errorNumber))
     result.errorNumber = value.errorNumber;
+  if (typeof value.committed === "boolean") result.committed = value.committed;
   for (const key of ["runId", "sourceId", "siteId", "jobId", "code"])
     if (token(value[key])) result[key] = value[key];
   for (const key of ["activityId", "sliceRunId"])
@@ -337,8 +381,16 @@ export function cleanMetadata(value) {
     value.route === safeApiRoute(value.route)
   )
     result.route = value.route;
-  for (const key of ["cacheHit", "hasMore"])
+  for (const key of ["cacheHit", "hasMore", "cleanupComplete"])
     if (typeof value[key] === "boolean") result[key] = value[key];
+  if (Array.isArray(value.failedResources))
+    result.failedResources = [
+      ...new Set(
+        value.failedResources.filter((id) =>
+          enums.shutdownResource.includes(id),
+        ),
+      ),
+    ].slice(0, 16);
   const counts = numbers(value.counts, countKeys);
   if (counts) result.counts = counts;
   const coverage = numbers(value.coverage, [

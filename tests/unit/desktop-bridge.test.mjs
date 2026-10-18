@@ -25,7 +25,7 @@ test("desktop encrypted credentials never return plaintext to renderer", async (
     service,
     getWindow: () => ({ webContents: contents }),
     getOrigin: () => frame.url,
-    onKey: (key) => (changes = key),
+    onKey: async(key)=>{changes=key;return key?service.save('deepseek',key):service.delete('deepseek');},
   });
   const event = { sender: contents, senderFrame: frame };
   const result = await handlers.get("credentials:save")(
@@ -34,7 +34,7 @@ test("desktop encrypted credentials never return plaintext to renderer", async (
     "sk-synthetic-desktop-key",
   );
   assert.deepEqual(result, { configured: true });
-  assert.equal(changes, "sk-synthetic-desktop-key");
+  assert.equal(changes==="sk-synthetic-desktop-key",true);
   const disk = await fs.readFile(
     path.join(dataDir, "credentials.v2.json"),
     "utf8",

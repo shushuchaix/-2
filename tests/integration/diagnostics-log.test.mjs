@@ -1,4 +1,4 @@
-import {namedTargetInput} from '../helpers/fixtures.mjs';
+import { namedTargetInput } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -7,26 +7,26 @@ import { createTempDir, job, profile, target } from "../helpers/fixtures.mjs";
 import { apiFixture } from "../helpers/api-fixture.mjs";
 import { fakeProvider } from "../helpers/fake-sources.mjs";
 import { writeAtomicJson } from "../../src/infrastructure/storage/atomic.mjs";
-import { once } from "node:events";
-import { createServer } from "../../src/server.mjs";
-import { loadConfig } from "../../src/config.mjs";
-import { hashPassword } from "../../src/auth.mjs";
-import { allowLocalOrigin } from "../helpers/network-guard.mjs";
 import {
   createPagedProvider,
   jsonResponse,
 } from "../../src/sources/adapters/shared.mjs";
 import { createLegacyProvider } from "../../src/sources/adapters/legacy.mjs";
+import { createDiagnosticWriteBarrier } from "../helpers/diagnostic-write-barrier.mjs";
 
 async function logger(t, options = {}) {
   const module = await import(
     "../../src/infrastructure/diagnostics/log.mjs"
   ).catch(() => null);
   assert.ok(module, "本地诊断日志模块应存在");
-  return module.createDiagnosticsLog({
-    dataDir: await createTempDir(t),
+  const dataDir = await createTempDir(t);
+  const completion = options.fsAdapter ? null : createDiagnosticWriteBarrier({ dataDir });
+  const log = module.createDiagnosticsLog({
+    dataDir,
+    ...(completion ? { fsAdapter: completion.fsAdapter } : {}),
     ...options,
   });
+  return completion ? { ...log, waitForWrites: completion.waitForWrites } : log;
 }
 
 test("diagnostics survive restart and omit sensitive errors and event payloads", async (t) => {
@@ -56,6 +56,7 @@ test("diagnostics survive restart and omit sensitive errors and event payloads",
     error,
   );
   assert.match(entry.diagnosticId, /^d-/);
+  await log.waitForWrites(1);
   const module = await import("../../src/infrastructure/diagnostics/log.mjs");
   const reopened = module.createDiagnosticsLog({ dataDir: log.dataDir });
   const result = await reopened.list({ runId: "r-test" });
@@ -86,6 +87,7 @@ test("diagnostic rotation is bounded and filtering returns newest task records",
       runId: i % 2 ? "r-first" : "r-second",
       stage: "collecting",
     });
+  await log.waitForWrites(18);
   const result = await log.list({ runId: "r-first", limit: 3 });
   assert.equal(result.entries.length, 3);
   assert.ok(result.entries.every((entry) => entry.runId === "r-first"));
@@ -162,10 +164,12 @@ test("invalid source records have a diagnosed ingest failure rather than a stora
   const f = await apiFixture(t, { providers: [provider] }),
     app = await f.ctx.ready;
   const p = await app.workspaceService.saveProfile({ profile: profile() });
-  const tar = await app.workspaceService.saveTarget(namedTargetInput({
-    ...target(),
-    profileRevisionId: p.revisionId,
-  }));
+  const tar = await app.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: p.revisionId,
+    }),
+  );
   const { runId } = await app.runService.startRun({
     targetRevisionId: tar.revisionId,
   });
@@ -187,10 +191,12 @@ test("failed source-progress persistence is fatal and is not blamed on the provi
   const f = await apiFixture(t),
     app = await f.ctx.ready;
   const p = await app.workspaceService.saveProfile({ profile: profile() });
-  const tar = await app.workspaceService.saveTarget(namedTargetInput({
-    ...target(),
-    profileRevisionId: p.revisionId,
-  }));
+  const tar = await app.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target(),
+      profileRevisionId: p.revisionId,
+    }),
+  );
   const publish = app.eventHub.publish;
   let failed = false;
   app.eventHub.publish = (...args) => {
@@ -256,23 +262,10 @@ test("atomic write preserves the primary failure and exposes the failed write ph
 });
 
 test("log viewing and export require the same login as the workspace", async (t) => {
-  const dataDir = await createTempDir(t),
-    cfg = loadConfig({ quiet: true, dataDir });
-  cfg.auth.mode = "password";
-  cfg.auth.passwordHash = hashPassword("synthetic-test-password");
-  const { server, ready } = createServer(cfg, { dataDir });
-  await ready;
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const origin = "http://127.0.0.1:" + server.address().port;
-  allowLocalOrigin(origin);
-  t.after(async () => {
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
-  });
+  const fixture = await apiFixture(t, { authRequired: true });
   for (const suffix of ["", "/export"])
     assert.equal(
-      (await fetch(origin + "/api/v2/diagnostics/logs" + suffix)).status,
+      (await fixture.call("/api/v2/diagnostics/logs" + suffix)).response.status,
       401,
     );
 });
@@ -285,6 +278,7 @@ test("reading a damaged log rejects injected private fields and skips invalid li
     stage: "details",
   });
   const file = path.join(log.dataDir, "logs", "application.log");
+  await log.waitForWrites(1);
   await fs.writeFile(
     file,
     "invalid-json\n" +
@@ -314,10 +308,12 @@ test("caught paged HTTP errors keep status and diagnostic ids in collection and 
   const f = await apiFixture(t, { providers: [provider] }),
     app = await f.ctx.ready;
   const p = await app.workspaceService.saveProfile({ profile: profile() });
-  const tar = await app.workspaceService.saveTarget(namedTargetInput({
-    ...target({ sourceIds: ["ncss"] }),
-    profileRevisionId: p.revisionId,
-  }));
+  const tar = await app.workspaceService.saveTarget(
+    namedTargetInput({
+      ...target({ sourceIds: ["ncss"] }),
+      profileRevisionId: p.revisionId,
+    }),
+  );
   const { runId } = await app.runService.startRun({
     targetRevisionId: tar.revisionId,
   });

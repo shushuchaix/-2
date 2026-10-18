@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {assertScope} from '../domain/packages.mjs';
+import { readOwnedTarget } from './job-row-access.mjs';
+import { rowKey } from '../infrastructure/storage/sqlite-records.mjs';
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
 import { assertInput, inputError } from "../../public/js/validation-rules.js";
 import { parseHTML } from "linkedom";
@@ -28,7 +30,9 @@ export function createImportService({
 }) {
   return {
     async import(input, { scope, operationLease: parentLease, signal } = {}) {
-      const initial=await repository.read();if(initial.schemaVersion===3){assertScope(initial,scope,clock.now());input={...input,targetRevisionId:scope.targetRevisionId};}
+      const schemaVersion=await repository.getMeta('schemaVersion');
+      const targetContext=schemaVersion===3?await readOwnedTarget(repository,scope,clock.now()):null;
+      if(schemaVersion===3)input={...input,targetRevisionId:scope.targetRevisionId};
       assertInput("import", input);
       return operationGate.withOperation(
         "import",
@@ -111,7 +115,13 @@ export function createImportService({
             ],
           });
           const runId="import-"+randomUUID();
-          if(initial.schemaVersion===3)await repository.mutateWorkspace(w=>{assertScope(w,scope,clock.now());w.runs[runId]={runId,recordId:randomUUID(),ownerPackageId:scope.packageId,targetSnapshot:structuredClone(Object.values(w.targets).flat().find(t=>t.revisionId===scope.targetRevisionId)),status:'completed',stage:'manual_import',events:[],lastSeq:0};},{operationLease});
+          if(schemaVersion===3)await repository.transaction({select:[
+            {collection:'runs',ownerPackageId:scope.packageId,ids:[runId]},
+            {collection:'runSnapshots',ownerPackageId:scope.packageId,ids:[rowKey(runId,'targetSnapshot','value')]},
+          ]},tx=>{
+            tx.putRow({collection:'runs',id:runId,ownerPackageId:scope.packageId,targetRevisionId:scope.targetRevisionId,value:{runId,recordId:randomUUID(),ownerPackageId:scope.packageId,status:'completed',stage:'manual_import',lastSeq:0}});
+            tx.putRow({collection:'runSnapshots',id:rowKey(runId,'targetSnapshot','value'),ownerPackageId:scope.packageId,parent:{collection:'runs',id:runId,path:'targetSnapshot'},ordinal:0,value:structuredClone(targetContext.target)});
+          },{scope,operationLease});
           const result = await jobService.ingestRecords({
             runId,
             scope,
@@ -119,10 +129,11 @@ export function createImportService({
             observedAt: at,
             targetRevisionId: input.targetRevisionId,
             provenanceOperationId: operationLease.operationId,
+            operationLease,
           });
           if (Object.hasOwn(input, "note"))
             for (const id of result.jobIds)
-              await jobService[initial.schemaVersion===3?'updateJobApplication':'updateApplication'](id, {
+              await jobService[schemaVersion===3?'updateJobApplication':'updateApplication'](id, {
                 note: String(input.note),
               },scope);
           issues.push({

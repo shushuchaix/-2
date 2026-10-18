@@ -320,7 +320,7 @@ test('desktop inspector rejects a 32px dropdown trigger and accepts its 44px fix
 test('expiry screenshot waits for closed Sheet content and backdrop to stop painting', () => {
   const source = fs.readFileSync(new URL('../../electron/self-test.mjs',import.meta.url),'utf8');
   const expiry = source.slice(source.indexOf('await phase("回收站到期'),source.indexOf('await phase("减少动效'));
-  const expression = expiry.match(/await wait\("([^"\n]*data-slot=sheet-content[^"\n]*)"\)/)?.[1];
+  const expression = expiry.match(/await wait\(\s*"([^"\n]*data-slot=sheet-content[^"\n]*)"\s*,?\s*\)/)?.[1];
   assert.ok(expression, 'expiry capture must wait for both actual Sheet surfaces, not just the transient expired message');
   assert.ok(expiry.indexOf(expression) < expiry.indexOf('await capture("trash-expired.png"'));
   let painted = true;

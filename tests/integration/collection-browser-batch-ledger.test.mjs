@@ -6,13 +6,12 @@ import { createBrowserWindowBudget } from "../../electron/collection/window-budg
 async function fixture(t, limits = {}) {
   const f = await collectionFixture(t, { limits }),
     c = await f.openCommit();
-  let writes = 0;
-  const mutate = f.repository.mutateWorkspace;
-  f.repository.mutateWorkspace = (...args) => {
-    writes++;
-    return mutate(...args);
+  const commitBaseline = f.repository.metrics().commits;
+  return {
+    ...f,
+    ...c,
+    writes: () => f.repository.metrics().commits - commitBaseline,
   };
-  return { ...f, ...c, writes: () => writes };
 }
 const reservations = () => [
   {

@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import { assertSourceRecord } from "../domain/contracts.mjs";
+import { normalizeRecord } from "../domain/record.mjs";
+import {
+  conditionalPageRequest,
+  persistConditionalPage,
+} from "../infrastructure/http/collection-conditional-request.mjs";
 const error = (code) => Object.assign(Error(code), { code });
 function finite(value, depth = 0) {
   if (depth > 8) throw error("collection_cursor_invalid");
@@ -55,18 +60,30 @@ export async function readProviderPage(provider, input) {
     typeof provider.collectPage === "function" &&
     provider.capabilities?.resumablePages !== false;
   if (!resumable && cursor !== null) throw error("pagination_not_supported");
-  const result = resumable
-    ? await provider.collectPage({ ...input, cursor })
-    : await provider.collect({
-        ...input.context,
-        scope: input.scope,
-        site: input.site,
-        sites: [input.site],
-        queries: [input.query || {}],
-        request: input.request || input.context?.request,
-        signal: input.signal || input.context?.signal,
-        onBatch: undefined,
-      });
+  const conditional = conditionalPageRequest(input, provider);
+  input = {
+    ...input,
+    request: conditional.request,
+    context: { ...input.context, request: conditional.request },
+  };
+  let result;
+  try {
+    result = resumable
+      ? await provider.collectPage({ ...input, cursor })
+      : await provider.collect({
+          ...input.context,
+          scope: input.scope,
+          site: input.site,
+          sites: [input.site],
+          queries: [input.query || {}],
+          request: input.request || input.context?.request,
+          signal: input.signal || input.context?.signal,
+          onBatch: undefined,
+        });
+  } catch (error) {
+    if (!conditional.isUnmodified(error)) throw error;
+    result = error.result;
+  }
   input.signal?.throwIfAborted();
   if (!result || !Array.isArray(result.records))
     throw error("collection_page_invalid");
@@ -75,7 +92,7 @@ export async function readProviderPage(provider, input) {
   for (const record of result.records) {
     try {
       assertSourceRecord(record);
-      records.push(record);
+      records.push(normalizeRecord(record));
     } catch {
       issues.push({
         code: "invalid_record",
@@ -105,7 +122,7 @@ export async function readProviderPage(provider, input) {
       input.site?.siteId +
       "/" +
       digest(JSON.stringify(ordered(input.query || {})));
-  return {
+  const page = {
     ...result,
     records,
     issues,
@@ -116,5 +133,10 @@ export async function readProviderPage(provider, input) {
     parserVersion,
     resumablePages: resumable,
     pageKey: digest(JSON.stringify([unitId, cursorHash, parserVersion])),
+    ...(conditional.latest()
+      ? { conditionalResponse: conditional.latest() }
+      : {}),
   };
+  await persistConditionalPage(input, page);
+  return page;
 }

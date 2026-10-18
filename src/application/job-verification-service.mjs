@@ -11,6 +11,8 @@ import {
 import { validatePublicUrl } from "../infrastructure/http/public-url.mjs";
 import { loadSiteCatalog } from "../sources/catalog.mjs";
 import { randomUUID } from "node:crypto";
+import { createPackageJobService } from './package-job-service.mjs';
+import { readOwnedTarget } from './job-row-access.mjs';
 export function createJobVerificationService({
   repository,
   registry,
@@ -19,9 +21,11 @@ export function createJobVerificationService({
 }) {
   return {
     async verifyJob({ scope, jobId, ref }) {
-      const before = await repository.read(),
-        pkg = assertScope(before, scope, clock.now());
-      assertOwned(before, before.jobs[jobId], scope.packageId);
+      const jobs = createPackageJobService({ repository, clock });
+      await readOwnedTarget(repository, scope, clock.now());
+      const pkg = await repository.getRow({ collection: 'packages', id: scope.packageId }, { scope });
+      const before = await jobs.getJob(jobId, scope);
+      const settings = Object.fromEntries((await repository.queryRows({ collection: 'settings', ids: ['customSites', 'sourceOverrides'] })).rows.map(row => [row.id, row.value]));
       if (
         !ref ||
         ref.scope?.packageId !== scope.packageId ||
@@ -33,10 +37,7 @@ export function createJobVerificationService({
           "岗位核验需使用本版本采集活动的累计额度。",
           409,
         );
-      const fact = selectVersionJobFact(before, {
-        targetRevisionId: scope.targetRevisionId,
-        jobId,
-      });
+      const fact = before.fact;
       if (!fact.record)
         throw packageError(
           "version_fact_unavailable",
@@ -47,7 +48,7 @@ export function createJobVerificationService({
         ctx.signal?.throwIfAborted();
         let record = fact.record;
         const provider = registry.get(record.sourceId),
-          sites = loadSiteCatalog({ customSites: before.settings.customSites });
+          sites = loadSiteCatalog({ customSites: settings.customSites });
         const didFetchDetail = typeof provider?.fetchDetail === "function";
         if (didFetchDetail)
           record = await provider.fetchDetail(record, {
@@ -57,7 +58,7 @@ export function createJobVerificationService({
             clock,
             sites,
             config: {
-              ...before.settings.sourceOverrides[provider.id],
+              ...settings.sourceOverrides?.[provider.id],
               ...pkg.collectionSettings?.sourceOverrides[provider.id],
             },
             sessionRefs: pkg.collectionSettings?.sessionRefs || {},
@@ -97,39 +98,12 @@ export function createJobVerificationService({
           { ...record, retrievedAt: checkedAt },
           clock.now(),
         );
-        await repository.mutateWorkspace(
-          (w) => {
-            ctx.signal?.throwIfAborted();
-            assertScope(w, scope, clock.now());
-            assertOwned(w, w.jobs[jobId], scope.packageId);
-            assertCollectionWrite(w, ctx.collectionGuard);
-            const result = ingestRecordsDraft(w, {
-              scope,
-              runId: ctx.token.sliceRunId,
-              records: [record],
-              observedAt: checkedAt,
-              provenanceOperationId: "verify:" + ref.activityId,
-            });
-            if (result.jobIds[0] !== jobId)
-              throw packageError(
-                "verification_identity_conflict",
-                "核验发现岗位身份或条件冲突，请保留原记录并单独复核。",
-                409,
-              );
-            const application = Object.values(w.applications).find(
-              (a) => a.jobId === jobId && a.ownerPackageId === scope.packageId,
-            );
-            if (application)
-              application.events.push({
-                recordId: randomUUID(),
-                ownerPackageId: scope.packageId,
-                type: "recruitment_verified",
-                at: checkedAt,
-                evidence: record.recruitmentEvidence,
-              });
-          },
-          { operationLease: ctx.operationLease },
-        );
+        ctx.signal?.throwIfAborted();
+        await jobs.ingestRecords({ scope, runId: ctx.token.sliceRunId, records: [record], observedAt: checkedAt,
+          provenanceOperationId: 'verify:' + ref.activityId, expectedJobId: jobId,
+          operationLease: ctx.operationLease, collectionGuard: ctx.collectionGuard,
+          applicationEvent: { type: 'recruitment_verified', at: checkedAt, evidence: record.recruitmentEvidence },
+        });
         return {
           jobId,
           recruitmentEvidence: record.recruitmentEvidence,

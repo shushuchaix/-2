@@ -7,6 +7,7 @@ import {
   assertWorkspace,
 } from "../../src/domain/contracts.mjs";
 import { tempRepository } from "../helpers/repository.mjs";
+import { createTempDir, registerTestResource } from '../helpers/fixtures.mjs';
 import { openWorkspaceRepository } from "../../src/infrastructure/storage/repository.mjs";
 import { openPackageControl } from "../../src/infrastructure/storage/package-control.mjs";
 import { normalizeBackupOwnership } from "../../src/infrastructure/storage/package-migration.mjs";
@@ -109,18 +110,20 @@ export async function seedLegacy(
   t,
   { workspace = legacyWorkspace(), failPhase } = {},
 ) {
-  const repository = await tempRepository(t);
+  const dataDir = await createTempDir(t);
   await fs.writeFile(
-    path.join(repository.dataDir, "workspace.v2.json"),
+    path.join(dataDir, "workspace.v2.json"),
     JSON.stringify(workspace),
   );
   const adapter = failOnce(fs);
-  if (failPhase) adapter.arm(failPhase);
   const repo = await openWorkspaceRepository({
     allowLegacy: true,
-    dataDir: repository.dataDir,
+    dataDir,
     fsAdapter: adapter,
+    faultInjector: adapter.faultInjector,
   });
+  registerTestResource(t,()=>repo.close());
+  if (failPhase) adapter.arm(failPhase);
   return {
     repository: repo,
     dataDir: repo.dataDir,
@@ -474,6 +477,7 @@ test("failed main migration commit retains legacy and prepared identities for re
     allowLegacy: true,
     dataDir: f.dataDir,
   });
+  registerTestResource(t,()=>repo.close());
   await bootstrapWorkspace({
     repository: repo,
     clock: { now: () => new Date("2026-10-10T00:00:00.000Z") },

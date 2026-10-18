@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { tempRepository } from "../helpers/repository.mjs";
 import {
@@ -9,6 +8,7 @@ import {
   target,
   namedTargetInput,
   AT,
+  registerTestResource,
 } from "../helpers/fixtures.mjs";
 import { createWorkspaceService } from "../../src/application/workspace-service.mjs";
 import { createJobService } from "../../src/application/job-service.mjs";
@@ -243,27 +243,22 @@ test("note changes, forged selections, backup failure and atomic commit failure 
   await repository.mutateWorkspace((w) => {
     delete w.runs.missing;
   });
-  let failed = false;
+  let failed = false, failureRevision;
   const faulty = await openWorkspaceRepository({allowLegacy:true,
     dataDir: repository.dataDir,
-    fsAdapter: {
-      ...fs,
-      rename: async (from, to) => {
-        if (!failed && to.endsWith("workspace.v2.json")) {
-          const body = JSON.parse(await fs.readFile(from, "utf8"));
-          if (Object.keys(body.jobs).length === 1) {
-            failed = true;
-            throw Object.assign(Error("synthetic commit failure"), {
-              code: "EIO",
-            });
-          }
-        }
-        return fs.rename(from, to);
-      },
+    faultInjector: (phase, context) => {
+      // The lease acquisition commits first; fail the cleanup's SQLite commit
+      // after its deletion writes, while SQLite can still roll everything back.
+      if (!failed && phase === "sqlite.beforeCommit" && context.revision === failureRevision) {
+        failed = true;
+        throw Object.assign(Error("synthetic commit failure"), { code: "EIO" });
+      }
     },
   });
+  registerTestResource(t, () => faulty.close());
   const faultyService = await cleanup(faulty);
   preview = await faultyService.preview();
+  failureRevision = preview.workspaceRevision + 2;
   const before = await repository.read();
   await assert.rejects(
     faultyService.apply({
@@ -272,8 +267,11 @@ test("note changes, forged selections, backup failure and atomic commit failure 
     }),
     /synthetic commit/,
   );
+  assert.equal(failed, true, "the cleanup transaction must reach the real SQLite commit fault");
   const after = await repository.read();
   assert.equal(contentHash(after.jobs), contentHash(before.jobs));
+  for (const key of ["applications", "observations", "evaluations", "targetMembers", "identityAliases", "jobRedirects", "dedupOperations"])
+    assert.deepEqual(after[key], before[key], key + " must roll back with deleted jobs");
   assert.deepEqual(after.operationLeases, {});
 });
 test("empty cleanup has exact zero deletion counts", async (t) => {

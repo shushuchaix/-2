@@ -1,0 +1,44 @@
+[
+  {
+    "institutionName": "国家大学生就业服务平台",
+    "homepage": "https://main.ncss.cn/student/jobs/index.html",
+    "evidenceUrl": "https://main.ncss.cn/student/jobs/index.html",
+    "channel": "official_platform"
+  },
+  {
+    "institutionName": "贵州民航产业集团有限公司",
+    "homepage": "https://www.gz-gcac.com/",
+    "evidenceUrl": "https://www.gz-gcac.com/srecruitment.html",
+    "channel": "official_airport_announcements"
+  },
+  {
+    "institutionName": "成都双流国际机场股份有限公司",
+    "homepage": "https://www.cdairport.com/",
+    "evidenceUrl": "https://www.cdairport.com/announcement.aspx?page=4&t=60",
+    "channel": "official_airport_announcements"
+  },
+  {
+    "institutionName": "集信国控安评消防（茂名）有限公司",
+    "homepage": "https://www.xyjiance.cn/",
+    "evidenceUrl": "https://www.xyjiance.cn/news.asp",
+    "channel": "official_group_announcements"
+  },
+  {
+    "institutionName": "连云港港口集团有限公司消防救援技术（咨询）服务分公司",
+    "homepage": "https://www.lygport.com.cn/",
+    "evidenceUrl": "https://www.lygport.com.cn/gb2312/renliziyuan/rencaizhaopin/",
+    "channel": "official_group_announcements"
+  },
+  {
+    "institutionName": "常州国际机场集团有限公司",
+    "homepage": "https://czjc.changzhou.gov.cn/",
+    "evidenceUrl": "https://czjc.changzhou.gov.cn/class/KHBDKLPQ",
+    "channel": "official_airport_announcements"
+  },
+  {
+    "institutionName": "国泰应急产业集团有限公司",
+    "homepage": "https://www.guotaigroup.com.cn/",
+    "evidenceUrl": "https://www.guotaigroup.com.cn/rlzy/rlzy.asp",
+    "channel": "official_employer_careers"
+  }
+]

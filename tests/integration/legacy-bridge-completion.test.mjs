@@ -1,0 +1,114 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID,createHash} from 'node:crypto';
+import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {packageBusinessFixture} from '../helpers/package-business-fixture.mjs';
+import {job,registerTestResource} from '../helpers/fixtures.mjs';
+import {resolveApplicationAssociation} from '../../src/domain/job-resolution.mjs';
+import {handlePackageBusinessRequest} from '../../src/server/package-business-routes.mjs';
+import {createDiagnosticsLog} from '../../src/infrastructure/diagnostics/log.mjs';
+import {openWorkspaceRepository} from '../../src/infrastructure/storage/repository.mjs';
+import {exportLegacyOwner} from '../../src/application/legacy-bridge.mjs';
+
+const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const noMaintenance=repository=>{for(const key of ['maintenanceReads','maintenanceMutations','maintenanceTransactions','maintenanceExports','maintenanceImports'])assert.equal(repository.metrics()[key],0,key);};
+
+test('legacy seeds resolve missing then single then ambiguous in the same ingest fact transaction',async t=>{
+ const f=await packageBusinessFixture(t),{a}=await f.twoTargets(),[anchor]=await f.ingest(a,[job({sourceRecordId:'anchor',url:'https://jobs.example.com/anchor',company:'锚点公司',title:'历史锚点岗位'})]),runId='seed-incremental',applicationId='seed-manual';
+ await f.repository.mutateWorkspace(w=>{
+  const target=Object.values(w.targets).flat().find(item=>item.revisionId===a.targetRevisionId);
+  w.runs[runId]={runId,recordId:randomUUID(),ownerPackageId:a.packageId,targetSnapshot:structuredClone(target),status:'completed',events:[],lastSeq:0,createdAt:new Date(f.clock.now()).toISOString()};
+  w.applications[applicationId]={applicationId,recordId:randomUUID(),ownerPackageId:a.packageId,jobId:anchor,legacyJobIds:['arrives-later'],status:'applied',note:'retained raw seed',events:[]};
+ });
+ const rawBefore=await f.repository.getRow({collection:'applications',id:applicationId,ownerPackageId:a.packageId},{scope:a});
+ const seedRows=()=>f.repository.queryRows({collection:'jobRelations',ownerPackageId:a.packageId,where:{kind:'legacy_application_seed'}},{scope:a});
+ assert.equal((await seedRows()).rows.length,1,'unresolved raw aliases receive their seed');
+ assert.equal((await f.jobs.getApplication(applicationId,a)).association.status,'missing');
+ f.repository.metrics({reset:true});
+ const first=(await f.jobs.ingestRecords({runId,scope:a,records:[job({id:'arrives-later'})]})).jobIds[0];
+ assert.equal((await f.jobs.getApplication(applicationId,a)).association.status,'single');
+ assert.equal((await f.jobs.getJob(first,a)).application.status,'applied');
+ assert.equal((await f.jobs.queryJobs({packageId:a.packageId,targetRevisionId:a.targetRevisionId,status:'applied'})).total,1);
+ noMaintenance(f.repository);
+ const firstView=await exportLegacyOwner(f.repository,a);
+ assert.equal(resolveApplicationAssociation(firstView,firstView.applications[applicationId]).status,'single');
+ f.repository.metrics({reset:true});
+ f.armFailure('previous_commit');
+ const secondRecord=job({id:'arrives-later',sourceRecordId:'other',url:'https://jobs.example.com/other',company:'另一家合成公司',title:'机场消防检修岗位'});
+ await assert.rejects(f.jobs.ingestRecords({runId,scope:a,records:[secondRecord]}),/synthetic storage failure/);
+ assert.equal((await f.jobs.getApplication(applicationId,a)).association.status,'single');
+ assert.equal((await f.jobs.queryJobs({packageId:a.packageId,targetRevisionId:a.targetRevisionId,status:'applied'})).total,1,'failed fact commit preserves the prior projection');
+ const second=(await f.jobs.ingestRecords({runId,scope:a,records:[secondRecord]})).jobIds[0];
+ assert.notEqual(first,second);
+ const associated=(await f.jobs.getApplication(applicationId,a)).association;
+ assert.equal(associated.status,'ambiguous');assert.deepEqual(associated.jobIds.sort(),[first,second].sort());
+ assert.equal((await f.jobs.getJob(first,a)).application.status,'new');
+ assert.equal((await f.jobs.getJob(second,a)).application.status,'new');
+ assert.equal((await f.jobs.queryJobs({packageId:a.packageId,targetRevisionId:a.targetRevisionId,status:'applied'})).total,0);
+ assert.deepEqual(await f.repository.getRow({collection:'applications',id:applicationId,ownerPackageId:a.packageId},{scope:a}),rawBefore);
+ noMaintenance(f.repository);
+ const finalView=await exportLegacyOwner(f.repository,a),domain=resolveApplicationAssociation(finalView,finalView.applications[applicationId]);
+ assert.equal(domain.status,associated.status);assert.deepEqual(domain.jobIds.sort(),associated.jobIds.sort());
+ await f.reopen();assert.equal((await f.jobs.getApplication(applicationId,a)).association.status,'ambiguous');
+});
+
+test('diagnostic routes authorize only retained candidates in bounded batches and share one opaque scan',async t=>{
+ const f=await packageBusinessFixture(t),{a,b}=await f.twoTargets();await f.ingest(a,[job()]);await f.ingest(b,[job()]);
+ const runA=(await f.repository.queryIds({collection:'runs',ownerPackageId:a.packageId},{scope:a})).ids[0],runB=(await f.repository.queryIds({collection:'runs',ownerPackageId:b.packageId},{scope:b})).ids[0];
+ const logger=createDiagnosticsLog({dataDir:f.dataDir,clock:f.clock});
+ await logger.record({operation:'application.migration',level:'info'});
+ await logger.record({operation:'private.synthetic',level:'info'});
+ await logger.record({operation:'application.start',ownerPackageId:b.packageId,level:'info'});
+ for(let i=0;i<405;i++)await logger.record({operation:'legacy.synthetic',runId:'absent-retained-run-'+i,level:'info'});
+ await logger.record({operation:'legacy.synthetic',runId:runA,level:'info'});
+ f.clock.advance(1000);await logger.record({operation:'legacy.synthetic',runId:runB,level:'info'});
+ const original=f.repository.queryDiagnosticRunScopes,batches=[];
+ const repository=new Proxy(f.repository,{get(target,key){if(['queryRows','queryIds','discoverLegacyOwners'].includes(key))return ()=>{throw Error('unbounded owner or historical run discovery');};if(key==='queryDiagnosticRunScopes')return async(input,options)=>{batches.push(input.runIds.length);return original(input,options);};return Reflect.get(target,key);}});
+ let scans=0,lastToken,response;
+ const diagnostics={async captureReadSnapshot(){scans++;lastToken=await logger.captureReadSnapshot();return lastToken;},async list(options){assert.equal(options.readSnapshot,lastToken);return logger.list(options);},async exportText(options){assert.equal(options.readSnapshot,lastToken);return logger.exportText(options);}};
+ const context={repository,diagnostics,http:{json(req,res,status,data){response=data;}}};
+ await handlePackageBusinessRequest({method:'GET',url:'/api/v2/diagnostics/logs?allTargets=true&limit=1'},{},context);
+ assert.equal(scans,1);assert.equal(response.entries.length,1);assert.equal(response.entries[0].runId,runB);assert.ok(batches.every(n=>n<=200));assert.ok(batches.filter(n=>n===200).length>=2);
+ await f.trash.archive({packageId:b.packageId});
+ await handlePackageBusinessRequest({method:'GET',url:'/api/v2/diagnostics/logs?allTargets=true'},{},context);
+ assert.deepEqual(response.entries.map(entry=>entry.operation).sort(),['application.migration','http.request']);
+ assert.equal(response.entries.find(entry=>entry.runId).runId,runA);
+ let exported;
+ await handlePackageBusinessRequest({method:'GET',url:'/api/v2/diagnostics/logs/export?allTargets=true'},{writeHead(){},end(value){exported=value;}},context);
+ assert.match(exported,/application.migration/);assert.doesNotMatch(exported,/private.synthetic/);assert.doesNotMatch(exported,new RegExp(runB));
+ const selected='?packageId='+a.packageId+'&targetRevisionId='+encodeURIComponent(a.targetRevisionId);
+ await handlePackageBusinessRequest({method:'GET',url:'/api/v2/diagnostics/logs'+selected},{},context);assert.deepEqual(response.entries.map(entry=>entry.runId),[runA]);
+ for(const input of ['readSnapshot=x','runIds=x','includeRuntimeGlobals=true'])await assert.rejects(handlePackageBusinessRequest({method:'GET',url:'/api/v2/diagnostics/logs'+selected+'&'+input},{},context),{code:'invalid_input'});
+ await assert.rejects(handlePackageBusinessRequest({method:'GET',url:'/api/v2/diagnostics/logs'+selected+'&runId='+runB},{},context));
+});
+
+test('empty workspace allTargets diagnostics retain migration globals and hide unowned private entries',async t=>{
+ const f=await packageBusinessFixture(t),logger=createDiagnosticsLog({dataDir:f.dataDir,clock:f.clock});
+ await logger.record({operation:'application.migration',level:'info'});await logger.record({operation:'boss.session.private',level:'info'});
+ let response;const context={repository:f.repository,diagnostics:logger,http:{json(req,res,status,data){response=data;}}};
+ await handlePackageBusinessRequest({method:'GET',url:'/api/v2/diagnostics/logs?allTargets=true'},{},context);
+ assert.deepEqual(response.entries.map(entry=>entry.operation),['application.migration']);
+});
+
+for(const boundary of ['control-prepared','sql-published','control-complete'])test('generation 3 reopens to seed metadata v4 after '+boundary+' without changing business JSON',async t=>{
+ const f=await packageBusinessFixture(t),{a}=await f.twoTargets(),[id]=await f.ingest(a,[job()]);
+ await f.repository.mutateWorkspace(w=>{w.applications.historical={applicationId:'historical',recordId:randomUUID(),ownerPackageId:a.packageId,jobId:id,legacyJobIds:['redirect-old'],status:'applied',events:[]};w.jobRedirects['redirect-old']={fromJobId:'redirect-old',toJobId:id,ownerPackageId:a.packageId,operationId:'generation-test'};});
+ await f.repository.close();
+ const filename=path.join(f.dataDir,'workspace.sqlite'),old=new DatabaseSync(filename);
+ old.prepare("DELETE FROM row_refs WHERE collection='jobRelations' AND id IN (SELECT id FROM rows WHERE collection='jobRelations' AND kind='legacy_application_seed')").run();
+ old.prepare("DELETE FROM rows WHERE collection='jobRelations' AND kind='legacy_application_seed'").run();
+ old.prepare("UPDATE rows SET kind=NULL,resource_key=NULL WHERE collection='jobRedirects'").run();
+ old.prepare("UPDATE store_meta SET value='3' WHERE key='jobReadModelVersion'").run();
+ const business=old.prepare("SELECT collection,id,value FROM rows WHERE collection NOT IN ('jobProjections','jobIdentityKeys','jobFactBasis','jobRelations','budgetUsage','activityMetrics') ORDER BY collection,id").all(),beforeHash=digest(business),source=old.prepare("SELECT value FROM store_meta WHERE key='migrationSourceHash'").get();old.close();
+ await assert.rejects(openWorkspaceRepository({dataDir:f.dataDir,faultInjector(stage){if(stage==='read-model.'+boundary)throw Object.assign(Error('v3 generation fault'),{code:'v3_generation_fault'});}}),{code:'v3_generation_fault'});
+ const repository=await openWorkspaceRepository({dataDir:f.dataDir});registerTestResource(t,()=>repository.close());
+ assert.equal(await repository.getMeta('jobReadModelVersion'),4);assert.equal((await repository.readControl()).migrationJournal.readModels.phase,'complete');
+ const raw=new DatabaseSync(filename);registerTestResource(t,()=>raw.close());
+ assert.equal(digest(raw.prepare("SELECT collection,id,value FROM rows WHERE collection NOT IN ('jobProjections','jobIdentityKeys','jobFactBasis','jobRelations','budgetUsage','activityMetrics') ORDER BY collection,id").all()),beforeHash);
+ assert.deepEqual(raw.prepare("SELECT value FROM store_meta WHERE key='migrationSourceHash'").get(),source);
+ assert.deepEqual({...raw.prepare("SELECT kind,resource_key FROM rows WHERE collection='jobRedirects' AND id='redirect-old'").get()},{kind:'job_redirect',resource_key:id});
+ const application=await repository.queryLegacyApplicationPage({...a,applicationIds:['historical'],includeResolved:true},{scope:a});assert.equal(application.items[0].association.status,'single');
+ const seeds=raw.prepare("SELECT parent_collection,parent_id FROM rows WHERE collection='jobRelations' AND kind='legacy_application_seed'").all();assert.deepEqual(seeds.map(item=>({...item})),[{parent_collection:'applications',parent_id:'historical'}]);
+ assert.deepEqual(raw.prepare('PRAGMA foreign_key_check').all(),[]);
+});

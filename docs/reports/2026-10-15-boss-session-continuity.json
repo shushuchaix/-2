@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-14T16:16:29.139Z",
+  "scope": "boss_owned_session_continuity",
+  "evidence": {
+    "humanLoginIncomplete": true,
+    "newReferenceDetachedPreviousSavedMaterial": true,
+    "versionRiskWasHiddenByReferenceReplacement": true,
+    "dnsObservedDurationMsRange": [
+      4239,
+      14722
+    ],
+    "observedManualRequestRange": [
+      19,
+      33
+    ],
+    "manualRequestCap": 60,
+    "manualCapWasNotReached": true
+  },
+  "changes": [
+    "Reuse the current owned Boss reference and window without another navigation.",
+    "Restore only encrypted material owned by the same target version after restart.",
+    "Commit remember preferences only after persistence succeeds; retain runtime material when disabling remember.",
+    "Retain prior material on failed reused navigation.",
+    "Keep Boss risk across version references, reopening and login-material cleanup.",
+    "Bind recovery to the observed risk fingerprint, including a new generation for each risk event.",
+    "Arbitrate opening, reading and clearing; drain pending operations before cleanup completes.",
+    "Close partially allocated windows on policy setup failure.",
+    "Return fresh safe risk metadata on reopen and cleanup; reject stale UI status results.",
+    "Use valid public DNS cache before the system resolver, honoring TTL and cancellation."
+  ],
+  "review": {
+    "rounds": 1,
+    "critical": 0,
+    "important": 6,
+    "allAddressed": true,
+    "reReviewed": false
+  },
+  "verification": {
+    "continuityCases": 19,
+    "focusedCases": 86,
+    "sourceUiCases": 9,
+    "business": {
+      "pass": 1977,
+      "fail": 0
+    },
+    "ui": {
+      "pass": 179,
+      "fail": 0
+    },
+    "offlineSuites": {
+      "total": 25,
+      "pass": 18,
+      "explicitSkip": 7,
+      "fail": 0
+    },
+    "typecheckExit": 0,
+    "package": {
+      "files": 10455,
+      "exactSourceHashes": 228,
+      "productionDependencies": 52,
+      "ocrHashes": 32,
+      "runtimeVerified": true
+    },
+    "native": {
+      "scale": 1,
+      "pass": 425,
+      "fail": 0,
+      "exit": 0,
+      "externalRequests": 0,
+      "rendererErrors": 0,
+      "screenshots": 63,
+      "visualAudits": 39
+    },
+    "inspectedScreenshots": [
+      "matrix-sources-768-1.png",
+      "matrix-sources-375-1.png"
+    ],
+    "actualMainWindowVisible": true,
+    "originalTargetSelected": true
+  },
+  "delivery": {
+    "exe": "dist/简历岗位雷达-win32-x64/简历岗位雷达.exe",
+    "asarSha256": "9104C66CECAC3E23BD3B6B6EF8192133E8E7FC539BF2AC6454C07B2AA2DEE40A",
+    "previousProgramPreserved": true,
+    "noUserProcessTerminated": true
+  },
+  "activity": {
+    "sameRoot": true,
+    "additionalPublicRequestAllowance": 120,
+    "requestsUsed": 2296,
+    "cumulativeRequestCap": 2460,
+    "remainingRequests": 164,
+    "cumulativeDetails": 119,
+    "detailCap": 220,
+    "cumulativeBytes": 262696116,
+    "byteCap": 314572800,
+    "cumulativeCostCny": 3.98861,
+    "costCapCny": 9.999184,
+    "ledgerAndUnitsUnchangedByExtension": true
+  },
+  "liveState": {
+    "rootPaused": true,
+    "activeRunCount": 0,
+    "versionRiskRetained": true,
+    "storedOwnedMaterialCount": 4,
+    "newBossJobRequests": 0,
+    "newBossJobs": 0,
+    "sourceExpansionGapsRemaining": 30,
+    "effectiveRecommendations": 0
+  },
+  "boundaries": [
+    "No real Boss login, list or JD success is claimed by offline tests.",
+    "Cold DNS and upstream latency remain dependent on the actual network; the cache test is not a measured live speedup.",
+    "The latest native check ran at 100 percent; earlier three-scale checks are not presented as this build evidence.",
+    "The main workspace and encrypted session files were unchanged by replacing and starting the executable.",
+    "Saved-cookie presence is not authentication or recovery evidence.",
+    "The approved read protocol and route restrictions remain unchanged; no challenge handling, messaging, applying or global browser account access.",
+    "The overall source-expansion task and conditional shutdown are not complete."
+  ],
+  "sourceHashes": {
+    "electron/collection/browser.mjs": "66c6e7555f79d6d8ceeb3138e7ab87339f65a52f15dd580fdc83351b40531dee",
+    "electron/collection/sessions.mjs": "3bd635708132f7a0a90aaea1f18749ea9446d93623e754a669f04d815e27a783",
+    "electron/collection/ipc.mjs": "12d6b135db451b4028da91b2c17e14bea9851684d99b298c0fbdab1d956d8494",
+    "electron/self-test-boss.mjs": "9cf9cf544d5feb4462fa87504150d978d1ec05fc09d452c6b987fd70a0bfb04c",
+    "src/infrastructure/http/dns.mjs": "14d947d52703711515f255d9a856a563971b0f22e61b47e0ed363e912b30ec0e",
+    "ui/src/lib/types.ts": "2e3ea438fb792225db9d924b222cfe5e392d6c00b3af01e910d8bbffa425ecb2",
+    "ui/src/features/sources/CollectionSessionDialog.tsx": "126c72694a18ce0ac379b38c323cbb30d6c8dec5588a2ec885ac655596968e05"
+  }
+}

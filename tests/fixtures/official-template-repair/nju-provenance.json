@@ -1,0 +1,25 @@
+{
+  "nju-list.json": {
+    "sourceUrl": "https://job.nju.edu.cn/api/career/job/recruitments?page=0&size=50",
+    "observedAt": "2026-10-12",
+    "actualShape": "HTTP200 {content,page:{size:50,number:0,totalElements:3056,totalPages:62}}; 50 announcements and 139 distinct position-row IDs. Only two position.intro fields are nonempty, neither proves complete individual duties and requirements.",
+    "purpose": "Reduced native JSON shape. First parent/row/definition IDs and education/major scope are based on a public sample; second row reusing a definition ID, complete-body row, aggregate title and no-row notice are synthetic boundary controls. All company names, prose, contacts and other identifiers are synthetic. Page totals describe this reduced fixture, never the actual coverage.",
+    "identityEvidence": "jobs-v2-lHGt93YO.js function ut(e,t,o) constructs s=t.id||fallback and returns id:s,kind:job,position:t,positionId:t.position.id,recruitmentId:e.id. Only present native t.id is accepted; the frontend fallback is forbidden.",
+    "jobUrlEvidence": "jobs-v2 pe(e) uses P({jobId:e.kind===job?e.id:undefined},true). P builds path:c.path/query and router replace. Bootstrap PortalJobsV2 route is /career/jobs-v2 under WebHistory rooted at /. Canonical job URL is https://job.nju.edu.cn/career/jobs-v2?jobId=<native row ID>.",
+    "detailEvidence": "portal-DjLgeP1J.js m(e) performs GET /career/job/recruitments/${e}. Base API URL is /api. Actual GET /api/career/job/recruitments/620905077799915522 returned HTTP200 with a plain recruitment object, six matching row IDs/definition IDs/titles and no own position.intro content. Never use a row ID as the parent API parameter.",
+    "publicationEvidence": "No publication field was established. applyAt and positions.updatedAt are not publication evidence.",
+    "paginationBoundary": "Internal page 1 maps to native page 0. Later pages require the same site/origin cursor with matching page number and prior page signatures. Only public pages 0 and 1 were sampled. At internal page 20, additional native pages cause explicit limited/page_limit coverage with no unusable page-21 cursor; all 62 native pages remain unverified.",
+    "publicationStateEvidence": "Public pages 0 and 1 observed enabled:true and status:PUBLISHED only. This is a positive native publication-schema gate, never a recruiting-open proof. Missing, false or unknown state remains unresolved without inventing a CLOSED mapping.",
+    "sharedRequirements": "Only literal parent-wide mandatory qualification restrictions are scoped to each row as unresolved supplied conditions with intro path and shared evidence. They do not fill the role description or duties/qualification sections. Preferences, procedures, company introduction and unrelated role restrictions do not create a shared qualification barrier. An identical literal requirement already in the own intro is evaluated through its own proof.",
+    "applicationEvidence": "e.website and explicit application links are candidates only; no form availability or successful submission is inferred.",
+    "rowConditionEvidence": "Across public pages 0 and 1, recruitmentCondition (111 nonempty strings), otherRequirement (59 nonempty strings), and ageRequirement (31 nonempty strings) belong to the native row t, while intro/education/major/fullTime belong to t.position. The building internship row has t.otherRequirement identical to t.position.intro; text is deduplicated. No parent requirements are silently copied into a role body.",
+    "privacy": "No resume, real local workspace, credentials, private user paths or private campaign IDs are stored. The adapter tests use injected offline transports."
+  },
+  "nju-page1-reduced.json": {
+    "sourceUrl": "https://job.nju.edu.cn/api/career/job/recruitments?page=1&size=50",
+    "observedAt": "2026-10-12",
+    "actualShape": "50 announcements, 109 unique native rows, one positions-empty announcement; two rows of one parent contain only id and updatedAt, without a position property. Seven own intro fields are nonempty. Public page 0 and 1 share no parent or row IDs; coverage of all 62 pages was not tested.",
+    "purpose": "Native string parent, row and definition IDs plus id/updatedAt-only orphan row shapes are retained from public examples. Company names, narrative text, updatedAt values and shortened duties/qualification body are synthetic. Reduced totals describe this fixture only. The positive own intro is modeled on a building internship role with its own duties and qualifications, with identical otherRequirement text; mentioning fire in duties does not establish fire professional eligibility.",
+    "privacy": "No contacts, resume, real local workspace, credentials, private user paths or private campaign IDs. All transports are injected offline."
+  }
+}

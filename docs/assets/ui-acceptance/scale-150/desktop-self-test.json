@@ -1,0 +1,568 @@
+{
+  "schemaVersion": 2,
+  "synthetic": true,
+  "passed": 57,
+  "failed": 0,
+  "results": [
+    {
+      "name": "Base UI 未注入 style 元素",
+      "ok": true
+    },
+    {
+      "name": "九页真实导航与严格 CSP",
+      "ok": true
+    },
+    {
+      "name": "错误 summary 接收焦点",
+      "ok": true
+    },
+    {
+      "name": "校正专业实际保存",
+      "ok": true
+    },
+    {
+      "name": "表单错误、焦点和简历导入校正保存",
+      "ok": true
+    },
+    {
+      "name": "目标完整独立简历副本",
+      "ok": true
+    },
+    {
+      "name": "停用已持久化",
+      "ok": true
+    },
+    {
+      "name": "重命名持久化",
+      "ok": true
+    },
+    {
+      "name": "命名目标、独立副本、停用启用与重命名",
+      "ok": true
+    },
+    {
+      "name": "当前版本采集已保存",
+      "ok": true
+    },
+    {
+      "name": "真实规则评价显示资格核对与评分组成",
+      "ok": true
+    },
+    {
+      "name": "Sheet 焦点位于弹层",
+      "ok": true,
+      "details": {
+        "active": "<button type=\"button\" tabindex=\"0\" data-slot=\"sheet-close\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none fo",
+        "focus": false,
+        "dialogs": [
+          {
+            "closed": false,
+            "title": "检索任务已创建"
+          },
+          {
+            "closed": false,
+            "title": "目标已保存"
+          },
+          {
+            "closed": false,
+            "title": "版本名称已保存"
+          },
+          {
+            "closed": false,
+            "title": "版本已启用"
+          },
+          {
+            "closed": false,
+            "title": "版本已停用"
+          },
+          {
+            "closed": false,
+            "title": "目标已保存"
+          },
+          {
+            "closed": false,
+            "title": "简历已保存"
+          },
+          {
+            "closed": false,
+            "title": "消防工程师与机场应急保障岗位合成长中文名称用于换行检查合成目标A已命名 · 本版本事实、评价与投递记录合成机场集团符合已知要求优先推荐100 分薪资薪资未提供城"
+          }
+        ]
+      }
+    },
+    {
+      "name": "投递实际提交",
+      "ok": true
+    },
+    {
+      "name": "真实更新、规则评价、岗位事实与投递记录",
+      "ok": true
+    },
+    {
+      "name": "未提交启动跨页返回时禁止重复提交",
+      "ok": true
+    },
+    {
+      "name": "延迟提交的后台任务已在原版本恢复",
+      "ok": true
+    },
+    {
+      "name": "导航回来恢复活跃任务并禁用重复启动",
+      "ok": true
+    },
+    {
+      "name": "目标B岗位没有混入目标A",
+      "ok": true
+    },
+    {
+      "name": "真实去重保留当前版本人工投递与其他版本",
+      "ok": true
+    },
+    {
+      "name": "岗位库请求375px / 实际374px 无页面横向溢出",
+      "ok": true,
+      "details": {
+        "requestedWidth": 375,
+        "nativeRequestedWidth": 374,
+        "rounded": true,
+        "attempts": [
+          {
+            "requested": 375,
+            "actual": 376
+          },
+          {
+            "requested": 374,
+            "actual": 374
+          },
+          {
+            "requested": 375,
+            "actual": 376
+          },
+          {
+            "requested": 374,
+            "actual": 374
+          }
+        ],
+        "width": 374,
+        "dpr": 1.5,
+        "overflow": false
+      }
+    },
+    {
+      "name": "375px 目标选择浮层定位在窗口内",
+      "ok": true,
+      "details": {
+        "left": 16,
+        "right": 342.66668701171875,
+        "width": 374
+      }
+    },
+    {
+      "name": "目标选择 Esc 关闭并归还焦点",
+      "ok": true
+    },
+    {
+      "name": "岗位库请求768px / 实际768px 无页面横向溢出",
+      "ok": true,
+      "details": {
+        "requestedWidth": 768,
+        "nativeRequestedWidth": 768,
+        "attempts": [
+          {
+            "requested": 768,
+            "actual": 768
+          }
+        ],
+        "width": 768,
+        "dpr": 1.5,
+        "overflow": false
+      }
+    },
+    {
+      "name": "岗位库请求1024px / 实际1024px 无页面横向溢出",
+      "ok": true,
+      "details": {
+        "requestedWidth": 1024,
+        "nativeRequestedWidth": 1024,
+        "attempts": [
+          {
+            "requested": 1024,
+            "actual": 1024
+          }
+        ],
+        "width": 1024,
+        "dpr": 1.5,
+        "overflow": false
+      }
+    },
+    {
+      "name": "岗位库请求1440px / 实际1440px 无页面横向溢出",
+      "ok": true,
+      "details": {
+        "requestedWidth": 1440,
+        "nativeRequestedWidth": 1440,
+        "attempts": [
+          {
+            "requested": 1440,
+            "actual": 1440
+          }
+        ],
+        "width": 1440,
+        "dpr": 1.5,
+        "overflow": false
+      }
+    },
+    {
+      "name": "全部目标汇总禁止发起更新",
+      "ok": true
+    },
+    {
+      "name": "取消任务与切换版本竞态隔离",
+      "ok": true
+    },
+    {
+      "name": "日志页显示当前版本范围",
+      "ok": true
+    },
+    {
+      "name": "实际系统诊断按当前版本成功读取",
+      "ok": true
+    },
+    {
+      "name": "仅开放生产桥接方法",
+      "ok": true
+    },
+    {
+      "name": "合成 Key 加密保存及状态",
+      "ok": true
+    },
+    {
+      "name": "密钥没有明文落盘",
+      "ok": true
+    },
+    {
+      "name": "合成 Key 已删除",
+      "ok": true
+    },
+    {
+      "name": "安全目录仅返回合成根",
+      "ok": true
+    },
+    {
+      "name": "打开目录被记录为意图",
+      "ok": true
+    },
+    {
+      "name": "桥接拒绝任意目录",
+      "ok": true
+    },
+    {
+      "name": "来源检查、日志与生产安全桥接",
+      "ok": true
+    },
+    {
+      "name": "真实后退恢复岗位筛选",
+      "ok": true
+    },
+    {
+      "name": "真实刷新恢复准确版本和筛选",
+      "ok": true
+    },
+    {
+      "name": "真实窗口后退与完整刷新恢复版本和筛选",
+      "ok": true
+    },
+    {
+      "name": "源简历删除后目标副本保留",
+      "ok": true
+    },
+    {
+      "name": "源简历永久删除后目标副本仍可运行",
+      "ok": true
+    },
+    {
+      "name": "恢复保留岗位评价检索投递完整子集",
+      "ok": true
+    },
+    {
+      "name": "归档隐藏整个版本、整包恢复保持子集",
+      "ok": true
+    },
+    {
+      "name": "部分失败如实显示",
+      "ok": true
+    },
+    {
+      "name": "续清理实际清除子集",
+      "ok": true
+    },
+    {
+      "name": "清空回收站部分失败与安全续清理",
+      "ok": true
+    },
+    {
+      "name": "72小时到期正文与身份已清除",
+      "ok": true
+    },
+    {
+      "name": "72 小时到期清理服务",
+      "ok": true
+    },
+    {
+      "name": "请求375px / 实际374px 无页面横向溢出",
+      "ok": true,
+      "details": {
+        "requestedWidth": 375,
+        "nativeRequestedWidth": 374,
+        "rounded": true,
+        "attempts": [
+          {
+            "requested": 375,
+            "actual": 376
+          },
+          {
+            "requested": 374,
+            "actual": 374
+          },
+          {
+            "requested": 375,
+            "actual": 376
+          },
+          {
+            "requested": 374,
+            "actual": 374
+          }
+        ],
+        "width": 374,
+        "dpr": 1.5,
+        "overflow": false
+      }
+    },
+    {
+      "name": "请求768px / 实际768px 无页面横向溢出",
+      "ok": true,
+      "details": {
+        "requestedWidth": 768,
+        "nativeRequestedWidth": 768,
+        "attempts": [
+          {
+            "requested": 768,
+            "actual": 768
+          }
+        ],
+        "width": 768,
+        "dpr": 1.5,
+        "overflow": false
+      }
+    },
+    {
+      "name": "请求1024px / 实际1024px 无页面横向溢出",
+      "ok": true,
+      "details": {
+        "requestedWidth": 1024,
+        "nativeRequestedWidth": 1024,
+        "attempts": [
+          {
+            "requested": 1024,
+            "actual": 1024
+          }
+        ],
+        "width": 1024,
+        "dpr": 1.5,
+        "overflow": false
+      }
+    },
+    {
+      "name": "请求1440px / 实际1440px 无页面横向溢出",
+      "ok": true,
+      "details": {
+        "requestedWidth": 1440,
+        "nativeRequestedWidth": 1440,
+        "attempts": [
+          {
+            "requested": 1440,
+            "actual": 1440
+          }
+        ],
+        "width": 1440,
+        "dpr": 1.5,
+        "overflow": false
+      }
+    },
+    {
+      "name": "字体放大125%无页面横向溢出",
+      "ok": true
+    },
+    {
+      "name": "响应式窗口、长中文与字体放大截图",
+      "ok": true
+    },
+    {
+      "name": "CSP、渲染器错误与控制台错误为零",
+      "ok": true,
+      "details": {
+        "issues": [],
+        "rendererErrors": []
+      }
+    },
+    {
+      "name": "外部网络请求为零",
+      "ok": true
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "jobs-375-1_5.png",
+      "requestedWidth": 375,
+      "nativeRequestedWidth": 374,
+      "rounded": true,
+      "attempts": [
+        {
+          "requested": 375,
+          "actual": 376
+        },
+        {
+          "requested": 374,
+          "actual": 374
+        },
+        {
+          "requested": 375,
+          "actual": 376
+        },
+        {
+          "requested": 374,
+          "actual": 374
+        }
+      ],
+      "width": 374,
+      "dpr": 1.5,
+      "overflow": false
+    },
+    {
+      "file": "jobs-768-1_5.png",
+      "requestedWidth": 768,
+      "nativeRequestedWidth": 768,
+      "attempts": [
+        {
+          "requested": 768,
+          "actual": 768
+        }
+      ],
+      "width": 768,
+      "dpr": 1.5,
+      "overflow": false
+    },
+    {
+      "file": "jobs-1024-1_5.png",
+      "requestedWidth": 1024,
+      "nativeRequestedWidth": 1024,
+      "attempts": [
+        {
+          "requested": 1024,
+          "actual": 1024
+        }
+      ],
+      "width": 1024,
+      "dpr": 1.5,
+      "overflow": false
+    },
+    {
+      "file": "jobs-1440-1_5.png",
+      "requestedWidth": 1440,
+      "nativeRequestedWidth": 1440,
+      "attempts": [
+        {
+          "requested": 1440,
+          "actual": 1440
+        }
+      ],
+      "width": 1440,
+      "dpr": 1.5,
+      "overflow": false
+    },
+    {
+      "file": "ui-375-1_5.png",
+      "requestedWidth": 375,
+      "nativeRequestedWidth": 374,
+      "rounded": true,
+      "attempts": [
+        {
+          "requested": 375,
+          "actual": 376
+        },
+        {
+          "requested": 374,
+          "actual": 374
+        },
+        {
+          "requested": 375,
+          "actual": 376
+        },
+        {
+          "requested": 374,
+          "actual": 374
+        }
+      ],
+      "width": 374,
+      "dpr": 1.5,
+      "overflow": false
+    },
+    {
+      "file": "ui-768-1_5.png",
+      "requestedWidth": 768,
+      "nativeRequestedWidth": 768,
+      "attempts": [
+        {
+          "requested": 768,
+          "actual": 768
+        }
+      ],
+      "width": 768,
+      "dpr": 1.5,
+      "overflow": false
+    },
+    {
+      "file": "ui-1024-1_5.png",
+      "requestedWidth": 1024,
+      "nativeRequestedWidth": 1024,
+      "attempts": [
+        {
+          "requested": 1024,
+          "actual": 1024
+        }
+      ],
+      "width": 1024,
+      "dpr": 1.5,
+      "overflow": false
+    },
+    {
+      "file": "ui-1440-1_5.png",
+      "requestedWidth": 1440,
+      "nativeRequestedWidth": 1440,
+      "attempts": [
+        {
+          "requested": 1440,
+          "actual": 1440
+        }
+      ],
+      "width": 1440,
+      "dpr": 1.5,
+      "overflow": false
+    },
+    {
+      "file": "ui-font-125.png",
+      "fontZoom": 1.25
+    }
+  ],
+  "network": {
+    "externalRequests": 0,
+    "blockedRequests": 0
+  },
+  "deviceScaleFactor": 1.5,
+  "rendererErrors": [],
+  "externalIntents": [
+    {
+      "kind": "directory-open"
+    }
+  ]
+}

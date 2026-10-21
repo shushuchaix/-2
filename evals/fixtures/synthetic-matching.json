@@ -1,0 +1,548 @@
+{
+  "synthetic": true,
+  "labelMethod": "实现者按预先定义场景人工编写标签；不是用户真值或模型生成标签",
+  "limitations": [
+    "仅3画像×10合成JD，不代表真实求职成功率。",
+    "同一场景用于开发回放，无法证明样本外泛化或新模型提示词质量。",
+    "v1不输出资格分类，因此其资格预测统一unknown。"
+  ],
+  "jobs": [
+    {
+      "jobId": "s1",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "1",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "Java开发工程师",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "本科",
+      "description": "本科以上，2027届毕业生，负责Java和SQL服务开发与维护。",
+      "url": "https://example.com/jobs/1",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s2",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "2",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "JavaScript前端工程师",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "本科",
+      "description": "本科以上，2027届，负责JavaScript前端开发和React界面维护。",
+      "url": "https://example.com/jobs/2",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s3",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "3",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "消防设计工程师",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "本科",
+      "description": "本科以上，2027届，负责消防设计、防排烟、建筑防火和设施验收。",
+      "url": "https://example.com/jobs/3",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s4",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "4",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "网络安全工程师",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "本科",
+      "description": "本科以上，2027届，负责网络安全、渗透测试、漏洞分析和检测。",
+      "url": "https://example.com/jobs/4",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s5",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "5",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "设备工程师",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "大专及以上",
+      "description": "大专以上，2027届，负责设备维护，使用CAD和PLC处理生产线故障。",
+      "url": "https://example.com/jobs/5",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s6",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "6",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "会计助理",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "本科",
+      "description": "本科以上，2027届，会计核算、Excel和财务报表编制工作。",
+      "url": "https://example.com/jobs/6",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s7",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "7",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "Java高级工程师",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "博士",
+      "description": "必须博士学历，要求5年以上工作经验，负责Java与SQL开发。",
+      "url": "https://example.com/jobs/7",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s8",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "8",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "消防设施工程师",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "本科",
+      "description": "本科以上，2027届，须持有注册消防工程师证书，负责消防设施检测。",
+      "url": "https://example.com/jobs/8",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s9",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "9",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "Java校招工程师",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2026,
+      "degree": "本科",
+      "description": "本科以上，仅限2026届，负责Java和SQL开发及系统维护。",
+      "url": "https://example.com/jobs/9",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    },
+    {
+      "jobId": "s10",
+      "sourceId": "synthetic",
+      "siteId": "synthetic",
+      "sourceRecordId": "10",
+      "identityScope": "synthetic",
+      "kind": "job",
+      "title": "工程招聘线索",
+      "company": "合成公司",
+      "cities": [
+        "北京"
+      ],
+      "jobType": "campus",
+      "graduationYear": 2027,
+      "degree": "本科",
+      "description": null,
+      "url": "https://example.com/jobs/10",
+      "applyUrl": null,
+      "evidence": [],
+      "requiredCertificates": [],
+      "parserVersion": "synthetic-1"
+    }
+  ],
+  "scenarios": [
+    {
+      "profileId": "software",
+      "profile": {
+        "education": "本科",
+        "major": "软件工程",
+        "skills": [
+          "Java",
+          "SQL"
+        ],
+        "cities": [
+          "北京"
+        ],
+        "graduationYear": 2027,
+        "experienceYears": 0,
+        "certificates": [],
+        "explicitFacts": {
+          "certificates": true
+        }
+      },
+      "target": {
+        "roles": [
+          "Java开发"
+        ],
+        "cityMode": "selected",
+        "cities": [
+          "北京"
+        ],
+        "jobTypes": [
+          "campus"
+        ],
+        "degreePolicy": "eligibility"
+      },
+      "labels": [
+        {
+          "jobId": "s1",
+          "relevance": 3,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "专业与技能明确匹配"
+        },
+        {
+          "jobId": "s2",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s3",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s4",
+          "relevance": 1,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s5",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s6",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s7",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "博士和经验硬门槛不符"
+        },
+        {
+          "jobId": "s8",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "已确认无必需证书"
+        },
+        {
+          "jobId": "s9",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "毕业年份不符"
+        },
+        {
+          "jobId": "s10",
+          "relevance": 0,
+          "qualification": "unknown",
+          "incomplete": true,
+          "reason": "缺正文"
+        }
+      ]
+    },
+    {
+      "profileId": "fire",
+      "profile": {
+        "education": "本科",
+        "major": "消防工程",
+        "skills": [
+          "消防设计",
+          "防排烟"
+        ],
+        "cities": [
+          "北京"
+        ],
+        "graduationYear": 2027,
+        "experienceYears": 0,
+        "certificates": [],
+        "explicitFacts": {
+          "certificates": true
+        }
+      },
+      "target": {
+        "roles": [
+          "消防设计"
+        ],
+        "cityMode": "selected",
+        "cities": [
+          "北京"
+        ],
+        "jobTypes": [
+          "campus"
+        ],
+        "degreePolicy": "eligibility"
+      },
+      "labels": [
+        {
+          "jobId": "s1",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s2",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s3",
+          "relevance": 3,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "专业与技能明确匹配"
+        },
+        {
+          "jobId": "s4",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s5",
+          "relevance": 1,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s6",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s7",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "博士和经验硬门槛不符"
+        },
+        {
+          "jobId": "s8",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "已确认无必需证书"
+        },
+        {
+          "jobId": "s9",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "毕业年份不符"
+        },
+        {
+          "jobId": "s10",
+          "relevance": 0,
+          "qualification": "unknown",
+          "incomplete": true,
+          "reason": "缺正文"
+        }
+      ]
+    },
+    {
+      "profileId": "mechanical",
+      "profile": {
+        "education": "本科",
+        "major": "机械工程",
+        "skills": [
+          "CAD",
+          "PLC"
+        ],
+        "cities": [
+          "北京"
+        ],
+        "graduationYear": 2027,
+        "experienceYears": 0,
+        "certificates": [],
+        "explicitFacts": {
+          "certificates": true
+        }
+      },
+      "target": {
+        "roles": [
+          "设备工程师"
+        ],
+        "cityMode": "selected",
+        "cities": [
+          "北京"
+        ],
+        "jobTypes": [
+          "campus"
+        ],
+        "degreePolicy": "eligibility"
+      },
+      "labels": [
+        {
+          "jobId": "s1",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s2",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s3",
+          "relevance": 1,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s4",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s5",
+          "relevance": 3,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "专业与技能明确匹配"
+        },
+        {
+          "jobId": "s6",
+          "relevance": 0,
+          "qualification": "pass",
+          "incomplete": false,
+          "reason": "技能方向弱或不匹配"
+        },
+        {
+          "jobId": "s7",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "博士和经验硬门槛不符"
+        },
+        {
+          "jobId": "s8",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "已确认无必需证书"
+        },
+        {
+          "jobId": "s9",
+          "relevance": 0,
+          "qualification": "fail",
+          "incomplete": false,
+          "reason": "毕业年份不符"
+        },
+        {
+          "jobId": "s10",
+          "relevance": 0,
+          "qualification": "unknown",
+          "incomplete": true,
+          "reason": "缺正文"
+        }
+      ]
+    }
+  ]
+}

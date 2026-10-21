@@ -1,0 +1,18 @@
+{
+  "boc-list.html": {
+    "siteId": "boc",
+    "sourceUrl": "https://www.boc.cn/",
+    "capturedAt": "2026-10-11T17:33:21.716Z",
+    "purpose": "Reduced observed .tab_content.clearfix ul.list recruitment anchor ancestry. All prose, titles, navigation and negative-control links are synthetic; no contact details or full page retained.",
+    "bodyEvidence": "List structure only; not proof of current recruitment or public application form."
+  },
+  "boc-detail.html": {
+    "siteId": "boc",
+    "sourceUrl": "https://www.boc.cn/aboutboc/bi4/202607/t20260721_25680323.html",
+    "capturedAt": "2026-10-11T20:09:13.625Z",
+    "purpose": "Reduced observed .con_area .sub_con .trs_editor_view body and .con_time date. Publication date, explicit deadline and public native application URL are preserved; other prose is synthetic and personal/contact details are omitted.",
+    "openingEvidence": "Visible absolute application deadline 2026-08-09 24:00 is historical and expired as of 2026-10-12. Narrow deadline parser improvement is required before it becomes structured temporal evidence.",
+    "applicationEvidence": "Official notice links to a public recruitment portal; portal was not requested and remains unverified.",
+    "attachmentEvidence": "No PDF/DOC/DOCX/XLS/XLSX anchor observed in the scoped notice body."
+  }
+}

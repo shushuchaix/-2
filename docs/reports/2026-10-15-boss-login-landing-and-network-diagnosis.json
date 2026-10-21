@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-14T21:07:37.288Z",
+  "scope": "owned_boss_manual_login_landing_and_transport_diagnostics",
+  "baseCommit": "84b69535163aa560c5a1d9773f40dc881f4afbab",
+  "observed": {
+    "windowReadOnly": true,
+    "screenshotsCaptured": false,
+    "scanSuccessVisible": true,
+    "waitingForPhoneConfirmationVisible": true,
+    "jobPageVisible": false,
+    "authenticationBusinessStatusKnown": false,
+    "scanLoginHttpStatus": 200,
+    "scanLoginDurationMs": 2601,
+    "finalSubmitHttpStatus": 200,
+    "finalSubmitDurationMs": 2600,
+    "manualRequests": 31,
+    "manualBytes": 500248,
+    "manualAllowanceExhausted": false,
+    "slowSuccessfulDnsDurationsMs": [
+      9018,
+      9528
+    ],
+    "tunAdapterActive": true,
+    "windowsSystemProxyEnabled": false,
+    "networkSettingsChanged": false,
+    "tunAsExactCauseProven": false
+  },
+  "confirmedSoftwareGaps": [
+    "The official successful job-seeker login defaults to the www.zhipin.com root main-frame landing, which the manual route policy rejected.",
+    "Denied-event deduplication omitted phase and could hide a later redirect denial after an earlier resource validation denial.",
+    "Idle connection cleanup was logged as a failed network request even after observed requests had completed."
+  ],
+  "changes": [
+    "Allow only owned manual main-frame GET/HEAD to https://www.zhipin.com/ without a query or fragment; automatic reads and other root resource types retain their previous permissions.",
+    "Include phase in route-denial deduplication. Quota feedback stays one per quota code.",
+    "Use fixed login-landing and restricted-landing categories without storing URL parameters or private response content.",
+    "Classify idle tunnel closure as cleanup/completed. Connection handshakes and actual request error callbacks retain transport failure semantics."
+  ],
+  "publicReferences": [
+    {
+      "url": "https://static.zhipin.com/zhipin-sign/v5330/static/js/app.8b190f81.js",
+      "bytes": 60793,
+      "sha256": "f0da4b0d089a1a747d58e64f594bef55ce0d50a85b0da71e0ae6cd8bf2be6a47"
+    },
+    {
+      "url": "https://static.zhipin.com/zhipin-sign/v5330/static/js/user-login.5398946e.js",
+      "bytes": 306663,
+      "sha256": "04b4040d344479f2b093b82fd2e9e03b9bf5ee62701ccd00ec34a3e0aaa963b0"
+    },
+    {
+      "url": "https://wiki.metacubex.one/config/inbound/tun/"
+    },
+    {
+      "url": "https://wiki.metacubex.one/config/dns/"
+    }
+  ],
+  "review": {
+    "rounds": 1,
+    "critical": 0,
+    "important": 0,
+    "minor": 0,
+    "scope": "Minimal default landing permission, phase-aware denial, fixed landing stages and their native/integration checks.",
+    "laterChange": "Idle cleanup classification was added after this review and verified by effective RED/GREEN tests and implementer inspection; no second review."
+  },
+  "verification": {
+    "businessPassed": 2034,
+    "uiPassed": 179,
+    "failed": 0,
+    "suitesPassed": 18,
+    "suitesExplicitlySkipped": 7,
+    "typecheckExit": 0,
+    "diffCheckExit": 0,
+    "initialFullFailure": {
+      "businessTests": 2032,
+      "failed": 1,
+      "name": "detailed diagnostic metadata survives restart while unknown nested payloads are discarded",
+      "singleFileRecheckPassed": 15,
+      "finalFullRecheckPassed": true,
+      "assertionsOrProductionIoTimeoutChanged": false
+    },
+    "restrictedSandboxFocusedAttempt": {
+      "tests": 31,
+      "passed": 25,
+      "failed": 6,
+      "reason": "Loopback EACCES and temporary-directory rename EPERM. The normal-permission complete gate executes and passes all these tests."
+    },
+    "initialFocusedPassed": 29,
+    "laterIdleClassificationTests": {
+      "effectiveRedFailures": 1,
+      "greenPassed": 2
+    },
+    "package": {
+      "exactSourceHashes": 229,
+      "productionDependencies": 52,
+      "ocrHashes": 32,
+      "runtimeVerified": true
+    },
+    "native": {
+      "nativeProcessExited": true,
+      "originalHandleHeld": true,
+      "rendererErrors": 0,
+      "asarSha256": "C47EF62CF4EAD3639E46FADB628FA4A97A70324B9D7C2027B3B23E29F3C78645",
+      "nativeExit": 0,
+      "externalRequests": 0,
+      "failed": 0,
+      "observedAt": "2026-10-14T20:50:04.7002953Z",
+      "deadlineExceeded": false,
+      "passed": 435,
+      "asarUnchanged": true,
+      "screenshots": 63,
+      "scale": 1,
+      "visualAudits": 39,
+      "nativeReport": ".cache/actual-campaign/rjr-self-test-boss-landing-scale1-20261014T2048164556868Z-data/desktop-self-test.json"
+    },
+    "ci": "The exact submitted revision CI is tracked separately in the work state and final delivery response."
+  },
+  "delivery": {
+    "asarSha256": "C47EF62CF4EAD3639E46FADB628FA4A97A70324B9D7C2027B3B23E29F3C78645",
+    "observedAt": "2026-10-14T21:05:25.5060882Z",
+    "oldPackageDirectory": "dist/简历岗位雷达-win32-x64",
+    "allPhysicalFilesEqual": true,
+    "shortcutReadbackVerified": true,
+    "delivered": true,
+    "oldPackagePreserved": true,
+    "previousHash": "75D2891E02291F80C8F0CB0C4EEC294961FFB3A9D844B87F6E4DFAD636568EAA",
+    "copyPhysicalFiles": 11709,
+    "desktopShortcutUpdated": true,
+    "oldPackageRestored": true,
+    "strategy": "independent_version_directory",
+    "formalExecutable": "releases/desktop/20261015-c47ef62/简历岗位雷达-win32-x64/简历岗位雷达.exe",
+    "restoredFilesMatched": 22,
+    "noUserProcessTerminated": true,
+    "candidatePreserved": true
+  },
+  "deploymentIncident": {
+    "directoryMoveFailedTwice": true,
+    "oldArchiveHolder": "ChatGPT desktop host",
+    "userProgramRunning": false,
+    "partialMoveFilesRestored": 22,
+    "oldDirectoryRecovered": true,
+    "newStrategy": "Copy to an independent version directory and update the existing desktop shortcut after all-file hash validation; no host process stopped."
+  },
+  "activity": {
+    "sameRoot": true,
+    "rootPaused": true,
+    "activeRunCount": 0,
+    "requests": 2333,
+    "requestCap": 2460,
+    "details": 119,
+    "detailCap": 220,
+    "bytes": 263803711,
+    "byteCap": 314572800,
+    "costCny": 3.98861,
+    "costCapCny": 9.999184,
+    "newAuthenticationRequests": 0,
+    "newJobApiRequests": 0,
+    "newModelCalls": 0,
+    "publicResearchJavaScriptDownloads": 2
+  },
+  "privacy": "No QR identifiers/images, cookies, credentials, fingerprints, resume contents, response bodies or proxy subscriptions were extracted, logged or exported. Public scripts were inspected statically only; the local workspace was used only for budget/session metadata.",
+  "acceptance": {
+    "status": "pending_one_human_login_check_after_delivery",
+    "actualLoginSuccess": false,
+    "riskAutomaticallyCleared": false
+  },
+  "broaderWork": {
+    "sourceExpansionGapsRemaining": 30,
+    "effectiveRecommendations": 0,
+    "allTasksComplete": false,
+    "shutdownTriggered": false
+  }
+}

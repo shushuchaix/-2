@@ -138,8 +138,8 @@ const auth = await import('../src/auth.mjs');
     auth.clientIp(fakeReq({ 'x-forwarded-for': '1.1.1.1' }, '10.0.0.5'), false) === '10.0.0.5',
   );
   check(
-    'TRUST_PROXY 开启时采用 X-Forwarded-For 首个地址',
-    auth.clientIp(fakeReq({ 'x-forwarded-for': '1.1.1.1, 2.2.2.2' }, '10.0.0.5'), true) === '1.1.1.1',
+    'TRUST_PROXY 开启时采用受信代理追加的最右地址，忽略伪造前缀',
+    auth.clientIp(fakeReq({ 'x-forwarded-for': '1.1.1.1, 2.2.2.2' }, '10.0.0.5'), true) === '2.2.2.2',
   );
   check(
     'IPv4-mapped IPv6 归一化',
@@ -289,11 +289,16 @@ section('四、HTTP 集成测试（进程内启动，全数据源关闭以便快
 
 // 隔离环境与测试配置已在文件顶部的「零、隔离运行环境」中建好，
 // 这里只需启动服务（config.mjs 会自己读到 TMP_DATA/config.json）。
-let server;
+let server, started;
 try {
-  const { startServer } = await import('../src/server.mjs');
-  const started = startServer();
-  server = started.server;
+  const { createServer } = await import('../src/server.mjs');
+  const { loadConfig } = await import('../src/config.mjs');
+  const cfg = loadConfig({ quiet: true, dataDir: TMP_DATA, readLocalCredentials: false });
+  cfg.deepseek.apiKey = '';
+  const ctx = createServer(cfg, { dataDir: TMP_DATA });
+  started = { ctx };
+  server = ctx.server;
+  server.listen(PORT, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
 
   let cookie = '';
@@ -310,7 +315,13 @@ try {
 
   r = await api('/api/health');
   j = await r.json();
-  check('未登录时 /api/health 不泄露密钥信息', j.ok === true && !j.deepseek, `字段：${Object.keys(j).join(',')}`);
+  check('未登录时 /api/health 不泄露密钥信息',
+    ['starting', 'ready', 'maintenance'].includes(j.status) &&
+    j.ok === (j.status === 'ready') &&
+    j.authRequired === true && j.authenticated === false &&
+    Object.keys(j).every(key => ['ok', 'status', 'maintenance', 'version', 'authRequired', 'authenticated'].includes(key)),
+    `字段：${Object.keys(j).join(',')}`);
+  await started.ctx.ready;
 
   r = await api('/api/analyze', {
     method: 'POST',
@@ -373,7 +384,7 @@ try {
   check('健康信息中的密钥已脱敏', !j.deepseek.keyMasked?.includes(TEST_PASSWORD) && j.deepseek.keyMasked !== process.env.DEEPSEEK_API_KEY);
 
   r = await api('/api/runs');
-  check('登录后可访问历史记录', r.status === 200);
+    check('登录后无目标范围的历史访问明确拒绝', r.status === 409 && (await r.json()).code==='version_scope_required');
 
   // --- 会话伪造 ---
   const savedCookie = cookie;
@@ -386,7 +397,7 @@ try {
   r = await api('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ resumeText: '张三 本科 计算机 2026届 Java Spring Boot MySQL Redis 项目 实习', userApiKey: 'not-a-key' }),
+    body: JSON.stringify({ resumeText: '张三 本科 计算机 2026届 Java Spring Boot MySQL Redis 项目 实习', userApiKey: 'invalid key with spaces' }),
   });
   check('非法自带 Key 被拒绝', r.status === 400, `HTTP ${r.status}`);
 
@@ -441,15 +452,30 @@ try {
 
   // --- 未知接口 ---
   cookie = savedCookie;
+  r = await api('/api/runs');
+  check('登出后复制的旧 Cookie 也被服务器拒绝', r.status === 401, `HTTP ${r.status}`);
+  cookie = '';
+  r = await api('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: TEST_PASSWORD }),
+  });
+  cookie = (r.headers.get('set-cookie') || '').split(';')[0];
   r = await api('/api/definitely-not-exist');
   check('未知 API 返回 404 JSON', r.status === 404 && (await r.json()).error);
 } catch (e) {
   check('HTTP 集成测试执行', false, e.message);
   if (process.env.DEBUG) console.error(e.stack);
 } finally {
-  // 整个临时数据目录一起删掉，仓库里的 config.json / data/ 自始至终没被碰过
-  fs.rmSync(TMP_DATA, { recursive: true, force: true });
-  if (server) server.close();
+  // Stop HTTP callbacks and drain startup/log writes before removing their temporary directory.
+  if (server) {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    await (await started.ctx.ready).close?.();
+    await started.ctx.diagnostics.list({limit:1});
+  }
+  // Windows can retain a sharing handle briefly even after every writer drains.
+  // Yield during bounded retries rather than blocking pending close callbacks.
+  await fs.promises.rm(TMP_DATA, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
 }
 
 /* ============================================================

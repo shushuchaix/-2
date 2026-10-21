@@ -1,0 +1,20 @@
+{
+  "hpu-list.html": {
+    "siteId": "official-c738f71905918585",
+    "sourceUrl": "https://hpu.bysjy.com.cn/",
+    "purpose": "Reduced publicly cached homepage ancestry: .row-left.obtain-tags .col-news.tags-list ul.col-content.curr > li.content-item.new > a.content-txt-wrap[href]. Titles, prose and negative controls are synthetic. No contacts, login data or complete source page retained.",
+    "identityEvidence": "Actual anchor /detail/news?id=1839023&type_id=9129 has a title attribute and span.content-txt exactly matching API notice_name. Only same-origin /detail/news with one numeric id and optional numeric type_id is used; safe/jump_warning wrappers are not followed.",
+    "publicationEvidence": "The actual homepage mark contains only 09-30; publication year must wait for API create_time.",
+    "paginationEvidence": "Only the observed homepage is supported; historic pagination and full-source coverage remain unverified."
+  },
+  "hpu-detail.json": {
+    "siteId": "official-c738f71905918585",
+    "sourceUrl": "https://hpu.bysjy.com.cn/detail/getnoticedetail?notice_id=1839023",
+    "purpose": "Reduced response schema from anonymous public HTTP 200 JSON: code=1, data.notice_id=1839023, exact notice_name, content HTML, create_time, docs, file_name_url, content_source_url and ticket signup fields. Native ID, publication date, explicit closing date, 63-person total and application URL are retained; title, paragraphs and reduced table rows are synthetic.",
+    "recordScope": "Actual notice is 陕西陕煤韩城矿业有限公司 2027年度高校毕业生招聘简章. Its table has 17 rows including header, 15 role rows and total 63; no independent role IDs or role-specific duties justify job splitting. Reduced fixture demonstrates two separate same-name education rows, not the complete real table.",
+    "publicationEvidence": "Actual data.create_time is 2026年9月30日. Never infer a date from the URL, title graduation year, local clock or homepage mark.",
+    "openingEvidence": "Actual body explicitly closes recruitment on 2026年10月31日. sign_up_end_time is an event ticket signup field and is never used as a recruitment deadline; is_overdue is also not a recruitment proof.",
+    "applicationEvidence": "Actual body contains plain https://webhr.shccig.com/webhrN2-zp followed by a Chinese parenthesis. It is a candidate URL only; neither a live form nor availability was checked in this fixture.",
+    "attachmentEvidence": "Actual docs is empty; file_name_url and content_source_url are empty. doc_id/doc_name/doc_url field names are evidenced only by the native #tmpl_details loop. Any nonempty-doc test is synthetic metadata and does not claim a downloaded, extracted or live-observed attachment."
+  }
+}

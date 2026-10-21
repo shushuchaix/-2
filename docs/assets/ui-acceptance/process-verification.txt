@@ -1,0 +1,9 @@
+SELF_TEST_SCALE=1 PID=82700 DIRECTORY=.cache\rjr-self-test-exe-aa14910864a849ae8c2a1273d9fc8a4c
+SELF_TEST_EXIT=0
+SELF_TEST_PASS=57 SCALE=1 REPORT=.cache\rjr-self-test-exe-aa14910864a849ae8c2a1273d9fc8a4c\desktop-self-test.json
+SELF_TEST_SCALE=1.25 PID=86960 DIRECTORY=.cache\rjr-self-test-exe-01928223359242e9ad2246b9e394c78f
+SELF_TEST_EXIT=0
+SELF_TEST_PASS=57 SCALE=1.25 REPORT=.cache\rjr-self-test-exe-01928223359242e9ad2246b9e394c78f\desktop-self-test.json
+SELF_TEST_SCALE=1.5 PID=83556 DIRECTORY=.cache\rjr-self-test-exe-a5b3b0861a814780be1e42ffd82099c5
+SELF_TEST_EXIT=0
+SELF_TEST_PASS=57 SCALE=1.5 REPORT=.cache\rjr-self-test-exe-a5b3b0861a814780be1e42ffd82099c5\desktop-self-test.json

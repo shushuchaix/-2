@@ -1,0 +1,43 @@
+{
+  "content": [
+    {
+      "id": "recruit_recruitdata_5b5bf32c9f6f1963019f8889ea3901f5",
+      "company": { "id": "synthetic-company-building", "name": "合成建筑企业" },
+      "theme": "合成建筑实习招聘公告",
+      "intro": "这是公告的共用招聘介绍，各岗位条件应以岗位自己的文字为准。",
+      "website": "",
+      "enabled": true,
+      "status": "PUBLISHED",
+      "deadline": "2026-10-22",
+      "positions": [
+        {
+          "id": "recruit_recruitdata_post_5b5bf32c9f6f1963019f8889eb4e01fd",
+          "position": {
+            "id": "recruit_position_template_5b5bf32c9f6f1963019f8889eb4e01fc",
+            "name": "建筑规划岗实习生",
+            "education": "本科 研究生",
+            "major": null,
+            "fullTime": null,
+            "intro": "岗位职责：\n协助建筑规划与项目管理，整理施工资料并完成工作交底，消防相关信息仅作为交底内容。\n\n任职资格：\n2027-2028届本科生或硕士生，建筑学等相关专业，具备良好的沟通协调能力。\n\n实习福利：\n提供学习培训，具体安排以正式录用通知为准。"
+          },
+          "region": { "city": "合成市" },
+          "otherRequirement": "岗位职责：\n协助建筑规划与项目管理，整理施工资料并完成工作交底，消防相关信息仅作为交底内容。\n\n任职资格：\n2027-2028届本科生或硕士生，建筑学等相关专业，具备良好的沟通协调能力。\n\n实习福利：\n提供学习培训，具体安排以正式录用通知为准。"
+        }
+      ]
+    },
+    {
+      "id": "recruit_recruitdata_5b5bf32c9f6f1963019f7e37b3c00043",
+      "company": { "id": "synthetic-company-orphan", "name": "合成无岗位定义企业" },
+      "theme": "合成缺岗位定义的招聘公告",
+      "enabled": true,
+      "status": "PUBLISHED",
+      "intro": "这段文字是父招聘公告介绍，两个原生岗位行均未提供岗位定义，不能据此制造岗位名称或完整职责。",
+      "deadline": "2026-10-22",
+      "positions": [
+        { "id": "recruit_recruitdata_post_5b5bf32c9f6f1963019f7e37b4540046", "updatedAt": "2026-10-12 00:00:00" },
+        { "id": "recruit_recruitdata_post_5b5bf32c9f6f1963019f7e37b44e0044", "updatedAt": "2026-10-12 00:00:00" }
+      ]
+    }
+  ],
+  "page": { "size": 50, "number": 1, "totalElements": 52, "totalPages": 2 }
+}

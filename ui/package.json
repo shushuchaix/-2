@@ -1,0 +1,21 @@
+{
+  "name": "resume-job-radar-ui",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "@base-ui/react": "1.8.0",
+    "cn": "0.4.0",
+    "class-variance-authority": "0.7.1",
+    "lucide-react": "1.53.0"
+  },
+  "devDependencies": {
+    "vite": "7.3.7",
+    "@vitejs/plugin-react": "5.2.0",
+    "tailwindcss": "4.3.3",
+    "@tailwindcss/vite": "4.3.3",
+    "typescript": "5.9.3"
+  }
+}

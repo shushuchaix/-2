@@ -1,0 +1,2 @@
+Local OCR language data: naptha/tessdata, 4.0.0_best_int. Training data is Apache-2.0; @tesseract.js-data language npm packages declare MIT. Package versions and integrity are pinned in package-lock.json.
+https://github.com/naptha/tessdata

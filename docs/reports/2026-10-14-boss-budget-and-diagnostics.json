@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "observedAt": "2026-10-14T09:13:13.528Z",
+  "scope": "Boss diagnostic and browser budget repair",
+  "overallCollectionComplete": false,
+  "actualBeforeRepair": {
+    "humanReportedLogin": true,
+    "probeRequestsUpperBound": 37,
+    "listSamples": 0,
+    "bodySamples": 0,
+    "persistedFailureCode": "source_probe_failed",
+    "diagnosticIdPreserved": false,
+    "storageTransactions": 65,
+    "storageDurationMs": {
+      "minimum": 1001,
+      "median": 1061,
+      "maximum": 5202
+    },
+    "authenticatedCollectionSucceeded": false
+  },
+  "changes": [
+    "Known page failures retain their cause and safe diagnostic link.",
+    "Source probes and detail errors use version-owned diagnostic metadata.",
+    "Failed desktop verification shows an error and log link.",
+    "HTTP and DNS share an allowance of at most 60 requests and 20 MiB, tightened to the original remaining quota.",
+    "One durable batch before wire and one settlement after drain replace per-resource workspace writes.",
+    "Original-lease drain settlement can confirm completed requests and refund never-issued slots after pause/cancel; new sends, resumed slices and business writes still reject stale tokens.",
+    "Progress, usage and quality derive from one locked workspace snapshot.",
+    "The public request validator matches the existing finite 10000 extension cap; defaults and other budgets are unchanged."
+  ],
+  "verification": {
+    "businessPassed": 1904,
+    "uiPassed": 174,
+    "suites": {
+      "total": 25,
+      "passed": 18,
+      "explicitlySkipped": 7,
+      "failed": 0
+    },
+    "focusedDrainAndBudgetPassed": 28,
+    "typescriptExitCode": 0,
+    "package": {
+      "asarSha256": "AABE3F570A587801757FD68E8A3724BD6A3D65AC6E0D8967F349D93CC347E1B2",
+      "exactSourceHashes": 228,
+      "productionDependencies": 52,
+      "ocrHashes": 32
+    },
+    "nativeScales": [
+      {
+        "scale": 1,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "screenshots": 63,
+        "visualAudits": 39
+      },
+      {
+        "scale": 1.25,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "screenshots": 63,
+        "visualAudits": 39
+      },
+      {
+        "scale": 1.5,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "screenshots": 63,
+        "visualAudits": 39
+      }
+    ],
+    "review": {
+      "critical": 0,
+      "important": 1,
+      "minor": 0,
+      "importantResolved": 1,
+      "fixPasses": 1
+    }
+  },
+  "priorFailedGates": [
+    {
+      "gate": "first_full",
+      "failure": "small remaining quota rejected an upfront 60-request allowance",
+      "fixed": true
+    },
+    {
+      "gate": "second_full",
+      "failure": "synthetic accounting wrapper omitted snapshot",
+      "fixed": true
+    }
+  ],
+  "cumulative": {
+    "requestsUpperBound": 1949,
+    "requestLimit": 2100,
+    "remainingRequests": 151,
+    "currentRootKnownPhysicalRequests": 1233,
+    "currentRootUnknownRequestUpperBound": 627,
+    "historicalRequestsUpperBound": 89,
+    "details": 119,
+    "detailLimit": 220,
+    "bytes": 254475973,
+    "byteLimit": 314572800,
+    "costUpperBoundCny": 3.98861,
+    "costLimitCny": 9.999184
+  },
+  "priorSourceSnapshot": {
+    "observedAt": "2026-10-13T19:23:14.928Z",
+    "summary": {
+      "originalTemplateGaps": 47,
+      "candidateTemplates": 17,
+      "remainingTemplateGaps": 30,
+      "newUniqueRecords": 12,
+      "newBodyVerifiedRecords": 12,
+      "newEffectiveRecommendations": 0
+    },
+    "quality": {
+      "uniqueRecords": 928,
+      "bodyVerified": 88,
+      "open": 4,
+      "applicationAvailable": 0,
+      "qualificationPass": 48,
+      "qualificationUnknown": 632,
+      "qualificationFail": 248,
+      "historicalOrExpired": 25,
+      "suspectedDuplicates": 241,
+      "validNewUnique": 0,
+      "knownRequests": 1171,
+      "unknownRequestUpperBound": 191,
+      "validPer100KnownRequests": 0
+    },
+    "newJobsInThisRepair": 0,
+    "allSourcesRetestedInThisRepair": false
+  },
+  "privacy": {
+    "realResumeLocalOnly": true,
+    "newModelCalls": 0,
+    "accountOrQrContentSaved": false,
+    "privateIdentifiersIncluded": false,
+    "newActivityCreated": false
+  },
+  "remaining": [
+    "Updated executable authenticated list/body probe requires the human to reopen its own version login; the earlier unremembered process is no longer running.",
+    "The prior source snapshot retains 30 official-template gaps and zero verified usable application entries; offline tests do not establish online readiness.",
+    "Source expansion and task completion remain open; shutdown has not been performed."
+  ]
+}

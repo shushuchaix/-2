@@ -1,0 +1,4481 @@
+{
+  "mode": "rules",
+  "ruleVersion": "rules-2.0.0",
+  "sampleCount": 30,
+  "synthetic": true,
+  "labelMethod": "实现者按预先定义场景人工编写标签；不是用户真值或模型生成标签",
+  "limitations": [
+    "仅3画像×10合成JD，不代表真实求职成功率。",
+    "同一场景用于开发回放，无法证明样本外泛化或新模型提示词质量。",
+    "v1不输出资格分类，因此其资格预测统一unknown。"
+  ],
+  "scenarios": [
+    {
+      "profileId": "software",
+      "ranked": [
+        {
+          "jobId": "s1",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 100,
+          "ruleScore": 100,
+          "components": {
+            "role": {
+              "score": 22,
+              "max": 22,
+              "evidence": [
+                {
+                  "matchedText": "Java开发",
+                  "start": 0,
+                  "end": 6,
+                  "role": "Java开发"
+                }
+              ]
+            },
+            "skills": {
+              "score": 45,
+              "max": 45,
+              "evidence": [
+                {
+                  "skillId": "java",
+                  "matchedText": "Java",
+                  "start": 0,
+                  "end": 4,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "java",
+                  "matchedText": "Java",
+                  "start": 26,
+                  "end": 30,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "SQL",
+                  "matchedText": "SQL",
+                  "start": 31,
+                  "end": 34,
+                  "relation": "exact"
+                }
+              ]
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 8,
+              "max": 8,
+              "evidence": [
+                "岗位与专业同属 software"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [
+            {
+              "skillId": "java",
+              "matchedText": "Java",
+              "start": 0,
+              "end": 4,
+              "relation": "exact"
+            },
+            {
+              "skillId": "java",
+              "matchedText": "Java",
+              "start": 26,
+              "end": 30,
+              "relation": "exact"
+            },
+            {
+              "skillId": "SQL",
+              "matchedText": "SQL",
+              "start": 31,
+              "end": 34,
+              "relation": "exact"
+            }
+          ],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "high",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s7",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "fail",
+                "requirement": "博士",
+                "evidence": {
+                  "excerpt": "博士"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              },
+              {
+                "type": "experience",
+                "status": "fail",
+                "requirement": 5,
+                "evidence": {
+                  "excerpt": "要求5年以上工作经验"
+                },
+                "reason": "实习/项目不能自动视为正式工作年限",
+                "preferred": false,
+                "required": true
+              }
+            ]
+          },
+          "score": 49,
+          "ruleScore": 49,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 45,
+              "max": 45,
+              "evidence": [
+                {
+                  "skillId": "java",
+                  "matchedText": "Java",
+                  "start": 0,
+                  "end": 4,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "java",
+                  "matchedText": "Java",
+                  "start": 30,
+                  "end": 34,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "SQL",
+                  "matchedText": "SQL",
+                  "start": 35,
+                  "end": 38,
+                  "relation": "exact"
+                }
+              ]
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 8,
+              "max": 8,
+              "evidence": [
+                "岗位与专业同属 software"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "fail",
+                  "requirement": "博士",
+                  "evidence": {
+                    "excerpt": "博士"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                },
+                {
+                  "type": "experience",
+                  "status": "fail",
+                  "requirement": 5,
+                  "evidence": {
+                    "excerpt": "要求5年以上工作经验"
+                  },
+                  "reason": "实习/项目不能自动视为正式工作年限",
+                  "preferred": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [
+            {
+              "skillId": "java",
+              "matchedText": "Java",
+              "start": 0,
+              "end": 4,
+              "relation": "exact"
+            },
+            {
+              "skillId": "java",
+              "matchedText": "Java",
+              "start": 30,
+              "end": 34,
+              "relation": "exact"
+            },
+            {
+              "skillId": "SQL",
+              "matchedText": "SQL",
+              "start": 35,
+              "end": 38,
+              "relation": "exact"
+            }
+          ],
+          "gaps": [
+            "比较岗位接受的最低学历与已确认学历",
+            "实习/项目不能自动视为正式工作年限"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s9",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "fail",
+                "requirement": [
+                  2026
+                ],
+                "evidence": {
+                  "excerpt": "2026届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 49,
+          "ruleScore": 49,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 45,
+              "max": 45,
+              "evidence": [
+                {
+                  "skillId": "java",
+                  "matchedText": "Java",
+                  "start": 0,
+                  "end": 4,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "java",
+                  "matchedText": "Java",
+                  "start": 25,
+                  "end": 29,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "SQL",
+                  "matchedText": "SQL",
+                  "start": 30,
+                  "end": 33,
+                  "relation": "exact"
+                }
+              ]
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 8,
+              "max": 8,
+              "evidence": [
+                "岗位与专业同属 software"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "fail",
+                  "requirement": [
+                    2026
+                  ],
+                  "evidence": {
+                    "excerpt": "2026届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [
+            {
+              "skillId": "java",
+              "matchedText": "Java",
+              "start": 0,
+              "end": 4,
+              "relation": "exact"
+            },
+            {
+              "skillId": "java",
+              "matchedText": "Java",
+              "start": 25,
+              "end": 29,
+              "relation": "exact"
+            },
+            {
+              "skillId": "SQL",
+              "matchedText": "SQL",
+              "start": 30,
+              "end": 33,
+              "relation": "exact"
+            }
+          ],
+          "gaps": [
+            "比较明确接受的毕业年份"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s2",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 33,
+          "ruleScore": 33,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 8,
+              "max": 8,
+              "evidence": [
+                "岗位与专业同属 software"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s4",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 33,
+          "ruleScore": 33,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 8,
+              "max": 8,
+              "evidence": [
+                "岗位与专业同属 software"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s3",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s5",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "大专及以上",
+                "evidence": {
+                  "excerpt": "大专及以上"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "大专及以上",
+                  "evidence": {
+                    "excerpt": "大专及以上"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s6",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s10",
+          "qualification": {
+            "status": "unknown",
+            "checks": [
+              {
+                "type": "record",
+                "status": "unknown",
+                "requirement": null,
+                "evidence": null,
+                "reason": "公告或缺少岗位正文，资格需核实"
+              }
+            ]
+          },
+          "score": 19,
+          "ruleScore": 19,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": []
+            },
+            "eligibility": {
+              "score": 4,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "record",
+                  "status": "unknown",
+                  "requirement": null,
+                  "evidence": null,
+                  "reason": "公告或缺少岗位正文，资格需核实"
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "公告或缺少岗位正文，资格需核实"
+          ],
+          "completeness": {
+            "score": 50,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": false,
+              "url": true
+            },
+            "missing": [
+              "description"
+            ]
+          },
+          "status": "rules",
+          "recommendation": "insufficient",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s8",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              },
+              {
+                "type": "certificate",
+                "status": "fail",
+                "requirement": "注册消防工程师",
+                "evidence": {
+                  "excerpt": "须持有注册消防工程师证书"
+                },
+                "reason": "已确认未持有必需证书",
+                "preferred": false,
+                "required": true
+              }
+            ]
+          },
+          "score": 15,
+          "ruleScore": 15,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                },
+                {
+                  "type": "certificate",
+                  "status": "fail",
+                  "requirement": "注册消防工程师",
+                  "evidence": {
+                    "excerpt": "须持有注册消防工程师证书"
+                  },
+                  "reason": "已确认未持有必需证书",
+                  "preferred": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "已确认未持有必需证书"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        }
+      ],
+      "metrics": {
+        "precisionAt10": 0.1,
+        "ndcgAt10": 0.9680147827042069,
+        "qualificationConfusion": {
+          "pass": {
+            "pass": 6,
+            "fail": 0,
+            "unknown": 0
+          },
+          "fail": {
+            "pass": 0,
+            "fail": 3,
+            "unknown": 0
+          },
+          "unknown": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 1
+          }
+        },
+        "incompleteHighRecommendationRate": 0
+      }
+    },
+    {
+      "profileId": "fire",
+      "ranked": [
+        {
+          "jobId": "s3",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 100,
+          "ruleScore": 100,
+          "components": {
+            "role": {
+              "score": 22,
+              "max": 22,
+              "evidence": [
+                {
+                  "matchedText": "消防设计",
+                  "start": 0,
+                  "end": 4,
+                  "role": "消防设计"
+                }
+              ]
+            },
+            "skills": {
+              "score": 45,
+              "max": 45,
+              "evidence": [
+                {
+                  "skillId": "消防设计",
+                  "matchedText": "消防设计",
+                  "start": 0,
+                  "end": 4,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "消防设计",
+                  "matchedText": "消防设计",
+                  "start": 21,
+                  "end": 25,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "防排烟",
+                  "matchedText": "防排烟",
+                  "start": 26,
+                  "end": 29,
+                  "relation": "exact"
+                }
+              ]
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 8,
+              "max": 8,
+              "evidence": [
+                "岗位与专业同属 fire_safety"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [
+            {
+              "skillId": "消防设计",
+              "matchedText": "消防设计",
+              "start": 0,
+              "end": 4,
+              "relation": "exact"
+            },
+            {
+              "skillId": "消防设计",
+              "matchedText": "消防设计",
+              "start": 21,
+              "end": 25,
+              "relation": "exact"
+            },
+            {
+              "skillId": "防排烟",
+              "matchedText": "防排烟",
+              "start": 26,
+              "end": 29,
+              "relation": "exact"
+            }
+          ],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "high",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s1",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s2",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s4",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s5",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "大专及以上",
+                "evidence": {
+                  "excerpt": "大专及以上"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "大专及以上",
+                  "evidence": {
+                    "excerpt": "大专及以上"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s6",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s8",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              },
+              {
+                "type": "certificate",
+                "status": "fail",
+                "requirement": "注册消防工程师",
+                "evidence": {
+                  "excerpt": "须持有注册消防工程师证书"
+                },
+                "reason": "已确认未持有必需证书",
+                "preferred": false,
+                "required": true
+              }
+            ]
+          },
+          "score": 23,
+          "ruleScore": 23,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 8,
+              "max": 8,
+              "evidence": [
+                "专业 消防工程 有明确证据"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                },
+                {
+                  "type": "certificate",
+                  "status": "fail",
+                  "requirement": "注册消防工程师",
+                  "evidence": {
+                    "excerpt": "须持有注册消防工程师证书"
+                  },
+                  "reason": "已确认未持有必需证书",
+                  "preferred": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "已确认未持有必需证书"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s10",
+          "qualification": {
+            "status": "unknown",
+            "checks": [
+              {
+                "type": "record",
+                "status": "unknown",
+                "requirement": null,
+                "evidence": null,
+                "reason": "公告或缺少岗位正文，资格需核实"
+              }
+            ]
+          },
+          "score": 19,
+          "ruleScore": 19,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": []
+            },
+            "eligibility": {
+              "score": 4,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "record",
+                  "status": "unknown",
+                  "requirement": null,
+                  "evidence": null,
+                  "reason": "公告或缺少岗位正文，资格需核实"
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "公告或缺少岗位正文，资格需核实"
+          ],
+          "completeness": {
+            "score": 50,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": false,
+              "url": true
+            },
+            "missing": [
+              "description"
+            ]
+          },
+          "status": "rules",
+          "recommendation": "insufficient",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s7",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "fail",
+                "requirement": "博士",
+                "evidence": {
+                  "excerpt": "博士"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              },
+              {
+                "type": "experience",
+                "status": "fail",
+                "requirement": 5,
+                "evidence": {
+                  "excerpt": "要求5年以上工作经验"
+                },
+                "reason": "实习/项目不能自动视为正式工作年限",
+                "preferred": false,
+                "required": true
+              }
+            ]
+          },
+          "score": 15,
+          "ruleScore": 15,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "fail",
+                  "requirement": "博士",
+                  "evidence": {
+                    "excerpt": "博士"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                },
+                {
+                  "type": "experience",
+                  "status": "fail",
+                  "requirement": 5,
+                  "evidence": {
+                    "excerpt": "要求5年以上工作经验"
+                  },
+                  "reason": "实习/项目不能自动视为正式工作年限",
+                  "preferred": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "比较岗位接受的最低学历与已确认学历",
+            "实习/项目不能自动视为正式工作年限"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s9",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "fail",
+                "requirement": [
+                  2026
+                ],
+                "evidence": {
+                  "excerpt": "2026届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 15,
+          "ruleScore": 15,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "fail",
+                  "requirement": [
+                    2026
+                  ],
+                  "evidence": {
+                    "excerpt": "2026届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "比较明确接受的毕业年份"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        }
+      ],
+      "metrics": {
+        "precisionAt10": 0.1,
+        "ndcgAt10": 0.9680147827042069,
+        "qualificationConfusion": {
+          "pass": {
+            "pass": 6,
+            "fail": 0,
+            "unknown": 0
+          },
+          "fail": {
+            "pass": 0,
+            "fail": 3,
+            "unknown": 0
+          },
+          "unknown": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 1
+          }
+        },
+        "incompleteHighRecommendationRate": 0
+      }
+    },
+    {
+      "profileId": "mechanical",
+      "ranked": [
+        {
+          "jobId": "s5",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "大专及以上",
+                "evidence": {
+                  "excerpt": "大专及以上"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 100,
+          "ruleScore": 100,
+          "components": {
+            "role": {
+              "score": 22,
+              "max": 22,
+              "evidence": [
+                {
+                  "matchedText": "设备工程师",
+                  "start": 0,
+                  "end": 5,
+                  "role": "设备工程师"
+                }
+              ]
+            },
+            "skills": {
+              "score": 45,
+              "max": 45,
+              "evidence": [
+                {
+                  "skillId": "CAD",
+                  "matchedText": "CAD",
+                  "start": 26,
+                  "end": 29,
+                  "relation": "exact"
+                },
+                {
+                  "skillId": "PLC",
+                  "matchedText": "PLC",
+                  "start": 30,
+                  "end": 33,
+                  "relation": "exact"
+                }
+              ]
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 8,
+              "max": 8,
+              "evidence": [
+                "岗位与专业同属 manufacturing"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "大专及以上",
+                  "evidence": {
+                    "excerpt": "大专及以上"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [
+            {
+              "skillId": "CAD",
+              "matchedText": "CAD",
+              "start": 26,
+              "end": 29,
+              "relation": "exact"
+            },
+            {
+              "skillId": "PLC",
+              "matchedText": "PLC",
+              "start": 30,
+              "end": 33,
+              "relation": "exact"
+            }
+          ],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "high",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s1",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s2",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s3",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s4",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s6",
+          "qualification": {
+            "status": "pass",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 25,
+          "ruleScore": 25,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 10,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "low",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s10",
+          "qualification": {
+            "status": "unknown",
+            "checks": [
+              {
+                "type": "record",
+                "status": "unknown",
+                "requirement": null,
+                "evidence": null,
+                "reason": "公告或缺少岗位正文，资格需核实"
+              }
+            ]
+          },
+          "score": 19,
+          "ruleScore": 19,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": []
+            },
+            "eligibility": {
+              "score": 4,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "record",
+                  "status": "unknown",
+                  "requirement": null,
+                  "evidence": null,
+                  "reason": "公告或缺少岗位正文，资格需核实"
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "公告或缺少岗位正文，资格需核实"
+          ],
+          "completeness": {
+            "score": 50,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": false,
+              "url": true
+            },
+            "missing": [
+              "description"
+            ]
+          },
+          "status": "rules",
+          "recommendation": "insufficient",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s7",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "fail",
+                "requirement": "博士",
+                "evidence": {
+                  "excerpt": "博士"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              },
+              {
+                "type": "experience",
+                "status": "fail",
+                "requirement": 5,
+                "evidence": {
+                  "excerpt": "要求5年以上工作经验"
+                },
+                "reason": "实习/项目不能自动视为正式工作年限",
+                "preferred": false,
+                "required": true
+              }
+            ]
+          },
+          "score": 15,
+          "ruleScore": 15,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "fail",
+                  "requirement": "博士",
+                  "evidence": {
+                    "excerpt": "博士"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                },
+                {
+                  "type": "experience",
+                  "status": "fail",
+                  "requirement": 5,
+                  "evidence": {
+                    "excerpt": "要求5年以上工作经验"
+                  },
+                  "reason": "实习/项目不能自动视为正式工作年限",
+                  "preferred": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "比较岗位接受的最低学历与已确认学历",
+            "实习/项目不能自动视为正式工作年限"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s8",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "pass",
+                "requirement": [
+                  2027
+                ],
+                "evidence": {
+                  "excerpt": "2027届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              },
+              {
+                "type": "certificate",
+                "status": "fail",
+                "requirement": "注册消防工程师",
+                "evidence": {
+                  "excerpt": "须持有注册消防工程师证书"
+                },
+                "reason": "已确认未持有必需证书",
+                "preferred": false,
+                "required": true
+              }
+            ]
+          },
+          "score": 15,
+          "ruleScore": 15,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "pass",
+                  "requirement": [
+                    2027
+                  ],
+                  "evidence": {
+                    "excerpt": "2027届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                },
+                {
+                  "type": "certificate",
+                  "status": "fail",
+                  "requirement": "注册消防工程师",
+                  "evidence": {
+                    "excerpt": "须持有注册消防工程师证书"
+                  },
+                  "reason": "已确认未持有必需证书",
+                  "preferred": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "已确认未持有必需证书"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        },
+        {
+          "jobId": "s9",
+          "qualification": {
+            "status": "fail",
+            "checks": [
+              {
+                "type": "degree",
+                "status": "pass",
+                "requirement": "本科",
+                "evidence": {
+                  "excerpt": "本科"
+                },
+                "reason": "比较岗位接受的最低学历与已确认学历",
+                "preferred": false,
+                "required": true
+              },
+              {
+                "type": "graduation_year",
+                "status": "fail",
+                "requirement": [
+                  2026
+                ],
+                "evidence": {
+                  "excerpt": "2026届"
+                },
+                "reason": "比较明确接受的毕业年份",
+                "required": true
+              },
+              {
+                "type": "job_type",
+                "status": "pass",
+                "requirement": [
+                  "campus"
+                ],
+                "evidence": {
+                  "excerpt": "campus"
+                },
+                "reason": "与目标岗位类型比较",
+                "required": true
+              }
+            ]
+          },
+          "score": 15,
+          "ruleScore": 15,
+          "components": {
+            "role": {
+              "score": 0,
+              "max": 22,
+              "evidence": []
+            },
+            "skills": {
+              "score": 0,
+              "max": 45,
+              "evidence": []
+            },
+            "city": {
+              "score": 15,
+              "max": 15,
+              "evidence": [
+                "北京"
+              ]
+            },
+            "major": {
+              "score": 0,
+              "max": 8,
+              "evidence": [
+                "岗位方向与专业族不同"
+              ]
+            },
+            "eligibility": {
+              "score": 0,
+              "max": 10,
+              "evidence": [
+                {
+                  "type": "degree",
+                  "status": "pass",
+                  "requirement": "本科",
+                  "evidence": {
+                    "excerpt": "本科"
+                  },
+                  "reason": "比较岗位接受的最低学历与已确认学历",
+                  "preferred": false,
+                  "required": true
+                },
+                {
+                  "type": "graduation_year",
+                  "status": "fail",
+                  "requirement": [
+                    2026
+                  ],
+                  "evidence": {
+                    "excerpt": "2026届"
+                  },
+                  "reason": "比较明确接受的毕业年份",
+                  "required": true
+                },
+                {
+                  "type": "job_type",
+                  "status": "pass",
+                  "requirement": [
+                    "campus"
+                  ],
+                  "evidence": {
+                    "excerpt": "campus"
+                  },
+                  "reason": "与目标岗位类型比较",
+                  "required": true
+                }
+              ]
+            }
+          },
+          "evidence": [],
+          "gaps": [
+            "比较明确接受的毕业年份"
+          ],
+          "completeness": {
+            "score": 100,
+            "fields": {
+              "title": true,
+              "company": true,
+              "cities": true,
+              "description": true,
+              "url": true
+            },
+            "missing": []
+          },
+          "status": "rules",
+          "recommendation": "not_recommended",
+          "ruleVersion": "rules-2.0.0"
+        }
+      ],
+      "metrics": {
+        "precisionAt10": 0.1,
+        "ndcgAt10": 0.9737576937588317,
+        "qualificationConfusion": {
+          "pass": {
+            "pass": 6,
+            "fail": 0,
+            "unknown": 0
+          },
+          "unknown": {
+            "pass": 0,
+            "fail": 0,
+            "unknown": 1
+          },
+          "fail": {
+            "pass": 0,
+            "fail": 3,
+            "unknown": 0
+          }
+        },
+        "incompleteHighRecommendationRate": 0
+      }
+    }
+  ],
+  "legacy": {
+    "ref": "3547885",
+    "mode": "legacy-pure-rules",
+    "network": "blocked",
+    "scenarios": [
+      {
+        "profileId": "software",
+        "ranked": [
+          {
+            "jobId": "s1",
+            "score": 98,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "high"
+          },
+          {
+            "jobId": "s9",
+            "score": 88,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "high"
+          },
+          {
+            "jobId": "s7",
+            "score": 72,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s2",
+            "score": 60,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s4",
+            "score": 28,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s3",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s5",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s6",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s8",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s10",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          }
+        ],
+        "metrics": {
+          "precisionAt10": 0.1,
+          "ndcgAt10": 0.9680147827042069,
+          "qualificationConfusion": {
+            "pass": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 6
+            },
+            "fail": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 3
+            },
+            "unknown": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 1
+            }
+          },
+          "incompleteHighRecommendationRate": 0
+        }
+      },
+      {
+        "profileId": "fire",
+        "ranked": [
+          {
+            "jobId": "s3",
+            "score": 98,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "high"
+          },
+          {
+            "jobId": "s8",
+            "score": 52,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s9",
+            "score": 31,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s1",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s2",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s4",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s5",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s6",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s10",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s7",
+            "score": 15,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          }
+        ],
+        "metrics": {
+          "precisionAt10": 0.1,
+          "ndcgAt10": 0.9610012895088121,
+          "qualificationConfusion": {
+            "pass": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 6
+            },
+            "fail": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 3
+            },
+            "unknown": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 1
+            }
+          },
+          "incompleteHighRecommendationRate": 0
+        }
+      },
+      {
+        "profileId": "mechanical",
+        "ranked": [
+          {
+            "jobId": "s5",
+            "score": 98,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "high"
+          },
+          {
+            "jobId": "s9",
+            "score": 31,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s1",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s2",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s3",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s4",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s6",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s8",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s10",
+            "score": 27,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          },
+          {
+            "jobId": "s7",
+            "score": 15,
+            "qualification": {
+              "status": "unknown"
+            },
+            "recommendation": "consider"
+          }
+        ],
+        "metrics": {
+          "precisionAt10": 0.1,
+          "ndcgAt10": 0.9680147827042069,
+          "qualificationConfusion": {
+            "pass": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 6
+            },
+            "fail": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 3
+            },
+            "unknown": {
+              "pass": 0,
+              "fail": 0,
+              "unknown": 1
+            }
+          },
+          "incompleteHighRecommendationRate": 0
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "siteId": "siemens",
+  "structureOnly": true,
+  "syntheticTitlesBodyAndNativeIds": true,
+  "publicListUrl": "https://jobs.siemens.com/en_US/externaljobs/SearchJobs",
+  "publicDetailUrl": "https://jobs.siemens.com/en_US/externaljobs/JobDetail/525348",
+  "publicNativeDetailIds": ["525362", "525348", "522959", "524658", "519961", "524731"],
+  "observedDetailNativeId": "525348",
+  "fixtureDetailNativeId": "990348",
+  "listRule": "article.article--result .article__header__text__title a.link[href]",
+  "detailTitleRule": "h3.section__header__text__title",
+  "detailIdRule": "#section0__content .article__content__view > .article__content__view__field:nth-child(1) > .article__content__view__field__value",
+  "bodyRule": "#section1__content .article__content__view__field__value",
+  "requiredBodyRules": [
+    "#section1__content .article__content__view__field__value > div > p:nth-of-type(2) + ul:nth-of-type(1)",
+    "#section1__content .article__content__view__field__value > div > p:nth-of-type(3) + ul:nth-of-type(2)"
+  ],
+  "observedBodyTextCharCount": 3789,
+  "observedDutiesItemCount": 15,
+  "observedQualificationsItemCount": 5,
+  "observedOfferItemCount": 2,
+  "observedPostedDateLabel": "Posted since",
+  "observedPostedDateValue": "11-Oct-2026",
+  "listDateRule": null,
+  "dateRule": null,
+  "dateEvidence": "List dates were not observed. The visible English month date is retained as structure evidence; no date parser extension is enabled.",
+  "publicApplicationUrl": "https://jobs.siemens.com/en_US/externaljobs/ApplicationMethods?folderId=525348",
+  "applicationSelector": "article.article--actions a.button--hero[href]",
+  "applicationLabel": "Apply",
+  "applicationVerification": "unknown",
+  "openingEvidence": "No deadline or current recruitment window was established.",
+  "bodyEvidence": "The complete field contains nonempty duties and qualifications lists and the closing body; no image, iframe or truncation container was observed."
+}

@@ -11,7 +11,18 @@ config.json
 
 # 开发/勘察脚本与桌面版构建产物
 # 注意：dist 有 300MB+、.cache 有 130MB+，若不打进 .dockerignore 会把构建上下文撑爆
-tools
+# tools/build-ui.mjs and ui/ are required by the builder stage.
+tests
+public/app
+control
+cache
+logs
+credentials.v2.json
+credentials
+.credentials.yaml
+credentials.yaml
+.superpowers
+*.log
 dist
 .cache
 .tmp

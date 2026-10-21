@@ -6,6 +6,10 @@ import {
 } from "./shared.mjs";
 import { elementText } from "../../util/html-elements.mjs";
 import { parseHTML } from "linkedom";
+import {
+  sourceIssueCode,
+  safeSourceDiagnosticRefs,
+} from "../source-status.mjs";
 const id = "ncss";
 function entryOrigin(site) {
   const url = new URL(site.origin || "https://www.ncss.cn");
@@ -134,7 +138,11 @@ export default createPagedProvider({
   async detail(r, ctx) {
     const response = await ctx.request(r.url, { signal: ctx.signal });
     if (response.status !== 200)
-      throw Error("NCSS detail HTTP " + response.status);
+      throw Object.assign(Error("NCSS detail HTTP " + response.status), {
+        code: sourceIssueCode(response, "detail_unavailable"),
+        status: response.status,
+        ...safeSourceDiagnosticRefs(response),
+      });
     const candidates = [".mainContent", ".jobdetail-box"].map((selector) => ({
       selector,
       text: elementText(response.text, selector),

@@ -168,6 +168,7 @@ const enums = {
   endpointKind: [
     "list",
     "detail",
+    "application",
     "search",
     "dns",
     "import",

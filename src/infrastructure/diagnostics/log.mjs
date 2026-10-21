@@ -154,6 +154,7 @@ const messages = {
   "collection.plan": "采集活动计划已生成。",
   "collection.page": "采集页面已提交。",
   "collection.body": "招聘正文检查已结束。",
+  "collection.application": "投递入口核验已结束。",
   "collection.attachment": "招聘附件解析已结束。",
   "collection.qualification": "招聘资格检查已结束。",
   "collection.dedup": "招聘去重检查已结束。",

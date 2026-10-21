@@ -89,9 +89,33 @@ export function safeSourceDiagnosticRefs(value) {
   }
   return refs;
 }
+// Classify only structured facts. Upstream text is neither evidence of risk
+// nor safe diagnostic metadata.
+export function sourceIssueCode(error, fallback = "source_probe_failed") {
+  if (issueCodes.has(error?.code)) return error.code;
+  if (error?.name === "TimeoutError" || error?.code === "ETIMEDOUT")
+    return "request_timeout";
+  if (
+    [
+      "ECONNRESET",
+      "ECONNREFUSED",
+      "ENETUNREACH",
+      "EHOSTUNREACH",
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "EPIPE",
+    ].includes(error?.code)
+  )
+    return "network_error";
+  if (error?.status === 429) return "rate_limited";
+  if (error?.status === 401) return "login_required";
+  if (error?.status === 403) return "restricted";
+  if (error?.status === 408 || error?.status === 504) return "http_timeout";
+  return issueCodes.has(fallback) ? fallback : "source_probe_failed";
+}
 export function safeSourceIssues(issues, sourceId, siteId) {
   return (Array.isArray(issues) ? issues : []).slice(0, 100).map((issue) => ({
-    code: issueCodes.has(issue?.code) ? issue.code : "source_probe_failed",
+    code: sourceIssueCode(issue),
     sourceId,
     siteId,
     ...(typeof issue?.retryable === "boolean"

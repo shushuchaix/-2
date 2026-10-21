@@ -2,6 +2,7 @@ import { assertSourceRecord } from "../../domain/contracts.mjs";
 import {
   normalizeSourceStatus,
   safeSourceDiagnosticRefs,
+  sourceIssueCode,
 } from "../source-status.mjs";
 import { recordDiagnostic } from "../../infrastructure/diagnostics/log.mjs";
 import { parseHTML } from "linkedom";
@@ -95,11 +96,14 @@ export function jsonResponse(response) {
     const e = Error("restricted: HTTP " + response.status);
     e.code = "restricted";
     e.status = response.status;
+    Object.assign(e, safeSourceDiagnosticRefs(response));
     throw e;
   }
   if (response.status !== 200)
     throw Object.assign(Error("HTTP " + response.status), {
       status: response.status,
+      code: sourceIssueCode(response, "unavailable"),
+      ...safeSourceDiagnosticRefs(response),
     });
   if (
     /captcha|人机验证|访问过于频繁|<title>[^<]*验证码/i.test(
@@ -391,7 +395,7 @@ export function createPagedProvider({
               page: currentPage,
               phase: e.phase || "parse",
               outcome: "failed",
-              code: e.code,
+              code: sourceIssueCode(e, "unavailable"),
               parser: e.parser,
               requestId: safeSourceDiagnosticRefs(e).requestId,
               truncationReason: requestBudgetExhausted
@@ -399,11 +403,7 @@ export function createPagedProvider({
                 : undefined,
             });
             issues.push({
-              code:
-                e.code ||
-                (/budget_exhausted/.test(e.message)
-                  ? "budget_exhausted"
-                  : "unavailable"),
+              code: sourceIssueCode(e, "unavailable"),
               sourceId: id,
               siteId: site.siteId,
               message: e.message,
@@ -523,7 +523,7 @@ export function createPagedProvider({
             siteId: r.siteId,
           });
           result.issues.push({
-            code: e.code || "detail_unavailable",
+            code: sourceIssueCode(e, "detail_unavailable"),
             sourceId: id,
             siteId: r.siteId,
             message: e.message,

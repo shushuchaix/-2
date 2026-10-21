@@ -32,9 +32,16 @@ function requestContext(defaults, overrides) {
     if (Number.isSafeInteger(context[key]) && context[key] >= 0)
       safe[key] = context[key];
   if (
-    ["request", "list", "detail", "search", "dns", "import", "model"].includes(
-      context.endpointKind,
-    )
+    [
+      "request",
+      "list",
+      "detail",
+      "application",
+      "search",
+      "dns",
+      "import",
+      "model",
+    ].includes(context.endpointKind)
   )
     safe.endpointKind = context.endpointKind;
   return safe;

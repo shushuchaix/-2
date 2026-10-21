@@ -122,8 +122,15 @@ export async function readProviderPage(provider, input) {
       input.site?.siteId +
       "/" +
       digest(JSON.stringify(ordered(input.query || {})));
+  const rawCount = [result.stats?.raw, result.raw].find(
+    (value) => Number.isSafeInteger(value) && value >= 0,
+  );
+  const stats = { ...result.stats };
+  if (rawCount !== undefined) stats.raw = rawCount;
+  else delete stats.raw;
   const page = {
     ...result,
+    ...(result.stats || rawCount !== undefined ? { stats } : {}),
     records,
     issues,
     done,

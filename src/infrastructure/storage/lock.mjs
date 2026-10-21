@@ -27,6 +27,19 @@ function ticketState(text, id) {
 }
 const precedes = (other, own) => other.choosing || other.ticket < own.ticket || (other.ticket === own.ticket && other.id < own.id);
 const busyLegacy = () => Object.assign(Error("Workspace busy: legacy recovery lock has an uncertain owner"), { code: "EEXIST" });
+function coordinationFailure(error, phase) {
+  const storageOperation = "workspace.lock." + phase;
+  try {
+    error.runFatal = true;
+    error.storageOperation = storageOperation;
+    if (error.runFatal === true && error.storageOperation === storageOperation) return error;
+  } catch { /* Frozen errors require an explicit wrapper retaining the cause. */ }
+  const failure = new Error("Workspace lock coordination failed.", { cause: error });
+  if (error?.code !== undefined) failure.code = error.code;
+  failure.runFatal = true;
+  failure.storageOperation = storageOperation;
+  return failure;
+}
 async function legacyGuardAbsent(filename, adapter) {
   try {
     if (typeof adapter.stat === "function") await adapter.stat(filename + ".reclaim");
@@ -175,8 +188,14 @@ export function reclaimDeadFileLockSync(filename) {
 export async function withWorkspaceLock(dataDir, fn, { timeoutMs = 10000, pollMs = 25, fsAdapter = fs, platform = process.platform } = {}) {
   const adapter = fsAdapter;
   const transient = error => platform === "win32" && ["EPERM", "EACCES", "EBUSY"].includes(error.code);
+  let filename, token;
+  // Only coordination failures receive this origin. The caller's business or
+  // network callback below must retain its own error classification.
+  try {
   await adapter.mkdir(dataDir, { recursive: true });
-  const filename = path.join(dataDir, ".workspace.lock"), token = randomUUID(), start = Date.now();
+  filename = path.join(dataDir, ".workspace.lock");
+  token = randomUUID();
+  const start = Date.now();
   const busy = () => Error("Workspace busy: active or uncertain owner lock (including legacy recovery locks)");
   let attempted = false, recoveredSlot = false;
   for (;;) {
@@ -213,8 +232,10 @@ export async function withWorkspaceLock(dataDir, fn, { timeoutMs = 10000, pollMs
       await sleep(pollMs);
     }
   }
+  } catch (error) { throw coordinationFailure(error, "acquire"); }
   try { return await fn(); }
   finally {
+    try {
     for (let attempt = 0;; attempt++) {
       try {
         const owner = JSON.parse(await adapter.readFile(filename, "utf8"));
@@ -226,5 +247,6 @@ export async function withWorkspaceLock(dataDir, fn, { timeoutMs = 10000, pollMs
         await sleep(Math.min(800, pollMs * 2 ** attempt));
       }
     }
+    } catch (error) { throw coordinationFailure(error, "release"); }
   }
 }

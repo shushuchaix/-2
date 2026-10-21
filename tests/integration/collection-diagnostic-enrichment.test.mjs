@@ -231,7 +231,9 @@ test("diagnostic enrichment uses real attachment row parsing and public applicat
   root = await f.context.collectionService.get(f.ref);
   assert.equal(root.collectionUsage.usedRequests, 3);
   assert.equal(root.collectionUsage.usedAttachments, 1);
-  assert.deepEqual(f.calls, [applyUrl, attachmentUrl, applyUrl]);
+  // Attachment evidence must be complete before the first application check.
+  // The second diagnostic operation still consumes the same root allowance.
+  assert.deepEqual(f.calls, [attachmentUrl, applyUrl, applyUrl]);
 });
 
 test("a running collection exposes the same owned attachment completion path to its activity context", async (t) => {

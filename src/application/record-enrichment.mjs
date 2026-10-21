@@ -4,6 +4,11 @@ import {
   assessOwnedApplicationResponse,
 } from "./application-verification.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
+import { prepareRecruitmentRecord } from "../domain/recruitment-evidence.mjs";
+import {
+  sourceIssueCode,
+  safeSourceDiagnosticRefs,
+} from "../sources/source-status.mjs";
 
 /** Complete public record evidence using the caller-owned request and attachments. */
 export function createRecordEnrichment({
@@ -13,7 +18,7 @@ export function createRecordEnrichment({
   getAttachmentService = () => undefined,
 }) {
   const at = () => new Date(clock.now()).toISOString();
-  return async function enrichRecord(record, context) {
+  async function checkApplication(record, context) {
     const owned = prepareOwnedApplicationCheck(
       record,
       officialSites,
@@ -42,33 +47,93 @@ export function createRecordEnrichment({
       applicationCheck.shouldRequest &&
       evidence.applicationStatus !== "available"
     ) {
+      const started = clock.now();
+      let phase = "transport";
       try {
+        context.signal?.throwIfAborted();
+        const response = await context.request(record.applyUrl, {
+          signal: context.signal,
+          maxBytes: 1048576,
+          maxRetries: 0,
+          diagnosticContext: {
+            sourceId: record.sourceId,
+            siteId: record.siteId,
+            endpointKind: "application",
+          },
+        });
+        context.signal?.throwIfAborted();
+        phase = "parse";
         record = {
           ...record,
           applicationVerification: assessOwnedApplicationResponse(
             owned.site,
             record,
-            await context.request(record.applyUrl, {
-              signal: context.signal,
-              maxBytes: 1048576,
-              maxRetries: 0,
-              diagnosticContext: {
-                sourceId: record.sourceId,
-                endpointKind: "application",
-              },
-            }),
+            response,
             at(),
             context.runId,
           ),
         };
+        await recordDiagnostic(diagnostics, {
+          operation: "collection.application",
+          runId: context.runId,
+          sourceId: record.sourceId,
+          siteId: record.siteId,
+          endpointKind: "application",
+          phase: "parse",
+          durationMs: Math.max(0, Math.round(clock.now() - started)),
+          httpStatus: response.status,
+          ...safeSourceDiagnosticRefs(response),
+          outcome: record.applicationVerification.formVerified
+            ? "success"
+            : "insufficient",
+          resultCategory: record.applicationVerification.challenge
+            ? "business_risk"
+            : record.applicationVerification.status === "login_required" ||
+                [401, 403].includes(response.status)
+              ? "auth"
+              : response.status === 429
+                ? "rate_limited"
+                : "response",
+        });
       } catch (error) {
         context.signal?.throwIfAborted();
         if (
-          ["source_budget_exhausted", "collection_stale_epoch"].includes(
-            error.code,
-          )
+          error?.runFatal ||
+          [
+            "source_budget_exhausted",
+            "collection_stale_epoch",
+            "invalid_operation_lease",
+          ].includes(error?.code) ||
+          /^(?:workspace_|package_)/.test(error?.code || "")
         )
           throw error;
+        const code = sourceIssueCode(error);
+        await recordDiagnostic(diagnostics, {
+          operation: "collection.application",
+          level: "warn",
+          runId: context.runId,
+          sourceId: record.sourceId,
+          siteId: record.siteId,
+          endpointKind: "application",
+          phase,
+          code,
+          ...safeSourceDiagnosticRefs(error),
+          durationMs: Math.max(0, Math.round(clock.now() - started)),
+          outcome: "failed",
+          resultCategory: ["request_timeout", "http_timeout"].includes(code)
+            ? "timeout"
+            : code === "network_error" || code.startsWith("public_dns_")
+              ? "network"
+              : code === "rate_limited"
+                ? "rate_limited"
+                : ["login_required", "restricted", "http_forbidden"].includes(
+                      code,
+                    )
+                  ? "auth"
+                  : code === "response_size_exceeded"
+                    ? "policy"
+                    : "unknown",
+        });
         record = {
           ...record,
           applicationVerification: {
@@ -79,6 +144,9 @@ export function createRecordEnrichment({
         };
       }
     }
+    return prepareRecruitmentRecord(record, clock.now());
+  }
+  async function enrichAttachments(record, context) {
     const officialLinks = [];
     for (const link of record.externalLinks || [])
       try {
@@ -196,5 +264,11 @@ export function createRecordEnrichment({
         ),
       ],
     };
+  }
+  return async function enrichRecord(record, context) {
+    context.signal?.throwIfAborted();
+    const enriched = await enrichAttachments(record, context);
+    context.signal?.throwIfAborted();
+    return checkApplication(enriched, context);
   };
 }

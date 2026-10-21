@@ -246,7 +246,10 @@ const provider = createPagedProvider({
       String(notice ? "notice:" + d.result?.zpggid : d.result?.zpgwid) !==
         r.sourceRecordId
     )
-      throw Error("parse_error: 91job detail identity");
+      throw Object.assign(Error("parse_error: 91job detail identity"), {
+        code: "detail_identity_mismatch",
+        phase: "parse",
+      });
     if (!description(notice ? d.result.zpggxq : d.result.zwms).trim())
       throw Object.assign(
         Error("Detail response has insufficient body content"),

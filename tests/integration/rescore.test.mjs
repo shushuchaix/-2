@@ -109,15 +109,16 @@ test("rescore cancellation retains completed batch and validates real revisions"
   const { jobIds } = await jobs.ingestRecords({
     runId: "fixture",
     targetRevisionId: tar.revisionId,
-    records: Array.from({ length: 6 }, (_, i) =>
+    records: Array.from({ length: 21 }, (_, i) =>
       job({ sourceRecordId: String(i) }),
     ),
   });
+  assert.equal(jobIds.length, 21);
   const controller = new AbortController(),
     mutate = repository.mutateWorkspace;
   repository.mutateWorkspace = async (fn) => {
     const result = await mutate(fn);
-    if (Object.keys((await repository.read()).evaluations).length >= 5)
+    if (Object.keys((await repository.read()).evaluations).length >= 20)
       controller.abort();
     return result;
   };
@@ -131,7 +132,12 @@ test("rescore cancellation retains completed batch and validates real revisions"
     }),
     /abort/i,
   );
-  assert.equal(Object.keys((await repository.read()).evaluations).length, 5);
+  const saved = await repository.read();
+  assert.equal(Object.keys(saved.evaluations).length, 20);
+  assert.equal(
+    jobIds.filter(id => !Object.values(saved.evaluations).some(e => e.jobId === id)).length,
+    1,
+  );
   await assert.rejects(
     service.rescore({
       jobIds,

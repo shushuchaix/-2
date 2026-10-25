@@ -13,7 +13,7 @@ const sources = { zhaopin, shixiseng, jiuyeqiao };
 const failures = [
   { name: "TimeoutError", issue: "request_timeout" },
   { code: "ECONNRESET", issue: "network_error" },
-  { code: "CERT_HAS_EXPIRED", issue: "network_error" },
+  { code: "CERT_HAS_EXPIRED", issue: "tls_certificate_expired" },
 ];
 
 function requestFailure(fields) {

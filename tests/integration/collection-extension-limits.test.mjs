@@ -110,7 +110,7 @@ test("an authorized 300MiB extension uses normal activity guards and preserves i
     () =>
       f.service.adjustLimits({
         ref,
-        limits: { maxTotalAttachmentBytes: 314572801 },
+        limits: { maxTotalAttachmentBytes: 536870913 },
         expectedRevision: revision,
       }),
     { code: "invalid_input" },

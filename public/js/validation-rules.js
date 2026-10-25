@@ -10,7 +10,7 @@ export const COLLECTION_LIMIT_CAPS = Object.freeze({
   maxQueryGroups: 12,
   maxAttachments: 40,
   maxAttachmentBytes: 20 * 1048576,
-  maxTotalAttachmentBytes: 300 * 1048576,
+  maxTotalAttachmentBytes: 512 * 1048576,
   maxPageRequests: 60,
   maxPageBytes: 20 * 1048576,
   maxCostCny: 10,

@@ -436,3 +436,19 @@ test("fatal logging avoids synchronous IO after a known filesystem stall", async
     fsSync.mkdirSync = originalMkdir;
   }
 });
+
+for (const code of ["CERT_HAS_EXPIRED", "ERR_TLS_CERT_ALTNAME_INVALID"]) {
+  test(`native ${code} survives persisted diagnostics without certificate or private-message content`, async t => {
+    const dataDir = await createTempDir(t), completion = createDiagnosticWriteBarrier({ dataDir });
+    const log = createDiagnosticsLog({ dataDir, fsAdapter: completion.fsAdapter });
+    const error = Object.assign(Error("TLS_PRIVATE_CANARY"), { code, certificate: "TLS_PRIVATE_CANARY", path: "TLS_PRIVATE_CANARY" });
+    const entry = await log.record({ operation: "network.request", phase: "transport", code, certificate: "TLS_PRIVATE_CANARY" }, error);
+    await completion.waitForWrites(1);
+    const reopened = createDiagnosticsLog({ dataDir }), result = await reopened.list();
+    const saved = result.entries.find(row => row.diagnosticId === entry.diagnosticId);
+    assert.equal(saved.code, code);
+    assert.equal(saved.error.code, code);
+    assert.doesNotMatch(JSON.stringify(result), /TLS_PRIVATE_CANARY/);
+    assert.doesNotMatch(await reopened.exportText(), /TLS_PRIVATE_CANARY/);
+  });
+}

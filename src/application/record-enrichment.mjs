@@ -5,6 +5,7 @@ import {
 } from "./application-verification.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { prepareRecruitmentRecord } from "../domain/recruitment-evidence.mjs";
+import { isOperationControlError } from "../domain/operation-control.mjs";
 import {
   sourceIssueCode,
   safeSourceDiagnosticRefs,
@@ -97,16 +98,7 @@ export function createRecordEnrichment({
         });
       } catch (error) {
         context.signal?.throwIfAborted();
-        if (
-          error?.runFatal ||
-          [
-            "source_budget_exhausted",
-            "collection_stale_epoch",
-            "invalid_operation_lease",
-          ].includes(error?.code) ||
-          /^(?:workspace_|package_)/.test(error?.code || "")
-        )
-          throw error;
+        if (isOperationControlError(error)) throw error;
         const code = sourceIssueCode(error);
         await recordDiagnostic(diagnostics, {
           operation: "collection.application",

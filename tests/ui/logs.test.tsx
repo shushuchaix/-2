@@ -635,3 +635,22 @@ test("diagnostic details reject unknown enum strings and never infer elapsed tim
     /PRIVATE_|resultCategory|requestPurpose/,
   );
 });
+
+for (const [code, label] of [
+  ["CERT_HAS_EXPIRED", "当前连接的证书已过期"],
+  ["tls_certificate_expired", "当前连接的证书已过期"],
+  ["ERR_TLS_CERT_ALTNAME_INVALID", "当前连接的证书与访问域名不匹配"],
+  ["tls_hostname_mismatch", "当前连接的证书与访问域名不匹配"],
+]) {
+  test(`diagnostic ${code} has a clear summary and keeps its safe technical code`, async t => {
+    const f = await renderApp(t, { route: "#/logs?packageId=A&targetRevisionId=t1%401&tab=system",
+      apiHandler: path => path.startsWith("/diagnostics/logs") ? { entries: [{ operation: "network.request", level: "error", phase: "transport",
+        code, message: "TLS_PRIVATE_CANARY", certificate: "TLS_PRIVATE_CANARY" }] } : undefined });
+    await f.user.click(await f.screen.findByRole("button", { name: /查看诊断/ }));
+    const summary = f.screen.getByRole("region", { name: "诊断事件摘要" });
+    assert.ok(within(summary).getByText(label));
+    await f.user.click(f.screen.getByRole("button", { name: "技术详情" }));
+    assert.ok(document.body.textContent?.includes(code));
+    assert.doesNotMatch(document.body.textContent ?? "", /TLS_PRIVATE_CANARY/);
+  });
+}

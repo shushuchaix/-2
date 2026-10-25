@@ -246,3 +246,15 @@ test("retry waits abort immediately and origins share spacing without blocking o
   assert.equal(starts[1][0], "b");
   assert.ok(starts[2][1] - starts[0][1] >= 24);
 });
+
+for (const code of ["CERT_HAS_EXPIRED", "ERR_TLS_CERT_ALTNAME_INVALID"]) {
+  test(`native ${code} keeps Error identity and never consumes an automatic TLS retry`, async () => {
+    let calls = 0;
+    const error = Object.assign(Error("TLS_PRIVATE_CANARY"), { code });
+    const budget = createSourceBudget({ maxRequests: 5 });
+    const request = createRequestClient({ budget, dnsLookup, scheduler: scheduler(), transport: async () => { calls++; throw error; } });
+    await assert.rejects(request(PUBLIC), actual => actual === error);
+    assert.equal(calls, 1);
+    assert.equal(budget.snapshot().requests, 1);
+  });
+}

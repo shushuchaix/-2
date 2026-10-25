@@ -57,7 +57,7 @@ const provider = createPagedProvider({
         records: [],
         hasMore: false,
         coverageScope: "limited",
-        issues: [{ code: "public_seeds_required", retryable: false }],
+        issues: [{ code: "not_configured", configurationReason: "public_seeds_required", retryable: false }],
       };
     if (!/^[A-Za-z0-9_=+-]{1,200}$/.test(account))
       throw Object.assign(Error("公众号标识无效。"), {

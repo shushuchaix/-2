@@ -1,6 +1,7 @@
 import os from "node:os";
 import { safeApiRoute } from "../../../public/js/diagnostic-rules.js";
 import { VERSION } from "../../version.mjs";
+import { safeSourceContractMetadata } from "../../sources/source-status.mjs";
 
 const tokens = /^[A-Za-z0-9_.@-]{1,160}$/;
 export const token = (value) =>
@@ -346,6 +347,7 @@ export function cleanMetadata(value) {
       "pendingRequests",
       "startupMs",
     ]) || {};
+  Object.assign(result, safeSourceContractMetadata(value));
   if (/^[a-f0-9]{40}$/.test(String(value.buildId)))
     result.buildId = value.buildId;
   if (

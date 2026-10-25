@@ -1,4 +1,5 @@
 import { assertSourceRecord } from "../../domain/contracts.mjs";
+import { isOperationControlError, isOrdinarySourceBudgetError } from "../../domain/operation-control.mjs";
 import {
   normalizeSourceStatus,
   safeSourceDiagnosticRefs,
@@ -176,10 +177,14 @@ export function createPagedProvider({
   capabilities,
   listPage,
   detail,
+  parserVersion = id + "-1",
+  conditionalPageCache,
 }) {
   const provider = {
     id,
     name,
+    parserVersion,
+    ...(conditionalPageCache ? { conditionalPageCache } : {}),
     capabilities: {
       resumablePages: true,
       body: !!detail,
@@ -210,7 +215,7 @@ export function createPagedProvider({
         issues: response.issues || [],
         done,
         nextCursor: done ? null : response.nextCursor || { page: page + 1 },
-        parserVersion: id + "-1",
+        parserVersion,
       };
     },
     async collect(ctx) {
@@ -218,7 +223,7 @@ export function createPagedProvider({
         issues = [],
         coverage = [];
       let raw = 0;
-      for (const site of ctx.sites || []) {
+      collectSites: for (const site of ctx.sites || []) {
         const queries = (ctx.queries || []).filter(
           (q) => !q.siteId || q.siteId === site.siteId,
         );
@@ -369,11 +374,7 @@ export function createPagedProvider({
               finishedAt: new Date().toISOString(),
             });
           } catch (e) {
-            if (
-              ctx.signal?.aborted ||
-              e.runFatal ||
-              e.code === "workspace_write_failed"
-            )
+            if (ctx.signal?.aborted || (isOperationControlError(e) && !isOrdinarySourceBudgetError(e, ctx.signal)))
               throw e;
             const requestBudgetExhausted =
               e.code === "source_budget_exhausted" &&
@@ -397,7 +398,7 @@ export function createPagedProvider({
               outcome: "failed",
               code: sourceIssueCode(e, "unavailable"),
               parser: e.parser,
-              requestId: safeSourceDiagnosticRefs(e).requestId,
+              ...safeSourceDiagnosticRefs(e),
               truncationReason: requestBudgetExhausted
                 ? "request_budget"
                 : undefined,
@@ -428,6 +429,7 @@ export function createPagedProvider({
               startedAt,
               finishedAt: new Date().toISOString(),
             });
+            if (isOrdinarySourceBudgetError(e, ctx.signal)) break collectSites;
           }
         }
       }
@@ -503,7 +505,7 @@ export function createPagedProvider({
           .map((q) => ({ ...q, pageLimit: 1 })),
       });
       const evidence = [];
-      for (const r of result.records.slice(0, 2)) {
+      for (const r of (result.issues.some(issue => issue.code === "source_budget_exhausted") ? [] : result.records.slice(0, 2))) {
         try {
           const record = await provider.fetchDetail(r, ctx);
           evidence.push({
@@ -518,6 +520,7 @@ export function createPagedProvider({
               record.description.trim().length >= 30,
           });
         } catch (e) {
+          if (ctx.signal?.aborted || (isOperationControlError(e) && !isOrdinarySourceBudgetError(e, ctx.signal))) throw e;
           const entry = await ctx.reportError?.(e, {
             sourceId: id,
             siteId: r.siteId,
@@ -531,6 +534,7 @@ export function createPagedProvider({
             ...safeSourceDiagnosticRefs(e),
             ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
           });
+          if (isOrdinarySourceBudgetError(e, ctx.signal)) break;
         }
       }
       const ready = evidence.some(

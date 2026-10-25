@@ -268,7 +268,8 @@ const errorMessages = [
 ];
 export function diagnosticError(error, depth = 0) {
   if (!error) return undefined;
-  const code = token(error.code),
+  const metadata = cleanMetadata(error),
+    code = token(error.code),
     status = Number(
       error.status ||
         String(error.message || "").match(/\bHTTP\s+(\d{3})\b/)?.[1],
@@ -329,9 +330,11 @@ export function diagnosticError(error, depth = 0) {
       ? { syscall: error.syscall }
       : {}),
     ...(resource ? { resource } : {}),
-    ...(cleanMetadata(error).phase
-      ? { phase: cleanMetadata(error).phase }
+    ...(metadata.phase
+      ? { phase: metadata.phase }
       : {}),
+    ...(metadata.contractStage ? { contractStage: metadata.contractStage } : {}),
+    ...(metadata.contractReason ? { contractReason: metadata.contractReason } : {}),
     ...(identifier(error.requestId, "q") ? { requestId: error.requestId } : {}),
     ...(["requests", "details"].includes(error.budgetKind)
       ? { budgetKind: error.budgetKind }

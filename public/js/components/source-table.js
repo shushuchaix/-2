@@ -11,7 +11,10 @@ const labels = {
   login_required: "返回登录页，需要登录",
   risk_blocked: "返回验证页，访问受限",
   unavailable: "暂时不可访问",
+  tls_certificate_expired: "当前连接的证书已过期",
+  tls_hostname_mismatch: "当前连接的证书与访问域名不匹配",
   skipped: "未配置或已跳过",
+  not_configured: "尚未配置",
 };
 const responseIssue = (health) =>
   (health?.issues || []).find((issue) =>

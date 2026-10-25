@@ -47,6 +47,8 @@ test("conditional page consumers count 304 transport and preserve fact evidence 
   const provider = createPagedProvider({
     id: "synthetic",
     name: "fixture",
+    parserVersion: "synthetic-single-get-2",
+    conditionalPageCache: "single-public-get-v2",
     capabilities: {},
     listPage: async (_site, _query, _page, ctx) => {
       await ctx.request("https://jobs.example.org/list");
@@ -360,3 +362,29 @@ test("page apply rejects a changed content task and does not overwrite a newer p
   assert.equal(before.committedPages, 1);
   await f.service.pause(c.ref);
 });
+
+for (const [native, standard] of [
+  ["CERT_HAS_EXPIRED", "tls_certificate_expired"],
+  ["ERR_TLS_CERT_ALTNAME_INVALID", "tls_hostname_mismatch"],
+]) {
+  test(`row source health preserves ${native} and successful evidence independently`, async t => {
+    const f = await collectionFixture(t), at = Number(f.clock.now());
+    assert.ok(Number.isFinite(at));
+    const previous = mergeSourceHealth(null, { sourceId: "synthetic", siteId: "tls", status: "ready", sampleCount: 1,
+      capabilities: { list: "verified", body: "verified" } }, at);
+    const failed = mergeSourceHealth(previous, { sourceId: "synthetic", siteId: "tls", status: "unavailable",
+      issues: [{ code: native, message: "TLS_PRIVATE_CANARY" }] }, at + 1000);
+    await f.repository.transaction({ select: [{ collection: "sourceHealth", ids: ["synthetic/tls"] }] }, tx =>
+      tx.putRow({ collection: "sourceHealth", id: "synthetic/tls", value: failed }), { scope: f.scope });
+    const saved = await f.repository.getRow({ collection: "sourceHealth", id: "synthetic/tls" });
+    assert.equal(saved.status, "unavailable");
+    assert.equal(saved.issues[0].code, standard);
+    assert.equal(saved.lastSuccessAt, previous.lastSuccessAt);
+    assert.deepEqual(saved.lastSuccessCapabilities, previous.capabilities);
+    const ready = mergeSourceHealth(saved, { sourceId: "synthetic", siteId: "tls", status: "ready", sampleCount: 1,
+      issues: [{ code: native }], capabilities: { list: "verified", body: "verified" } }, at + 2000);
+    assert.equal(ready.status, "ready");
+    assert.equal(ready.issues[0].code, standard);
+    assert.doesNotMatch(JSON.stringify({ saved, ready }), /TLS_PRIVATE_CANARY/);
+  });
+}

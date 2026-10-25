@@ -44,6 +44,10 @@ export const diagnosticResultLabel = (value: unknown) =>
   (
     ({
       ETIMEDOUT: "请求超时",
+      CERT_HAS_EXPIRED: "当前连接的证书已过期",
+      tls_certificate_expired: "当前连接的证书已过期",
+      ERR_TLS_CERT_ALTNAME_INVALID: "当前连接的证书与访问域名不匹配",
+      tls_hostname_mismatch: "当前连接的证书与访问域名不匹配",
       ESOCKETTIMEDOUT: "请求超时",
       ECONNREFUSED: "连接被拒绝",
       ECONNRESET: "连接中断",

@@ -160,11 +160,11 @@ test("account provider follows real cursor past page two and filters unrelated p
               cards: [
                 {
                   mblog: {
-                    id: "recruit" + seen.length,
+                    id: String(1000 + seen.length),
                     text: "公司现招聘消防工程师。本科要求。",
                   },
                 },
-                { mblog: { id: "unrelated", text: "今天去旅游了" } },
+                { mblog: { id: "2000", text: "今天去旅游了" } },
               ],
               cardlistInfo:
                 seen.length < 3 ? { since_id: "next" + seen.length } : {},

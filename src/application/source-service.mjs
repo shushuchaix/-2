@@ -19,6 +19,7 @@ import {
 } from "../sources/source-status.mjs";
 import { assertCollectionWrite } from "../domain/collection.mjs";
 import { createRowSourceService } from './source-row-service.mjs';
+import { isOperationControlError, isOrdinarySourceBudgetError } from "../domain/operation-control.mjs";
 import {
   probeReadService,
   enableReadService,
@@ -39,14 +40,7 @@ const bossBlockingCodes = new Set([
   "boss_auth_expired",
   "boss_login_required",
 ]);
-const fatalProbeError = (error) =>
-  error?.runFatal ||
-  [
-    "workspace_write_failed",
-    "collection_stale_epoch",
-    "collection_cancelled",
-  ].includes(error?.code) ||
-  error?.name === "AbortError";
+const fatalProbeError = isOperationControlError;
 function safeProbeResult(result, sourceId, siteId) {
   return {
     ...result,
@@ -398,7 +392,7 @@ function createLegacySourceService({
           list = await provider.collect({ ...context, onBatch: undefined });
         } catch (error) {
           signal?.throwIfAborted();
-          if (fatalProbeError(error)) throw error;
+          if (fatalProbeError(error) && !isOrdinarySourceBudgetError(error, signal)) throw error;
           if (/^boss_/.test(error.code || "")) terminalError = error;
           const entry = await recordDiagnostic(
             diagnostics,
@@ -432,12 +426,12 @@ function createLegacySourceService({
         }
         const details = [],
           issues = [...(list.issues || [])];
-        for (const record of list.records.slice(0, 2))
+        for (const record of (issues.some(issue => issue.code === "source_budget_exhausted") ? [] : list.records.slice(0, 2)))
           try {
             details.push(await provider.fetchDetail(record, context));
           } catch (e) {
             signal?.throwIfAborted();
-            if (fatalProbeError(e)) throw e;
+            if (fatalProbeError(e) && !isOrdinarySourceBudgetError(e, signal)) throw e;
             if (sourceId === "boss" && /^boss_/.test(e.code || ""))
               terminalError = e;
             const entry = await context.reportError(e, {
@@ -449,6 +443,7 @@ function createLegacySourceService({
               ...safeSourceDiagnosticRefs(e),
               ...(entry ? { diagnosticId: entry.diagnosticId } : {}),
             });
+            if (isOrdinarySourceBudgetError(e, signal)) break;
             if (terminalError) {
               if (entry?.diagnosticId && Object.isExtensible(terminalError))
                 terminalError.diagnosticId = entry.diagnosticId;
@@ -653,6 +648,7 @@ function createLegacySourceService({
             ),
         });
       } catch (error) {
+        if (fatalProbeError(error) && !isOrdinarySourceBudgetError(error)) throw error;
         const entry = await recordDiagnostic(
           diagnostics,
           {
@@ -664,15 +660,8 @@ function createLegacySourceService({
           },
           error,
         );
-        if (entry) error.diagnosticId = entry.diagnosticId;
-        if (
-          !error.runFatal &&
-          !["workspace_write_failed", "collection_stale_epoch"].includes(
-            error.code,
-          ) &&
-          error.name !== "AbortError"
-        )
-          await repository.mutateWorkspace((d) =>
+        if (entry && Object.isExtensible(error)) error.diagnosticId = entry.diagnosticId;
+        await repository.mutateWorkspace((d) =>
             recordSourceHealth(
               d,
               {

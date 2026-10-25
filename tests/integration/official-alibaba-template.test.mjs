@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import official from "../../src/sources/adapters/official-announcements.mjs";
 import { prepareRecruitmentRecord } from "../../src/domain/recruitment-evidence.mjs";
+import { buildAlibabaPublicSearchRequest } from "../../src/sources/adapters/alibaba-public-read.mjs";
+import { safeSourceIssues, safeSourceContractMetadata } from "../../src/sources/source-status.mjs";
+import { cleanMetadata } from "../../src/infrastructure/diagnostics/fields.mjs";
+import { diagnosticError } from "../../src/infrastructure/diagnostics/log.mjs";
 const origin = "https://talent.alibaba.com",
   endpoint = origin + "/position/search";
 const nonce = "00000000-0000-0000-0000-000000000000";
@@ -249,4 +253,76 @@ test("the observed social contract does not claim coverage for a campus-only tar
   assert.deepEqual(p.records, []);
   assert.equal(p.coverageScope, "limited");
   assert.equal(f.calls.length, 0);
+});
+
+const requestId = "q-12345678-1234-4234-8234-123456789abc";
+function publicPage(fields = {}) {
+  return { status: 200, url: origin + "/", text: html(), requestId,
+    headers: { "set-cookie": `XSRF-TOKEN=${nonce}; Path=/, SESSION=synthetic-anonymous-session; Path=/` }, ...fields };
+}
+function build(response, fields = {}) {
+  return buildAlibabaPublicSearchRequest({ siteId: "alibaba", query: "消防", page: 1, response, ...fields });
+}
+test("Alibaba data script MIME types do not become executable configuration", async () => {
+  const f = replay({ pageHtml: html() + '<script type="application/ld+json">{"@context":"synthetic","@type":"JobPosting"}</script>' +
+    '<script type="application/json">{"window.__sysconfig":{"ignored":true}}</script>' +
+    '<script type="importmap">{"imports":{}}</script>' });
+  assert.equal((await f.collect()).records.length, 1);
+  assert.equal(f.calls.length, 2);
+  const onlyDataConfig = html().replace('<script>window.__userconfig=', '<script type="application/json">window.__userconfig=');
+  assert.throws(() => build(publicPage({ text: onlyDataConfig })), { code: "native_transport_contract_mismatch", contractStage: "config_shape" });
+});
+
+for (const [name, fields, stage, reason] of [
+  ["status", { status: 500 }, "response_identity", "unexpected_status"],
+  ["url", { url: "https://foreign.example.org/" }, "response_identity", "unexpected_url"],
+  ["body type", { text: null }, "response_size", "invalid_body"],
+  ["body bound", { text: "x".repeat(1048577) }, "response_size", "body_too_large"],
+  ["title", { text: html().replace("阿里巴巴集团招聘官网", "其他企业") }, "portal_identity", "title_mismatch"],
+  ["asset pin", { text: html().replaceAll("2.0.4", "2.0.5") }, "asset_identity", "asset_missing_or_duplicate"],
+  ["JavaScript syntax", { text: html() + "<script>const broken = ;</script>" }, "inline_parse", "javascript_syntax_invalid"],
+  ["duplicate config", { text: html() + "<script>window.__sysconfig={};</script>" }, "config_shape", "config_duplicate_or_dynamic"],
+  ["missing property", { text: html().replace('locale:"zh"', 'other:"zh"') }, "config_shape", "property_missing_or_duplicate"],
+  ["dynamic token", { text: html().replace(`__token__:"${nonce}"`, "__token__:dynamicSecret()") }, "token_shape", "property_not_literal"],
+  ["portal channel", { text: html().replace("group_official_site", "foreign-channel") }, "config_identity", "portal_config_mismatch"],
+  ["token format", { text: html().replace(nonce, "synthetic-invalid-token") }, "token_shape", "token_invalid"],
+  ["duplicate cookie", { headers: { "set-cookie": `XSRF-TOKEN=${nonce}, SESSION=one, SESSION=two` } }, "anonymous_cookie", "cookie_invalid_or_duplicate"],
+  ["missing cookie", { headers: {} }, "anonymous_cookie", "cookie_missing"],
+  ["token-cookie binding", { headers: { "set-cookie": "XSRF-TOKEN=11111111-1111-1111-1111-111111111111, SESSION=synthetic-session" } }, "token_cookie_mismatch", "token_cookie_mismatch"],
+]) test("Alibaba bounded contract diagnostics: " + name, () => {
+  assert.throws(() => build(publicPage(fields)), error => {
+    assert.equal(error.code, "native_transport_contract_mismatch");
+    assert.equal(error.contractStage, stage); assert.equal(error.contractReason, reason); assert.equal(error.requestId, requestId);
+    const safe = safeSourceIssues([error], "official-announcements", "alibaba")[0];
+    for (const value of [safe, cleanMetadata(error), diagnosticError(error)]) {
+      assert.equal(value.contractStage, stage); assert.equal(value.contractReason, reason);
+      assert.equal(value.requestId, requestId);
+      assert.doesNotMatch(JSON.stringify(value), /synthetic-anonymous-session|dynamicSecret|synthetic-invalid-token|11111111/);
+    }
+    return true;
+  });
+});
+
+test("Alibaba invalid input and arbitrary metadata never widen the fixed contract vocabulary", () => {
+  assert.throws(() => build(publicPage(), { page: 0 }), { code: "native_transport_contract_mismatch", contractStage: "input", contractReason: "invalid_input" });
+  const forged = { contractStage: "synthetic-private-token", contractReason: "synthetic-private-cookie", configurationReason: "synthetic-private-path" };
+  assert.deepEqual(safeSourceContractMetadata(forged), {});
+  assert.equal(cleanMetadata(forged).contractReason, undefined);
+});
+
+test("Alibaba shared collect retains the same bounded contract branch in page diagnostics and safe issues", async () => {
+  const f = replay({ pageHtml: html().replaceAll("2.0.4", "2.0.5") }), events = [], directErrors = [];
+  const original = f.context.request;
+  f.context.request = async (...args) => ({ ...await original(...args), requestId });
+  f.context.reportDiagnostic = event => events.push(cleanMetadata(event));
+  f.context.reportError = error => { directErrors.push(diagnosticError(error)); };
+  f.context.queries = [{ keyword: "消防", pageLimit: 1 }];
+  const result = await official.collect(f.context);
+  assert.equal(f.calls.length, 1);
+  assert.equal(result.issues[0].contractStage, "asset_identity");
+  assert.equal(safeSourceIssues(result.issues)[0].contractReason, "asset_missing_or_duplicate");
+  assert.ok(events.some(event => event.contractStage === "asset_identity" && event.contractReason === "asset_missing_or_duplicate" && event.requestId === requestId));
+  assert.equal(directErrors[0].contractStage, "asset_identity");
+  assert.equal(directErrors[0].contractReason, "asset_missing_or_duplicate");
+  assert.doesNotMatch(JSON.stringify(directErrors), /synthetic-anonymous-session|synthetic-tracking/);
 });

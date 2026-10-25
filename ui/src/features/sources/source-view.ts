@@ -88,6 +88,8 @@ export function sourceIssueLabel(issue: SourceIssue): string {
   if (isBudgetIssue(issue)) return sourceStatusLabels.budget_exhausted;
   const labels: Record<string, string> = {
     network_error: "网络读取失败",
+    tls_certificate_expired: "当前连接的证书已过期",
+    tls_hostname_mismatch: "当前连接的证书与访问域名不匹配",
     request_timeout: "读取超时",
     http_timeout: "读取超时",
     rate_limited: "读取频率受限",

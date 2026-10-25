@@ -4,6 +4,7 @@ import { normalizeRecord } from "../domain/record.mjs";
 import {
   conditionalPageRequest,
   persistConditionalPage,
+  SINGLE_PUBLIC_GET_PAGE,
 } from "../infrastructure/http/collection-conditional-request.mjs";
 const error = (code) => Object.assign(Error(code), { code });
 function finite(value, depth = 0) {
@@ -60,6 +61,14 @@ export async function readProviderPage(provider, input) {
     typeof provider.collectPage === "function" &&
     provider.capabilities?.resumablePages !== false;
   if (!resumable && cursor !== null) throw error("pagination_not_supported");
+  if (provider.conditionalPageCache === SINGLE_PUBLIC_GET_PAGE && typeof provider.parserVersion === "string" &&
+    typeof input.site?.siteId === "string" && input.site.siteId.length > 0) {
+    finite(input.query || {});
+    input = { ...input, conditionalVariantHash: digest(JSON.stringify(ordered({
+      site: { siteId: input.site.siteId, name: input.site.name ?? null, tenantId: input.site.tenantId ?? null, origin: input.site.origin ?? null },
+      query: input.query || {}, cursor, parserVersion: provider.parserVersion,
+    }))) };
+  }
   const conditional = conditionalPageRequest(input, provider);
   input = {
     ...input,

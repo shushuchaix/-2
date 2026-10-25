@@ -5,6 +5,7 @@ import { parseDocx, ATTACHMENT_ZIP_LIMITS } from "./docx.mjs";
 import { parseSpreadsheet } from "./spreadsheet.mjs";
 import { parsePdf } from "./pdf.mjs";
 import { imageDimensions } from "./ocr.mjs";
+import { isOperationControlError, isOrdinarySourceBudgetError } from "../domain/operation-control.mjs";
 const parserVersion = "recruitment-attachments-2";
 const result = (status, format, extra = {}) => ({
   status,
@@ -118,6 +119,7 @@ export async function parseAttachmentBytes({
     });
   } catch (e) {
     signal?.throwIfAborted();
+    if (isOperationControlError(e)) throw e;
     const limit =
       /ZIP .*limit/.test(e.message) || e.code === "attachment_expansion_limit";
     return result(
@@ -364,13 +366,9 @@ export function createAttachmentService({
           });
         } catch (e) {
           context.signal?.throwIfAborted();
-          if (
-            ["collection_stale_epoch", "workspace_write_failed"].includes(
-              e.code,
-            )
-          )
+          if (isOperationControlError(e) && !isOrdinarySourceBudgetError(e, context.signal))
             throw e;
-          if (e.code === "source_budget_exhausted") {
+          if (isOrdinarySourceBudgetError(e, context.signal)) {
             budgetExhausted = true;
             attachments.push(pending(a, e.code));
             continue;

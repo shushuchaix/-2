@@ -37,6 +37,36 @@ import {
   selectMatchingEvaluation,
   resolveEvaluationFactBasis,
 } from "../domain/job-facts.mjs";
+
+const RULE_PERSISTENCE_BATCH_SIZE = 20;
+const RULE_PERSISTENCE_BATCH_WEIGHT = 2 * 1024 * 1024;
+
+// Size only the pending record/draft, once, outside the write fence. Six bytes
+// per UTF-16 unit conservatively allows JSON escaping without building a second
+// copy of a large body. Node/depth limits stop oversized metadata walks early.
+// This bounds the new batch's current facts, not its stored historical closure.
+function rulePersistenceWeight(record, draft) {
+  let weight = 64, nodes = 0;
+  const oversized = RULE_PERSISTENCE_BATCH_WEIGHT + 1;
+  function visit(value, depth) {
+    if (++nodes > 4096 || depth > 32) { weight = oversized; return; }
+    if (typeof value === "string") weight += value.length * 6 + 2;
+    else if (value && typeof value === "object") {
+      weight += 2;
+      for (const key in value) {
+        if (!Object.hasOwn(value, key)) continue;
+        weight += key.length * 6 + 4;
+        if (weight > RULE_PERSISTENCE_BATCH_WEIGHT) break;
+        visit(value[key], depth + 1);
+        if (weight > RULE_PERSISTENCE_BATCH_WEIGHT) break;
+      }
+    } else weight += 32;
+  }
+  visit(record, 0);
+  if (weight <= RULE_PERSISTENCE_BATCH_WEIGHT) visit(draft, 0);
+  return Math.min(weight, oversized);
+}
+
 function createLegacyEvaluationService({
   repository,
   cache = new Map(),
@@ -207,14 +237,16 @@ function createLegacyEvaluationService({
               );
               continue;
             }
+            const draft = evaluateRules(record, p.profile, target, {
+              now: clock.now(),
+            });
             pending.push({
               record,
               jdHash,
               cacheKey,
               fact,
-              draft: evaluateRules(record, p.profile, target, {
-                now: clock.now(),
-              }),
+              draft,
+              ...(!ai ? { persistenceWeight: rulePersistenceWeight(record, draft) } : {}),
             });
           }
           const cachedCount = evaluations.length;
@@ -232,9 +264,24 @@ function createLegacyEvaluationService({
               accepted: pending.length,
             },
           });
-          for (let offset = 0; offset < pending.length; offset += 5) {
+          for (let offset = 0; offset < pending.length;) {
             signal?.throwIfAborted();
-            const batch = pending.slice(offset, offset + 5);
+            let end = Math.min(offset + 5, pending.length);
+            if (!ai) {
+              let weight = 0;
+              end = offset;
+              while (end < pending.length && end - offset < RULE_PERSISTENCE_BATCH_SIZE) {
+                const nextWeight = pending[end].persistenceWeight;
+                if (end > offset && weight + nextWeight > RULE_PERSISTENCE_BATCH_WEIGHT) break;
+                weight += nextWeight;
+                end++;
+                // An already valid, large item keeps its original semantics:
+                // process it alone rather than dropping or rejecting it.
+                if (weight > RULE_PERSISTENCE_BATCH_WEIGHT) break;
+              }
+            }
+            const batch = pending.slice(offset, end);
+            offset = end;
             let valid = new Map();
             if (ai && client?.available !== false && client) {
               const allowance = budget.snapshot();

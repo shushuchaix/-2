@@ -2,10 +2,14 @@
 // obtain this response without account material; nothing is executed or stored.
 import { parse } from "acorn";
 import { parseHTML } from "linkedom";
+import { safeSourceDiagnosticRefs } from "../source-status.mjs";
 export const ALIBABA_PUBLIC_LIST = "https://talent.alibaba.com/position/search";
-const fail = () => {
+const fail = (contractStage, contractReason) => {
   throw Object.assign(Error("native_transport_contract_mismatch"), {
     code: "native_transport_contract_mismatch",
+    contractStage,
+    contractReason,
+    retryable: false,
   });
 };
 const key = (p) =>
@@ -22,14 +26,14 @@ function property(node, name) {
         p.type !== "Property" || p.computed || p.method || p.kind !== "init",
     )
   )
-    fail();
+    fail("config_shape", "config_duplicate_or_dynamic");
   const selected = node.properties.filter((p) => key(p) === name);
-  if (selected.length !== 1) fail();
+  if (selected.length !== 1) fail("config_shape", "property_missing_or_duplicate");
   return selected[0].value;
 }
-function literal(node, name) {
+function literal(node, name, stage = "config_shape") {
   const value = property(node, name);
-  if (value.type !== "Literal" || typeof value.value !== "string") fail();
+  if (value.type !== "Literal" || typeof value.value !== "string") fail(stage, "property_not_literal");
   return value.value;
 }
 function nativePage(html) {
@@ -38,7 +42,7 @@ function nativePage(html) {
     document.querySelector("title")?.textContent.trim() !==
     "阿里巴巴集团招聘官网"
   )
-    fail();
+    fail("portal_identity", "title_mismatch");
   for (const name of ["vendors", "alibaba-group"])
     if (
       [...document.querySelectorAll("script[src]")].filter(
@@ -47,17 +51,21 @@ function nativePage(html) {
           `https://g.alicdn.com/platform/new-careers-portal/2.0.4/${name}.min.js`,
       ).length !== 1
     )
-      fail();
+      fail("asset_identity", "asset_missing_or_duplicate");
   const config = new Map();
   for (const script of document.querySelectorAll("script:not([src])")) {
+    const type = (script.getAttribute("type") || "").split(";")[0].trim().toLowerCase();
+    // Data/import-map scripts are not executable JavaScript. They are not a
+    // configuration source and must not be fed to the JavaScript AST parser.
+    if (!["", "text/javascript", "application/javascript", "text/ecmascript", "application/ecmascript", "module"].includes(type)) continue;
     let ast;
     try {
       ast = parse(script.textContent, {
         ecmaVersion: "latest",
-        sourceType: "script",
+        sourceType: type === "module" ? "module" : "script",
       });
     } catch {
-      fail();
+      fail("inline_parse", "javascript_syntax_invalid");
     }
     for (const statement of ast.body) {
       const expression =
@@ -77,7 +85,7 @@ function nativePage(html) {
         expression.operator !== "=" ||
         config.has(name)
       )
-        fail();
+        fail("config_shape", "config_duplicate_or_dynamic");
       config.set(name, expression.right);
     }
   }
@@ -91,9 +99,9 @@ function nativePage(html) {
     literal(circle, "portalOfficialChannel") !== "group_official_site" ||
     literal(circle, "portalDomain") !== "https://talent.alibaba.com"
   )
-    fail();
-  const nonce = literal(system, "__token__");
-  if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(nonce)) fail();
+    fail("config_identity", "portal_config_mismatch");
+  const nonce = literal(system, "__token__", "token_shape");
+  if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(nonce)) fail("token_shape", "token_invalid");
   return nonce;
 }
 export function buildAlibabaPublicSearchRequest(input) {
@@ -110,15 +118,13 @@ export function buildAlibabaPublicSearchRequest(input) {
     input.page < 1 ||
     input.page > 20
   )
-    fail();
+    fail("input", "invalid_input");
   const response = input.response;
-  if (
-    response?.status !== 200 ||
-    response.url !== "https://talent.alibaba.com/" ||
-    typeof response.text !== "string" ||
-    response.text.length > 1048576
-  )
-    fail();
+  try {
+  if (response?.status !== 200) fail("response_identity", "unexpected_status");
+  if (response.url !== "https://talent.alibaba.com/") fail("response_identity", "unexpected_url");
+  if (typeof response.text !== "string") fail("response_size", "invalid_body");
+  if (response.text.length > 1048576) fail("response_size", "body_too_large");
   const nonce = nativePage(response.text),
     cookies = new Map();
   for (const item of String(response.headers?.["set-cookie"] || "").split(
@@ -129,10 +135,11 @@ export function buildAlibabaPublicSearchRequest(input) {
       name = first.slice(0, eq),
       value = first.slice(eq + 1);
     if (!["XSRF-TOKEN", "_rb_id", "SESSION"].includes(name)) continue;
-    if (cookies.has(name) || !/^[A-Za-z0-9+/_=-]{1,512}$/.test(value)) fail();
+    if (cookies.has(name) || !/^[A-Za-z0-9+/_=-]{1,512}$/.test(value)) fail("anonymous_cookie", "cookie_invalid_or_duplicate");
     cookies.set(name, value);
   }
-  if (cookies.get("XSRF-TOKEN") !== nonce || !cookies.has("SESSION")) fail();
+  if (!cookies.has("XSRF-TOKEN") || !cookies.has("SESSION")) fail("anonymous_cookie", "cookie_missing");
+  if (cookies.get("XSRF-TOKEN") !== nonce) fail("token_cookie_mismatch", "token_cookie_mismatch");
   return {
     url: ALIBABA_PUBLIC_LIST + "?_csrf=" + encodeURIComponent(nonce),
     method: "POST",
@@ -152,4 +159,9 @@ export function buildAlibabaPublicSearchRequest(input) {
       language: "zh_CN",
     }),
   };
+  } catch (error) {
+    const requestId = safeSourceDiagnosticRefs(response).requestId;
+    if (error?.code === "native_transport_contract_mismatch" && requestId) error.requestId = requestId;
+    throw error;
+  }
 }

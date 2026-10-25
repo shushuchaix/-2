@@ -224,6 +224,18 @@ export function parseWeiboList(payload) {
     nextSinceId: data.cardlistInfo?.since_id || data.since_id || null,
   };
 }
+/** Native post identity only; a rounded JSON number is never an authority ID. */
+export function weiboPostIdentity(post) {
+  if (!post || typeof post !== "object" || Array.isArray(post)) return null;
+  const numeric = value => typeof value === "string" && /^[1-9]\d{0,29}$/.test(value);
+  const id = typeof post.id === "string" ? post.id :
+    Number.isSafeInteger(post.id) && post.id > 0 ? String(post.id) : null;
+  if (post.idstr !== undefined) {
+    if (!numeric(post.idstr) || (id !== null && id !== post.idstr)) return null;
+    return post.idstr;
+  }
+  return numeric(id) ? id : null;
+}
 export function parseSocialResponse({ platform, url, status, text }) {
   if (platform === "wechat")
     return parseWechatContent({ url, status, html: text });
@@ -231,14 +243,25 @@ export function parseSocialResponse({ platform, url, status, text }) {
   try {
     payload = JSON.parse(text);
   } catch {}
+  const expected = new URL(canonicalSocialUrl(url, "weibo")).pathname.split("/").at(-1);
+  const rejectIdentity = code => { throw Object.assign(Error("微博正文身份未通过核验。"), { code, retryable: false }); };
+  if (!/^[1-9]\d{0,29}$/.test(expected)) rejectIdentity("detail_identity_unsupported");
+  if (payload?.ok !== undefined && payload.ok !== 1)
+    throw Object.assign(Error("微博正文业务状态无效。"), { code: "parse_error" });
+  const post = payload?.data?.text !== undefined || payload?.data?.text_raw !== undefined ? payload.data :
+    payload?.text !== undefined || payload?.text_raw !== undefined ? payload : payload?.data?.status || payload?.status;
+  if (post != null && weiboPostIdentity(post) !== expected) rejectIdentity("detail_identity_mismatch");
+  if ((post?.longText?.idstr !== undefined || post?.longText?.id !== undefined) && weiboPostIdentity(post.longText) !== expected)
+    rejectIdentity("detail_identity_mismatch");
+  const extended = payload?.data?.longTextContent ? payload.data : undefined;
+  if (extended && (extended.idstr !== undefined || extended.id !== undefined) && weiboPostIdentity(extended) !== expected)
+    rejectIdentity("detail_identity_mismatch");
   return parseWeiboContent({
     url,
     status,
     html: payload ? "" : text,
-    post:
-      payload?.data?.text !== undefined
-        ? payload.data
-        : payload?.data?.status || payload?.status,
-    longText: payload?.data?.longTextContent ? payload.data : undefined,
+    post,
+    // Standalone extend JSON without a native post ID cannot establish binding.
+    longText: extended && weiboPostIdentity(extended) === expected ? extended : undefined,
   });
 }

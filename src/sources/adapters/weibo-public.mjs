@@ -4,8 +4,28 @@ import {
   canonicalSocialUrl,
   parseWeiboContent,
   parseWeiboList,
+  weiboPostIdentity,
 } from "../social-content.mjs";
 const configFor = (ctx) => ctx.config?.weibo || ctx.config || {};
+const numericPostId = value => typeof value === "string" && /^[1-9]\d{0,29}$/.test(value);
+function identityFailure(code = "detail_identity_mismatch") {
+  throw Object.assign(Error("微博正文身份未通过核验。"), { code, retryable: false });
+}
+function assertPostBinding(post, expected) {
+  if (post != null && weiboPostIdentity(post) !== expected) identityFailure();
+}
+function seedIdentity(record) {
+  if (!numericPostId(record.sourceRecordId)) identityFailure("detail_identity_unsupported");
+  const url = canonicalSocialUrl(record.url, "weibo");
+  if (new URL(url).pathname.split("/").at(-1) !== record.sourceRecordId) identityFailure();
+  return record.sourceRecordId;
+}
+function detailPayload(response) {
+  const payload = weiboJsonResponse(response);
+  if (payload?.ok !== undefined && payload.ok !== 1)
+    throw Object.assign(Error("parse_error: 微博正文业务状态无效。"), { code: "parse_error", phase: "parse", requestId: response.requestId });
+  return payload?.data || payload;
+}
 function weiboJsonResponse(response) {
   if (response.status !== 200) return jsonResponse(response);
   try {
@@ -75,9 +95,11 @@ const attachmentsFor = (parsed) => [
     .map((link) => ({ ...link, textStatus: "not_extracted" })),
 ];
 function recordFor(post, site) {
+  const postId = weiboPostIdentity(post);
+  if (!postId) throw Object.assign(Error("微博列表缺少可靠的帖子标识。"), { code: "parse_error" });
   const parsed = parseWeiboContent({
     post,
-    url: "https://m.weibo.cn/detail/" + String(post.idstr || post.id),
+    url: "https://m.weibo.cn/detail/" + postId,
   });
   return baseRecord({
     id: parsed.sourceRecordId,
@@ -134,6 +156,7 @@ const provider = createPagedProvider({
             retryEligible: true,
             urlKind: "notice_detail",
             sourceRecordIdKind: "authority",
+            evidenceLevel: "discovery",
           }),
         ),
         hasMore: accounts.length > 0,
@@ -147,7 +170,7 @@ const provider = createPagedProvider({
         records: [],
         hasMore: false,
         coverageScope: "limited",
-        issues: [{ code: "public_seeds_required" }],
+        issues: [{ code: "not_configured", configurationReason: "public_seeds_required", retryable: false }],
       };
     if (!/^\d{1,30}$/.test(account))
       throw Object.assign(Error("微博账号标识无效。"), {
@@ -194,6 +217,7 @@ const provider = createPagedProvider({
     };
   },
   async detail(record, ctx) {
+    const expectedId = seedIdentity(record);
     let post = record.post,
       longText,
       parsed;
@@ -204,10 +228,9 @@ const provider = createPagedProvider({
         { signal: ctx.signal, maxRetries: 0, maxBytes: 6291456 },
       );
       if (response.status === 200) {
-        const payload = weiboJsonResponse(response);
-        post = payload?.data || payload;
+        post = detailPayload(response);
       }
-      if (response.status === 429)
+      if ([401, 403, 429].includes(response.status))
         return {
           ...record,
           bodyStatus: "restricted",
@@ -216,13 +239,16 @@ const provider = createPagedProvider({
           detailStatus: "unavailable",
         };
     }
+    assertPostBinding(post, expectedId);
+    if (post?.longText?.idstr !== undefined || post?.longText?.id !== undefined)
+      assertPostBinding(post.longText, expectedId);
     if (post?.isLongText) {
       const response = await ctx.request(
         "https://m.weibo.cn/api/statuses/extend?" +
           new URLSearchParams({ id: record.sourceRecordId }),
         { signal: ctx.signal, maxRetries: 0, maxBytes: 6291456 },
       );
-      if (response.status === 429)
+      if ([401, 403, 429].includes(response.status))
         return {
           ...record,
           bodyStatus: "restricted",
@@ -231,8 +257,13 @@ const provider = createPagedProvider({
           detailStatus: "unavailable",
         };
       if (response.status === 200) {
-        const payload = weiboJsonResponse(response);
-        longText = payload?.data || payload;
+        const data = detailPayload(response);
+        // An independently returned full body needs its own matching identity.
+        // Missing identity stays pending; an explicit conflicting/lossy ID fails.
+        if (data?.idstr !== undefined || data?.id !== undefined) {
+          assertPostBinding(data, expectedId);
+          longText = data;
+        }
       }
     }
     if (post?.text || post?.text_raw)
@@ -244,6 +275,7 @@ const provider = createPagedProvider({
         providerId: "weibo",
         sessionRef: ctx.sessionRefs?.weibo,
       });
+    if ((parsed?.sourceRecordId != null || parsed?.bodyStatus === "complete") && parsed.sourceRecordId !== expectedId) identityFailure();
     parsed ||= { bodyStatus: "incomplete", retryEligible: true };
     return {
       ...record,

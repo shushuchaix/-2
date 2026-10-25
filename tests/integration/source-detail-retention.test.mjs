@@ -118,7 +118,9 @@ function fixture(c, fields) {
     title: "列表岗位名称",
     company: "列表公司",
     cities: ["南京", "北京"],
-    url: "https://jobs.example.com/listed/1",
+    url: c.sourceId === "greenhouse"
+      ? "https://job-boards.greenhouse.io/synthetic/jobs/1"
+      : "https://jobs.example.com/listed/1",
     applyUrl: "https://jobs.example.com/apply/1",
     jobType: "internship",
     degree: "本科",
@@ -158,7 +160,9 @@ for (const c of cases) {
         assert.equal(detail.title, "列表岗位名称");
         assert.equal(detail.company, "列表公司");
         assert.deepEqual(detail.cities, ["南京", "北京"]);
-        assert.equal(detail.url, "https://jobs.example.com/listed/1");
+        assert.equal(detail.url, c.sourceId === "greenhouse"
+          ? "https://job-boards.greenhouse.io/synthetic/jobs/1"
+          : "https://jobs.example.com/listed/1");
         assert.equal(detail.applyUrl, "https://jobs.example.com/apply/1");
         assert.equal(detail.jobType, "internship");
         assert.equal(detail.degree, "本科");

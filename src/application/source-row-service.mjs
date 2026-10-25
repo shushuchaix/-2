@@ -29,6 +29,7 @@ import {
 } from "./collection-row-access.mjs";
 import { rowKey } from "../infrastructure/storage/sqlite-records.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
+import { isOperationControlError, isOrdinarySourceBudgetError } from "../domain/operation-control.mjs";
 
 const defaults = () => ({
   sourceOverrides: {},
@@ -42,14 +43,7 @@ const blockedCodes = new Set([
   "boss_auth_expired",
   "boss_login_required",
 ]);
-const fatal = (error) =>
-  error?.runFatal ||
-  error?.name === "AbortError" ||
-  [
-    "workspace_write_failed",
-    "collection_stale_epoch",
-    "collection_cancelled",
-  ].includes(error?.code);
+const fatal = isOperationControlError;
 export function createRowSourceService({
   repository,
   registry,
@@ -491,7 +485,7 @@ export function createRowSourceService({
           list = await provider.collect({ ...context, onBatch: undefined });
         } catch (error) {
           ctx.signal?.throwIfAborted();
-          if (fatal(error)) throw error;
+          if (fatal(error) && !isOrdinarySourceBudgetError(error, ctx.signal)) throw error;
           terminalError = /^boss_/.test(error.code || "") ? error : null;
           const entry = await context.reportError(error);
           if (entry) error.diagnosticId = entry.diagnosticId;
@@ -508,18 +502,19 @@ export function createRowSourceService({
         }
         const records = [];
         issues.push(...(list.issues || []));
-        for (const record of list.records.slice(0, 2)) {
+        for (const record of (issues.some(issue => issue.code === "source_budget_exhausted") ? [] : list.records.slice(0, 2))) {
           try {
             records.push(await provider.fetchDetail(record, context));
           } catch (error) {
             ctx.signal?.throwIfAborted();
-            if (fatal(error)) throw error;
+            if (fatal(error) && !isOrdinarySourceBudgetError(error, ctx.signal)) throw error;
             const entry = await context.reportError(error);
             if (entry) error.diagnosticId = entry.diagnosticId;
             issues.push({
               code: error.code || "detail_unavailable",
               ...safeSourceDiagnosticRefs(error),
             });
+            if (isOrdinarySourceBudgetError(error, ctx.signal)) break;
             if (sourceId === "boss" && /^boss_/.test(error.code || "")) {
               terminalError = error;
               break;
@@ -628,7 +623,7 @@ export function createRowSourceService({
             ),
         });
       } catch (error) {
-        if (!fatal(error))
+        if (!fatal(error) || isOrdinarySourceBudgetError(error))
           await persist(
             {
               sourceId,

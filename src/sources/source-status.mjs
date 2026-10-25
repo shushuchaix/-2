@@ -13,6 +13,8 @@ const issueCodes = new Set([
   "request_timeout",
   "http_timeout",
   "network_error",
+  "tls_certificate_expired",
+  "tls_hostname_mismatch",
   "invalid_record",
   "detail_unavailable",
   "detail_insufficient",
@@ -51,6 +53,7 @@ const issueCodes = new Set([
   "response_decode_failed",
   "unsupported_content_encoding",
   "detail_identity_mismatch",
+  "detail_identity_unsupported",
   "detail_title_mismatch",
   "public_dns_unavailable",
   "public_dns_resolution_failed",
@@ -58,6 +61,24 @@ const issueCodes = new Set([
   "public_dns_non_public",
   "public_dns_invalid_response",
 ]);
+export const SOURCE_CONTRACT_STAGES = Object.freeze([
+  "input", "response_identity", "response_size", "portal_identity", "asset_identity", "inline_parse",
+  "config_shape", "config_identity", "token_shape", "anonymous_cookie", "token_cookie_mismatch",
+]);
+export const SOURCE_CONTRACT_REASONS = Object.freeze([
+  "invalid_input", "unexpected_status", "unexpected_url", "invalid_body", "body_too_large", "title_mismatch",
+  "asset_missing_or_duplicate", "javascript_syntax_invalid", "config_duplicate_or_dynamic",
+  "property_missing_or_duplicate", "property_not_literal", "portal_config_mismatch", "token_invalid",
+  "cookie_invalid_or_duplicate", "cookie_missing", "token_cookie_mismatch",
+]);
+export function safeSourceContractMetadata(value) {
+  return {
+    ...(SOURCE_CONTRACT_STAGES.includes(value?.contractStage) ? { contractStage: value.contractStage } : {}),
+    ...(SOURCE_CONTRACT_REASONS.includes(value?.contractReason) ? { contractReason: value.contractReason } : {}),
+    ...(value?.configurationReason === "public_seeds_required" || value?.code === "public_seeds_required"
+      ? { configurationReason: "public_seeds_required" } : {}),
+  };
+}
 export function isVersionPrivateSource(provider) {
   return (
     [
@@ -72,7 +93,7 @@ export function isVersionPrivateSource(provider) {
   );
 }
 export function safeSourceDiagnosticRefs(value) {
-  const refs = {};
+  const refs = safeSourceContractMetadata(value);
   for (const [key, prefix] of [
     ["diagnosticId", "d"],
     ["requestId", "q"],
@@ -92,6 +113,9 @@ export function safeSourceDiagnosticRefs(value) {
 // Classify only structured facts. Upstream text is neither evidence of risk
 // nor safe diagnostic metadata.
 export function sourceIssueCode(error, fallback = "source_probe_failed") {
+  if (error?.code === "CERT_HAS_EXPIRED") return "tls_certificate_expired";
+  if (error?.code === "ERR_TLS_CERT_ALTNAME_INVALID") return "tls_hostname_mismatch";
+  if (error?.code === "public_seeds_required") return "not_configured";
   if (issueCodes.has(error?.code)) return error.code;
   if (error?.name === "TimeoutError" || error?.code === "ETIMEDOUT")
     return "request_timeout";
@@ -158,6 +182,8 @@ export function normalizeSourceStatus({ status, issues = [] }) {
     return "restricted";
   if (codes.includes("content_non_json")) return "unavailable";
   if (codes.includes("parse_error")) return "parse_error";
+  if (failures.length && failures.every(code => ["not_configured", "public_seeds_required"].includes(code)))
+    return "not_configured";
   if (
     failures.some(
       (code) =>

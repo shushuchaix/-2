@@ -4,6 +4,8 @@ import {
 } from "../sources/social-content.mjs";
 import { platformPolicy } from "../../electron/collection/network-policy.mjs";
 import { parseHTML } from "linkedom";
+import { isOperationControlError } from "../domain/operation-control.mjs";
+import { sourceIssueCode } from "../sources/source-status.mjs";
 
 function isWechatCaptchaResponse(response) {
   if ((response.status ?? 200) !== 200 || !response.url) return false;
@@ -61,6 +63,8 @@ export function createContentReadService({
         request = input.request || defaultRequest;
       signal?.throwIfAborted();
       const parse = (r) => {
+        if (platform === "weibo" && canonicalSocialUrl(r.url || url, platform) !== url)
+          throw Object.assign(Error("微博正文地址身份未通过核验。"), { code: "detail_identity_mismatch", retryable: false });
         const metadata = {
           status: r.status ?? 200,
           channel: r.channel,
@@ -99,19 +103,11 @@ export function createContentReadService({
         result = parse({ ...response, channel: "public_http" });
       } catch (e) {
         signal?.throwIfAborted();
-        if (
-          [
-            "source_budget_exhausted",
-            "collection_stale_epoch",
-            "workspace_write_failed",
-            "collection_route_forbidden",
-          ].includes(e.code)
-        )
-          throw e;
+        if (isOperationControlError(e)) throw e;
         result = {
           bodyStatus: "incomplete",
           retryEligible: true,
-          code: e.code || "body_unavailable",
+          code: sourceIssueCode(e, "body_unverified"),
           url,
         };
       }
@@ -133,15 +129,8 @@ export function createContentReadService({
           );
         } catch (e) {
           signal?.throwIfAborted();
-          if (
-            [
-              "source_budget_exhausted",
-              "collection_stale_epoch",
-              "workspace_write_failed",
-            ].includes(e.code)
-          )
-            throw e;
-          result = { ...result, code: e.code || "browser_unavailable" };
+          if (isOperationControlError(e)) throw e;
+          result = { ...result, code: sourceIssueCode(e, "body_unverified") };
         }
         if (
           result.bodyStatus === "complete" ||
@@ -171,15 +160,8 @@ export function createContentReadService({
           if (enhanced.html || enhanced.text) result = parse(enhanced);
         } catch (e) {
           signal?.throwIfAborted();
-          if (
-            [
-              "source_budget_exhausted",
-              "collection_stale_epoch",
-              "workspace_write_failed",
-            ].includes(e.code)
-          )
-            throw e;
-          result = { ...result, code: e.code || "enhancement_unavailable" };
+          if (isOperationControlError(e)) throw e;
+          result = { ...result, code: sourceIssueCode(e, "body_unverified") };
         }
       }
       return { ...result, retryEligible: result.bodyStatus !== "complete" };

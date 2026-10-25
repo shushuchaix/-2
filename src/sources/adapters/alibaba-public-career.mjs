@@ -8,6 +8,7 @@ import {
   buildAlibabaPublicSearchRequest,
   ALIBABA_PUBLIC_LIST,
 } from "./alibaba-public-read.mjs";
+import { safeSourceDiagnosticRefs } from "../source-status.mjs";
 
 const origin = "https://talent.alibaba.com",
   portal = "alibaba-public-career-1";
@@ -93,12 +94,16 @@ function rowValid(row) {
 async function readList(site, keyword, page, ctx) {
   const fresh = await ctx.request(origin + "/", { signal: ctx.signal });
   gate(fresh);
-  const { url, ...options } = buildAlibabaPublicSearchRequest({
-    siteId: site.siteId,
-    query: keyword,
-    page,
-    response: fresh,
-  });
+  let built;
+  try {
+    built = buildAlibabaPublicSearchRequest({ siteId: site.siteId, query: keyword, page, response: fresh });
+  } catch (error) {
+    // Only bounded public correlation and fixed contract metadata survive.
+    const requestId = safeSourceDiagnosticRefs(fresh).requestId;
+    if (error?.code === "native_transport_contract_mismatch" && requestId) error.requestId = requestId;
+    throw error;
+  }
+  const { url, ...options } = built;
   const response = await ctx.request(url, { ...options, signal: ctx.signal });
   ctx.signal?.throwIfAborted();
   gate(response);

@@ -832,3 +832,23 @@ test("list samples do not claim verified content when the body remains unverifie
   assert.ok(within(site).getByText("页面结构无法解析"));
   assert.ok(within(site).getByText("正文待验证"));
 });
+
+for (const [code, label] of [
+  ["tls_certificate_expired", "当前连接的证书已过期"],
+  ["tls_hostname_mismatch", "当前连接的证书与访问域名不匹配"],
+]) {
+  test(`source card explains ${code} while retaining last successful probe`, async t => {
+    const data = { ...catalog(), sites: [{ ...catalog().sites[0], health: {
+      status: "unavailable", checkedAt: "2026-10-24T00:00:00Z", lastSuccessAt: "2026-10-05T00:00:00Z",
+      issues: [{ code, diagnosticId: "d-00000000-0000-4000-8000-000000000024", message: "TLS_PRIVATE_CANARY" }],
+    } }] };
+    const f = await renderApp(t, { route: "#/sources?packageId=A&targetRevisionId=t1%401",
+      apiHandler: (p, o) => p === "/sources" ? data : syntheticApi(p, o) });
+    await openSource(f, "合成学校");
+    const card = f.screen.getByRole("region", { name: "候选目录站点探针" });
+    assert.ok(within(card).getByText(label));
+    assert.ok(within(card).getByText(/最近成功：2026/));
+    assert.ok(within(card).getByRole("link", { name: /查看.*(?:日志|诊断)/ }));
+    assert.doesNotMatch(document.body.textContent ?? "", /TLS_PRIVATE_CANARY/);
+  });
+}

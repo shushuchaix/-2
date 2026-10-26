@@ -8,7 +8,7 @@ import { migrateWorkspaceToSqlite } from './sqlite-migration.mjs';
 import { createManagedSnapshotPort, assertSnapshotOwner, assertSnapshotPath, snapshotPath } from './managed-snapshots.mjs';
 import { withWorkspaceLock } from './lock.mjs';
 import { assertWorkspace } from '../../domain/contracts.mjs';
-import { requirePackage, assertScope, packageError } from '../../domain/packages.mjs';
+import { requirePackage, assertScope, packageError, UUID_RE } from '../../domain/packages.mjs';
 import { assertOperationWriteAllowed } from '../../application/workspace-operations.mjs';
 import { canonicalContentHash } from './content-hash.mjs';
 import { countPackageRows } from './package-counts.mjs';
@@ -193,6 +193,34 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
       const ensureCapability=()=>{assertOpen();if(!live||!token.active||heldLock.getStore()!==token||activePort!==state)throw packageError('workspace_fence_closed','工作区 fence 已结束。',503);};
       const ensure=()=>{ensureCapability();if(controlWriting)throw packageError('workspace_fence_busy','请等待当前控制提交完成。',503);};
       const check=selection=>{ensure();validate(selection,state.control,state.options);};
+      let purgeLeaseRecord;
+      const purgeLeaseFor=packageId=>{
+        ensure();const supplied=state.options.operationLease;
+        if(!supplied?.operationId||!supplied.token)throw packageError('invalid_operation_lease','永久清理授权已失效。',409);
+        purgeLeaseRecord||=callStore(()=>store.getRow({collection:'operationLeases',id:supplied.operationId}));
+        const lease=purgeLeaseRecord;
+        if(!lease||lease.operationId!==supplied.operationId||lease.token!==supplied.token||lease.kind!=='permanent-delete')
+          throw packageError('invalid_operation_lease','永久清理授权已失效。',409);
+        const invalidScope=()=>{throw packageError('invalid_operation_lease','永久清理授权范围已损坏。',409);};
+        if(Object.hasOwn(lease,'packageIds')&&(!Array.isArray(lease.packageIds)||lease.packageIds.some(id=>typeof id!=='string'||!UUID_RE.test(id))||new Set(lease.packageIds).size!==lease.packageIds.length))invalidScope();
+        if(Object.hasOwn(lease,'packageId')&&(typeof lease.packageId!=='string'||!UUID_RE.test(lease.packageId)))invalidScope();
+        if(lease.scope!==undefined&&lease.scope!==null&&(!lease.scope||Object.getPrototypeOf(lease.scope)!==Object.prototype||
+          Object.keys(lease.scope).some(key=>!['packageId','targetRevisionId'].includes(key))||
+          typeof lease.scope.packageId!=='string'||!UUID_RE.test(lease.scope.packageId)||
+          (Object.hasOwn(lease.scope,'targetRevisionId')&&(typeof lease.scope.targetRevisionId!=='string'||!lease.scope.targetRevisionId))))invalidScope();
+        const ids=Object.hasOwn(lease,'packageIds')?lease.packageIds:lease.packageId?[lease.packageId]:lease.scope?.packageId?[lease.scope.packageId]:[];
+        if((lease.packageId&&!ids.includes(lease.packageId))||(lease.scope?.packageId&&!ids.includes(lease.scope.packageId)))invalidScope();
+        // An unscoped resume lease may only inspect an existing pending task it
+        // owns through the current ledger. A random task must not grant access.
+        const ledger=state.control.deletionLedger[packageId],task=state.control.purgeTasks[ledger?.operationId];
+        const pending=ledger?.phase==='purge_pending'&&task&&task.operationId===ledger.operationId&&task.packageId===packageId&&
+          ['prepared','purge_pending','verified'].includes(task.phase)&&Array.isArray(task.files)&&
+          task.counts&&ledger.counts&&JSON.stringify(task.counts)===JSON.stringify(ledger.counts);
+        if(!ids.includes(packageId)&&!(ids.length===0&&pending))throw packageError('package_scope_mismatch','永久清理授权范围不符。',409);
+        const acquiredRevision=callStore(()=>store.readPurgeLeaseRevision(lease.operationId));
+        if(!Number.isSafeInteger(acquiredRevision))throw packageError('invalid_operation_lease','永久清理授权缺少持久版本。',409);
+        return {...lease,acquiredRevision};
+      };
       const fence={
         get control(){ensure();return clone(state.control);},
         commitControl(next){
@@ -204,13 +232,24 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
         },
         queryRecoveryRunHeads(input={}){return observation.measure(()=>{ensure();return recoveryHeads(callStore(()=>store.queryRecoveryRunHeads(input)),state.control);});},
         queryRecoveryRecordKeys(input){return observation.measure(()=>{ensure();return callStore(()=>store.queryRecoveryRecordKeys(input));});},
+        queryPurgePlanningPage(input){return observation.measure(()=>{
+          ensure();if(input?.section!=='packages')purgeLeaseFor(input?.packageId);
+          return callStore(()=>store.queryPurgePlanningPage(input,state.control));
+        });},
+        getPurgePlanningCounts(packageId){return observation.measure(()=>{
+          ensure();return callStore(()=>store.countPurgePlanningRecords(packageId,state.control));
+        });},
+        assertPurgeLease(packageId){return clone(purgeLeaseFor(packageId));},
+        assertPurgePlanningIdentity(packageId){return observation.measure(()=>{
+          purgeLeaseFor(packageId);return callStore(()=>store.assertPurgePlanningIdentity());
+        });},
         getPackageCounts(packageId){return observation.measure(()=>{ensure();return callStore(()=>countPackageRows(store,packageId));});},
         readOperationState(input={}){return observation.measure(()=>{ensure();return callStore(()=>store.readOperationState(input));});},
         transaction(selection,action){return observation.measure(()=>{
           ensure();const newPackages=new Set((selection.select||[]).filter(s=>s.collection==='packages').flatMap(s=>s.ids||[]).filter(id=>!callStore(()=>store.getRow({collection:'packages',id}))));
           const prior=state.options;state.options={...prior,newPackages};
           try{check(selection);assertOperationWriteAllowed(operationView(),state.options);return callStore(()=>store.transaction(selection,action));}
-          finally{state.options=prior;}
+          finally{state.options=prior;purgeLeaseRecord=undefined;}
         });},
       };
   for(const method of ['getMeta','getRow','getRecord','readView','queryRows','queryIds','aggregateRows','readChanges'])fence[method]=input=>observation.measure(()=>{

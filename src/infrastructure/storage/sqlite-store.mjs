@@ -10,6 +10,7 @@ import { createSqliteJobQueries } from './sqlite-job-queries.mjs';
 import { createSqliteCollectionQueries } from './sqlite-collection-queries.mjs';
 import { createSqliteLegacyQueries } from './sqlite-legacy-queries.mjs';
 import { createSqliteRecoveryQueries } from './sqlite-recovery-queries.mjs';
+import { createSqlitePurgeQueries } from './sqlite-purge-queries.mjs';
 import { buildCollectionProjectionRows, COLLECTION_PROJECTION_VERSION } from '../../domain/collection-projections.mjs';
 import { PRIVATE_COLLECTIONS, QUERY_FIELDS, SCHEMA_SQL, SQLITE_COLLECTIONS, SQLITE_STORE_VERSION } from './sqlite-schema.mjs';
 import { assertJson, defineOwn, flattenWorkspace, inflateWorkspace, plain, recordMetadata,
@@ -68,6 +69,8 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
     enableDoubleQuotedStringLiterals: false, allowExtension: false });
   let closed = false, active = false, operation = false;
   const metrics = { statements: 0, prepares:0,statementCacheHits:0, rowsRead: 0, rowsWritten: 0, decodedRows: 0, decodedBytes: 0,
+    decodedPrivateRows:0,decodedPrivateBytes:0,
+    purgeIdentityGuardStatements:0,purgeIdentityGuardMs:0,
     metaRowsRead: 0, metaDecodedBytes: 0,
     transactionReadMs:0,transactionStageMs:0,transactionWriteRowsMs:0,transactionRefsMs:0,transactionCommitMs:0,
     serializedRows: 0, serializedBytes: 0, transactions: 0, commits: 0, rollbacks: 0,
@@ -85,6 +88,9 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
   const decode = raw => {
     if (!raw) return null;
     metrics.rowsRead++; metrics.decodedRows++; metrics.decodedBytes += Buffer.byteLength(raw.value);
+    if(PRIVATE_COLLECTIONS.has(raw.collection)||(raw.collection==='recoveryRecords'&&raw.owner_id)){
+      metrics.decodedPrivateRows++;metrics.decodedPrivateBytes+=Buffer.byteLength(raw.value);
+    }
     return fromDb(raw);
   };
   const encode = value => { const text = enc(value); metrics.serializedRows++; metrics.serializedBytes += Buffer.byteLength(text); return text; };
@@ -696,6 +702,21 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
   const recoveryQueries=createSqliteRecoveryQueries({statement,countRows:n=>{metrics.rowsRead+=n;}});
   for(const method of ['queryRecoveryRunHeads','queryRecoveryRecordKeys'])api[method]=(input={})=>{
     assertReady();return readConsistent(()=>clone(recoveryQueries[method](input)));
+  };
+  const purgeQueries=createSqlitePurgeQueries({statement,countRows:n=>{metrics.rowsRead+=n;}});
+  api.assertPurgePlanningIdentity=()=>{
+    assertReady();const started=performance.now();metrics.purgeIdentityGuardStatements++;
+    try{return readConsistent(()=>purgeQueries.assertPurgePlanningIdentity());}
+    finally{metrics.purgeIdentityGuardMs+=performance.now()-started;}
+  };
+  api.queryPurgePlanningPage=(input,control)=>{
+    assertReady();return readConsistent(()=>clone(purgeQueries.queryPurgePlanningPage(input,control)));
+  };
+  api.countPurgePlanningRecords=(packageId,control)=>{
+    assertReady();return readConsistent(()=>clone(purgeQueries.countPurgePlanningRecords(packageId,control)));
+  };
+  api.readPurgeLeaseRevision=operationId=>{
+    assertReady();return readConsistent(()=>purgeQueries.readPurgeLeaseRevision(operationId));
   };
   const jobQueries=createSqliteJobQueries({db,statement,countRows:n=>{metrics.rowsRead+=n;}});
   for(const method of ['queryJobPage','queryApplicationPage','findJobIdentityCandidates','queryJobQuality','readJobBodySignatures','readJobHead','queryJobRelatedPage'])api[method]=(input,options={})=>{

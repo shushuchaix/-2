@@ -7,7 +7,7 @@ import { assertWorkspace } from "../../domain/contracts.mjs";
 import { redactBusiness } from "../../domain/redact.mjs";
 import { normalizeWorkspaceExtensions } from "../../domain/workspace-management.mjs";
 import { backfillTargetMembers } from "../../domain/job-facts.mjs";
-import { createWorkspaceOperationGate } from "../../application/workspace-operations.mjs";
+import { createWorkspaceOperationGate, invalidLease, operationBusy } from "../../application/workspace-operations.mjs";
 import { filterBackup } from "./backup-filter.mjs";
 import { createTrashService } from "../../application/trash-service.mjs";
 import { createPurgeService } from "../../application/purge-service.mjs";
@@ -118,6 +118,36 @@ export function validateBackupArchive(archive) {
     }
   return archive;
 }
+const restorePurgePreflightErrors = new WeakSet();
+const purgePreflightPending = () => {
+  const error=packageError('purge_pending','永久清理尚未完成，请在回收站完成清理后重试恢复备份。',409);
+  restorePurgePreflightErrors.add(error);return error;
+};
+// Provenance is process-local, not a caller-controlled code/flag. Only errors
+// raised before restoreWorkspaceWithIntent may preserve the current credential.
+export const isRestorePurgePreflightError = error => restorePurgePreflightErrors.has(error);
+const hasRestoreIntent = control => Object.values(control.migrationJournal.maintenance||{})
+  .some(task=>task?.kind==='restore'&&task.phase!=='complete'&&task.phase!=='aborted');
+async function assertRestorePurgePreflight(repository, operationLease) {
+  await repository.withWriteFence(fence=>{
+    const lease=operationLease&&fence.getRow({collection:'operationLeases',id:operationLease.operationId});
+    if(!lease||lease.operationId!==operationLease.operationId||lease.token!==operationLease.token||lease.kind!=='restore')throw invalidLease();
+    if(fence.readOperationState().hasMore)throw operationBusy();
+    const control=fence.control;
+    // This is a resume, not an unstarted restore. The kernel must match the
+    // source/plan and its persisted trash authority; it must not gain a WeakSet
+    // preflight exemption or borrow this lease to delete newly expired data.
+    if(hasRestoreIntent(control))return;
+    if(Object.values(control.purgeTasks).some(task=>task?.phase!=='completed')||
+      Object.values(control.deletionLedger).some(entry=>entry.phase!=='purged'))throw purgePreflightPending();
+    let after;
+    do{
+      const page=fence.queryPurgePlanningPage({section:'packages',limit:200,...(after?{after}:{})});
+      if(page.rows.some(pkg=>pkg&&(pkg.state==='purge_pending'||isExpired(pkg,repository.clock.now()))))throw purgePreflightPending();
+      after=page.hasMore?page.nextCursor:null;
+    }while(after);
+  },{operationLease});
+}
 export async function restoreBackup({
   repository,
   archivePath,
@@ -128,13 +158,25 @@ export async function restoreBackup({
   validatedArchive,
   faultInjector,
 }) {
-  const source =
-    validatedArchive ||
-    validateBackupArchive(
-      JSON.parse(await fsAdapter.readFile(archivePath, "utf8")),
-    );
-  if ((await repository.read()).schemaVersion === 3) {
-    if (!operationLease)
+  // Validate even the internal recursion's supplied archive before any cleanup,
+  // lease acquisition or durable restore intent. Never let a flag bypass hashes.
+  const source=validateBackupArchive(validatedArchive||JSON.parse(await fsAdapter.readFile(archivePath,'utf8')));
+  if ((await repository.getMeta('schemaVersion')) === 3) {
+    const trash=trashService||createTrashService({repository}),
+      purge=purgeService||createPurgeService({repository,trash,fsAdapter});
+    if (!operationLease) {
+      // Purge owns its real permanent-delete lease. It must finish before this
+      // function takes restore's exclusive lease; borrowing it would deadlock or
+      // violate the typed planning capability's permanent-delete kind check.
+      if(!hasRestoreIntent(await repository.readControl())){
+        const resumed=await purge.resumePending();
+        if(resumed.pending.length)throw purgePreflightPending();
+        const expired=await trash.preview({expiredOnly:true});
+        if(expired.candidates.length){
+          const result=await purge.execute(expired,{reason:'expired'});
+          if(result.pending.length)throw purgePreflightPending();
+        }
+      }
       return createWorkspaceOperationGate({ repository }).withOperation(
         "restore",
         {},
@@ -143,36 +185,17 @@ export async function restoreBackup({
             repository,
             archivePath,
             operationLease: lease,
-            trashService,
-            purgeService,
+            trashService:trash,
+            purgeService:purge,
             fsAdapter,
             validatedArchive: source,
             faultInjector,
           }),
       );
-    const trash = trashService || createTrashService({ repository }),
-      purge =
-        purgeService || createPurgeService({ repository, trash, fsAdapter });
-    const resumed = await purge.resumePending({ operationLease });
-    if (resumed.pending.length)
-      throw packageError(
-        "purge_pending",
-        "永久清理尚未完成，暂时不能恢复备份。",
-        503,
-      );
-    const expired = await trash.preview({ expiredOnly: true });
-    if (expired.candidates.length) {
-      const result = await purge.execute(expired, {
-        reason: "expired",
-        operationLease,
-      });
-      if (result.pending.length)
-        throw packageError(
-          "purge_pending",
-          "已到期版本尚未清理完成，暂时不能恢复备份。",
-          503,
-        );
     }
+    // Caller-owned leases are never released or lent to purge. This fresh held
+    // fence also closes state changes between cleanup and our own restore lease.
+    await assertRestorePurgePreflight(repository,operationLease);
     const {restoreWorkspaceWithIntent}=await import('./restore-maintenance.mjs');
     return restoreWorkspaceWithIntent({repository,source,operationLease,fsAdapter,faultInjector});
   }
@@ -181,7 +204,7 @@ export async function restoreBackup({
       "restore",
       {},
       (lease) =>
-        restoreBackup({ repository, archivePath, operationLease: lease }),
+        restoreBackup({ repository, archivePath, operationLease: lease,fsAdapter,validatedArchive:source,faultInjector }),
     );
   const archive = source;
   const snapshots = archive.runSnapshots || {};

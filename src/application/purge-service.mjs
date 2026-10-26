@@ -285,16 +285,66 @@ export function createPurgeService({
     }
     return result;
   }
+  function planningRows(fence, section, packageId) {
+    const rows=[];let after;
+    do{
+      const page=fence.queryPurgePlanningPage({section,packageId,limit:200,...(after?{after}:{})});
+      rows.push(...page.rows);after=page.hasMore?page.nextCursor:null;
+    }while(after);
+    return rows;
+  }
+  async function prepare(tx,preview,reason,operationLease,typed) {
+    if(!typed)tx.operationLease=operationLease;
+    const packages=typed?trash.validatePreviewRows(tx,preview):trash.validatePreview(tx,preview),
+      c=structuredClone(tx.control),ids=[];
+    const state=typed?tx.readOperationState():null;
+    if(state?.hasMore)throw packageError('workspace_operation_busy','活动操作超过安全上限。',409);
+    // Exactly one guard per nonempty prepare, before ledger visibility/owner
+    // filters can hide a physically misrouted row or a peer's conflicting file.
+    if(typed&&packages.length)tx.assertPurgePlanningIdentity(packages[0].packageId);
+    let fileHeads;
+    for(const p of packages){
+      if(reason==='expired'&&!isExpired(p,clock.now()))throw packageError('trash_preview_stale','自动清理范围包含未到期版本。');
+      const runs=typed?planningRows(tx,'runHeads',p.packageId):null;
+      const w=typed?{packages:{[p.packageId]:p},runs:Object.fromEntries(runs.map(r=>[r.id,r])),
+        operationLeases:Object.fromEntries(state.leases.map(l=>[l.operationId,l]))}:tx.workspace;
+      const active=activePackageOperations(w,p.packageId);
+      if(active.runs.length||active.leases.some(l=>l.operationId!==operationLease.operationId))
+        throw packageError('workspace_operation_busy','版本仍有活动操作。');
+      const existing=c.deletionLedger[p.packageId];
+      if(existing){ids.push(existing.operationId);continue;}
+      if(typed){
+        // All file heads are needed for effective-owner migration and same-path
+        // peer conflicts. No global private business value is decoded here.
+        fileHeads||=planningRows(tx,'fileHeads',p.packageId);
+        w.files=Object.fromEntries(fileHeads.map(f=>[f.id,f]));
+      }
+      const filePlan=planPackageFiles({layout,workspace:w,control:c,packageId:p.packageId}),
+        operationId=randomUUID(),
+        records=typed?planningRows(tx,'recordHeads',p.packageId).map(r=>r.recordId):packageRecords(w)
+          .filter(n=>n.record.ownerPackageId===p.packageId).map(n=>n.record.recordId),
+        transferred=Object.entries(c.ownershipTransfers).filter(([,i])=>i.to===p.packageId).map(([id])=>id),
+        recordIds=[...new Set([...records,...filePlan.files.map(f=>f.snapshotRecordId),...transferred])],
+        counts=typed?tx.getPurgePlanningCounts(p.packageId):countPackageRecords(w,p.packageId);
+      c.deletionLedger[p.packageId]={phase:'purge_pending',recordIds,archiveId:p.archiveId,archivedAt:p.archivedAt,
+        purgeAt:p.purgeAt,operationId,createdAt:now(),counts};
+      c.purgeTasks[operationId]={operationId,packageId:p.packageId,phase:'prepared',createdAt:now(),counts,
+        nameHash:versionNameHash(p.kind,p.versionName),files:filePlan.files.map(f=>({recordId:f.recordId,
+          snapshotRecordId:f.snapshotRecordId,ownerPackageId:f.ownerPackageId,path:f.path,hash:f.hash,
+          acceptedOwnerPackageIds:f.acceptedOwnerPackageIds,acceptedHashes:f.acceptedHashes})),code:null,attempts:0};
+      ids.push(operationId);
+    }
+    await tx.commitControl(c);return ids;
+  }
   const service = {
     async execute(preview, { reason = "manual", operationLease } = {}) {
       if (!["manual", "empty", "expired"].includes(reason))
         throw packageError("validation_failed", "永久清理原因无效。", 400);
       // Validate even an empty submitted preview without acquiring or changing a workspace lease.
       if (!preview?.candidates?.length) {
-        await repository.withMaintenanceTransaction(
-          (tx) => trash.validatePreview(tx, preview),
-          { operationMaintenance: true },
-        );
+        if((await repository.getMeta('schemaVersion'))===3)
+          await repository.withWriteFence(fence=>trash.validatePreviewRows(fence,preview),{operationMaintenance:true});
+        else await repository.withMaintenanceTransaction(tx=>trash.validatePreview(tx,preview),{operationMaintenance:true});
         return empty();
       }
       if (!operationLease)
@@ -307,91 +357,11 @@ export function createPurgeService({
           (lease) =>
             service.execute(preview, { reason, operationLease: lease }),
         );
-      const ids = await repository.withMaintenanceTransaction(
-        async (tx) => {
-          tx.operationLease = operationLease;
-          const packages = trash.validatePreview(tx, preview);
-          const c = structuredClone(tx.control),
-            ids = [];
-          for (const p of packages) {
-            if (reason === "expired" && !isExpired(p, clock.now()))
-              throw packageError(
-                "trash_preview_stale",
-                "自动清理范围包含未到期版本。",
-              );
-            const active = activePackageOperations(tx.workspace, p.packageId);
-            if (
-              active.runs.length ||
-              active.leases.some(
-                (l) => l.operationId !== operationLease.operationId,
-              )
-            )
-              throw packageError(
-                "workspace_operation_busy",
-                "版本仍有活动操作。",
-              );
-            const existing = c.deletionLedger[p.packageId];
-            if (existing) {
-              ids.push(existing.operationId);
-              continue;
-            }
-            const filePlan = planPackageFiles({
-                layout,
-                workspace: tx.workspace,
-                control: c,
-                packageId: p.packageId,
-              }),
-              operationId = randomUUID(),
-              records = packageRecords(tx.workspace)
-                .filter((n) => n.record.ownerPackageId === p.packageId)
-                .map((n) => n.record.recordId);
-            const transferred = Object.entries(c.ownershipTransfers)
-                .filter(([, i]) => i.to === p.packageId)
-                .map(([id]) => id),
-              recordIds = [
-                ...new Set([
-                  ...records,
-                  ...filePlan.files.map((f) => f.snapshotRecordId),
-                  ...transferred,
-                ]),
-              ];
-            const counts = countPackageRecords(tx.workspace, p.packageId);
-            c.deletionLedger[p.packageId] = {
-              phase: "purge_pending",
-              recordIds,
-              archiveId: p.archiveId,
-              archivedAt: p.archivedAt,
-              purgeAt: p.purgeAt,
-              operationId,
-              createdAt: now(),
-              counts,
-            };
-            c.purgeTasks[operationId] = {
-              operationId,
-              packageId: p.packageId,
-              phase: "prepared",
-              createdAt: now(),
-              counts,
-              nameHash: versionNameHash(p.kind, p.versionName),
-              files: filePlan.files.map((f) => ({
-                recordId: f.recordId,
-                snapshotRecordId: f.snapshotRecordId,
-                ownerPackageId: f.ownerPackageId,
-                path: f.path,
-                hash: f.hash,
-                acceptedOwnerPackageIds: f.acceptedOwnerPackageIds,
-                acceptedHashes: f.acceptedHashes,
-              })),
-              code: null,
-              attempts: 0,
-            };
-            ids.push(operationId);
-          }
-          await tx.commitControl(c);
-          return ids;
-        },
-        { operationLease },
-      );
+      const typed=(await repository.getMeta('schemaVersion'))===3;
+      const ids=typed?await repository.withWriteFence(fence=>prepare(fence,preview,reason,operationLease,true),{operationLease}):
+        await repository.withMaintenanceTransaction(tx=>prepare(tx,preview,reason,operationLease,false),{operationLease});
+      // Full workspace/body assertion remains in runTasks/exportWorkspace before
+      // any destructive finish step. A prepared intent is not physical completion.
       return runTasks(ids, operationLease);
     },
     async resumePending({ operationLease } = {}) {

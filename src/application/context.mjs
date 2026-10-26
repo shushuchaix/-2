@@ -18,6 +18,7 @@ import {
   createBackup,
   restoreBackup,
   validateBackupArchive,
+  isRestorePurgePreflightError,
 } from "../infrastructure/storage/backup.mjs";
 import { createWorkspaceService } from "./workspace-service.mjs";
 import { createWorkspaceOperationGate } from "./workspace-operations.mjs";
@@ -802,6 +803,9 @@ export async function createApplicationContext({
           publishModelSettings(await readSettings());
           return restored;
         } catch (error) {
+          // This exact error originates before the restore intent. Preserve the
+          // configured binding and its friendly business-conflict feedback.
+          if(isRestorePurgePreflightError(error))throw error;
           credentialBinding=undefined;cfg.deepseek.apiKey='';credentialStatus='needs_configuration';
           if (
             error.code === "workspace_operation_busy" ||

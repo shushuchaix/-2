@@ -49,17 +49,18 @@ test("wave inventory contains every recursively discovered file exactly once", (
   assert.equal(listed.status, 0);
   const files = JSON.parse(listed.stdout),
     waves = createTestExecutionPlan(files);
-  assert.equal(waves.length, 3);
+  assert.equal(waves.length, 4);
   assert.deepEqual(
-    waves.slice(0, 2).map((wave) => wave.files),
+    waves.slice(0, 3).map((wave) => wave.files),
     [
       ["tests/integration/diagnostics-concurrency.test.mjs"],
       ["tests/integration/collection-row-lifecycle.test.mjs"],
+      ["tests/integration/purge-typed-planning.test.mjs"],
     ],
   );
   assert.deepEqual(waves.flatMap((wave) => wave.files).sort(), files);
   assert.equal(new Set(waves.flatMap((wave) => wave.files)).size, files.length);
-  const selected = "tests/integration/collection-row-lifecycle.test.mjs";
+  const selected = "tests/integration/purge-typed-planning.test.mjs";
   assert.deepEqual(
     JSON.parse(run(["tools/test-v2.mjs", "--file", selected, "--list"]).stdout),
     [selected],
@@ -79,6 +80,17 @@ test("wave inventory contains every recursively discovered file exactly once", (
     createTestExecutionPlan(units).map((wave) => wave.files),
     [units],
   );
+  const integration = run(["tools/test-v2.mjs", "--group", "integration", "--list"]);
+  assert.equal(integration.status, 0);
+  const integrations = JSON.parse(integration.stdout);
+  assert.deepEqual(
+    integrations,
+    files.filter((file) => file.startsWith("tests/integration/")),
+  );
+  const integrationWaves = createTestExecutionPlan(integrations);
+  assert.deepEqual(integrationWaves.flatMap((wave) => wave.files).sort(), integrations);
+  assert.deepEqual(integrationWaves.slice(0, 3).map((wave) => wave.files),
+    waves.slice(0, 3).map((wave) => wave.files));
   assert.equal(
     run(["tools/test-v2.mjs", "--group", "unknown", "--list"]).status,
     1,
@@ -445,13 +457,15 @@ test("V2 execution records bounded Node subprocess arguments while retaining exc
   assert.equal(typeof createTestWorkerArgs, "function");
   const root = path.resolve("."),
     files = [
-      ...threeWaveFiles,
+      ...threeWaveFiles.slice(0, 2),
+      "tests/integration/purge-typed-planning.test.mjs",
+      ...threeWaveFiles.slice(2),
       "tests/unit/second.test.mjs",
       "tests/unit/third.test.mjs",
       "tests/unit/fourth.test.mjs",
       "tests/unit/fifth.test.mjs",
     ];
-  for (const [cpus, counts] of [[1, [1, 1, 1]], [2, [1, 1, 1]], [20, [1, 1, 4]]]) {
+  for (const [cpus, counts] of [[1, [1, 1, 1, 1]], [2, [1, 1, 1, 1]], [20, [1, 1, 1, 4]]]) {
     let elapsed = 0;
     const spawned = [];
     const result = runTestExecutionPlan({
@@ -477,12 +491,13 @@ test("V2 execution records bounded Node subprocess arguments while retaining exc
     });
     assert.equal(result.status, "passed");
     assert.equal(result.timeoutMs, 300000);
+    assert.equal(result.durationMs, 40000);
     assert.deepEqual(result.workerPolicy, {
       availableParallelism: cpus, maxWorkers: cpus === 20 ? 4 : 1,
     });
     assert.deepEqual(result.waves.map((wave) => wave.testConcurrency), counts);
     assert.deepEqual(
-      spawned.map((call) => call.timeoutMs), [300000, 290000, 280000],
+      spawned.map((call) => call.timeoutMs), [300000, 290000, 280000, 270000],
     );
     assert.deepEqual(result.waves.flatMap((wave) => wave.completedFiles), files);
     result.waves.forEach((wave, index) => {

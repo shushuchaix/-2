@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 const exclusiveFiles = [
   "tests/integration/diagnostics-concurrency.test.mjs",
   "tests/integration/collection-row-lifecycle.test.mjs",
+  // Its real 1k/10k SQLite fixture must not compete with ordinary assertions.
+  "tests/integration/purge-typed-planning.test.mjs",
 ];
 
 /** Leave one CPU when possible; four workers is a resource cap, not a tuned optimum. */

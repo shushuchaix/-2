@@ -272,6 +272,25 @@ export function createTrashService({
       const empty={profiles:{},targets:{},jobs:{},observations:{},evaluations:{},runs:{},applications:{},events:{},files:{}};
       return buildPreview({...empty,revision:await repository.getMeta('revision'),packages:Object.fromEntries(packages.map(p=>[p.packageId,p]))},control,scope,clock.now(),counts);
     },
+    validatePreviewRows(fence, preview, now = clock.now()) {
+      if(!preview||typeof preview.planHash!=='string'||!Number.isSafeInteger(preview.workspaceRevision)||!Array.isArray(preview.candidates))throw stale();
+      const revision=fence.getMeta('revision');
+      const leases=preview.candidates.map(p=>fence.assertPurgeLease(p?.packageId));
+      if(revision!==preview.workspaceRevision&&!(leases.length&&leases.every(l=>l.acquiredRevision===revision)&&preview.workspaceRevision+1===revision))throw stale();
+      const packages=[],control=fence.control,counts={};let after;
+      do{
+        const page=fence.queryPurgePlanningPage({section:'packages',...(after?{after}:{}),limit:200});
+        packages.push(...page.rows.filter(Boolean));after=page.hasMore?page.nextCursor:null;
+      }while(after);
+      for(const p of packages)if(p.state==='trashed')counts[p.packageId]=fence.getPurgePlanningCounts(p.packageId);
+      const scope=scopeOf(preview.scope),w={revision,packages:Object.fromEntries(packages.map(p=>[p.packageId,p]))},
+        current=buildPreview(w,control,scope,now,counts);
+      current.workspaceRevision=preview.workspaceRevision;
+      const {planHash:ignored,...data}=current;current.planHash=contentHash(data);
+      const {planHash,...input}=preview;
+      if(contentHash(input)!==planHash||current.planHash!==planHash)throw stale();
+      return current.candidates.map(p=>w.packages[p.packageId]);
+    },
     validatePreview(tx, preview, now = clock.now()) {
       if (
         !preview ||

@@ -1,11 +1,11 @@
-import { contentHash } from "../infrastructure/storage/content-hash.mjs";
+import { contentHash, canonicalContentHash } from "../infrastructure/storage/content-hash.mjs";
 import {
   isCalendarDate,
   inputError,
 } from "../../public/js/validation-rules.js";
 import { assertSourceRecord } from "./contracts.mjs";
 import { normalizeRecord } from "./record.mjs";
-import { resolveJobIdentity, relateJobs } from "./identity.mjs";
+import { resolveJobIdentity, relateJobs, canonicalizeSourceUrl } from "./identity.mjs";
 import { jobBusinessFingerprint } from "./job-duplicates.mjs";
 import { resolveJobId } from "./job-resolution.mjs";
 import { addTargetMemberFact, jobFactHash } from "./job-facts.mjs";
@@ -18,6 +18,62 @@ import {
   packageWorkspace,
   mergePackageWorkspace,
 } from "./package-workspace.mjs";
+// A generated position is not an authority identity. Only an exact replay from
+// the same notice producer may bypass the generic "insufficient identity"
+// outcome; no cross-source duplicate or historical weak entity is confirmed.
+function generatedReplayProof(record) {
+  if (record.kind !== "job" || record.sourceRecordIdKind !== "generated" ||
+      record.urlKind !== "notice_detail" || record.rowAmbiguous || record.bodyIncomplete ||
+      (record.evidenceConflicts || []).length || typeof record.description !== "string" ||
+      !record.description.trim()) return null;
+  for (const field of ["sourceId", "siteId", "identityScope", "sourceRecordId", "derivedFrom", "parserVersion"])
+    if (typeof record[field] !== "string" || !record[field].trim()) return null;
+  if (!record.sourceRecordId.startsWith(record.derivedFrom + ":position:") ||
+      !/:[0-9a-f]{24}$/.test(record.sourceRecordId)) return null;
+  const rowId = record.jobRowId ?? null;
+  if (rowId !== null && (typeof rowId !== "string" || !rowId.trim())) return null;
+  const descriptions = (record.sourceEvidence || []).filter(e => e.field === "description");
+  if (descriptions.length !== 1) return null;
+  const e = descriptions[0];
+  if (e.status !== "verified" || e.ambiguous || e.sourceId !== record.sourceId ||
+      e.sourceExcerpt !== record.description || !Number.isFinite(e.confidence) ||
+      e.confidence < 85 || e.confidence > 100 || e.parserVersion !== record.parserVersion ||
+      e.appliesTo?.jobRowId !== rowId || !e.location) return null;
+  try {
+    const sourceUrl = canonicalizeSourceUrl(e.sourceUrl);
+    if (e.sourceKind === "article") {
+      if (rowId !== null || sourceUrl !== canonicalizeSourceUrl(record.url) ||
+          !Number.isSafeInteger(e.location.start) || e.location.start < 0 ||
+          !Number.isSafeInteger(e.location.end) ||
+          e.location.end - e.location.start !== record.description.length) return null;
+    } else if (e.sourceKind === "attachment") {
+      if (rowId === null || e.location.jobRowId !== rowId ||
+          !Array.isArray(e.location.cells) || !e.location.cells.length) return null;
+    } else return null;
+    // Re-observation timestamps and generated evidence IDs are not position
+    // identity. Preserve every other supplied proof field, including extensions,
+    // rather than silently dropping a future row qualifier or conflicting value.
+    const { observedAt, evidenceId, ...descriptionEvidence } = e;
+    return canonicalContentHash({
+      sourceId: record.sourceId, siteId: record.siteId, identityScope: record.identityScope,
+      sourceRecordId: record.sourceRecordId, derivedFrom: record.derivedFrom, rowId,
+      // The real producer also stores batch/headcount/application instructions
+      // in extra. Compare the complete object and its presence: a later partial
+      // object must not reuse this path and replace a known qualifier with unknown.
+      producerExtra: Object.hasOwn(record, "extra")
+        ? { present: true, value: record.extra }
+        : { present: false },
+      descriptionEvidence: { ...descriptionEvidence, sourceUrl },
+    });
+  } catch { return null; }
+}
+function sameGeneratedProducerReplay(left, right, decision) {
+  if (decision.relation !== "distinct" || decision.reasons.length !== 1 ||
+      decision.reasons[0] !== "insufficient_identity_evidence") return false;
+  const proof = generatedReplayProof(left);
+  return proof !== null && proof === generatedReplayProof(right);
+}
+
 export function prepareIngestRecord(input, { observedAt, normalized = false } = {}) {
   const record = normalized ? structuredClone(input) : normalizeRecord({ ...input, retrievedAt: input.retrievedAt || observedAt });
   for (const key of ['status', 'note', 'appliedAt', 'followUpAt', 'resumeRevisionId', 'events', 'score', 'ruleScore', 'verdict', 'reason', 'tracking', 'scoreHistory', 'matchReason', 'matchedKeywords']) delete record[key];
@@ -99,8 +155,9 @@ export function ingestRecordsDraft(w, input) {
         j.canonical.sourceId === record.sourceId &&
         j.canonical.identityScope === record.identityScope &&
         resolveJobIdentity(j.canonical).key === identity.key &&
-        relateJobs(j.canonical, record).relation !== "distinct" &&
-        jobBusinessFingerprint(j.canonical) === jobBusinessFingerprint(record),
+        jobBusinessFingerprint(j.canonical) === jobBusinessFingerprint(record) &&
+        (classified.get(j.jobId).relation !== "distinct" ||
+          sameGeneratedProducerReplay(j.canonical, record, classified.get(j.jobId))),
     );
     if (!stored) {
       let jobId =

@@ -1,3 +1,4 @@
+import { mergeApplicationChannels } from "./application-channels.mjs";
 import { createHash } from "node:crypto";
 import { classifyJobDuplicate } from "./job-identity.mjs";
 import {
@@ -160,6 +161,11 @@ export function mergeRecruitmentFacts(older, newer) {
     ])
       if (older[field] !== undefined)
         result[field] = structuredClone(older[field]);
+  }
+  if (Object.hasOwn(older,"applicationChannels") || Object.hasOwn(newer,"applicationChannels")) {
+    const merged = mergeApplicationChannels(older,newer);
+    result.applicationChannels = merged.channels;
+    result.applicationChannelOverflow = merged.overflow;
   }
   const dedup = (array, projection = (v) => v) => [
     ...new Map(array.map((v) => [hash(projection(v)), v])).values(),

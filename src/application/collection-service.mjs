@@ -33,7 +33,7 @@ import {
   refreshArticleQueue,
 } from "../sources/content-queue.mjs";
 import { articleCacheIdentity } from "../llm/prompt-registry.mjs";
-import { expandArticles } from "../match/article.mjs";
+import { expandRecruitmentNotice } from "./notice-expansion-service.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { projectCollectionQuality } from "../domain/collection-quality.mjs";
@@ -1720,17 +1720,15 @@ function createLegacyCollectionService({
       for (const [key, pending] of articleQueue) {
         if (!modelClient) break;
         try {
-          const expanded = await expandArticles(
-            modelClient,
-            {},
-            [pending.record],
-            {
-              concurrency: 1,
-              signal,
-              diagnostics,
-              diagnosticContext: { runId: token.sliceRunId },
+          const expanded = await expandRecruitmentNotice({
+            modelClient, record:pending.record, signal, diagnostics,
+            assertCurrent:async () => {
+              signal.throwIfAborted();
+              if (active.get(ref.activityId) !== task) throw stale();
+              checkToken(await service.get(ref),token,false);
             },
-          );
+            diagnosticContext:{runId:token.sliceRunId},
+          });
           signal.throwIfAborted();
           const expandedRecords = [];
           if (!expanded.failed)

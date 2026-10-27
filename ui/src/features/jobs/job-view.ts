@@ -25,6 +25,11 @@ export function applicationUpdatedAt(
   }
   return latest;
 }
+export type ManualEmailCandidate = {
+  channelId: string; kind: "manual_email"; status: "candidate"; address: string;
+  sourceUrl: string; instructionExcerpt: string; observedAt: string;
+  verificationMethod: "official_instruction_observed"; deliveryVerified: false; submitted: false;
+};
 export type JobFact = {
   jobId?: string;
   title?: string;
@@ -34,6 +39,8 @@ export type JobFact = {
   deadline?: string;
   url?: string;
   description?: string;
+  applicationChannels?: ManualEmailCandidate[];
+  applicationChannelOverflow?: boolean;
   requirements?: unknown;
   kind?: string;
   [key: string]: unknown;

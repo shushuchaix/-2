@@ -128,6 +128,8 @@ export function createExportService({ repository }) {
         "招聘时效",
         "正文证据",
         "投递入口证据",
+        "官方邮件渠道候选",
+        "邮件渠道证据说明",
       ];
       const values = rows.map((i) => [
         i.jobId,
@@ -157,6 +159,8 @@ export function createExportService({ repository }) {
         i.recruitmentEvidence?.openingStatus ?? "unknown",
         i.recruitmentEvidence?.bodyVerified ? "verified" : "unknown",
         i.recruitmentEvidence?.applicationStatus ?? "unknown",
+        (i.applicationChannels || []).filter(c => c.kind === "manual_email" && c.status === "candidate").map(c => c.address + " [" + c.sourceUrl + "]").join(" / "),
+        i.applicationChannels?.length ? "官网声明的收件渠道，未证明邮箱实际收件或已经提交" : "",
       ]);
       if (format === "csv")
         return {

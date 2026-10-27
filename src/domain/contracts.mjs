@@ -1,3 +1,4 @@
+import { assertApplicationChannels } from "./application-channels.mjs";
 /** Shared v2 contracts. Missing facts stay null; execution state differs from recommendation. */
 import { assertWorkspaceExtensions } from "./workspace-management.mjs";
 import { assertPackageOwnership } from "./package-ownership.mjs";
@@ -144,6 +145,8 @@ function assertSourceFactTypes(value, { validateUrl = true } = {}) {
       value.evidence.some((item) => !plain(item)))
   )
     throw new Error("Invalid source evidence/cities");
+  if (Object.hasOwn(value,"applicationChannels")) assertApplicationChannels(value.applicationChannels);
+  if (Object.hasOwn(value,"applicationChannelOverflow") && typeof value.applicationChannelOverflow !== "boolean") throw Error("Invalid application channel overflow");
   if (validateUrl && Object.hasOwn(value, "url") && value.url !== null)
     assertSourceUrl(value.url);
 }

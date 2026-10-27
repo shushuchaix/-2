@@ -55,7 +55,8 @@ export const jobFactHash = (record) => {
     !record.applicationVerification &&
     !record.recruitmentEvidence &&
     !record.major &&
-    !record.contractType
+    !record.contractType &&
+    !record.applicationChannels
   )
     return legacyJobFactHash(record);
   const business = jobBusinessContent(record);
@@ -67,6 +68,8 @@ export const jobFactHash = (record) => {
       stable({
         ...business,
         applyUrl: record.applyUrl || null,
+        ...(Object.hasOwn(record,"applicationChannels") ? {applicationChannels:(record.applicationChannels || []).map(({observedAt,...channel}) => channel).sort((a,b) => a.channelId.localeCompare(b.channelId)), applicationChannelOverflow:record.applicationChannelOverflow === true} : {}),
+
         longTermRecruiting: record.longTermRecruiting === true,
         conditions: record.conditions || [],
         sourceEvidence: (record.sourceEvidence || []).map(

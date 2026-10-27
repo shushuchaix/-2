@@ -141,6 +141,7 @@ export function baseRecord({
   company = null,
   description = null,
   jobType = "unknown",
+  applicationChannels,
   ...fields
 }) {
   return {
@@ -168,6 +169,7 @@ export function baseRecord({
     salary: null,
     evidence: [],
     parserVersion: sourceId + "-1",
+    ...(applicationChannels === undefined ? {} : {applicationChannels}),
     ...fields,
   };
 }

@@ -170,3 +170,27 @@ test("an unsafe corresponding entry is withheld and closed evidence remains diff
     0,
   );
 });
+
+test("official email candidates display qualified trust and copying never records an application", async t => {
+  const address="published-hr@another.invalid",writes:string[]=[];
+  const item={jobId:"j-mail",title:"合成邮箱岗位",application:{status:"new"},
+    applicationChannels:[{channelId:"mail-fixture",kind:"manual_email",status:"candidate",address,
+      sourceUrl:"https://example.org/careers",instructionExcerpt:"简历投递邮箱",observedAt:"2026-10-27T00:00:00Z",
+      verificationMethod:"official_instruction_observed",deliveryVerified:false,submitted:false}],
+    recruitmentEvidence:{bodyVerified:true,openingStatus:"unknown",applicationStatus:"unknown"},
+  };
+  const f=await renderApp(t,{route:"#/jobs?packageId=A&targetRevisionId=t1%401",apiHandler:(path,options)=>{
+    if(options.method && options.method!=="GET") writes.push(path);
+    return path.startsWith("/jobs?")?{items:[item],total:1}:path==="/jobs/j-mail"?item:syntheticApi(path,options);
+  }});
+  await f.user.click(await f.screen.findByRole("button",{name:"查看岗位"}));
+  await f.screen.findByRole("dialog",{name:item.title});
+  await f.user.click(f.screen.getByRole("tab",{name:"来源与核验历史"}));
+  const candidates=await f.screen.findByRole("region",{name:"官网邮件投递候选"});
+  assert.ok(within(candidates).getByText(address));assert.ok(within(candidates).getByText(/未证明邮箱实际收件或已经提交/));
+  assert.equal(within(candidates).getByRole("link",{name:"查看邮箱官方来源"}).getAttribute("href"),"https://example.org/careers");
+  await f.user.click(within(candidates).getByRole("button",{name:"复制邮箱"}));
+  await within(candidates).findByText("邮箱已复制，尚未发送或记录为已投递。");
+  assert.equal(await navigator.clipboard.readText(),address);assert.deepEqual(writes,[]);
+  assert.equal(f.screen.queryByRole("link",{name:"前往投递"}),null);
+});

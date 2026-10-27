@@ -50,7 +50,7 @@ import {
 } from "../sources/source-status.mjs";
 import { recordDiagnostic } from "../infrastructure/diagnostics/log.mjs";
 import { normalizeRecord } from "../domain/record.mjs";
-import { expandArticles } from "../match/article.mjs";
+import { expandRecruitmentNotice } from "./notice-expansion-service.mjs";
 import { cancellableSleep } from "../infrastructure/http/scheduler.mjs";
 import { createConditionalCache } from "../infrastructure/http/conditional-cache.mjs";
 import { assertSourceRecord } from "../domain/contracts.mjs";
@@ -2809,17 +2809,17 @@ export function createRowCollectionService({
                     diagnosticContext: { runId: task.token.sliceRunId },
                   });
           if (!modelClient) continue;
-          const expanded = await expandArticles(
-            modelClient,
-            {},
-            [pending.record],
-            {
-              concurrency: 1,
-              signal: task.controller.signal,
-              diagnostics,
-              diagnosticContext: { runId: task.token.sliceRunId },
+          const expanded = await expandRecruitmentNotice({
+            modelClient, record:pending.record, signal:task.controller.signal, diagnostics,
+            diagnosticContext:{runId:task.token.sliceRunId},
+            assertCurrent:async () => {
+              await current(ref,task);
+              if (pending.recoverySourceFact) {
+                const basis = await repository.readView({select:sourceFactSelectors(ref.scope,pending.recoverySourceFact)},{scope:ref.scope});
+                assertSourceFactGuard(basis,ref.scope,pending.recoverySourceFact);
+              }
             },
-          );
+          });
           if (expanded.failed)
             throw packageError("article_extract_failed", "正文提取尚未完成。");
           records = [];

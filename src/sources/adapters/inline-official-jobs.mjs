@@ -1,3 +1,4 @@
+import { officialEmailCandidate } from "../../domain/application-channels.mjs";
 import { baseRecord } from "./shared.mjs";
 import { htmlToText } from "../../util/html.mjs";
 import { explicitDate } from "../../util/html-elements.mjs";
@@ -284,7 +285,37 @@ export function assessInlineOfficialApplication(
   };
 }
 
-function readRows(site, document, config) {
+function rowEmailCandidates(row,{site,nativeId,listUrl,observedAt}) {
+  const record = {sourceId:'official-announcements',siteId:site.siteId,identityScope:site.siteId,
+    sourceRecordId:nativeId,sourceRecordIdKind:'authority',kind:'job'};
+  const channels = new Map();
+  for (const meta of [...row.querySelectorAll('.career-meta-row')].slice(0,20)) {
+    if (!isVisibleHtmlElement(meta)) continue;
+    const inMeta = node => node.closest('.career-meta-row') === meta;
+    const labels = [...meta.querySelectorAll('.career-meta-label')].filter(inMeta);
+    const values = [...meta.querySelectorAll('.career-meta-value')].filter(inMeta);
+    if (labels.length !== 1 || values.length !== 1 ||
+        !isVisibleHtmlElement(labels[0]) || !isVisibleHtmlElement(values[0])) continue;
+    // textContent includes hidden descendants. Use only explicitly visible text
+    // without executing CSS/JS or turning ordinary contact text into instructions.
+    const visibleLabel = labels[0].cloneNode(true);
+    for (const node of [...visibleLabel.querySelectorAll('*')])
+      if (!isVisibleHtmlElement(node)) node.remove();
+    const label = text(visibleLabel.textContent).replace(/[:：]$/,'');
+    if (!/^(?:简历(?:投递|接收)邮箱|报名邮箱|投递邮箱|Apply Now)$/i.test(label)) continue;
+    for (const anchor of [...values[0].querySelectorAll('a[href]')].slice(0,8)) {
+      if (!inMeta(anchor) || anchor.closest('.career-meta-value') !== values[0] ||
+          !isVisibleHtmlElement(anchor)) continue;
+      const href = anchor.getAttribute('href');
+      if (!href?.startsWith('mailto:')) continue;
+      const candidate = officialEmailCandidate({record,address:href,sourceUrl:listUrl,observedAt,
+        instructionExcerpt:label,selector:'.career-meta-row .career-meta-value a[href]'});
+      if (candidate) channels.set(candidate.channelId,candidate);
+    }
+  }
+  return {applicationChannels:[...channels.values()].slice(0,4),applicationChannelOverflow:channels.size > 4};
+}
+function readRows(site, document, config, observedAt) {
   const { template, pattern, bodyMode, nativeHref, listUrl } = config;
   const rows = [...document.querySelectorAll(template.rowRule)].filter(
     (row) => bodyMode !== "row" || isVisibleHtmlElement(row),
@@ -385,6 +416,7 @@ function readRows(site, document, config) {
         jobType: "unknown",
         description,
         publishedAt,
+        ...rowEmailCandidates(row,{site,nativeId,listUrl,observedAt}),
         attachments: [],
         detailStatus: incomplete ? "incomplete" : "complete",
         bodyStatus: incomplete ? "incomplete" : "complete",
@@ -455,7 +487,7 @@ export async function collectInlineOfficialJobs(site, page, ctx, readDocument) {
   const document = readDocument(
     await ctx.request(config.listUrl, { signal: ctx.signal }),
   );
-  const records = readRows(site, document, config);
+  const records = readRows(site, document, config, new Date(ctx.clock?.now?.() ?? Date.now()).toISOString());
   return { records, raw: records.length, ...limited };
 }
 
@@ -490,7 +522,7 @@ export async function fetchInlineOfficialJob(site, record, ctx, readDocument) {
   const document = readDocument(
     await ctx.request(config.listUrl, { signal: ctx.signal }),
   );
-  const fresh = readRows(site, document, config).find(
+  const fresh = readRows(site, document, config, new Date(ctx.clock?.now?.() ?? Date.now()).toISOString()).find(
     (row) => row.sourceRecordId === nativeId,
   );
   if (!fresh)

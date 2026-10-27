@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "snapshotUpdatedAt": "2026-10-14T04:00:40.257Z",
+  "scope": "Boss independent login render follow-up",
+  "overallCollectionComplete": false,
+  "roots": [
+    {
+      "code": "static_chunk_tilde_rejected",
+      "evidence": "Official bootstrap had app~ chunks rejected by the path guard. A regression assertion failed before the fix."
+    },
+    {
+      "code": "concurrent_dns_duplicate_claims",
+      "evidence": "20 simultaneous same-host assets claimed 40 DNS requests instead of 2. Sharing is now local to one owned resolver and lifetime."
+    },
+    {
+      "code": "manual_entry_used_job_spa",
+      "evidence": "The job SPA rendered 0 body text and required private user/chat initialization. Manual login now uses the official independent user page."
+    },
+    {
+      "code": "manual_scan_png_rejected",
+      "evidence": "The actual APP scan switch requested an official numeric PNG which was blocked. Only this manual image GET/HEAD resource was added."
+    }
+  ],
+  "nativeLogin": {
+    "anonymous": true,
+    "packaged": true,
+    "existingUserSessionsRead": false,
+    "perVersionIsolationPreserved": true,
+    "bodyTextLength": 237,
+    "loginControlVisible": true,
+    "appScanSwitchClicked": true,
+    "scanAreaImage": {
+      "visible": true,
+      "loaded": true,
+      "width": 200,
+      "height": 200,
+      "officialPngHttpStatus": 200,
+      "qrContentSaved": false
+    },
+    "visibleChallenge": false,
+    "manualRequests": 24,
+    "manualBytes": 499115,
+    "manualRequestCap": 60,
+    "manualByteCap": 20971520,
+    "closedWindows": 0,
+    "nativeExitCode": 0,
+    "actualHumanLoginVerified": false,
+    "authenticatedListAndDetailVerified": false
+  },
+  "cumulative": {
+    "requestsUpperBound": 1875,
+    "requestLimit": 1980,
+    "remainingRequests": 105,
+    "knownPhysicalRequestsInCurrentRoot": 1191,
+    "unknownRequestUpperBoundInCurrentRoot": 595,
+    "historicalRequestUpperBound": 89,
+    "details": 119,
+    "detailLimit": 220,
+    "bytes": 253176048,
+    "byteLimit": 314572800,
+    "costUpperBoundCny": 3.98861,
+    "costLimitCny": 9.999184
+  },
+  "requestAccounting": "Diagnostic sessions reserve 60 requests before sending and retain the entire upper bound as uncertain without claiming a refund. Actual manual bytes are settled in the same original activity. Request additions follow existing task-wide authorization; all other caps remain unchanged.",
+  "verification": {
+    "businessTests": 1883,
+    "uiTests": 173,
+    "passedSuites": 18,
+    "explicitSkippedSuites": 7,
+    "failedSuites": 0,
+    "focusedTests": 27,
+    "exactSourceHashes": 227,
+    "productionDependencies": 52,
+    "ocrHashes": 32,
+    "asarSha256": "019D913ED8D3E8E3F76559E0101E4BF29DD4644901123422A059FC3A18DF91B8",
+    "scales": [
+      {
+        "scale": 1,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      },
+      {
+        "scale": 1.25,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      },
+      {
+        "scale": 1.5,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      }
+    ],
+    "review": {
+      "critical": 0,
+      "important": 0,
+      "minor": 0,
+      "scope": "Three core modules and three tests, before the later numeric scan-PNG addition. That addition has separate real evidence, RED/GREEN boundary tests and executor review."
+    }
+  },
+  "qualitySnapshot": {
+    "observedAt": "2026-10-13T19:23:14.928Z",
+    "summary": {
+      "originalTemplateGaps": 47,
+      "candidateTemplates": 17,
+      "remainingTemplateGaps": 30,
+      "newUniqueRecords": 12,
+      "newBodyVerifiedRecords": 12,
+      "newEffectiveRecommendations": 0
+    },
+    "quality": {
+      "uniqueRecords": 928,
+      "bodyVerified": 88,
+      "open": 4,
+      "applicationAvailable": 0,
+      "qualificationPass": 48,
+      "qualificationUnknown": 632,
+      "qualificationFail": 248,
+      "historicalOrExpired": 25,
+      "suspectedDuplicates": 241,
+      "validNewUnique": 0,
+      "knownRequests": 1171,
+      "unknownRequestUpperBound": 191,
+      "validPer100KnownRequests": 0
+    },
+    "newJobsInThisLoginFollowup": 0
+  },
+  "privacy": {
+    "realResumeLocalOnly": true,
+    "newModelCalls": 0,
+    "existingBrowserMaterialRead": false,
+    "qrImageOrPayloadSaved": false,
+    "privateIdentifiersIncluded": false,
+    "newActivityCreated": false
+  },
+  "limitations": [
+    "Visible scan UI and a loaded 200x200 scan-area image do not prove human login or authenticated job-list/JD success.",
+    "The earlier source snapshot still has 30 template gaps and 0 verified usable application entries; this login fix adds no jobs.",
+    "Public source probes were explicitly skipped in the offline suite. Real anonymous login verification was budgeted separately.",
+    "Task completion and shutdown conditions remain unmet until remaining work and human login verification finish."
+  ]
+}

@@ -1,0 +1,669 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import vm from "node:vm";
+import { EventEmitter } from "node:events";
+import { createCollectionBrowser } from "./collection/browser.mjs";
+import { createCollectionSessions } from "./collection/sessions.mjs";
+import { createCollectionService } from "../src/application/collection-service.mjs";
+import { createCollectionLedger } from "../src/application/collection-ledger.mjs";
+import { createBossProvider } from "../src/sources/adapters/boss.mjs";
+import { createSourceRegistry } from "../src/sources/registry.mjs";
+import { buildBossOperation } from "../src/sources/boss/protocol.mjs";
+import { assertScope } from "../src/domain/packages.mjs";
+
+// Packaged diagnostics use the production protocol, ownership and ledger. Only
+// Electron's external page and proxy are replaced; this module opens no socket.
+function syntheticBossWindows() {
+  const sessions = new Map(),
+    windows = [],
+    methods = new Set();
+  const controls = {
+    risk: false,
+    hold: false,
+    late: null,
+    started: null,
+    aborts: 0,
+    proxyIdleLimits: [],
+  };
+  const session = {
+    fromPartition(partition) {
+      if (!sessions.has(partition)) {
+        const ses = new EventEmitter();
+        Object.assign(ses, {
+          cookies: { get: async () => [], set: async () => {} },
+          webRequest: {
+            onBeforeSendHeaders: (filter, cb) => {
+              ses.beforeHeaders = filter === null ? null : cb;
+            },
+            onBeforeRequest: (filter, cb) => {
+              ses.before = filter === null ? null : cb;
+            },
+            onHeadersReceived: (filter, cb) => {
+              ses.headers = filter === null ? null : cb;
+            },
+            onCompleted: (filter, cb) => {
+              ses.completed = filter === null ? null : cb;
+            },
+            onErrorOccurred: (filter, cb) => {
+              ses.errored = filter === null ? null : cb;
+            },
+          },
+          setPermissionRequestHandler() {},
+          setPermissionCheckHandler() {},
+          async setProxy() {},
+          async closeAllConnections() {},
+          async clearStorageData() {},
+          async clearCache() {},
+        });
+        sessions.set(partition, ses);
+      }
+      return sessions.get(partition);
+    },
+  };
+  let nextId = 0;
+  let nextRequestId = 0;
+  class BrowserWindow extends EventEmitter {
+    constructor(options) {
+      super();
+      this.options = options;
+      this.destroyed = false;
+      const ses = session.fromPartition(options.webPreferences.partition);
+      this.webContents = new EventEmitter();
+      Object.assign(this.webContents, {
+        id: ++nextId,
+        session: ses,
+        getURL: () => this.url,
+        setWebRTCIPHandlingPolicy() {},
+        setWindowOpenHandler() {},
+        executeJavaScript: (code) => vm.runInContext(code, this.page),
+      });
+      const ajaxSettings = { beforeSend() {} };
+      const ajax = (input) => {
+        let aborted = false;
+        const headers = {};
+        const handle = {
+          setRequestHeader(name, value) {
+            headers[name] = value;
+          },
+          abort() {
+            aborted = true;
+            controls.aborts++;
+            input.error({ status: 0 }, "abort");
+          },
+        };
+        (input.beforeSend || ajaxSettings.beforeSend)(handle, input);
+        Promise.resolve()
+          .then(async () => {
+            const query = new URLSearchParams(input.data).toString();
+            const url =
+              input.type === "GET" ? input.url + "?" + query : input.url;
+            const details = {
+              id: ++nextRequestId,
+              url,
+              method: input.type,
+              resourceType: "xhr",
+              webContentsId: this.webContents.id,
+              ...(input.type === "POST"
+                ? { uploadData: [{ bytes: Buffer.from(query) }] }
+                : {}),
+            };
+            let decision = await new Promise((resolve) =>
+              ses.before(details, resolve),
+            );
+            if (!decision.cancel)
+              decision = await new Promise((resolve) =>
+                ses.beforeHeaders(
+                  { ...details, requestHeaders: headers },
+                  resolve,
+                ),
+              );
+            if (decision.cancel) return input.error({ status: 403 }, "blocked");
+            methods.add(input.type);
+            const page =
+              input.data.page || Number(input.data.securityId.split("-").pop());
+            const payload = controls.risk
+              ? { code: 36 }
+              : {
+                  code: 0,
+                  zpData:
+                    input.type === "POST"
+                      ? {
+                          jobList: [
+                            {
+                              encryptJobId: "offline-boss-" + page,
+                              jobName: "合成消防工程师" + page,
+                              brandName: "合成机场企业",
+                              cityName: "北京",
+                              jobDegree: "本科",
+                              securityId: "synthetic-private-read-ref-" + page,
+                              lid: "synthetic-private-lid",
+                            },
+                          ],
+                          hasMore: page === 1,
+                        }
+                      : {
+                          jobCard: {
+                            encryptJobId: "offline-boss-" + page,
+                            postDescription:
+                              "合成岗位职责：消防设施维护、安全检查、机场应急保障。任职要求：本科消防工程相关专业，掌握消防设施管理与风险排查。此数据仅供离线验收，不是真实招聘。",
+                          },
+                        },
+                };
+            const finish = () =>
+              input.success(payload, "success", { status: 200 });
+            if (controls.hold && input.type === "POST") {
+              controls.late = finish;
+              controls.started?.();
+            } else if (!aborted) finish();
+          })
+          .catch(() => input.error({ status: 0 }, "synthetic_failure"));
+        return handle;
+      };
+      this.page = vm.createContext({ window: { $: { ajax, ajaxSettings } } });
+      windows.push(this);
+    }
+    async loadURL(url) {
+      this.loadCount = (this.loadCount || 0) + 1;
+      this.url = url;
+      const ses = this.webContents.session;
+      const decision = await new Promise((resolve) =>
+        ses.before(
+          {
+            url,
+            method: "GET",
+            resourceType: "mainFrame",
+            webContentsId: this.webContents.id,
+          },
+          resolve,
+        ),
+      );
+      if (decision.cancel) throw Error("synthetic_route_blocked");
+      ses.headers?.(
+        { statusCode: 200, resourceType: "mainFrame", responseHeaders: {} },
+        () => {},
+      );
+    }
+    isDestroyed() {
+      return this.destroyed;
+    }
+    destroy() {
+      if (!this.destroyed) {
+        this.destroyed = true;
+        this.emit("closed");
+      }
+    }
+  }
+  const egressProxy = {
+    start: async () => ({ proxyUrl: "http://127.0.0.1:12345" }),
+    createClient: (input) => {
+      controls.proxyIdleLimits.push(input.idleTimeoutMs);
+      return {
+        username: "synthetic",
+        password: "synthetic",
+        grant() {},
+        revoke() {},
+        snapshot: () => ({ bytes: 0 }),
+      };
+    },
+    stop: async () => {},
+  };
+  return { session, BrowserWindow, egressProxy, controls, windows, methods };
+}
+
+export async function runBossSelfTest({ context, targets, dataDir }) {
+  if (
+    path.resolve(dataDir) !== path.resolve(context.repository.dataDir) ||
+    !(
+      await fs.stat(path.join(dataDir, ".rjr-self-test")).catch(() => null)
+    )?.isFile()
+  )
+    throw Error("unsafe_self_test_directory");
+  const { repository, operationGate } = context;
+  const clock = repository.clock,
+    results = [],
+    summary = {};
+  const check = (name, ok) => {
+    results.push({ name, ok: Boolean(ok) });
+    if (!ok) throw Error(name);
+  };
+  const failureCode = async (fn) => {
+    try {
+      await fn();
+      return null;
+    } catch (e) {
+      return e.code;
+    }
+  };
+  const scopes = targets.map((t) => ({
+    packageId: t.packageId,
+    targetRevisionId: t.revisionId,
+  }));
+  const storeOptions = {
+    dataDir: path.join(dataDir, "boss-contracts"),
+    safeStorage: { isEncryptionAvailable: () => false },
+    // Browser response timestamps use wall time; session freshness uses the
+    // same clock while business fixtures keep their fixed recruitment dates.
+    clock: { now: Date.now },
+  };
+  const sessionStore = createCollectionSessions(storeOptions),
+    ledger = createCollectionLedger({ repository });
+  const h = syntheticBossWindows(),
+    loginEvents = [];
+  const browser = createCollectionBrowser({
+    ...h,
+    sessionStore,
+    ledger,
+    diagnostics: (event) => {
+      loginEvents.push(event);
+    },
+    assertScope: async (scope) =>
+      assertScope(await repository.read(), scope, clock.now()),
+  });
+  const site = {
+    siteId: "self-test-boss",
+    providerId: "boss",
+    origin: "https://www.zhipin.com",
+  };
+  const service = createCollectionService({
+    repository,
+    operationGate,
+    ledger,
+    clock,
+    registry: createSourceRegistry([createBossProvider()]),
+    readService: browser,
+    requestFactory: () => async () => {
+      throw Error("offline_network_forbidden");
+    },
+    planner: async () => ({
+      units: [
+        {
+          unitId: "boss-contract",
+          sourceId: "boss",
+          siteId: site.siteId,
+          site,
+          queryIndex: 0,
+          query: { keyword: "消防", pageLimit: 2 },
+        },
+      ],
+      limits: {
+        maxRequests: 40,
+        maxDetails: 4,
+        maxPagesPerQuery: 2,
+        maxSites: 1,
+        maxQueryGroups: 1,
+        maxAttachments: 0,
+        maxAttachmentBytes: 20971520,
+        maxTotalAttachmentBytes: 209715200,
+        maxCostCny: 0,
+      },
+    }),
+  });
+  const bind = async (scope) => {
+    const entry = await sessionStore.create({
+      scope,
+      platform: "boss",
+      accountRef: "synthetic",
+    });
+    await repository.mutateWorkspace((w) => {
+      const p = w.packages[scope.packageId];
+      p.collectionSettings ||= {
+        sourceOverrides: {},
+        sessionRefs: {},
+        refreshEnabled: false,
+      };
+      p.collectionSettings.sessionRefs.boss = entry.sessionRef;
+    });
+    return entry;
+  };
+  const start = async (scope) => {
+    const root = await service.start({ scope, options: { mode: "rules" } });
+    return { scope, activityId: root.activityId };
+  };
+  try {
+    const entries = [await bind(scopes[0]), await bind(scopes[1])],
+      roots = [];
+    for (const scope of scopes) {
+      const ref = await start(scope);
+      roots.push(await service.wait(ref));
+    }
+    summary.pagesByVersion = roots.map(
+      (r) => r.collectionProgress.units["boss-contract"].committedPages,
+    );
+    check(
+      "Boss 两版本各自保存两页",
+      summary.pagesByVersion.every((n) => n === 2),
+    );
+    const w = await repository.read();
+    summary.jobsByVersion = scopes.map(
+      (s) =>
+        Object.values(w.jobs).filter(
+          (j) =>
+            j.ownerPackageId === s.packageId && j.canonical.sourceId === "boss",
+        ).length,
+    );
+    check(
+      "Boss 相同公开ID仍逐版本隔离",
+      summary.jobsByVersion.every((n) => n === 2),
+    );
+    const bossFacts = Object.values(w.observations).filter(
+      (o) =>
+        scopes.some((s) => s.packageId === o.ownerPackageId) &&
+        o.sourceId === "boss",
+    );
+    check(
+      "Boss 详情正文在各版本保存",
+      bossFacts.length === 4 &&
+        bossFacts.every((o) => o.fields.description?.includes("合成岗位职责")),
+    );
+    check(
+      "Boss 临时读取引用未落盘",
+      !/synthetic-private-read-ref|synthetic-private-lid|securityId/.test(
+        JSON.stringify(w),
+      ),
+    );
+    summary.methods = [...h.methods].sort();
+    check(
+      "Boss 固定 POST 列表与 GET 详情实际执行",
+      summary.methods.join() === "GET,POST",
+    );
+    check(
+      "Boss 两版本使用不同沙箱分区",
+      new Set(h.windows.map((win) => win.options.webPreferences.partition))
+        .size === 2 &&
+        h.windows.every(
+          (win) =>
+            win.options.webPreferences.sandbox &&
+            !win.options.webPreferences.nodeIntegration &&
+            !win.options.webPreferences.preload,
+        ),
+    );
+    h.controls.risk = true;
+    const riskRef = await start(scopes[0]);
+    const riskRoot = await service.wait(riskRef);
+    check(
+      "Boss 风险将本版本单元停止",
+      riskRoot.collectionProgress.units["boss-contract"].riskBlocked === true,
+    );
+    const restarted = createCollectionSessions(storeOptions);
+    check(
+      "Boss 风险停止在重启后保留",
+      (
+        await restarted.getStatus({
+          scope: scopes[0],
+          sessionRef: entries[0].sessionRef,
+        })
+      ).riskBlocked === true,
+    );
+    const before = await ledger.snapshot(riskRef);
+    await service.withDiagnosticContext(
+      { ref: riskRef, requestId: "offline-risk-scope" },
+      async (ctx) => {
+        const input = {
+          ...ctx,
+          ref: riskRef,
+          sessionRef: entries[0].sessionRef,
+          operation: buildBossOperation({ kind: "boss.search", query: "消防" }),
+        };
+        summary.riskCode = await failureCode(() => browser.readBoss(input));
+        summary.crossScopeCode = await failureCode(() =>
+          browser.readBoss({ ...input, ref: { ...riskRef, scope: scopes[1] } }),
+        );
+      },
+    );
+    check(
+      "Boss 风险阻塞先于额度预约",
+      summary.riskCode === "boss_risk_blocked" &&
+        (await ledger.snapshot(riskRef)).usedRequests === before.usedRequests,
+    );
+    check(
+      "Boss 会话不能用于另一目标版本",
+      summary.crossScopeCode === "collection_session_scope",
+    );
+    check(
+      "Boss 另一版本不继承风险",
+      !(
+        await sessionStore.getStatus({
+          scope: scopes[1],
+          sessionRef: entries[1].sessionRef,
+        })
+      ).riskBlocked,
+    );
+    await browser.clearSession({
+      scope: scopes[0],
+      sessionRef: entries[0].sessionRef,
+    });
+    summary.revokedCode = await failureCode(() =>
+      sessionStore.get({ scope: scopes[0], sessionRef: entries[0].sessionRef }),
+    );
+    check(
+      "Boss 清理后立即撤销旧会话",
+      summary.revokedCode === "collection_session_scope",
+    );
+    const rebound = await bind(scopes[0]);
+    const riskSnapshot = await sessionStore.get({
+      scope: scopes[0],
+      sessionRef: rebound.sessionRef,
+    });
+    summary.riskAfterLoginClear = Boolean(riskSnapshot.risk);
+    await sessionStore.clearRisk({
+      scope: scopes[0],
+      sessionRef: rebound.sessionRef,
+      verification: {
+        status: "success",
+        sessionRef: rebound.sessionRef,
+        checkedAt: new Date().toISOString(),
+        expectedRiskStamp: riskSnapshot.riskStamp,
+      },
+    });
+    check(
+      "Boss 清登录后仍保留风险且只在显式核验成功后恢复",
+      summary.riskAfterLoginClear &&
+        !(
+          await sessionStore.getStatus({
+            scope: scopes[0],
+            sessionRef: rebound.sessionRef,
+          })
+        ).riskBlocked,
+    );
+    h.controls.risk = false;
+    const beforeOwnedPage = h.windows.length;
+    await browser.openLogin({
+      ref: riskRef,
+      platform: "boss",
+      accountRef: "synthetic",
+      sessionRef: rebound.sessionRef,
+    });
+    const ownedWindow = h.windows.at(-1),
+      ownedLoadCount = ownedWindow.loadCount;
+    summary.qrIdleTimeoutMs = h.controls.proxyIdleLimits.at(-1);
+    const qrRequest = {
+      id: "synthetic-qr-confirm",
+      webContentsId: ownedWindow.webContents.id,
+      resourceType: "xhr",
+      method: "GET",
+      url: "https://www.zhipin.com/wapi/zppassport/qrcode/scanLogin?qrId=synthetic-private-qr",
+    };
+    const qrDecision = await new Promise((resolve) =>
+      ownedWindow.webContents.session.before(qrRequest, resolve),
+    );
+    ownedWindow.webContents.session.completed({
+      ...qrRequest,
+      statusCode: 200,
+    });
+    summary.qrConfirmationTransportObserved =
+      !qrDecision.cancel &&
+      loginEvents.some(
+        (event) =>
+          event.phase === "response" &&
+          event.parser?.version === "boss-qr-confirm-wait" &&
+          event.httpStatus === 200,
+      );
+    summary.qrDiagnosticPrivateFieldsAbsent =
+      !/synthetic-private-qr|qrId|https:|cookie|fingerprint/i.test(
+        JSON.stringify(loginEvents),
+      );
+    check(
+      "Boss 人工扫码等待覆盖官方100秒轮询",
+      summary.qrIdleTimeoutMs === 120000,
+    );
+    check(
+      "Boss 手机确认阶段传输可诊断",
+      summary.qrConfirmationTransportObserved,
+    );
+    check(
+      "Boss 扫码日志不含二维码或认证材料",
+      summary.qrDiagnosticPrivateFieldsAbsent,
+    );
+    const landingRequest = {
+      id: "synthetic-landing",
+      webContentsId: ownedWindow.webContents.id,
+      method: "GET",
+      resourceType: "mainFrame",
+      url: "https://www.zhipin.com/",
+    };
+    const landingDecision = await new Promise((resolve) =>
+      ownedWindow.webContents.session.before(landingRequest, resolve),
+    );
+    ownedWindow.webContents.session.completed({
+      ...landingRequest,
+      statusCode: 200,
+    });
+    summary.manualDefaultLandingAllowed =
+      !landingDecision.cancel &&
+      loginEvents.some(
+        (event) =>
+          event.phase === "response" &&
+          event.parser?.version === "boss-login-landing",
+      );
+    check(
+      "Boss 人工登录默认首页可导航并留下过程记录",
+      summary.manualDefaultLandingAllowed,
+    );
+    await new Promise((resolve) =>
+      ownedWindow.webContents.session.before(
+        {
+          ...landingRequest,
+          id: "synthetic-denied-image",
+          url: "https://static.zhipin.com/unapproved.png",
+          resourceType: "image",
+        },
+        resolve,
+      ),
+    );
+    let blockedRedirect = false;
+    ownedWindow.webContents.emit(
+      "will-navigate",
+      {
+        preventDefault: () => {
+          blockedRedirect = true;
+        },
+      },
+      "https://www.zhipin.com/web/common/403.html?code=31",
+    );
+    summary.blockedLoginRedirectObserved =
+      blockedRedirect &&
+      loginEvents.some(
+        (event) =>
+          event.phase === "redirect" &&
+          event.parser?.version === "boss-login-restricted-landing",
+      );
+    check(
+      "Boss 限制页跳转仍拒绝且不被资源错误日志压掉",
+      summary.blockedLoginRedirectObserved,
+    );
+    const beforeAutomaticLease = h.controls.proxyIdleLimits.length;
+    ownedWindow.url = "https://www.zhipin.com/web/geek/jobs";
+    await service.withDiagnosticContext(
+      { ref: riskRef, requestId: "offline-owned-page" },
+      (ctx) =>
+        browser.readBoss({
+          ...ctx,
+          ref: riskRef,
+          sessionRef: rebound.sessionRef,
+          operation: buildBossOperation({ kind: "boss.search", query: "消防" }),
+        }),
+    );
+    summary.ownedPageWindowCount = h.windows.length - beforeOwnedPage;
+    summary.ownedPageReloads = ownedWindow.loadCount - ownedLoadCount;
+    summary.ownedPageRetained = !ownedWindow.isDestroyed();
+    summary.automaticIdleTimeoutMs = h.controls.proxyIdleLimits
+      .slice(beforeAutomaticLease)
+      .find((value) => value === 45000);
+    check(
+      "Boss 自动读取仍使用45秒空闲上限",
+      summary.automaticIdleTimeoutMs === 45000,
+    );
+    check("Boss 核验使用原人工登录窗口", summary.ownedPageWindowCount === 1);
+    check("Boss 已就绪岗位页核验不重载", summary.ownedPageReloads === 0);
+    check(
+      "Boss 核验后保留页面与单份监听器",
+      summary.ownedPageRetained &&
+        ownedWindow.listenerCount("closed") === 1 &&
+        ownedWindow.webContents.listenerCount("login") === 1,
+    );
+    ownedWindow.destroy();
+    for (let i = 0; browser.snapshot().windows && i < 100; i++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    check("Boss 原页面关闭排空租约", browser.snapshot().windows === 0);
+    h.controls.hold = true;
+    let held;
+    const started = new Promise((resolve) => {
+      h.controls.started = resolve;
+    });
+    const cancelRef = await start(scopes[0]);
+    const timer = setTimeout(
+      () => held?.(Error("synthetic_boss_hold_timeout")),
+      10000,
+    );
+    try {
+      await Promise.race([
+        started,
+        new Promise((_, reject) => {
+          held = reject;
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+    await service.cancel(cancelRef);
+    h.controls.late();
+    const cancelled = await service.wait(cancelRef),
+      after = await repository.read();
+    summary.cancelledStatus = cancelled.collectionProgress.status;
+    const cancelledSlices = new Set(
+      Object.values(after.runs)
+        .filter((r) => r.collectionActivityId === cancelRef.activityId)
+        .map((r) => r.runId),
+    );
+    summary.cancelledJobCount = new Set(
+      Object.values(after.observations)
+        .filter((o) => cancelledSlices.has(o.runId))
+        .map((o) => o.jobId),
+    ).size;
+    check(
+      "Boss 取消后迟到响应没有提交页或岗位",
+      summary.cancelledStatus === "cancelled" &&
+        cancelled.collectionProgress.units["boss-contract"].committedPages ===
+          0 &&
+        summary.cancelledJobCount === 0 &&
+        Object.values(after.jobs).filter(
+          (j) =>
+            j.ownerPackageId === scopes[0].packageId &&
+            j.canonical.sourceId === "boss",
+        ).length === 2,
+    );
+    check(
+      "Boss 取消排空页面且不发送第二次",
+      h.controls.aborts === 1 && h.windows.every((win) => win.isDestroyed()),
+    );
+    return {
+      passed: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+      summary,
+    };
+  } finally {
+    await service.stop();
+    await browser.stop();
+  }
+}

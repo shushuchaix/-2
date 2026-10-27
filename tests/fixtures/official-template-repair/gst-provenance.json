@@ -1,0 +1,24 @@
+{
+  "siteId": "official-9b7b3076410fcacc",
+  "publicUrl": "https://www.gst.com.cn/contactus/",
+  "structureOnly": true,
+  "syntheticTextAndContact": true,
+  "observedNativeIds": ["career-detail-4375", "career-detail-4376", "career-detail-4377"],
+  "fixtureNativeIds": ["career-detail-9901", "career-detail-9902", "career-detail-9903"],
+  "rowRule": "#careers .careers-list > .career-box",
+  "titleRule": ".career-main > h3.career-title",
+  "nativeIdRule": ".career-actions > button.career-toggle[data-target]",
+  "nativeIdAttribute": "data-target",
+  "bodyRule": "article.career-card > .career-detail",
+  "requiredBodyRules": [
+    "article.career-card > .career-detail > .career-detail-text:nth-child(2)",
+    "article.career-card > .career-detail > .career-detail-text:nth-child(4)"
+  ],
+  "dateRule": "article.career-card .career-meta > .career-meta-row:nth-child(2) > .career-meta-value",
+  "observedPublicationLabels": ["发布时间", "Posted Date"],
+  "observedPublishedDate": "2026-09-04",
+  "standaloneDetailHrefCount": 0,
+  "inlineIdentityEvidence": "Three distinct body IDs exactly match three toggle data-target values; each body has nonempty duties and requirements.",
+  "applicationEvidence": "Public mailto links have application labels; no web form or application verification was observed.",
+  "openingEvidence": "No deadline or current opening fact was established. Publication date is not an opening window."
+}

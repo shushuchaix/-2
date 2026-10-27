@@ -1,0 +1,29 @@
+{
+  "observedAt": "2026-10-13",
+  "publicPortal": "https://zhaopin.meituan.com/web/campus",
+  "nativeScripts": [
+    "https://s3.meituan.net/static-prod01/com.sankuai.recruitment.official.website/bundle-app_src_bootstrap_tsx-8536add5.js",
+    "https://s3.meituan.net/static-prod01/com.sankuai.recruitment.official.website/bundle-app_src_nodes_position_list_index_tsx-node_modules_babel_runtime-corejs3_core-js-stable_insta-d8200e-daf942b3.js",
+    "https://s3.meituan.net/static-prod01/com.sankuai.recruitment.official.website/bundle-app_src_elements_FilterPositionList_index_tsx-e1430102.js"
+  ],
+  "inspection": "Official public JavaScript was inspected as source text and AST only. It was not executed. Chunk URLs came from the native entry runtime filename and public-path maps.",
+  "list": {
+    "method": "POST",
+    "url": "https://zhaopin.meituan.com/api/official/job/getJobList",
+    "nativeEvidence": "Bootstrap app/src/service/position/index.ts c6 -> B -> L calls getJobList. FilterPositionList constructs page.pageNo/pageSize, jobShareType, keywords and empty filter arrays. The native request wrapper calls client.post(url, payload, options).",
+    "publicPayload": "page={pageNo:1,pageSize:10}; jobShareType=1; keywords=消防 or 机场; cityList, department, jfJgList, jobType, typeCode and specialCode are empty arrays; u_query_id and r_query_id are empty strings. No login material or local resume is included.",
+    "observedResponse": "Both anonymous public reads returned HTTP200, status:1 and data:{list,page,traceId}. Each first page contained ten rows. The native totals were 58 and 11, but additional pages were not collected and totals do not establish relevant or applicable jobs.",
+    "rowSchema": "jobUnionId/name/jobType/jobStatus/cityList/jobDuty/jobRequirement; all twenty observed rows had separate nonempty duties and requirements. firstPostTime and expiredTime were null; refreshTime is not a publication date or application deadline.",
+    "identity": "Only native jobUnionId is authoritative. The public view uses /web/position/detail?jobUnionId=<id>&jobShareType=1. A role's duties and requirements belong only to its own row; desc or department prose cannot fill missing sections.",
+    "pagination": "Native page 1 is internal page 1. A continuation is bound to site, origin, query hash, page and prior-page signatures. Internal page 20 explicitly marks limited coverage when more native pages exist. Actual coverage here is first-page-only."
+  },
+  "detail": {
+    "method": "POST",
+    "url": "https://zhaopin.meituan.com/api/official/job/getJobDetail",
+    "nativeEvidence": "Bootstrap service xH -> O -> S calls getJobDetail; the detail model supplies {jobUnionId,jobShareType:1}. Returned ID and title must match the native list binding.",
+    "applicationBoundary": "The public detail view is a candidate only. No application form, login session, submission API or successful application is inferred or exercised. Missing application verification remains unknown."
+  },
+  "recruitmentStatus": "Native enum IN_RECRUITMENT=000; native UI treats 001 as offline. Status 000 is retained as source status and does not fabricate a dated recruitment window. A 001 row is closed. Refresh time is never a deadline.",
+  "tests": "All role IDs, names, locations and prose in official-meituan-template.test.mjs are synthetic boundary controls. Tests use injected transports and no external requests.",
+  "privacy": "No local resume, contacts, user workspace, credentials, trace ID, private filesystem path or private collection identifier is included."
+}

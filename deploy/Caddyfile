@@ -34,7 +34,8 @@ jobs.example.com {
 
 	# 检索接口：流式响应，必须关闭缓冲，并放宽超时
 	# 一次检索 40~90 秒，缓冲开启会导致前端看不到实时进度
-	handle /api/analyze {
+	@events path /api/analyze /api/v2/runs/*/events
+	handle @events {
 		reverse_proxy 127.0.0.1:3210 {
 			# 关闭响应缓冲，保证 NDJSON 逐行到达浏览器
 			flush_interval -1

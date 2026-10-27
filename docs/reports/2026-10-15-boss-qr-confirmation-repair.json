@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-14T19:59:23.899Z",
+  "scope": "owned_boss_manual_qr_confirmation_transport",
+  "baseCommit": "2e2d319d59719aa0d6d619c69a507e2b36f5d439",
+  "evidence": {
+    "userSymptom": "Phone confirmation completed but computer remained at scanned / please confirm in App.",
+    "publicSdkUrl": "https://static.zhipin.com/zhipin-geek-spa/web/v6763/static/js/boss-login-332c3023.bf146895.js",
+    "publicSdkSha256": "91f7f1a795eec55b42bf5f298d9fba4458da2354d9aebf26a04e85cd6b932250",
+    "nativeLongPollTimeoutMs": 100000,
+    "priorProxyIdleTimeoutMs": 45000,
+    "confirmedSoftwareIncompatibility": true,
+    "currentLiveWireCauseProven": false,
+    "reaUsedAsReference": true
+  },
+  "changes": [
+    "Only the version-owned manual Boss window uses 120000ms connected idle allowance; the TCP connect deadline, automatic reads and other platforms remain 45000ms.",
+    "Observe native QR creation, scan waiting, phone confirmation and final submit using endpoint-stage whitelist. Never read QR identifiers, fingerprints, credentials or response bodies.",
+    "Record classified transport errors, blocked redirects and manual request/DNS/byte quota failures with safe counts; quota failures have a native-window title notice.",
+    "Maintain immediate revoke/cancellation, strict routes and public-IP pinning, cumulative 60 manual requests and 20MiB allowance. No SDK refresh/replay or security-challenge handling.",
+    "HTTP200 means request completed; never mark a session verified from these observations."
+  ],
+  "review": {
+    "rounds": 1,
+    "critical": 0,
+    "important": 1,
+    "minor": 0,
+    "allAddressed": true,
+    "reReviewed": false,
+    "importantCause": "DNS quota and egress bytes did not enter new Boss quota observation/title pathway. Production DNS already had generic failure logs.",
+    "regression": "Three effective RED cases then GREEN, including a real local CONNECT byte revocation with a failing observer."
+  },
+  "verification": {
+    "initialFullRegression": {
+      "businessPassed": 2025,
+      "uiPassed": 179,
+      "failed": 0,
+      "suitesPassed": 18,
+      "suitesExplicitlySkipped": 7
+    },
+    "postReviewFocused": {
+      "passed": 27,
+      "failed": 0
+    },
+    "pauseResumeFocused": {
+      "passed": 27,
+      "failed": 0,
+      "sourceAndPackageRevalidated": true
+    },
+    "typecheckExit": 0,
+    "diffCheckExit": 0,
+    "package": {
+      "exactSourceHashes": 229,
+      "productionDependencies": 52,
+      "ocrHashes": 32,
+      "runtimeVerified": true
+    },
+    "native": {
+      "nativeExit": 0,
+      "observedAt": "2026-10-14T18:15:38.8980665Z",
+      "rendererErrors": 0,
+      "originalHandleHeld": true,
+      "nativeReport": ".cache/actual-campaign/rjr-self-test-boss-qr-scale1-20261014T1813479406539Z-data/desktop-self-test.json",
+      "nativeProcessExited": true,
+      "scale": 1,
+      "failed": 0,
+      "visualAudits": 39,
+      "asarSha256": "75D2891E02291F80C8F0CB0C4EEC294961FFB3A9D844B87F6E4DFAD636568EAA",
+      "deadlineExceeded": false,
+      "screenshots": 63,
+      "asarUnchanged": true,
+      "passed": 433,
+      "externalRequests": 0
+    },
+    "networkScope": "All regression and packaged Boss pages are synthetic/offline; no real authentication or job API request.",
+    "actualDesktopObservedThisBatch": false
+  },
+  "delivery": {
+    "noUserProcessTerminated": true,
+    "previousHash": "A9ACB308CEB804E1BADCA9209EC5C999EFE391D31E540E7388EA4F17113C287F",
+    "observedAt": "2026-10-14T19:58:57.8501962Z",
+    "asarSha256": "75D2891E02291F80C8F0CB0C4EEC294961FFB3A9D844B87F6E4DFAD636568EAA",
+    "backupDirectory": ".cache/desktop-before-boss-qr-20261014T1958573925685Z",
+    "formalExecutable": "dist/简历岗位雷达-win32-x64/简历岗位雷达.exe",
+    "delivered": true
+  },
+  "activity": {
+    "sameRoot": true,
+    "rootPaused": true,
+    "activeRunCount": 0,
+    "requests": 2333,
+    "requestCap": 2460,
+    "details": 119,
+    "detailCap": 220,
+    "bytes": 263803711,
+    "byteCap": 314572800,
+    "costCny": 3.98861,
+    "costCapCny": 9.999184,
+    "newSourceRequests": 0,
+    "newModelCalls": 0
+  },
+  "acceptance": {
+    "status": "pending_one_human_qr_check",
+    "target": "消防机场实测20261010",
+    "instructions": "Open this version Boss independent login window, scan and confirm on phone once. Check whether official page completes its transition. Retain errors for stage diagnosis; do not repeatedly retry blocked job reads."
+  },
+  "unknowns": [
+    "This offline transport incompatibility does not prove the exact live request that stalled in the screenshot.",
+    "The cached SDK matches observed routes, but this batch did not confirm the current live entry bundle or successful authentication.",
+    "Existing persisted risk is not cleared by these transport diagnostics."
+  ],
+  "broaderWork": {
+    "sourceExpansionGapsRemaining": 30,
+    "effectiveRecommendations": 0,
+    "allTasksComplete": false,
+    "shutdownTriggered": false
+  }
+}

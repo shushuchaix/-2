@@ -11,8 +11,15 @@ echo.
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo   [错误] 未检测到 Node.js，请先安装 Node.js 20 或更高版本：
+  echo   [错误] 未检测到 Node.js，请先安装 Node.js 24.x，至少 24.16.0，低于 25：
   echo          https://nodejs.org/
+  echo.
+  pause
+  exit /b 1
+)
+
+node --input-type=module -e "import { assertSupportedNodeRuntime } from './src/infrastructure/runtime/requirements.mjs'; try { assertSupportedNodeRuntime(); } catch (error) { console.error('  [错误] ' + error.message); process.exitCode = 1; }"
+if errorlevel 1 (
   echo.
   pause
   exit /b 1

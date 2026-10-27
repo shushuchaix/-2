@@ -1,0 +1,13 @@
+{
+  "status": "preview",
+  "counts": {
+    "jobs": 244,
+    "runs": 20,
+    "applications": 163
+  },
+  "conflictCount": 11,
+  "skippedCount": 0,
+  "backupFiles": 21,
+  "backupDir": "C:\\Users\\31069\\.codex\\worktrees\\b70d\\简历脚本\\.cache\\original-v1-backup-vlygea",
+  "originalWrites": 0
+}

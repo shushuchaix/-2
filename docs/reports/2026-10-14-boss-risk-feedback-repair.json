@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-14T13:08:56.742Z",
+  "scope": "owned_boss_probe_failure_feedback",
+  "actual": {
+    "at": "2026-10-14T12:13:11.953Z",
+    "code": "boss_environment_risk",
+    "diagnosticId": "d-f6f66cfd-545c-401a-954d-af9d511a53a2",
+    "riskStopped": true,
+    "listSamples": 0,
+    "bodySamples": 0,
+    "replayedForThisRepair": false,
+    "sourceHealthBeforeRepairStale": true
+  },
+  "changes": [
+    "Persist version-owned Boss failure before rethrowing the original typed error.",
+    "Do not let an earlier successful body hide a later Boss failure as ready.",
+    "Return safe owned-session risk status and diagnostic ID after the failed diagnostic drains.",
+    "Record a safe diagnostic for risk recovery failures that precede the source probe.",
+    "Fatal writes, stale activities and cancellation take precedence over Boss normalization."
+  ],
+  "review": {
+    "critical": 0,
+    "important": 3,
+    "allFindingsReproducedAndFixed": true,
+    "reReviewed": false,
+    "reviewRed": {
+      "tests": 14,
+      "pass": 11,
+      "fail": 3
+    }
+  },
+  "verification": {
+    "newRegressionCases": 14,
+    "focused": {
+      "tests": 42,
+      "pass": 42,
+      "fail": 0
+    },
+    "business": {
+      "tests": 1947,
+      "pass": 1947,
+      "fail": 0
+    },
+    "ui": {
+      "tests": 174,
+      "pass": 174,
+      "fail": 0
+    },
+    "offlineSuites": {
+      "total": 25,
+      "pass": 18,
+      "fail": 0,
+      "explicitSkip": 7
+    },
+    "package": {
+      "files": 10455,
+      "jsAssets": 3,
+      "cssAssets": 1,
+      "dependencies": 52,
+      "exactSourceHashes": 228,
+      "ocrHashes": 32,
+      "runtimeVerified": true
+    },
+    "native": {
+      "scale": 1,
+      "pass": 424,
+      "fail": 0,
+      "exit": 0,
+      "externalRequests": 0,
+      "rendererErrors": 0,
+      "screenshots": 63,
+      "visualAudits": 39,
+      "originalHandleHeld": true,
+      "processExited": true,
+      "asarUnchanged": true
+    }
+  },
+  "cumulative": {
+    "requestsUpperBound": 2296,
+    "maxRequests": 2340,
+    "details": 119,
+    "maxDetails": 220,
+    "bytes": 262696116,
+    "maxBytes": 314572800,
+    "costUpperBoundCny": 3.98861,
+    "maxCostUpperBoundCny": 9.999184
+  },
+  "sourceHashes": {
+    "electron/collection/ipc.mjs": "bdc7a3ffc18379e420817432855a4fdf380afc6f5e55ec8fad6a2edf87a75e97",
+    "src/application/source-service.mjs": "3042fe6c7144ab1a47563927cae755827dc442083e4de7562eb9c3456918c00f",
+    "tests/integration/boss-probe-failure-feedback.test.mjs": "21dd73bb7da39fc01356ba6aaed8f278eee002eeb00c1f968492bbc2b053f31f"
+  },
+  "delivery": {
+    "exe": "dist/简历岗位雷达-win32-x64/简历岗位雷达.exe",
+    "asarSha256": "D976240AEFDC7CCB1440802C91DD827D9CA8D226C16AAE1D2D8C8BBC38EA5F78",
+    "previousPackagePreserved": true,
+    "deliveredAt": "2026-10-14T13:05:14.9738012Z"
+  },
+  "boundaries": [
+    "All regression and EXE acceptance cases use synthetic local data; the current server restriction was not re-probed.",
+    "Current source-health history was not rewritten by replaying a failed probe; the new handling applies to future authorized probe failures.",
+    "The risk latch is still set. This release does not establish successful Boss job retrieval or explain the server-side risk cause.",
+    "No new model call, new real job, message, favorite or job application. Resume remains local.",
+    "Original source expansion still has 30 unresolved gaps in its latest snapshot; it was not freshly retested by this patch.",
+    "All tasks are not finished; shutdown condition is not met."
+  ]
+}

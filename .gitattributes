@@ -1,0 +1,2 @@
+# Windows command scripts need CRLF for reliable UTF-8 parsing by cmd.exe.
+*.cmd text eol=crlf

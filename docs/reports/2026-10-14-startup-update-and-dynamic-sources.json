@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "snapshotUpdatedAt": "2026-10-13T16:19:46.322Z",
+  "startupFeatureComplete": true,
+  "overallCollectionComplete": false,
+  "summary": {
+    "originalTemplateGaps": 47,
+    "candidateTemplates": 14,
+    "remainingTemplateGaps": 33,
+    "newUniqueRecords": 64,
+    "newBodyVerifiedRecords": 3,
+    "newEffectiveRecommendations": 0
+  },
+  "quality": {
+    "uniqueRecords": 916,
+    "bodyVerified": 76,
+    "open": 4,
+    "applicationAvailable": 0,
+    "qualificationPass": 46,
+    "qualificationUnknown": 622,
+    "qualificationFail": 248,
+    "historicalOrExpired": 25,
+    "suspectedDuplicates": 241,
+    "validNewUnique": 0,
+    "knownRequests": 1023,
+    "unknownRequestUpperBound": 181,
+    "validPer100KnownRequests": 0
+  },
+  "increment": {
+    "usedRequests": 156,
+    "knownPhysicalRequests": 149,
+    "unknownRequestUpperBound": 7,
+    "usedDetails": 4,
+    "usedBytes": 4679401,
+    "usedAttachments": 3,
+    "usedModelRequests": 0,
+    "costUpperBoundCny": 0
+  },
+  "cumulative": {
+    "requestsUpperBound": 1293,
+    "requestLimit": 1380,
+    "remainingRequests": 87,
+    "knownRequests": 1023,
+    "unknownRequestUpperBound": 181,
+    "details": 111,
+    "detailLimit": 220,
+    "bytes": 224903259,
+    "byteLimit": 314572800,
+    "costUpperBoundCny": 3.98861,
+    "costLimitCny": 9.999184
+  },
+  "zhejiangFinalLocalResumeReplay": [
+    {
+      "keyword": "机场",
+      "status": "verified",
+      "parsedRecords": 64,
+      "bodyVerified": 3,
+      "open": 0,
+      "applicationAvailable": 0,
+      "effective": 0,
+      "cacheReads": 10,
+      "finishedAt": "2026-10-13T15:20:12.695Z",
+      "usageDelta": {
+        "usedRequests": 0,
+        "knownPhysicalRequests": 0,
+        "unknownRequestUpperBound": 0,
+        "usedDetails": 0,
+        "usedBytes": 0,
+        "usedAttachments": 3,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      }
+    }
+  ],
+  "bytedanceAnonymousBrowser": [
+    {
+      "query": "消防",
+      "status": "blocked",
+      "code": "collection_browser_timeout",
+      "nativeRequests": 0,
+      "observedRequests": 37,
+      "failedReads": 1,
+      "captureStage": "page_loading",
+      "records": 0,
+      "usageDelta": {
+        "usedRequests": 20,
+        "knownPhysicalRequests": 19,
+        "unknownRequestUpperBound": 1,
+        "usedDetails": 0,
+        "usedBytes": 317843,
+        "usedAttachments": 0,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      },
+      "finishedAt": "2026-10-13T15:39:06.614Z"
+    },
+    {
+      "query": "消防",
+      "status": "blocked",
+      "code": "collection_browser_timeout",
+      "nativeRequests": 0,
+      "observedRequests": 37,
+      "failedReads": 0,
+      "captureStage": "page_loading",
+      "records": 0,
+      "usageDelta": {
+        "usedRequests": 21,
+        "knownPhysicalRequests": 19,
+        "unknownRequestUpperBound": 2,
+        "usedDetails": 0,
+        "usedBytes": 322495,
+        "usedAttachments": 0,
+        "usedModelRequests": 0,
+        "costUpperBoundCny": 0
+      },
+      "finishedAt": "2026-10-13T16:19:35.490Z"
+    }
+  ],
+  "verification": {
+    "offlineBusinessTests": 1848,
+    "offlineUiTests": 173,
+    "passedSuites": 18,
+    "explicitSkippedSuites": 7,
+    "failures": 0,
+    "typescriptExit": 0,
+    "diffCheckExit": 0,
+    "packageFiles": 10450,
+    "exactSourceHashes": 223,
+    "productionDependencies": 52,
+    "ocrHashes": 32,
+    "asarSha256": "3A5A1C54F3ED2C98BC1F685C215DE10494CD13B92BC959908FCF4DDD4920E811",
+    "native": [
+      {
+        "scale": 1,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      },
+      {
+        "scale": 1.25,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      },
+      {
+        "scale": 1.5,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "matrixScreenshots": 36,
+        "totalScreenshots": 63,
+        "visualAudits": 39
+      }
+    ],
+    "review": {
+      "critical": 0,
+      "important": 4,
+      "importantFixed": 4,
+      "startupUiRegressions": 19,
+      "dnsRegressions": 37,
+      "continuousApprovalRegressions": 18,
+      "privateBrowserRegressions": 5
+    },
+    "representativeScreenshotsInspected": 3
+  },
+  "privacy": {
+    "realResumeLocalOnly": true,
+    "newModelCalls": 0,
+    "newModelCostCny": 0,
+    "personalInformationIncluded": false,
+    "privatePathsIncluded": false,
+    "researchActivityCreated": false,
+    "refunds": 0
+  },
+  "limitations": [
+    "Candidate templates are not verified ready sources.",
+    "Recruitment notices remain notices; no headcount-based splitting.",
+    "The final ByteDance page still timed out with no observed native job-list request; removal of the static SDK block did not establish availability.",
+    "Some remaining source diagnoses are historical snapshots, not fresh institution-wide checks.",
+    "Boss requires a per-version owned login; WeChat and Weibo require valid public article seeds or owned sessions."
+  ],
+  "shutdown": false
+}

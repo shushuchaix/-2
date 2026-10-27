@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 // 下载并安装 Electron 运行时二进制
 //
 // 背景：electron 包的 postinstall（install.js）在本沙箱环境下会「静默失败但退出码为 0」，
@@ -8,7 +9,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { extractZip } from './lib/unzip.mjs';
+import { extractZip, readCentralDirectory } from './lib/unzip.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ELECTRON_PKG = path.join(ROOT, 'node_modules', 'electron');
@@ -56,19 +57,25 @@ if (!fs.existsSync(ELECTRON_PKG)) {
 const version = JSON.parse(fs.readFileSync(path.join(ELECTRON_PKG, 'package.json'), 'utf8')).version;
 const distDir = path.join(ELECTRON_PKG, 'dist');
 const marker = path.join(distDir, 'electron.exe');
+const zipPath = path.join(CACHE_DIR, `electron-v${version}-win32-x64.zip`);
+function validZip(){try{const entries=readCentralDirectory(fs.readFileSync(zipPath));return entries.some(e=>e.name==='electron.exe')&&entries.some(e=>e.name==='icudtl.dat');}catch{return false;}}
 
+async function verifyArchive(){
+ const filename=path.basename(zipPath),sidecar=zipPath+'.sha256';let expected='';try{expected=fs.readFileSync(sidecar,'utf8').trim();}catch{}
+ if(!/^[a-f0-9]{64}$/.test(expected)){const response=await fetch('https://github.com/electron/electron/releases/download/v'+version+'/SHASUMS256.txt',{signal:AbortSignal.timeout(30000)});if(!response.ok)throw Error('Official checksum HTTP '+response.status);const line=(await response.text()).split('\n').find(line=>line.trim().endsWith(filename));expected=line?.trim().split(/\s+/)[0]||'';if(!/^[a-f0-9]{64}$/.test(expected))throw Error('Missing official checksum');}
+ const actual=crypto.createHash('sha256').update(fs.readFileSync(zipPath)).digest('hex');if(expected!==actual)throw Error('Electron archive checksum mismatch');fs.writeFileSync(sidecar,expected+'\n');console.log('  ✅ 官方 SHA-256 校验通过');
+}
 console.log(`\n=== Electron 运行时安装（v${version}）===`);
 
-if (fs.existsSync(marker) && fs.existsSync(path.join(ELECTRON_PKG, 'path.txt'))) {
+if (fs.existsSync(marker) && fs.existsSync(path.join(ELECTRON_PKG, 'path.txt')) && validZip()) {
+  await verifyArchive();
   console.log(`  ✅ 已安装：${marker}`);
   console.log(`     大小 ${human(fs.statSync(marker).size)}\n`);
   process.exit(0);
 }
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
-const zipPath = path.join(CACHE_DIR, `electron-v${version}-win32-x64.zip`);
-
-if (fs.existsSync(zipPath) && fs.statSync(zipPath).size > 100 * 1024 * 1024) {
+if (validZip()) {
   console.log(`  使用已缓存压缩包 ${zipPath}（${human(fs.statSync(zipPath).size)}）`);
 } else {
   let ok = false;
@@ -90,6 +97,7 @@ if (fs.existsSync(zipPath) && fs.statSync(zipPath).size > 100 * 1024 * 1024) {
   }
 }
 
+await verifyArchive();
 console.log(`\n  解压到 ${path.relative(ROOT, distDir)} …`);
 fs.rmSync(distDir, { recursive: true, force: true });
 const t0 = Date.now();

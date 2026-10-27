@@ -1,0 +1,21 @@
+{
+  "cah-list.html": {
+    "siteId": "official-0201d47ae30267a0",
+    "sourceUrl": "https://www.cah.com.cn/Information/Recruit/",
+    "capturedAt": "2026-10-11T16:48:56.296Z",
+    "purpose": "Reduced observed jtyw-list, li, a.clearfix and title/time structure. Titles and the procurement exclusion control are synthetic; the publication date is preserved.",
+    "currentRecruiting": "not_verified"
+  },
+  "cah-detail.html": {
+    "siteId": "official-0201d47ae30267a0",
+    "sourceUrl": "https://www.cah.com.cn/content/2026/03-23/7442058771477565440.html",
+    "capturedAt": "2026-10-11T16:56:42.784Z",
+    "publicAttachmentUrl": "https://www.cah.com.cn/upload/2026/03-24/12-04-260564-2032371911.doc",
+    "fixtureAttachmentUrl": "https://www.cah.com.cn/upload/2026/03-24/structure-fixture.doc",
+    "observedBodyTextLength": 22,
+    "purpose": "Reduced observed title/date, #content.content-inner with one paragraph containing a DOC icon and anchor, empty second paragraph and excluded previous/return navigation. Anchor text and attachment path are synthetic; the 22-character body length and publication date are preserved. No article body or binary attachment is included.",
+    "bodyEvidence": "incomplete_attachment_text_not_extracted",
+    "currentRecruiting": "unknown",
+    "applicationEvidence": "unknown; a DOC download does not prove applying"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "hzairport-inline.html": {
+    "siteId": "official-2ea9828ffe1d2682",
+    "sourceUrl": "https://www.hzairport.com/talent/index.html",
+    "capturedAt": "2026-10-11T20:09:47.964Z",
+    "purpose": "Reduced observed .talent_list .inside_item rows with native href IDs 37 and 58, .erify direct sibling role headings, separate publication text, the global 招聘截止日期 label and role-specific 2026-10-15 closing column. Titles, requirements and duties are synthetic; public contacts and full page prose are omitted.",
+    "deadlineEvidence": "Native closing date belongs to each row. Body preserves the observed relative time formats 10月15日12:00 and 10月15日中午12点; no year is inserted into the body and no publication year is used to infer the deadline.",
+    "paginationEvidence": "Only the observed current talent list was read; no verified next-page control."
+  },
+  "hzairport-application-37.html": {
+    "sourceUrl": "https://www.hzairport.com/talent/detail/id/37.html",
+    "capturedAt": "2026-10-11T20:16:28.570Z",
+    "purpose": "Reduced observed native form ID resume_form, hidden job_id=37 and readonly job_name control. Title is synthetic and matches its synthetic list row. verifyCode and file-upload controls preserve the public form's challenge and upload boundary; no personal field values, POST, or uploads."
+  },
+  "hzairport-application-58.html": {
+    "sourceUrl": "https://www.hzairport.com/talent/detail/id/58.html",
+    "capturedAt": "2026-10-11T20:17:02.405Z",
+    "purpose": "Reduced observed native form ID resume_form, hidden job_id=58 and readonly job_name control. Title is synthetic and matches its synthetic list row. verifyCode and file-upload controls preserve the public form's challenge and upload boundary; no personal field values, POST, or uploads."
+  }
+}

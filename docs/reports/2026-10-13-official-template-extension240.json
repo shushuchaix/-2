@@ -1,0 +1,2121 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-13",
+  "snapshotUpdatedAt": "2026-10-13T06:35:55.645Z",
+  "complete": false,
+  "scope": "same_activity_additional_240_public_requests_original_47_gap_sources_and_normal_adapter_followups",
+  "privacy": {
+    "realResumeLocalRulesOnly": true,
+    "newModelRequests": 0,
+    "privatePayloadDisclosed": false,
+    "newActivityCreated": false,
+    "refunds": 0
+  },
+  "definitions": {
+    "candidate": "Configured parsing contract; not a ready source or a verified application.",
+    "records": "Latest terminal process per site and query; observations can overlap between queries and include jobs, aggregate notices and leads. These counts are not distinct applicable jobs or a fresh source-health statement. Use final localRulesRecheck.qualityAfter for unique owned facts.",
+    "freshness": "Each process includes its finishedAt. Old snapshots are retained as historical evidence; caches older than 24 hours were not replayed as current facts.",
+    "effective": "Body, current recruitment, qualification and application evidence must all pass."
+  },
+  "summary": {
+    "originalGapSources": 47,
+    "checkedOriginalSources": 47,
+    "candidateTemplates": 13,
+    "additionalCandidateTemplates": 7,
+    "remainingTemplateGaps": 34,
+    "latestAdapterProcesses": 26,
+    "latestParsedRecords": 178,
+    "latestBodyVerifiedRecords": 35,
+    "latestOpeningVerifiedRecords": 4,
+    "latestApplicationVerifiedRecords": 0,
+    "effectiveTargetRecords": 0
+  },
+  "increment": {
+    "usedRequests": 231,
+    "knownPhysicalRequests": 215,
+    "unknownRequestUpperBound": 16,
+    "usedDetails": 14,
+    "usedBytes": 30712544,
+    "usedAttachments": 0,
+    "usedModelRequests": 0,
+    "costUpperBoundCny": 0
+  },
+  "cumulative": {
+    "requestsUpperBound": 1011,
+    "requestLimit": 1020,
+    "details": 103,
+    "detailLimit": 220,
+    "bytes": 196182417,
+    "byteLimit": 314572800,
+    "costUpperBoundCny": 3.98861,
+    "costLimitCny": 9.999184
+  },
+  "localRulesRecheck": {
+    "status": "completed",
+    "counts": {
+      "requested": 835,
+      "selected": 835,
+      "selectedRejected": 0,
+      "selectionDuplicates": 0,
+      "invalidFacts": 0,
+      "evaluated": 835,
+      "newEvaluations": 666,
+      "reusedEvaluations": 169,
+      "staleEvaluationsBefore": 1448,
+      "issues": 0
+    },
+    "qualityAfter": {
+      "uniqueRecords": 835,
+      "bodyVerified": 71,
+      "open": 4,
+      "applicationAvailable": 0,
+      "qualificationPass": 46,
+      "qualificationUnknown": 542,
+      "qualificationFail": 247,
+      "expired": 13,
+      "historical": 5,
+      "closed": 0,
+      "openingUnknown": 813,
+      "historicalOrExpired": 18,
+      "validNewUnique": 0
+    },
+    "usageDelta": {
+      "usedRequests": 0,
+      "knownPhysicalRequests": 0,
+      "unknownRequestUpperBound": 0,
+      "usedDetails": 0,
+      "usedAttachments": 0,
+      "usedBytes": 0,
+      "usedModelRequests": 0,
+      "costUpperBoundCny": 0,
+      "modelSpendCny": 0,
+      "reservedCostCny": 0,
+      "unresolvedCostCny": 0
+    }
+  },
+  "verification": {
+    "offlineExit": 0,
+    "offlineFailed": 0,
+    "offlineBusinessTests": 1775,
+    "offlineUiTests": 154,
+    "offlinePassedSuites": 18,
+    "offlineSkippedSuites": 7,
+    "packageExit": 0,
+    "packageFiles": 10446,
+    "exactSourceHashes": 219,
+    "productionDependencies": 52,
+    "ocrHashes": 32,
+    "typescriptExit": 0,
+    "diffCheckExit": 0,
+    "nativeExit": 0,
+    "nativePassed": 418,
+    "nativeFailed": 0,
+    "nativeExternalRequests": 0,
+    "nativeOriginalHandleHeld": true,
+    "nativeScreenshots": 62,
+    "nativeVisualAudits": 39,
+    "nativeRendererErrors": 0,
+    "asarSha256": "7830F07CDFAE527961F3278241A37BABFE820565D57FF7014C0E5036B8DC9081",
+    "dnsValidationRegressionTests": 80,
+    "independentReviewImportantFixed": 3,
+    "newMeituanIndependentReviewCompleted": false
+  },
+  "officialSites": [
+    {
+      "siteId": "official-d80ddfbc91795a1f",
+      "name": "浙江省机场集团有限公司",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-0201d47ae30267a0",
+      "name": "首都机场集团有限公司",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "机场",
+          "finishedAt": "2026-10-11T17:43:14.609Z",
+          "bodyVerifiedRecords": 0
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "attachment",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-6287138bc37ffc8f",
+      "name": "上海机场（集团）有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "restricted",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "blocked",
+          "httpStatus": 403,
+          "code": "restricted",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "blocked",
+          "httpStatus": 403,
+          "code": "restricted",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-6ac179a3da59fd41",
+      "name": "西部机场集团有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "public_http_405",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": 405,
+          "code": "public_http_405",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": 405,
+          "code": "public_http_405",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-1144ced905f90a21",
+      "name": "温州机场集团有限公司",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-958ccbf7b24ae0d3",
+      "name": "中国中安消防安全工程有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "CERT_HAS_EXPIRED",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "CERT_HAS_EXPIRED",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "CERT_HAS_EXPIRED",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-31de7f85e7b969ae",
+      "name": "北京利达华信电子股份有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "restricted",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "blocked",
+          "httpStatus": 403,
+          "code": "restricted",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "blocked",
+          "httpStatus": 403,
+          "code": "restricted",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-a64ede1720adf4fa",
+      "name": "中集天达控股有限公司",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-11T17:43:44.834Z",
+          "bodyVerifiedRecords": 0
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-67e793bd77fd95b3",
+      "name": "中建安装集团有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "public_http_500",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "api_read",
+          "status": "failed",
+          "httpStatus": 500,
+          "code": "public_http_500",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "api_read",
+          "status": "failed",
+          "httpStatus": 500,
+          "code": "public_http_500",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-8e5c42fc4339931d",
+      "name": "上海盛安建设工程（集团）有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "reliable_recruitment_entry_not_found",
+      "issueCode": "recruitment_entry_missing",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-99682b3bd69abd1e",
+      "name": "中安建设安装集团有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "reliable_recruitment_entry_not_found",
+      "issueCode": "recruitment_entry_missing",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "response_size_exceeded",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-7ac6546c836dc43a",
+      "name": "威特龙消防安全集团股份公司",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-11T21:01:08.904Z",
+          "bodyVerifiedRecords": 1
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-88d3a0778a93df9b",
+      "name": "四川威特龙消防技术服务有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "ERR_TLS_CERT_ALTNAME_INVALID",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "ERR_TLS_CERT_ALTNAME_INVALID",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-00d8581315f61503",
+      "name": "南京消防器材股份有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "CERT_HAS_EXPIRED",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "CERT_HAS_EXPIRED",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "CERT_HAS_EXPIRED",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-d24d82679eb1f075",
+      "name": "国安达股份有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "reliable_recruitment_entry_not_found",
+      "issueCode": "recruitment_entry_missing",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-9b7b3076410fcacc",
+      "name": "海湾安全技术有限公司（GST）",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-11T18:15:14.012Z",
+          "bodyVerifiedRecords": 3
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-baf4120af7e0ab9a",
+      "name": "青鸟消防",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "reliable_recruitment_entry_not_found",
+      "issueCode": "recruitment_entry_missing",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-319f754152cd8c96",
+      "name": "泰和安（中消云·泰和安集团）",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "reliable_recruitment_entry_not_found",
+      "issueCode": "recruitment_entry_missing",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-4021f5c8714701d8",
+      "name": "四川久远智能消防设备有限责任公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "CERT_HAS_EXPIRED",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "CERT_HAS_EXPIRED",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "CERT_HAS_EXPIRED",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-1a674871278e30fe",
+      "name": "深圳市赋安安全系统有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "CERT_HAS_EXPIRED",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "CERT_HAS_EXPIRED",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "CERT_HAS_EXPIRED",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-9aeb2a4e0945a569",
+      "name": "安徽民航机场集团有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "restricted",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "blocked",
+          "httpStatus": 412,
+          "code": "restricted",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "blocked",
+          "httpStatus": 412,
+          "code": "restricted",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-5cf1fdcffbefdbb8",
+      "name": "深圳市机场（集团）有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "parser_candidate",
+      "issueCode": "script_response_is_html_shell",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 6
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 6
+        }
+      ]
+    },
+    {
+      "siteId": "official-843b1604cafcb902",
+      "name": "河北机场管理集团有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "request_timeout",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-98e523ac3d6df982",
+      "name": "吉林省民航机场集团有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "public_dns_resolution_failed",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "repair_failed",
+          "requestUpperBound": 2
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "repair_failed",
+          "requestUpperBound": 2
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "public_dns_resolution_failed",
+          "requestUpperBound": 2
+        }
+      ]
+    },
+    {
+      "siteId": "official-a66eb97f865de2d4",
+      "name": "黑龙江省机场管理集团有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "public_http_503",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": 503,
+          "code": "public_http_503",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": 503,
+          "code": "public_http_503",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-2ea9828ffe1d2682",
+      "name": "杭州萧山国际机场有限公司",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "机场",
+          "finishedAt": "2026-10-11T21:00:37.513Z",
+          "bodyVerifiedRecords": 2
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-51cdee56f15fe265",
+      "name": "宁波机场集团有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "request_timeout",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-b7aabd80bf014855",
+      "name": "北京首都国际机场股份有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "reliable_recruitment_entry_not_found",
+      "issueCode": "recruitment_entry_missing",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-7ed2e288d479fe18",
+      "name": "北京大兴国际机场",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "reliable_recruitment_entry_not_found",
+      "issueCode": "recruitment_entry_missing",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-807db73ad3e455c7",
+      "name": "天津滨海国际机场",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "ECONNRESET",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "ECONNRESET",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "ECONNRESET",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-54e22423ae1a84f6",
+      "name": "广州白云国际机场股份有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "public_http_468",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": 468,
+          "code": "public_http_468",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-6b46f820a4230948",
+      "name": "北京博维航空设施管理有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "request_timeout",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-44a18b57363f3e9b",
+      "name": "首都机场集团设备运维管理有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "request_timeout",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-7a4fcb52ac0a6cf0",
+      "name": "北京首都机场动力能源有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "request_timeout",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-d8753ce7e1144804",
+      "name": "北京空港航空地面服务有限公司",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "restricted",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "blocked",
+          "httpStatus": 403,
+          "code": "restricted",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "blocked",
+          "httpStatus": 403,
+          "code": "restricted",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "huawei",
+      "name": "华为",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "parser_candidate",
+      "issueCode": "static_page_without_job_details",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "xiaomi",
+      "name": "小米",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "parser_candidate",
+      "issueCode": "campus_program_without_job_details",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "alibaba",
+      "name": "阿里巴巴",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "parser_candidate",
+      "issueCode": "spa_without_job_data",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "bytedance",
+      "name": "字节跳动",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "public_http_404",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": 404,
+          "code": "public_http_404",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": 404,
+          "code": "public_http_404",
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "meituan",
+      "name": "美团",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-13T06:22:17.273Z",
+          "bodyVerifiedRecords": 10
+        },
+        {
+          "query": "机场",
+          "finishedAt": "2026-10-13T06:22:49.272Z",
+          "bodyVerifiedRecords": 10
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "api_read",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "api_read",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "boc",
+      "name": "中国银行",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-11T21:00:00.030Z",
+          "bodyVerifiedRecords": 1
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "siemens",
+      "name": "西门子",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-11T18:28:20.734Z",
+          "bodyVerifiedRecords": 1
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 4
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "response_size_exceeded",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "pep",
+      "name": "人民教育出版社",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-11T21:26:46.653Z",
+          "bodyVerifiedRecords": 1
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-nju",
+      "name": "南京大学",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-13T06:23:45.867Z",
+          "bodyVerifiedRecords": 0
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "response_size_exceeded",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-85f26b75dd32196a",
+      "name": "中国人民警察大学",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "public_dns_resolution_failed",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "repair_failed",
+          "requestUpperBound": 2
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "repair_failed",
+          "requestUpperBound": 2
+        },
+        {
+          "kind": "list",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "public_dns_resolution_failed",
+          "requestUpperBound": 2
+        }
+      ]
+    },
+    {
+      "siteId": "official-c738f71905918585",
+      "name": "河南理工大学",
+      "templateConfigured": true,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "candidate_template",
+      "issueCode": null,
+      "adapterQueries": [
+        {
+          "query": "消防",
+          "finishedAt": "2026-10-11T22:04:27.139Z",
+          "bodyVerifiedRecords": 1
+        }
+      ],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "request_timeout",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "script",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    },
+    {
+      "siteId": "official-92038145590ecfba",
+      "name": "西安科技大学",
+      "templateConfigured": false,
+      "catalogState": "candidate",
+      "catalogVerifiedAt": null,
+      "classification": "unavailable",
+      "issueCode": "content_missing",
+      "adapterQueries": [],
+      "attempts": [
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "list",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "failed",
+          "httpStatus": null,
+          "code": "repair_failed",
+          "requestUpperBound": 3
+        },
+        {
+          "kind": "detail",
+          "status": "sampled",
+          "httpStatus": 200,
+          "code": null,
+          "requestUpperBound": 3
+        }
+      ]
+    }
+  ],
+  "adapterProcesses": [
+    {
+      "siteId": "ncss",
+      "name": "国家大学生就业服务平台",
+      "query": "消防",
+      "finishedAt": "2026-10-11T19:12:04.317Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 20,
+      "bodyVerifiedRecords": 2,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 3,
+      "structuralSample": false
+    },
+    {
+      "siteId": "yingjiesheng",
+      "name": "应届生截止日期榜",
+      "query": "机场",
+      "finishedAt": "2026-10-11T18:00:09.761Z",
+      "status": "partial",
+      "code": null,
+      "issueCodes": ["challenge_required"],
+      "requestFailureCodes": [],
+      "parsedRecords": 40,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 2,
+      "structuralSample": true
+    },
+    {
+      "siteId": "official-0201d47ae30267a0",
+      "name": "首都机场集团有限公司",
+      "query": "机场",
+      "finishedAt": "2026-10-11T17:43:14.609Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 9,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 3,
+      "cacheReads": 2,
+      "structuralSample": false
+    },
+    {
+      "siteId": "official-a64ede1720adf4fa",
+      "name": "中集天达控股有限公司",
+      "query": "消防",
+      "finishedAt": "2026-10-11T17:43:44.834Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 6,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 2,
+      "structuralSample": true
+    },
+    {
+      "siteId": "nowcoder",
+      "name": "牛客校招",
+      "query": "消防",
+      "finishedAt": "2026-10-11T17:44:19.010Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 20,
+      "bodyVerifiedRecords": 1,
+      "openingVerifiedRecords": 1,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 2,
+      "structuralSample": true
+    },
+    {
+      "siteId": "shixiseng",
+      "name": "实习僧",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:08:48.071Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 3,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 3,
+      "cacheReads": 1,
+      "structuralSample": false
+    },
+    {
+      "siteId": "jiuyeqiao",
+      "name": "就业桥",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:08:07.491Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 0,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 3,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "zhaopin",
+      "name": "智联招聘",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:07:35.412Z",
+      "status": "partial",
+      "code": null,
+      "issueCodes": ["response_size_exceeded"],
+      "requestFailureCodes": ["response_size_exceeded"],
+      "parsedRecords": 20,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 4,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "boss",
+      "name": "Boss直聘",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:00:15.794Z",
+      "status": "blocked",
+      "code": "login_required",
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 0,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "wechat",
+      "name": "微信公众号线索",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:00:22.203Z",
+      "status": "blocked",
+      "code": "public_seeds_required",
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 0,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "weibo",
+      "name": "微博招聘线索",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:00:28.609Z",
+      "status": "blocked",
+      "code": "public_seeds_required",
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 0,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "searchapi",
+      "name": "全网搜索",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:00:34.919Z",
+      "status": "blocked",
+      "code": "external_cost_unverified",
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 0,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "douyin",
+      "name": "抖音招聘线索",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:00:40.873Z",
+      "status": "blocked",
+      "code": "external_cost_unverified",
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 0,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "tencent",
+      "name": "腾讯",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:02:24.734Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 1,
+      "bodyVerifiedRecords": 1,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 4,
+      "cacheReads": 0,
+      "structuralSample": true
+    },
+    {
+      "siteId": "bosch",
+      "name": "博世",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:03:26.764Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 20,
+      "bodyVerifiedRecords": 1,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 8,
+      "cacheReads": 0,
+      "structuralSample": true
+    },
+    {
+      "siteId": "canonical",
+      "name": "Canonical",
+      "query": "机场",
+      "finishedAt": "2026-10-11T18:09:22.192Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 0,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 3,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "official-9b7b3076410fcacc",
+      "name": "海湾安全技术有限公司（GST）",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:15:14.012Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 3,
+      "bodyVerifiedRecords": 3,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 1,
+      "structuralSample": false
+    },
+    {
+      "siteId": "siemens",
+      "name": "西门子",
+      "query": "消防",
+      "finishedAt": "2026-10-11T18:28:20.734Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 6,
+      "bodyVerifiedRecords": 1,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 2,
+      "structuralSample": true
+    },
+    {
+      "siteId": "boc",
+      "name": "中国银行",
+      "query": "消防",
+      "finishedAt": "2026-10-11T21:00:00.030Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 2,
+      "bodyVerifiedRecords": 1,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 2,
+      "structuralSample": false
+    },
+    {
+      "siteId": "official-2ea9828ffe1d2682",
+      "name": "杭州萧山国际机场有限公司",
+      "query": "机场",
+      "finishedAt": "2026-10-11T21:00:37.513Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 2,
+      "bodyVerifiedRecords": 2,
+      "openingVerifiedRecords": 2,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 5,
+      "structuralSample": false
+    },
+    {
+      "siteId": "official-7ac6546c836dc43a",
+      "name": "威特龙消防安全集团股份公司",
+      "query": "消防",
+      "finishedAt": "2026-10-11T21:01:08.904Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 1,
+      "bodyVerifiedRecords": 1,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 2,
+      "structuralSample": false
+    },
+    {
+      "siteId": "pep",
+      "name": "人民教育出版社",
+      "query": "消防",
+      "finishedAt": "2026-10-11T21:26:46.653Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 4,
+      "bodyVerifiedRecords": 1,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 2,
+      "structuralSample": true
+    },
+    {
+      "siteId": "official-c738f71905918585",
+      "name": "河南理工大学",
+      "query": "消防",
+      "finishedAt": "2026-10-11T22:04:27.139Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 1,
+      "bodyVerifiedRecords": 1,
+      "openingVerifiedRecords": 1,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 0,
+      "cacheReads": 2,
+      "structuralSample": true
+    },
+    {
+      "siteId": "official-nju",
+      "name": "南京大学",
+      "query": "消防",
+      "finishedAt": "2026-10-13T06:23:45.867Z",
+      "status": "failed",
+      "code": "request_timeout",
+      "issueCodes": ["request_timeout"],
+      "requestFailureCodes": ["request_timeout"],
+      "parsedRecords": 0,
+      "bodyVerifiedRecords": 0,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 3,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "meituan",
+      "name": "美团",
+      "query": "消防",
+      "finishedAt": "2026-10-13T06:22:17.273Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 10,
+      "bodyVerifiedRecords": 10,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 4,
+      "cacheReads": 0,
+      "structuralSample": false
+    },
+    {
+      "siteId": "meituan",
+      "name": "美团",
+      "query": "机场",
+      "finishedAt": "2026-10-13T06:22:49.272Z",
+      "status": "completed",
+      "code": null,
+      "issueCodes": [],
+      "requestFailureCodes": [],
+      "parsedRecords": 10,
+      "bodyVerifiedRecords": 10,
+      "openingVerifiedRecords": 0,
+      "applicationVerifiedRecords": 0,
+      "effectiveTargetRecords": 0,
+      "requestsUpperBound": 3,
+      "cacheReads": 0,
+      "structuralSample": false
+    }
+  ],
+  "remainingGapCategories": {
+    "originalTemplateGapSources": 47,
+    "newlyConfiguredCandidateTemplates": 13,
+    "remainingTemplateGapSources": 34,
+    "parser_candidate": 4,
+    "unavailable": 23,
+    "reliable_recruitment_entry_not_found": 7,
+    "sourceReadyVerifiedByThisAudit": 0
+  }
+}

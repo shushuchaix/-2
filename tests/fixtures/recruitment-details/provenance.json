@@ -1,0 +1,16 @@
+{
+  "guizhou-airport.html": {
+    "sourceUrl": "https://www.gz-gcac.com/content/details_182_28403.html",
+    "capturedAt": "2026-10-10T01:32:06.403Z",
+    "derivedFrom": ".cache/public-source-research/guizhou-airport-dom-metadata.json",
+    "purpose": "Reduced actual body ancestry, explicit text application URL and sibling attachment. Names, contact paragraphs and complete article omitted.",
+    "currentRecruiting": "expired; structure fixture only"
+  },
+  "ncss-fire-control.html": {
+    "sourceUrl": "https://main.ncss.cn/student/jobs/W7GsatBix8SrJqu3DLktuS/detail.html",
+    "capturedAt": "2026-10-09T11:14:54Z",
+    "derivedFrom": ".cache/source-expansion-pilot-20261009/public-ncss-detail.html",
+    "purpose": "Reduced public DOM structure and body. Placeholder apply anchor is intentionally not a verified application URL.",
+    "currentRecruiting": "not_measured"
+  }
+}

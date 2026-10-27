@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "observedAt": "2026-10-14T10:51:53.272Z",
+  "scope": "Bounded native Boss page client compatibility",
+  "overallTaskComplete": false,
+  "authenticatedCollectionVerified": false,
+  "actualProbeBeforeThisFix": {
+    "checkedAt": "2026-10-14T09:23:11.796Z",
+    "status": "unavailable",
+    "samples": 0,
+    "issueCodes": [
+      "boss_ajax_unavailable",
+      "list_unverified"
+    ],
+    "safeDiagnosticLinked": true
+  },
+  "diagnosis": {
+    "legacyAjaxAvailable": true,
+    "legacyBeforeSendAvailable": false,
+    "observations": [
+      {
+        "elapsedMs": 39,
+        "legacyHook": false,
+        "nativeClients": 1,
+        "nativeAdapterResolver": true,
+        "resolvedAdapterAvailable": true,
+        "nativeCancelToken": true,
+        "requestHandlers": 1,
+        "responseHandlers": 1,
+        "challengeVisible": false
+      },
+      {
+        "elapsedMs": 551,
+        "legacyHook": false,
+        "nativeClients": 1,
+        "nativeAdapterResolver": true,
+        "resolvedAdapterAvailable": true,
+        "nativeCancelToken": true,
+        "requestHandlers": 1,
+        "responseHandlers": 1,
+        "challengeVisible": false
+      },
+      {
+        "elapsedMs": 2060,
+        "legacyHook": false,
+        "nativeClients": 1,
+        "nativeAdapterResolver": true,
+        "resolvedAdapterAvailable": true,
+        "nativeCancelToken": true,
+        "requestHandlers": 1,
+        "responseHandlers": 1,
+        "challengeVisible": false
+      },
+      {
+        "elapsedMs": 6062,
+        "legacyHook": false,
+        "nativeClients": 1,
+        "nativeAdapterResolver": true,
+        "resolvedAdapterAvailable": true,
+        "nativeCancelToken": true,
+        "requestHandlers": 1,
+        "responseHandlers": 1,
+        "challengeVisible": false
+      }
+    ],
+    "publicStaticVersion": "v6763",
+    "nativeSearchMethod": "POST",
+    "nativeDetailMethod": "GET",
+    "staticRea": {
+      "evidenceId": "ev_0eeb87d23f8f69ebc5df614791c93c522aab5dfd6263da69cb77d87fd8fb3dc4",
+      "filesParsed": 1,
+      "astNodesVisited": 32982,
+      "executed": false,
+      "limitations": [
+        "Obfuscated or dynamic relationships remain unresolved.",
+        "Static analysis does not establish runtime initialization or authenticated success."
+      ]
+    },
+    "blockedAssetCauseProven": false
+  },
+  "changes": [
+    "Retain legacy jQuery reads when its callable page authentication hook exists.",
+    "Discover one initialized native page client with callable request hooks; fail without sending for ambiguity, unsupported transport or more than 64 candidate nodes.",
+    "Use the page own factory/defaults and request authentication functions in a per-read instance within the same browser/session.",
+    "Copy no rejected request recovery or success/error response recovery callbacks; capture raw response before recovery.",
+    "Retain fixed endpoints/parameters, cancellation, original ledger and risk classification; generate or transfer no authentication material."
+  ],
+  "verification": {
+    "nativeCasesPassed": 15,
+    "nativeAndLegacyRiskProtocolPassed": 34,
+    "businessPassed": 1921,
+    "uiPassed": 174,
+    "suites": {
+      "passed": 18,
+      "explicitlySkipped": 7,
+      "failed": 0,
+      "total": 25
+    },
+    "typescriptExitCode": 0,
+    "review": {
+      "critical": 0,
+      "important": 3,
+      "minor": 0,
+      "fixed": 3,
+      "fixPasses": 1,
+      "newReviews": 1
+    },
+    "redGreen": {
+      "initial": {
+        "passedBeforeFix": 2,
+        "failedBeforeFix": 8,
+        "passedAfterFix": 10
+      },
+      "review": {
+        "passedBeforeFix": 10,
+        "failedBeforeFix": 5,
+        "passedAfterFix": 15
+      }
+    },
+    "package": {
+      "asarSha256": "E46D3182E72291B26A69B05AA558CF022FC07BD93B592EF6DB7FF483CCCB7F07",
+      "exactSourceHashes": 228,
+      "productionDependencies": 52,
+      "ocrHashes": 32
+    },
+    "nativeScales": [
+      {
+        "scale": 1,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "screenshots": 63,
+        "visualAudits": 39,
+        "observedAt": "2026-10-14T10:47:32.7895739Z",
+        "asarSha256": "E46D3182E72291B26A69B05AA558CF022FC07BD93B592EF6DB7FF483CCCB7F07"
+      },
+      {
+        "scale": 1.25,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "screenshots": 63,
+        "visualAudits": 39,
+        "observedAt": "2026-10-14T10:49:25.8843432Z",
+        "asarSha256": "E46D3182E72291B26A69B05AA558CF022FC07BD93B592EF6DB7FF483CCCB7F07"
+      },
+      {
+        "scale": 1.5,
+        "passed": 424,
+        "failed": 0,
+        "exitCode": 0,
+        "externalRequests": 0,
+        "rendererErrors": 0,
+        "screenshots": 63,
+        "visualAudits": 39,
+        "observedAt": "2026-10-14T10:51:17.3622576Z",
+        "asarSha256": "E46D3182E72291B26A69B05AA558CF022FC07BD93B592EF6DB7FF483CCCB7F07"
+      }
+    ],
+    "publicSourceCiProbesPerformed": false
+  },
+  "utilityRepair": {
+    "cause": "relative OCR asset paths could not reach the absolute parent-loop sentinel",
+    "normalizedBothRoots": true,
+    "syntheticRegressionPassed": 2,
+    "relativeArchivePackageVerificationExitCode": 0,
+    "productRuntimeSourcesUnchangedByUtilityRepair": true
+  },
+  "rulings": [
+    "Reuse only callable native request-auth functions in a page-created isolated instance; omit all recovery chains. The original browser/session and wire policy are unchanged.",
+    "More than 64 DOM candidates means unavailable until layout is reviewed; never silently assume uniqueness."
+  ],
+  "cumulative": {
+    "requestsUpperBound": 2175,
+    "requestLimit": 2340,
+    "remainingRequests": 165,
+    "rootKnownRequests": 1459,
+    "rootUnknownRequestUpperBound": 627,
+    "details": 119,
+    "detailLimit": 220,
+    "bytes": 260294976,
+    "byteLimit": 314572800,
+    "costUpperBoundCny": 3.98861,
+    "costLimitCny": 9.999184
+  },
+  "privacy": {
+    "realResumeLocalOnly": true,
+    "newModelCalls": 0,
+    "newJobs": 0,
+    "existingUserSessionsReadForDiagnostics": false,
+    "credentialsCopied": false,
+    "accountOrQrContentSaved": false,
+    "newActivityCreated": false
+  },
+  "remaining": [
+    "New packaged authenticated one-page/one-JD check remains required.",
+    "The prior application process exited before delivery; its unremembered login was not retained. Fresh human authentication remains required.",
+    "The prior official-source snapshot retains 17 candidate templates and 30 unresolved source gaps. This batch does not retest them or add jobs.",
+    "Task completion and shutdown remain pending."
+  ]
+}

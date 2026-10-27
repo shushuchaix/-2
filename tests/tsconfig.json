@@ -1,0 +1,4 @@
+{
+  "extends": "../ui/tsconfig.json",
+  "include": ["ui", "helpers/react-fixture.tsx", "../ui/src"]
+}

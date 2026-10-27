@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>简历岗位雷达</title>
+    <link rel="stylesheet" href="startup.css" />
+  </head>
+  <body data-state="loading">
+    <aside><strong>简历岗位雷达</strong><span>个人求职工作台</span></aside>
+    <main>
+      <div class="accent" aria-hidden="true"></div>
+      <p class="eyebrow">本地工作区</p>
+      <h1>准备好下一步求职</h1>
+      <p id="startup-status" role="status" aria-live="polite">
+        正在准备工作区…
+      </p>
+      <p id="startup-error" role="alert" hidden></p>
+      <a href="rjr-startup:logs">打开运行日志</a>
+    </main>
+  </body>
+</html>

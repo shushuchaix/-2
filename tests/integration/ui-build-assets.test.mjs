@@ -9,19 +9,12 @@ import { apiFixture } from "../helpers/api-fixture.mjs";
 import { createTempDir } from "../helpers/fixtures.mjs";
 import { drainArchiveWrite } from "../../tools/lib/archive-write.mjs";
 import { sourceBuildIdentity } from "../../tools/lib/build-identity.mjs";
+import { REQUIRED_RUNTIME } from "../../tools/verify-package.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const runtime = [
-  "electron/main.mjs",
-  "electron/backend/entry.cjs",
-  "electron/backend/service.mjs",
-  "electron/backend/host.mjs",
-  "src/infrastructure/runtime/rpc.mjs",
-  "electron/preload.cjs",
-  "electron/credentials.mjs",
-  "electron/directories.mjs",
-  "electron/self-test.mjs",
-  "electron/self-test-network.mjs",
+const runtime = [...new Set([
+  ...REQUIRED_RUNTIME,
+  // Boss and public-resource fixtures extend the authoritative core inventory.
   "electron/self-test-boss.mjs",
   "electron/collection/boss-page.mjs",
   "electron/collection/browser.mjs",
@@ -46,17 +39,6 @@ const runtime = [
   "src/application/package-runtime-service.mjs",
   "src/domain/collection.mjs",
   "src/llm/prompt-registry.mjs",
-  "src/server.mjs",
-  "src/config.mjs",
-  "src/application/context.mjs",
-  "src/application/run-service.mjs",
-  "src/application/purge-service.mjs",
-  "src/infrastructure/storage/repository.mjs",
-  "src/infrastructure/storage/package-control.mjs",
-  "src/infrastructure/storage/bootstrap-workspace.mjs",
-  "src/infrastructure/diagnostics/log.mjs",
-  "src/domain/ontology.json",
-  "src/sources/catalog/universities.json",
   "public/login.html",
   "public/login.js",
   "public/style.css",
@@ -65,7 +47,7 @@ const runtime = [
   "public/js/version-management.js",
   "public/js/components/form-validation.js",
   "public/js/components/dom.js",
-];
+])];
 
 async function packageFixture(t) {
   const root = await createTempDir(t),
@@ -349,4 +331,16 @@ test("package verifier rejects first-party absolute user SDK paths even when sou
     result.stdout + result.stderr,
     /User-specific runtime path.*boss/,
   );
+});
+
+// Independent fixed paths prevent a shared inventory from turning the fixture
+// into a tautology. Start with a full valid package, then remove each specific
+// security-sensitive entry and require that exact missing-file failure.
+test('package verifier independently rejects missing backend and maintenance runtime entries',async t=>{
+  const f=await packageFixture(t);await f.pack();const valid=f.verify();assert.equal(valid.status,0,valid.stdout+valid.stderr);
+  for(const file of ['electron/backend/entry.cjs','src/infrastructure/storage/maintenance-existing.mjs','src/infrastructure/maintenance/protocol.mjs']){
+    await fs.unlink(path.join(f.stage,file));await f.pack();const result=f.verify();
+    assert.notEqual(result.status,0,file);assert.ok((result.stdout+result.stderr).includes('Missing runtime file: '+file),result.stdout+result.stderr);
+    await f.write(file,'/* synthetic runtime presence */');
+  }
 });

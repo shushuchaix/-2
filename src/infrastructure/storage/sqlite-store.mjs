@@ -898,13 +898,14 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
         const hasMore=leases.length>limit||runs.length>limit;if(leases.length>limit)leases.pop();if(runs.length>limit)runs.pop();
         metrics.rowsRead+=leases.length+runs.length;
         for(const lease of leases){metrics.decodedRows++;metrics.decodedBytes+=Buffer.byteLength(lease.value);}
-        // The physical primary key is authorization evidence, not a default
-        // which stored JSON may overwrite. Reject damaged identities before a
-        // caller can reconcile a claim or derive any ordinary deletion list.
+        // Historical ordinary leases may omit their JSON operationId: the map
+        // key remains their authority. Derive that missing field only in this
+        // read projection, never repair the stored row or mask an explicit
+        // conflict. Raw maintenance claim validation remains strict.
         const values=leases.map(row=>{
           const value=JSON.parse(row.value);
-          if(!plain(value)||value.operationId!==row.id)throw purgeClaimError();
-          return value;
+          if(!plain(value)||Object.hasOwn(value,'operationId')&&value.operationId!==row.id)throw purgeClaimError();
+          return Object.hasOwn(value,'operationId')?value:{...value,operationId:row.id};
         });
         return {leases:values,runs:runs.map(row=>({...row})),hasMore};
       });

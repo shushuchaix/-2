@@ -20,7 +20,7 @@ export const PUBLIC_RUNTIME_FILES = [
   "js/components/form-validation.js",
   "js/components/dom.js",
 ];
-const REQUIRED_RUNTIME = [
+export const REQUIRED_RUNTIME = Object.freeze([
   "electron/main.mjs",
   "electron/backend/entry.cjs",
   "electron/backend/service.mjs",
@@ -44,7 +44,7 @@ const REQUIRED_RUNTIME = [
   "src/infrastructure/diagnostics/log.mjs",
   "src/domain/ontology.json",
   "src/sources/catalog/universities.json",
-];
+]);
 
 /** Shared with the desktop assembler: installed production dependencies, including optional modules. */
 export function prodClosure({ root = ROOT, dependencies } = {}) {

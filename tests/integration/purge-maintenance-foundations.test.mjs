@@ -318,3 +318,45 @@ test('numeric clock holds failed-spawn cooldown until the exact nextRetryAt',asy
   assert.equal((await f.claim()).dispatchAllowed,false);f.clock.advance(299999);assert.equal((await f.claim()).dispatchAllowed,false);
   f.clock.advance(1);const next=await f.claim();assert.equal(next.dispatchAllowed,true);assert.equal(next.descriptor.generation,descriptor.generation+1);
 });
+// Compatibility is a read-boundary decision, not a schema migration. The raw
+// ordinary lease remains byte-identical when only its historical map key gives
+// its ID. An own conflicting field is never treated as the same omission.
+test('ordinary leases without a JSON operationId remain live and are not silently repaired',async t=>{
+  const f=await fixture(t),id='legacy-ordinary-map-key',value={kind:'collect',ownerPid:process.pid,token:randomUUID(),
+    packageIds:[f.b.packageId],targetRevisionId:f.b.targetRevisionId};
+  await f.repository.transaction({select:[{collection:'operationLeases',ids:[id]}]},tx=>
+    tx.putRow({collection:'operationLeases',id,value}),{operationMaintenance:true});
+  const before=leaseRow(f,id),revision=await f.repository.getMeta('revision'),control=await fs.readFile(path.join(f.dataDir,'control','state.json'));
+  const state=await f.repository.withWriteFence(fence=>fence.readOperationState(),{operationMaintenance:true});
+  assert.equal(state.leases.find(lease=>lease.operationId===id)?.token,value.token);
+  assert.equal(Object.hasOwn(JSON.parse(leaseRow(f,id)),'operationId'),false);
+  assert.deepEqual(await f.operationGate.recover(),{removed:0});
+  await assert.rejects(f.operationGate.acquire('cleanup'),{code:'workspace_operation_busy'});
+  assert.equal(leaseRow(f,id),before);assert.equal(await f.repository.getMeta('revision'),revision);
+  assert.deepEqual(await fs.readFile(path.join(f.dataDir,'control','state.json')),control);
+  for(const explicit of [null,17,'another-physical-row']){
+    const damaged=JSON.stringify({...value,operationId:explicit});
+    raw(f,db=>db.prepare("UPDATE rows SET value=? WHERE collection='operationLeases' AND id=?").run(damaged,id),{write:true});
+    await assert.rejects(f.operationGate.recover(),{code:'purge_claim_conflict'});
+    assert.equal(leaseRow(f,id),damaged);assert.equal(await f.repository.getMeta('revision'),revision);
+  }
+});
+
+test('journal-associated missing JSON operationId stays pending and cannot become a valid purge authorization',async t=>{
+  const f=await fixture(t),{worker,descriptor}=await f.worker(),lease=await worker.acquirePurgeClaim(),value=JSON.parse(leaseRow(f,lease.operationId));
+  delete value.operationId;raw(f,db=>db.prepare("UPDATE rows SET value=? WHERE collection='operationLeases' AND id=?").run(JSON.stringify(value),lease.operationId),{write:true});
+  const before=leaseRow(f,lease.operationId),revision=await f.repository.getMeta('revision'),
+    journalBytes=raw(f,db=>db.prepare("SELECT value FROM store_meta WHERE key='purgeWorkerJournal'").get().value),
+    control=await fs.readFile(path.join(f.dataDir,'control','state.json')),
+    gate=createWorkspaceOperationGate({repository:f.repository,isOwnerAlive:()=>false});
+  assert.deepEqual(await gate.recover(),{removed:0,pending:true});
+  await assert.rejects(gate.acquire('backup'),{code:'workspace_operation_busy'});
+  await assert.rejects(gate.acquire('backup',{parentLease:lease}),{code:'workspace_operation_busy'});
+  await assert.rejects(worker.acquirePurgeClaim(),{code:'purge_claim_conflict'});
+  await assert.rejects(f.repository.transaction({select:[{collection:'operationLeases',ids:[lease.operationId]}]},tx=>
+    tx.deleteRow({collection:'operationLeases',id:lease.operationId}),{operationMaintenance:true}),{code:'purge_claim_conflict'});
+  assert.equal(leaseRow(f,lease.operationId),before);assert.equal(await f.repository.getMeta('revision'),revision);
+  assert.equal(raw(f,db=>db.prepare("SELECT value FROM store_meta WHERE key='purgeWorkerJournal'").get().value),journalBytes);
+  assert.deepEqual(await fs.readFile(path.join(f.dataDir,'control','state.json')),control);
+  assert.equal(descriptor.leaseOperationId,lease.operationId);
+});

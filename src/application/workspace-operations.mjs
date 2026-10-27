@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { hasLiveOwner } from "../infrastructure/storage/process-owner.mjs";
 import { versionAvailability } from "../domain/version-references.mjs";
 import {assertScope,requirePackage,packageError} from '../domain/packages.mjs';
+import { isProtectedPurgeLease } from '../infrastructure/maintenance/protocol.mjs';
 export const SHARED_OPERATION_KINDS = new Set([
   "collect",
   "evaluate",
@@ -54,28 +55,42 @@ export function createWorkspaceOperationGate(options){
   const alive=lease=>{try{return isOwnerAlive(lease.ownerPid)!==false;}catch{return true;}};
   const leaseObject=(value,parent=false)=>({...value,async release(){
     if(parent)return;
-    await repository.transaction({select:[{collection:'operationLeases',ids:[value.operationId]}]},tx=>{
-      if(tx.getRow({collection:'operationLeases',id:value.operationId})?.token!==value.token)throw invalidLease();
-      tx.deleteRow({collection:'operationLeases',id:value.operationId});
+    await repository.withWriteFence(async fence=>{
+      const current=fence.getRow({collection:'operationLeases',id:value.operationId}),journal=fence.readPurgeWorkerJournal();
+      if(isProtectedPurgeLease(current,journal)){
+        await fence.reconcilePurgeWorker({isOwnerAlive});throw operationBusy();
+      }
+      fence.transaction({select:[{collection:'operationLeases',ids:[value.operationId]}]},tx=>{
+        if(tx.getRow({collection:'operationLeases',id:value.operationId})?.token!==value.token)throw invalidLease();
+        tx.deleteRow({collection:'operationLeases',id:value.operationId});
+      });
     },{operationMaintenance:true});
   }});
   const formal={
     async recover(){
-      return repository.withWriteFence(fence=>{
+      return repository.withWriteFence(async fence=>{
         const state=fence.readOperationState();if(state.hasMore)throw operationBusy();
-        const dead=state.leases.filter(lease=>!alive(lease));if(!dead.length)return {removed:0};
+        const journal=fence.readPurgeWorkerJournal(),protectedLeases=state.leases.filter(lease=>isProtectedPurgeLease(lease,journal)),
+          pending=Boolean(protectedLeases.length||journal&&journal.state!=='retired');
+        if(pending)await fence.reconcilePurgeWorker({isOwnerAlive});
+        const dead=state.leases.filter(lease=>!alive(lease)&&!isProtectedPurgeLease(lease,journal));
+        if(!dead.length)return {removed:0,...(pending?{pending:true}:{})};
         fence.transaction({select:[{collection:'operationLeases',ids:dead.map(lease=>lease.operationId)}]},tx=>{
           for(const lease of dead)tx.deleteRow({collection:'operationLeases',id:lease.operationId});
-        });return {removed:dead.length};
+        });return {removed:dead.length,...(pending?{pending:true}:{})};
       },{operationMaintenance:true});
     },
     async acquire(kind,{targetRevisionId,profileRevisionId,parentLease,expectedWorkspaceRevision,signal,scope,packageIds}={}){
       if(!SHARED_OPERATION_KINDS.has(kind)&&!EXCLUSIVE_OPERATION_KINDS.has(kind))throw Error('Invalid operation kind');
       signal?.throwIfAborted();
-      const value=await repository.withWriteFence(fence=>{
+      const value=await repository.withWriteFence(async fence=>{
         signal?.throwIfAborted();const revision=fence.getMeta('revision');
         if(expectedWorkspaceRevision!==undefined&&expectedWorkspaceRevision!==revision)throw Object.assign(Error('岗位数据已变化，请重新预览后确认清理。'),{status:409,code:'duplicate_preview_stale'});
         const state=fence.readOperationState();if(state.hasMore)throw operationBusy();
+        const purgeJournal=fence.readPurgeWorkerJournal();
+        if(state.leases.some(lease=>isProtectedPurgeLease(lease,purgeJournal))||purgeJournal&&purgeJournal.state!=='retired'){
+          await fence.reconcilePurgeWorker({isOwnerAlive});throw operationBusy();
+        }
         const leases=state.leases.filter(alive),dead=state.leases.filter(lease=>!alive(lease));
         if(scope){
           if(fence.control.migrationJournal?.archives?.[scope.packageId]?.phase==='prepared')throw operationBusy();
@@ -116,8 +131,12 @@ export function createWorkspaceOperationGate(options){
     },
     async withOperation(kind,input,action){const lease=await formal.acquire(kind,input);try{return await action(lease);}finally{await lease.release();}},
   };
-  return Object.fromEntries(['recover','acquire','withOperation'].map(method=>[method,async(...args)=>
-    (await repository.getMeta('schemaVersion'))===3?formal[method](...args):legacy[method](...args)]));
+  return {...Object.fromEntries(['recover','acquire','withOperation'].map(method=>[method,async(...args)=>
+    (await repository.getMeta('schemaVersion'))===3?formal[method](...args):legacy[method](...args)])),
+    async acquirePurgeClaim(){
+      if((await repository.getMeta('schemaVersion'))!==3||typeof repository.acquirePurgeClaim!=='function')throw invalidLease();
+      return repository.acquirePurgeClaim();
+    }};
 }
 function createLegacyWorkspaceOperationGate({
   repository,

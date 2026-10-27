@@ -15,13 +15,17 @@ import { buildCollectionProjectionRows, COLLECTION_PROJECTION_VERSION } from '..
 import { PRIVATE_COLLECTIONS, QUERY_FIELDS, SCHEMA_SQL, SQLITE_COLLECTIONS, SQLITE_STORE_VERSION } from './sqlite-schema.mjs';
 import { assertJson, defineOwn, flattenWorkspace, inflateWorkspace, plain, recordMetadata,
   rowKey, rowStoreError, SPLIT_PARTS, validateRecord } from './sqlite-records.mjs';
+import { existingMaintenanceState, assertExistingDatabasePathSync, verifyExistingReadWriteDatabase } from './maintenance-existing.mjs';
+import { PURGE_WORKER_JOURNAL, PURGE_REPLACEMENT_STAGES, assertPurgeDescriptor, assertPurgeJournal,
+  assertPurgeLease, samePurgeDescriptor, isProtectedPurgeLease, purgeClaimError, purgeLimits } from '../maintenance/protocol.mjs';
+import { hasLiveOwner } from './process-owner.mjs';
 
 const MAX_PAGE = 200, MAX_IDS = 1000, MAX_SELECT = 64;
 const enc = v => JSON.stringify(v);
 const clone = v => v === undefined ? undefined : structuredClone(v);
 const thenable = v => v !== null && (typeof v === 'object' || typeof v === 'function') && typeof v.then === 'function';
 const safeInt = (v, min = 0) => Number.isSafeInteger(v) && v >= min;
-const managedMeta = new Set(['storeVersion', 'schemaVersion', 'revision', 'topKeys', 'migrationSourceHash','jobReadModelVersion','collectionProjectionVersion']);
+const managedMeta = new Set(['storeVersion', 'schemaVersion', 'revision', 'topKeys', 'migrationSourceHash','jobReadModelVersion','collectionProjectionVersion',PURGE_WORKER_JOURNAL]);
 const columnNames = ['owner_id','record_id','parent_collection','parent_id','part_path','ordinal',
   'job_id','run_id','target_revision_id','profile_revision_id','observation_id','fact_hash','rule_version',
   'status','kind','next_due_at','resource_key','checked_at','sort_at','title','company','job_type','score',
@@ -59,14 +63,22 @@ function normalizeError(error) {
  * The production repository must hold its common control/write fence around a
  * transaction; this connection does not pretend to atomically update control.
  */
-export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onProjection, faultInjector } = {}) {
+export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onProjection, faultInjector, existingMaintenanceBinding } = {}) {
   assertSupportedNodeRuntime();
   const { DatabaseSync, backup: sqliteBackup } = createRequire(import.meta.url)('node:sqlite');
   if (typeof filename !== 'string' || !filename || !safeInt(busyTimeoutMs) || busyTimeoutMs > 30000)
     throw rowStoreError('sqlite_options_invalid', 'A file and bounded busy timeout are required.');
-  if (filename !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(filename)), { recursive: true });
-  const db = new DatabaseSync(filename, { timeout: busyTimeoutMs, enableForeignKeyConstraints: true,
-    enableDoubleQuotedStringLiterals: false, allowExtension: false });
+  const maintenanceState=existingMaintenanceBinding===undefined?null:existingMaintenanceState(existingMaintenanceBinding);
+  const modePath=value=>process.platform==='win32'?path.resolve(value).toLowerCase():path.resolve(value);
+  if(maintenanceState&&modePath(filename)!==modePath(path.join(maintenanceState.dataDir,'workspace.sqlite')))throw purgeClaimError();
+  if(!maintenanceState&&filename!==':memory:')fs.mkdirSync(path.dirname(path.resolve(filename)),{recursive:true});
+  let db;
+  try{
+    if(maintenanceState)assertExistingDatabasePathSync(existingMaintenanceBinding);
+    db=new DatabaseSync(filename,{timeout:busyTimeoutMs,enableForeignKeyConstraints:true,
+      enableDoubleQuotedStringLiterals:false,allowExtension:false});
+    if(maintenanceState){assertExistingDatabasePathSync(existingMaintenanceBinding);verifyExistingReadWriteDatabase(db,existingMaintenanceBinding);}
+  }catch(error){db?.close();if(maintenanceState)throw purgeClaimError('purge_existing_store_required');throw error;}
   let closed = false, active = false, operation = false;
   const metrics = { statements: 0, prepares:0,statementCacheHits:0, rowsRead: 0, rowsWritten: 0, decodedRows: 0, decodedBytes: 0,
     decodedPrivateRows:0,decodedPrivateBytes:0,
@@ -118,12 +130,20 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
     };
     inspectFormat();
     // PRAGMA values are fixed literals, never interpolated input. FULL is a hard gate.
-    db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;');
+    db.exec(maintenanceState?'PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; PRAGMA foreign_keys=ON;':
+      'PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;');
     const pragmas = Object.fromEntries(['journal_mode','synchronous','foreign_keys','secure_delete']
       .map(key => [key, Object.values(db.prepare(`PRAGMA ${key}`).get())[0]]));
     if ((filename !== ':memory:' && pragmas.journal_mode !== 'wal') || pragmas.synchronous !== 2 ||
       pragmas.foreign_keys !== 1 || pragmas.secure_delete !== 1)
       throw rowStoreError('sqlite_pragma_invalid', 'The database durability or reference settings were not applied.');
+    if(maintenanceState){
+      // Already initialized and inspected under the repository's file fence.
+      // In this mode there is deliberately no DDL, migration, journal-mode
+      // switch, marker write or fallback to normal initialization.
+      verifyExistingReadWriteDatabase(db,existingMaintenanceBinding);
+      assertExistingDatabasePathSync(existingMaintenanceBinding);
+    }else{
     db.exec('BEGIN IMMEDIATE');
     try {
       const initialized=inspectFormat();
@@ -135,6 +155,7 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
       }
       db.exec('COMMIT');
     } catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+    }
   } catch (error) { db.close(); throw normalizeError(error); }
 
   const rawRow = (collection, id) => statement('SELECT * FROM rows WHERE collection=? AND id=?').get(collection, id);
@@ -280,7 +301,7 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
   }
   const writeRowSql = `INSERT INTO rows(collection,id,value,${columnNames.join(',')}) VALUES (${Array(3 + columnNames.length).fill('?').join(',')})
     ON CONFLICT(collection,id) DO UPDATE SET value=excluded.value,${columnNames.map(c => `${c}=excluded.${c}`).join(',')}`;
-  function writeRow(row, schemaVersion) {
+  function validateRowForWrite(row, schemaVersion) {
     validateRecord(row.collection,row.id,row.value,{ schemaVersion, ownerPackageId: row.metadata.ownerPackageId });
     const partDefinitions=Object.entries(SPLIT_PARTS).flatMap(([parentCollection,definitions])=>definitions.map(definition=>({parentCollection,definition})));
     const detached=partDefinitions.filter(p=>p.definition[1] === row.collection);
@@ -306,6 +327,9 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
           throw rowStoreError('sqlite_part_invalid','A detached map identity differs from its entity identity.');
       }
     }
+  }
+  function writeRow(row, schemaVersion) {
+    validateRowForWrite(row,schemaVersion);
     if (row.collection === 'packages') {
       const v = row.value;
       statement(`INSERT INTO package_keys(id,kind,version_id,name_key,state) VALUES (?,?,?,?,?)
@@ -319,7 +343,7 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
         ON CONFLICT(collection,id,path) DO NOTHING`).run(row.metadata.parentCollection,row.metadata.parentId,part[0],part[1],part[2]);
     }
   }
-  function referenceRows(row) {
+  function referenceRows(row,{hasRow=(collection,id)=>Boolean(rawRow(collection,id))}={}) {
     const { collection, id, value: v, metadata: m } = row;
     const refs = [];
     const add = (field, collection, targetId) => { if (typeof targetId === 'string' && targetId) refs.push({ field, collection, id: targetId }); };
@@ -344,9 +368,9 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
     if (['runEvaluationIds','activityJobIds'].includes(collection)) add('value',collection === 'activityJobIds' ? 'jobs' : 'evaluations',v);
     if (m.parentId && !['packages','profileGroups','targetGroups','aliasGroups'].includes(m.parentCollection) && PRIVATE_COLLECTIONS.has(collection)) add('parent',m.parentCollection,m.parentId);
     if (collection === 'versionMetadata') add('revision',v.kind === 'profile' ? 'profiles' : 'targets',id);
-    if (collection === 'jobRedirects') add('toJobId',rawRow('jobs',v.toJobId) ? 'jobs' : 'jobRedirects',v.toJobId);
+    if (collection === 'jobRedirects') add('toJobId',hasRow('jobs',v.toJobId) ? 'jobs' : 'jobRedirects',v.toJobId);
     if (collection === 'duplicateGroups') for (const jobId of v.jobIds || []) add('jobIds','jobs',jobId);
-    if (collection === 'identityAliasLinks') add('jobId',rawRow('jobs',v) ? 'jobs' : 'jobRedirects',v);
+    if (collection === 'identityAliasLinks') add('jobId',hasRow('jobs',v) ? 'jobs' : 'jobRedirects',v);
     return refs;
   }
   function updateRefs(row) {
@@ -456,6 +480,10 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
         recordIds:changed.map(c => (c.after || c.before)?.recordId).filter(Boolean),
         changes:changed.map(({ collection,id,ownerPackageId }) => ({ collection,id,ownerPackageId })) });
       metrics.transactionStageMs+=performance.now()-phaseStart;
+      const protectedJournal=readPurgeWorkerJournal();
+      for(const row of [...dirty.values(),...deleted.values()])if(row.collection==='operationLeases'&&
+        (Object.hasOwn(row.value||{},'purgeClaim')||isProtectedPurgeLease({...decode(rawRow('operationLeases',row.id))?.value,operationId:row.id},protectedJournal)))
+        throw purgeClaimError();
       faultInjector && syncResult(faultInjector('beforeWrite',{ revision }));
       phaseStart=performance.now();
       for (const row of deleted.values()) { statement('DELETE FROM rows WHERE collection=? AND id=?').run(row.collection,row.id); metrics.rowsWritten++; }
@@ -521,6 +549,9 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
     assertReady(true); if (operation) throw rowStoreError('sqlite_nested_transaction','Maintenance cannot run inside another operation.');
     let maintenancePhase=performance.now();
     const flat = flattenWorkspace(workspace);
+    const protectedJournal=readPurgeWorkerJournal();
+    if(protectedJournal&&protectedJournal.state!=='retired'||flat.schemaVersion===3&&flat.rows.some(row=>row.collection==='operationLeases'&&Object.hasOwn(row.value||{},'purgeClaim'))||
+      statement("SELECT 1 AS present FROM rows WHERE collection='operationLeases' AND json_type(value,'$.purgeClaim') IS NOT NULL LIMIT 1").get())throw purgeClaimError();
     metrics.maintenanceFlattenMs+=performance.now()-maintenancePhase;
     if (migrationSourceHash !== undefined && (replace || typeof migrationSourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(migrationSourceHash)))
       throw rowStoreError('sqlite_migration_identity','Only an initial import may set its verified source hash.');
@@ -603,6 +634,205 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
     }catch(error){if(!committed&&db.isTransaction){db.exec('ROLLBACK');metrics.rollbacks++;}throw normalizeError(error);}
     finally{operation=false;}
   }
+  function readPurgeWorkerJournal(){
+    assertOpen();const value=metaRaw(PURGE_WORKER_JOURNAL);
+    return value===undefined?null:clone(assertPurgeJournal(value));
+  }
+  function coordinationTransaction(action){
+    assertReady();operation=true;let committed=false;
+    try{
+      if(maintenanceState)assertExistingDatabasePathSync(existingMaintenanceBinding);
+      db.exec('BEGIN IMMEDIATE');metrics.transactions++;
+      const revision=metaRaw('revision'),journal=readPurgeWorkerJournal();
+      invokeGuard({phase:'write',revision,ownerPackageIds:[]});
+      const result=action({revision,journal});
+      if(!result.changed){db.exec('COMMIT');committed=true;metrics.commits++;return result.value;}
+      const nextRevision=revision+1;if(!safeInt(nextRevision))throw purgeClaimError();
+      assertPurgeJournal(result.journal);writeMeta(PURGE_WORKER_JOURNAL,result.journal);writeMeta('revision',nextRevision);
+      for(const change of result.changes||[])statement('INSERT INTO changes(revision,collection,id,owner_id,topic,action) VALUES (?,?,?,?,?,?)')
+        .run(nextRevision,change.collection,change.id,null,'purge_coordination',change.action);
+      statement('INSERT INTO changes(revision,collection,id,owner_id,topic,action) VALUES (?,?,?,?,?,?)')
+        .run(nextRevision,'store_meta',PURGE_WORKER_JOURNAL,null,'purge_coordination','meta');
+      faultInjector&&syncResult(faultInjector('beforePurgeCoordinationCommit',{revision:nextRevision}));
+      db.exec('COMMIT');committed=true;metrics.commits++;
+      try{if(maintenanceState)assertExistingDatabasePathSync(existingMaintenanceBinding);
+        faultInjector&&syncResult(faultInjector('afterPurgeCoordinationCommit',{revision:nextRevision}));}
+      catch(cause){throw Object.assign(rowStoreError('sqlite_post_commit','Purge coordination committed; reporting failed.',cause),
+        {committed:true,revision:nextRevision});}
+      return {...result.value,revision:nextRevision,journal:clone(result.journal)};
+    }catch(error){if(!committed&&db.isTransaction){db.exec('ROLLBACK');metrics.rollbacks++;}throw normalizeError(error);}
+    finally{operation=false;}
+  }
+  function reservePurgeWorkerJournal(descriptor,{expectedSequence=null,previousDescriptor=null}={}){
+    assertPurgeDescriptor(descriptor);
+    return coordinationTransaction(({journal})=>{
+      if(journal&&samePurgeDescriptor(journal.descriptor,descriptor))return {changed:false,value:{journal}};
+      if(journal){
+        if(journal.state!=='retired'||journal.sequence!==expectedSequence||!samePurgeDescriptor(journal.descriptor,previousDescriptor))throw purgeClaimError();
+        if(rawRow('operationLeases',journal.descriptor.leaseOperationId))throw purgeClaimError();
+      }else if(expectedSequence!==null)throw purgeClaimError();
+      const next={version:1,descriptor:clone(descriptor),sequence:(journal?.sequence||0)+1,state:'dispatch_reserved',
+        workerPid:null,leaseToken:null,stage:'prepared',publicationReceipt:null};
+      return {changed:true,journal:next,value:{journal:next}};
+    });
+  }
+  function acquirePurgeWorkerLease(descriptor,{leaseToken,createdAt}={}){
+    if(!maintenanceState||!samePurgeDescriptor(maintenanceState.descriptor,descriptor))throw purgeClaimError();
+    return coordinationTransaction(({journal,revision})=>{
+      if(!journal||!samePurgeDescriptor(journal.descriptor,descriptor))throw purgeClaimError();
+      const stored=decode(rawRow('operationLeases',descriptor.leaseOperationId))?.value;
+      if(stored){
+        assertPurgeLease(stored,descriptor,{workerPid:process.pid});
+        if(!['claimed','running'].includes(journal.state)||journal.workerPid!==process.pid||journal.leaseToken!==stored.token)throw purgeClaimError();
+        return {changed:false,value:{lease:stored,journal,revision}};
+      }
+      if(journal.state!=='dispatch_reserved'||journal.workerPid!==null||journal.leaseToken!==null)throw purgeClaimError();
+      const rows=statement("SELECT id,value FROM rows WHERE collection='operationLeases' ORDER BY id LIMIT 201").all(),
+        runs=statement("SELECT json_extract(value,'$.ownerPid') AS ownerPid FROM rows WHERE collection='runs' AND json_extract(value,'$.status') IN ('queued','running') LIMIT 201").all();
+      if(rows.length>200||runs.length>200||runs.some(hasLiveOwner))throw purgeClaimError();
+      const dead=[];
+      for(const row of rows){const value=JSON.parse(row.value);
+        if(isProtectedPurgeLease({...value,operationId:row.id},journal)||hasLiveOwner(value))throw purgeClaimError();dead.push(row.id);}
+      for(const id of dead){statement("DELETE FROM rows WHERE collection='operationLeases' AND id=?").run(id);metrics.rowsWritten++;}
+      const lease={operationId:descriptor.leaseOperationId,kind:'permanent-delete',token:leaseToken,ownerPid:process.pid,
+        targetRevisionId:null,profileRevisionId:null,createdAt,scope:null,packageIds:[descriptor.packageId],
+        purgeClaim:Object.fromEntries(['taskId','packageId','generation','dispatchId'].map(key=>[key,descriptor[key]]))};
+      assertPurgeLease(lease,descriptor,{workerPid:process.pid});
+      if(typeof createdAt!=='string'||!Number.isFinite(Date.parse(createdAt)))throw purgeClaimError();
+      writeRow({collection:'operationLeases',id:lease.operationId,value:lease,metadata:recordMetadata('operationLeases',lease.operationId,lease)},3);
+      const topKeys=metaRaw('topKeys');if(!topKeys.includes('operationLeases'))writeMeta('topKeys',[...topKeys,'operationLeases']);
+      const next={...journal,sequence:journal.sequence+1,state:'claimed',workerPid:process.pid,leaseToken:lease.token};
+      return {changed:true,journal:next,value:{lease,journal:next},changes:[
+        ...dead.map(id=>({collection:'operationLeases',id,action:'delete'})),{collection:'operationLeases',id:lease.operationId,action:'put'}]};
+    });
+  }
+  function updatePurgeWorkerJournal(descriptor,{expectedSequence,state,stage,workerPid,leaseToken,allowDeadOwner=false}={}){
+    assertPurgeDescriptor(descriptor);
+    return coordinationTransaction(({journal})=>{
+      if(!journal||!samePurgeDescriptor(journal.descriptor,descriptor)||journal.sequence!==expectedSequence)throw purgeClaimError();
+      if(state==='running'){
+        if(!maintenanceState||!['claimed','running'].includes(journal.state)||workerPid!==process.pid||journal.workerPid!==process.pid)throw purgeClaimError();
+        assertPurgeLease(decode(rawRow('operationLeases',descriptor.leaseOperationId))?.value,descriptor,{workerPid:process.pid,token:leaseToken});
+      }else if(state==='release_observed'){
+        if(journal.state==='release_observed'&&!rawRow('operationLeases',descriptor.leaseOperationId)&&journal.leaseToken===leaseToken)
+          return {changed:false,value:{journal}};
+        if(!['claimed','running'].includes(journal.state))throw purgeClaimError();
+        const lease=decode(rawRow('operationLeases',descriptor.leaseOperationId))?.value;
+        assertPurgeLease(lease,descriptor,{workerPid:journal.workerPid,token:leaseToken});
+        if(lease.ownerPid===process.pid){if(!maintenanceState||!samePurgeDescriptor(maintenanceState.descriptor,descriptor))throw purgeClaimError();}
+        else if(!allowDeadOwner||hasLiveOwner(lease))throw purgeClaimError();
+        if(allowDeadOwner&&(journal.publicationReceipt!==null||!['prepared','body'].includes(journal.stage)))throw purgeClaimError();
+        statement("DELETE FROM rows WHERE collection='operationLeases' AND id=?").run(descriptor.leaseOperationId);metrics.rowsWritten++;
+      }else if(state==='retired'){
+        if(!['release_observed','dispatch_reserved'].includes(journal.state)||rawRow('operationLeases',descriptor.leaseOperationId))throw purgeClaimError();
+      }else throw purgeClaimError();
+      const next={...journal,sequence:journal.sequence+1,state,...(stage?{stage}:{})};assertPurgeJournal(next);
+      return {changed:true,journal:next,value:{journal:next},changes:state==='release_observed'?
+        [{collection:'operationLeases',id:descriptor.leaseOperationId,action:'delete'}]:[]};
+    });
+  }
+  function assertPurgeInputBounds(limits){
+    assertReady();
+    const row=statement('SELECT count(*) AS n,coalesce(sum(length(CAST(value AS BLOB))),0) AS bytes FROM rows').get(),
+      refs=statement('SELECT count(*) AS n FROM row_refs').get().n,parts=statement('SELECT count(*) AS n FROM row_parts').get().n;
+    if(row.n>limits.sourceRows||row.bytes>limits.sourceBytes||refs>limits.references||parts>limits.parts)throw purgeClaimError('purge_input_limit');
+    return {rows:row.n,bytes:row.bytes,references:refs,parts};
+  }
+  const purgeDataVersion=()=>Object.values(statement('PRAGMA data_version').get())[0];
+  function exportPurgeWorkspaceSnapshot(limits={}){
+    if(!maintenanceState)throw purgeClaimError();limits=purgeLimits(limits);assertPurgeInputBounds(limits);
+    // SQLite's per-connection data_version also rejects another connection's
+    // committed writes which failed to advance the application's revision.
+    // https://sqlite.org/pragma.html#pragma_data_version
+    const before=purgeDataVersion(),workspace=exportWorkspace(),after=purgeDataVersion();
+    if(!safeInt(before)||before!==after)throw purgeClaimError('purge_state_changed');
+    return {workspace,dataVersion:after};
+  }
+  const preparedPurgePlans=new WeakMap();
+  function preparePurgeReplacement(workspace,{descriptor,leaseToken,expectedSequence,controlIdentity,sourceDataVersion,stage,asOf=Date.now(),limits={}}={}){
+    assertReady();limits=purgeLimits(limits);
+    if(!maintenanceState||!samePurgeDescriptor(maintenanceState.descriptor,descriptor)||!PURGE_REPLACEMENT_STAGES.includes(stage)||
+      typeof controlIdentity!=='string'||!/^[a-f0-9]{64}$/.test(controlIdentity))throw purgeClaimError();
+    const input=assertPurgeInputBounds(limits),journal=readPurgeWorkerJournal(),sourceRevision=metaRaw('revision');
+    if(!journal||!samePurgeDescriptor(journal.descriptor,descriptor)||journal.state!=='running'||
+      journal.sequence!==expectedSequence||journal.workerPid!==process.pid||journal.leaseToken!==leaseToken||workspace.revision!==sourceRevision||
+      !safeInt(sourceDataVersion)||purgeDataVersion()!==sourceDataVersion)throw purgeClaimError();
+    assertPurgeLease(decode(rawRow('operationLeases',descriptor.leaseOperationId))?.value,descriptor,{workerPid:process.pid,token:leaseToken});
+    const flat=flattenWorkspace(workspace);
+    if(flat.schemaVersion!==3)throw purgeClaimError();
+    const rows=flat.rows.filter(row=>row.collection!=='operationLeases'),
+      derived=[...buildWorkspaceJobReadModels(workspace,{asOf}),...buildCollectionProjectionRows(workspace,{asOf})];
+    for(const row of derived)rows.push({collection:row.collection,id:row.id,value:row.value,
+      metadata:recordMetadata(row.collection,row.id,row.value,row)});
+    if(rows.length>limits.sourceRows||flat.parts.length>limits.parts)throw purgeClaimError('purge_input_limit');
+    const identities=new Map();
+    for(const row of rows){const key=rowKey(row.collection,row.id);if(identities.has(key))throw purgeClaimError();identities.set(key,row);}
+    const packed=[],packageKeys=[],parts=[],references=[];let bytes=0;
+    const count=tuple=>{bytes+=Buffer.byteLength(JSON.stringify(tuple));if(bytes>limits.packedBytes)throw purgeClaimError('purge_input_limit');return Object.freeze(tuple);};
+    const hasRow=(collection,id)=>identities.has(rowKey(collection,id));
+    for(const row of rows){
+      validateRowForWrite(row,3);
+      if(row.metadata.parentId&&!hasRow(row.metadata.parentCollection,row.metadata.parentId))throw purgeClaimError();
+      if(row.metadata.ownerPackageId&&!hasRow('packages',row.metadata.ownerPackageId))throw purgeClaimError();
+      const value=encode(row.value);packed.push(count([row.collection,row.id,value,...metadataNames.map(key=>row.metadata[key]??null)]));
+      if(row.collection==='packages')packageKeys.push(count([row.id,row.value.kind,row.value.versionId,versionNameKey(row.value.versionName),row.value.state]));
+      for(const ref of referenceRows(row,{hasRow})){
+        const target=identities.get(rowKey(ref.collection,ref.id));
+        if(!target||row.metadata.ownerPackageId&&target.metadata.ownerPackageId!==row.metadata.ownerPackageId)throw purgeClaimError();
+        references.push(count([row.collection,row.id,ref.field,ref.collection,ref.id,row.metadata.ownerPackageId]));
+        if(references.length>limits.references)throw purgeClaimError('purge_input_limit');
+      }
+    }
+    for(const part of flat.parts)parts.push(count([part.collection,part.id,part.path,part.childCollection,part.shape]));
+    const topKeys=encode(flat.topKeys);bytes+=Buffer.byteLength(topKeys);if(bytes>limits.packedBytes)throw purgeClaimError('purge_input_limit');
+    const token=Object.freeze(Object.create(null));
+    assertExistingDatabasePathSync(existingMaintenanceBinding);
+    preparedPurgePlans.set(token,Object.freeze({descriptor:Object.freeze(clone(descriptor)),leaseToken,expectedSequence,controlIdentity,
+      stage,sourceRevision,sourceDataVersion,input:Object.freeze(input),packed:Object.freeze(packed),packageKeys:Object.freeze(packageKeys),
+      parts:Object.freeze(parts),references:Object.freeze(references),topKeys,bytes,limits}));
+    return token;
+  }
+  function publishPreparedPurgeReplacement(token,{controlIdentity}={}){
+    assertReady();const plan=preparedPurgePlans.get(token);preparedPurgePlans.delete(token);
+    if(!plan||!maintenanceState||controlIdentity!==plan.controlIdentity)throw purgeClaimError('purge_state_changed');
+    assertExistingDatabasePathSync(existingMaintenanceBinding);
+    const verify=()=>{
+      const journal=readPurgeWorkerJournal(),revision=metaRaw('revision');
+      if(revision!==plan.sourceRevision||purgeDataVersion()!==plan.sourceDataVersion||!journal||!samePurgeDescriptor(journal.descriptor,plan.descriptor)||journal.state!=='running'||
+        journal.sequence!==plan.expectedSequence||journal.workerPid!==process.pid||journal.leaseToken!==plan.leaseToken||
+        metaRaw('schemaVersion')!==3||metaRaw('storeVersion')!==SQLITE_STORE_VERSION||metaRaw('jobReadModelVersion')!==JOB_READ_MODEL_VERSION||
+        metaRaw('collectionProjectionVersion')!==COLLECTION_PROJECTION_VERSION)throw purgeClaimError('purge_state_changed');
+      assertPurgeLease(decode(rawRow('operationLeases',plan.descriptor.leaseOperationId))?.value,plan.descriptor,{workerPid:process.pid,token:plan.leaseToken});
+      return {journal,revision};
+    };
+    verify();operation=true;let committed=false;
+    try{
+      db.exec('BEGIN IMMEDIATE');metrics.transactions++;const {journal,revision}=verify(),nextRevision=revision+1;
+      if(!safeInt(nextRevision))throw purgeClaimError();
+      invokeGuard({phase:'replace',schemaVersion:3,ownerPackageIds:[plan.descriptor.packageId],recordIds:[]});
+      faultInjector&&syncResult(faultInjector('beforeImport',{replace:true,prepared:true}));
+      db.exec("DELETE FROM row_refs WHERE collection<>'operationLeases'; DELETE FROM row_parts WHERE collection<>'operationLeases'; DELETE FROM rows WHERE collection<>'operationLeases'; DELETE FROM package_keys;");
+      for(const tuple of plan.packageKeys)statement('INSERT INTO package_keys(id,kind,version_id,name_key,state) VALUES (?,?,?,?,?)').run(...tuple);
+      for(const tuple of plan.packed){statement(writeRowSql).run(...tuple);metrics.rowsWritten++;}
+      for(const tuple of plan.parts)statement('INSERT INTO row_parts VALUES (?,?,?,?,?) ON CONFLICT(collection,id,path) DO NOTHING').run(...tuple);
+      for(const tuple of plan.references)statement('INSERT INTO row_refs VALUES (?,?,?,?,?,?)').run(...tuple);
+      // Business JSON is already final SQL text. Never stringify or rebuild it
+      // while holding this publication fence. Coordination rows remain in place.
+      statement('UPDATE store_meta SET value=? WHERE key=?').run(plan.topKeys,'topKeys');
+      const publicationReceipt={stage:plan.stage,baseRevision:revision,committedRevision:nextRevision},
+        next={...journal,sequence:journal.sequence+1,stage:plan.stage,publicationReceipt};
+      writeMeta(PURGE_WORKER_JOURNAL,next);writeMeta('revision',nextRevision);
+      statement('INSERT INTO changes(revision,collection,id,owner_id,topic,action) VALUES (?,?,?,?,?,?)')
+        .run(nextRevision,'workspace','*',null,'maintenance','replace');
+      faultInjector&&syncResult(faultInjector('beforeCommit',{revision:nextRevision}));
+      db.exec('COMMIT');committed=true;metrics.commits++;metrics.maintenanceImports++;
+      try{assertExistingDatabasePathSync(existingMaintenanceBinding);faultInjector&&syncResult(faultInjector('afterCommit',{revision:nextRevision}));}
+      catch(cause){throw Object.assign(rowStoreError('sqlite_post_commit','Prepared purge publication committed; reporting failed.',cause),
+        {committed:true,revision:nextRevision,publicationReceipt});}
+      return {revision:nextRevision,journal:clone(next),publicationReceipt,rows:plan.packed.length};
+    }catch(error){if(!committed&&db.isTransaction){db.exec('ROLLBACK');metrics.rollbacks++;}throw normalizeError(error);}
+    finally{operation=false;}
+  }
   const api = {
     filename,
     getMeta(key) { assertReady(true); validateMetaKey(key); return clone(metaRaw(key)); },
@@ -648,6 +878,8 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
       return {rows:result.records.map(r => ({id:r.id,value:clone(r.value),routing:routingOf(r)})),hasMore:result.hasMore,nextCursor:result.nextCursor};
     },
     transaction, exportWorkspace, importWorkspace, rebuildReadModels,
+    readPurgeWorkerJournal,reservePurgeWorkerJournal,updatePurgeWorkerJournal,
+    ...(maintenanceState?{acquirePurgeWorkerLease,preparePurgeReplacement,publishPreparedPurgeReplacement,assertPurgeInputBounds,exportPurgeWorkspaceSnapshot}:{}),
     exportPackage(packageId){
       assertReady();if(typeof packageId!=='string'||!packageId)throw rowStoreError('sqlite_scope_required','Package export requires one owner.');
       return readConsistent(()=>{
@@ -666,7 +898,15 @@ export function openSqliteRowStore({ filename, busyTimeoutMs = 250, guard, onPro
         const hasMore=leases.length>limit||runs.length>limit;if(leases.length>limit)leases.pop();if(runs.length>limit)runs.pop();
         metrics.rowsRead+=leases.length+runs.length;
         for(const lease of leases){metrics.decodedRows++;metrics.decodedBytes+=Buffer.byteLength(lease.value);}
-        return {leases:leases.map(row=>({operationId:row.id,...JSON.parse(row.value)})),runs:runs.map(row=>({...row})),hasMore};
+        // The physical primary key is authorization evidence, not a default
+        // which stored JSON may overwrite. Reject damaged identities before a
+        // caller can reconcile a claim or derive any ordinary deletion list.
+        const values=leases.map(row=>{
+          const value=JSON.parse(row.value);
+          if(!plain(value)||value.operationId!==row.id)throw purgeClaimError();
+          return value;
+        });
+        return {leases:values,runs:runs.map(row=>({...row})),hasMore};
       });
     },
     replaceWorkspace: (workspace, options = {}) => importWorkspace(workspace,{...options,replace:true}),

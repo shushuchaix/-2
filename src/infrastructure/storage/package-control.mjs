@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { writeAtomicJson } from "./atomic.mjs";
 import { UUID_RE, packageError } from "../../domain/packages.mjs";
+import { assertPurgeWorker, assertPurgeWorkerTransition, assertPurgePublication, assertPurgeFileIntent, assertPurgeTaskProofTransition } from '../maintenance/protocol.mjs';
 
 const checksum = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -77,6 +78,11 @@ export function assertControl(c) {
     )
       throw invalid();
   }
+  for(const task of Object.values(c.purgeTasks))if(task?.worker!==undefined)assertPurgeWorker(task.worker,{task});
+  for(const task of Object.values(c.purgeTasks)){
+    if(task?.sqlPublication!==undefined)assertPurgePublication(task.sqlPublication,task);
+    if(task?.fileIntent!==undefined)assertPurgeFileIntent(task.fileIntent,task);
+  }
   return c;
 }
 export function assertControlTransition(previous, next) {
@@ -103,6 +109,12 @@ export function assertControlTransition(previous, next) {
     )
       throw invalid();
   }
+  for(const [id,task]of Object.entries(next.purgeTasks))if(task?.worker!==undefined||previous.purgeTasks[id]?.worker!==undefined)
+    assertPurgeWorkerTransition(previous.purgeTasks[id]?.worker,task.worker,{task,previousTask:previous.purgeTasks[id],
+      retirementTask:task.worker?.previousRetirement?.descriptor.taskId===id?previous.purgeTasks[id]:next.purgeTasks[task.worker?.previousRetirement?.descriptor.taskId]});
+  for(const [id,task]of Object.entries(previous.purgeTasks))if(task?.worker!==undefined&&!Object.hasOwn(next.purgeTasks,id))throw invalid();
+  for(const [id,task]of Object.entries(next.purgeTasks))if(task?.worker!==undefined||previous.purgeTasks[id]?.worker!==undefined)
+    assertPurgeTaskProofTransition(previous.purgeTasks[id],task);
 }
 export function openPackageControl({
   dataDir,

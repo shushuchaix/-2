@@ -37,6 +37,8 @@ const REQUIRED_RUNTIME = [
   "src/application/run-service.mjs",
   "src/application/purge-service.mjs",
   "src/infrastructure/storage/repository.mjs",
+  "src/infrastructure/storage/maintenance-existing.mjs",
+  "src/infrastructure/maintenance/protocol.mjs",
   "src/infrastructure/storage/package-control.mjs",
   "src/infrastructure/storage/bootstrap-workspace.mjs",
   "src/infrastructure/diagnostics/log.mjs",

@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import { openPackageControl, applyDeletionLedger } from './package-control.mjs';
 import { openSqliteRowStore } from './sqlite-store.mjs';
 import { PRIVATE_COLLECTIONS } from './sqlite-schema.mjs';
-import { migrateWorkspaceToSqlite } from './sqlite-migration.mjs';
 import { createManagedSnapshotPort, assertSnapshotOwner, assertSnapshotPath, snapshotPath } from './managed-snapshots.mjs';
 import { withWorkspaceLock } from './lock.mjs';
 import { assertWorkspace } from '../../domain/contracts.mjs';
@@ -14,9 +14,11 @@ import { canonicalContentHash } from './content-hash.mjs';
 import { countPackageRows } from './package-counts.mjs';
 import { createOwnedRunSnapshotWriter } from './owned-run-snapshots.mjs';
 import { contentHash } from './content-hash.mjs';
-import { ensureSqliteReadModels } from './read-model-maintenance.mjs';
 import { hasLiveOwner } from './process-owner.mjs';
 import { createStorageDiagnostics, tagStorageError } from './diagnostics.mjs';
+import { inspectExistingMaintenance, existingMaintenanceState, recheckExistingMaintenance, assertExistingDatabasePathSync } from './maintenance-existing.mjs';
+import { assertPurgeDescriptor, assertPurgeJournal, assertPurgeLease, assertPurgeWorker, assertPurgeHostStatus, samePurgeDescriptor,
+  purgeDescriptor, purgeClaimError, isProtectedPurgeLease, PURGE_REPLACEMENT_STAGES } from '../maintenance/protocol.mjs';
 export { contentHash } from './content-hash.mjs';
 
 const clone=value=>value===undefined?undefined:structuredClone(value);
@@ -29,15 +31,30 @@ const signature=stat=>{
 
 /** The only production assembler of the SQLite business store and monotonic control fence. */
 export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:()=>Date.now()},
-  diagnostics,allowLegacy=false,busyTimeoutMs=250,faultInjector,onStartupStage}={}){
+  diagnostics,allowLegacy=false,busyTimeoutMs=250,faultInjector,onStartupStage,existingMaintenanceBinding}={}){
   if(!dataDir)throw Error('Missing data directory');
-  dataDir=path.resolve(dataDir);await fsAdapter.mkdir(dataDir,{recursive:true});
+  dataDir=path.resolve(dataDir);
+  const maintenanceState=existingMaintenanceBinding===undefined?null:existingMaintenanceState(existingMaintenanceBinding,{dataDir});
+  if(!maintenanceState)await fsAdapter.mkdir(dataDir,{recursive:true});
   const storageDiagnostics=createStorageDiagnostics({diagnostics,metrics:()=>store.metrics()});
   const controlStore=openPackageControl({dataDir,fsAdapter,captureFileIdentity:true,onRenameRecovery:storageDiagnostics.onControlRenameRecovery});
   const heldLock=new AsyncLocalStorage();
+  // The common lock normally creates its directory (and a reclaimer directory
+  // when recovering a dead owner). Maintenance may use existing coordination
+  // paths but must never initialize them. Keep ordinary callers unchanged.
+  const lockFsAdapter=maintenanceState?{...fsAdapter,async mkdir(directory){
+    const resolved=path.resolve(directory),key=value=>process.platform==='win32'?value.toLowerCase():value;
+    if(![dataDir,path.join(dataDir,'.workspace.lock.reclaimers')].some(allowed=>key(allowed)===key(resolved)))
+      throw purgeClaimError('purge_existing_store_required');
+    const stat=await fsAdapter.lstat(resolved,{bigint:true});
+    if(!stat.isDirectory()||stat.isSymbolicLink()||key(await fsAdapter.realpath(resolved))!==key(resolved))
+      throw purgeClaimError('purge_existing_store_required');
+  }}:fsAdapter;
   const counts={maintenanceReads:0,maintenanceMutations:0,maintenanceTransactions:0,controlReads:0,controlCacheHits:0,writeFences:0};
   let closed=false,queue=Promise.resolve(),controlCache,activePort,bootstrapping=true;
   const controlIndexes=new WeakMap();
+  const controlIdentities=new WeakMap(),purgeReplacementTokens=new WeakMap();
+  const controlIdentity=control=>{let value=controlIdentities.get(control);if(value===undefined){value=canonicalContentHash(control);controlIdentities.set(control,value);}return value;};
   const deletionHeads=new WeakMap();
   const deletionHeadFor=control=>{
     let head=deletionHeads.get(control);
@@ -58,7 +75,7 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
     return withWorkspaceLock(dataDir,async()=>{
       const token={active:true};
       try{return await heldLock.run(token,()=>action(token));}finally{token.active=false;}
-    },{fsAdapter});
+    },{fsAdapter:lockFsAdapter});
   };
   const fingerprint=async()=>{
     if(typeof fsAdapter.stat!=='function')return null;
@@ -126,11 +143,22 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
         throw packageError('package_purge_pending','记录已列入永久删除账本。');
     }
   };
-  const store=openSqliteRowStore({filename:path.join(dataDir,'workspace.sqlite'),busyTimeoutMs,guard,
-    faultInjector:faultInjector?(phase,context)=>faultInjector('sqlite.'+phase,context):undefined});
+  const storeOptions={filename:path.join(dataDir,'workspace.sqlite'),busyTimeoutMs,guard,
+    faultInjector:faultInjector?(phase,context)=>faultInjector('sqlite.'+phase,context):undefined,
+    ...(maintenanceState?{existingMaintenanceBinding}:{})};
+  const store=maintenanceState?await inLock(async()=>{
+    const before=await recheckExistingMaintenance(existingMaintenanceBinding),opened=openSqliteRowStore(storeOptions);
+    try{
+      const after=await recheckExistingMaintenance(existingMaintenanceBinding);
+      if(before.controlDigest!==after.controlDigest)throw purgeClaimError('purge_state_changed');return opened;
+    }catch(error){opened.close();throw error;}
+  }):openSqliteRowStore(storeOptions);
   let migration;
   try{
-    migration=await inLock(async()=>{const result=await migrateWorkspaceToSqlite({dataDir,store,controlStore,fsAdapter,clock,faultInjector,allowLegacy});
+    if(maintenanceState)migration={changed:false,phase:'complete',sourceHash:maintenanceState.sourceHash,existingOnly:true};
+    else migration=await inLock(async()=>{
+      const {migrateWorkspaceToSqlite}=await import('./sqlite-migration.mjs'),{ensureSqliteReadModels}=await import('./read-model-maintenance.mjs');
+      const result=await migrateWorkspaceToSqlite({dataDir,store,controlStore,fsAdapter,clock,faultInjector,allowLegacy});
       await ensureSqliteReadModels({store,controlStore,clock,faultInjector,onStartupStage});return result;});
     bootstrapping=false;controlCache=undefined;
   }catch(error){store.close();throw error;}finally{storageDiagnostics.flushControlRecoveries();}
@@ -168,6 +196,27 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
     const leases=callStore(()=>store.queryRows({collection:'operationLeases',limit:200}));
     if(leases.hasMore)throw packageError('workspace_operation_busy','活动操作超过安全上限。',409);
     return {operationLeases:Object.fromEntries(leases.rows.map(row=>[row.id,row.value]))};
+  };
+  const purgeTaskFor=(control,descriptor,{states=['starting','running','retry_wait','stopped','completed']}={})=>{
+    assertPurgeDescriptor(descriptor);
+    const task=control.purgeTasks[descriptor.taskId],ledger=control.deletionLedger[descriptor.packageId];
+    if(!task||!ledger||task.packageId!==descriptor.packageId||ledger.operationId!==descriptor.taskId||
+      !samePurgeDescriptor(purgeDescriptor(task),descriptor)||!states.includes(task.worker.state))throw purgeClaimError();
+    assertPurgeWorker(task.worker,{task});return task;
+  };
+  const requireMaintenanceBinding=binding=>{
+    if(!maintenanceState||binding!==existingMaintenanceBinding)throw purgeClaimError();
+    return existingMaintenanceState(binding,{dataDir,descriptor:maintenanceState.descriptor});
+  };
+  const runningPurgeAuthority=(control,{readPort=store}={})=>{
+    if(!maintenanceState)throw purgeClaimError();
+    const descriptor=maintenanceState.descriptor,task=purgeTaskFor(control,descriptor,{states:['running']}),
+      journal=assertPurgeJournal(readPort.getMeta('purgeWorkerJournal')),
+      lease=readPort.getRow({collection:'operationLeases',id:descriptor.leaseOperationId});
+    if(!journal||!samePurgeDescriptor(journal.descriptor,descriptor)||journal.state!=='running'||journal.workerPid!==process.pid||
+      task.worker.workerPid!==process.pid||task.worker.journalSequence!==journal.sequence)throw purgeClaimError();
+    assertPurgeLease(lease,descriptor,{workerPid:process.pid,token:journal.leaseToken});
+    return {descriptor,task,journal,lease};
   };
   // Fixed recovery metadata only, including inaccessible owners. These flags do
   // not grant any ordinary body-read/write capability.
@@ -245,6 +294,102 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
         });},
         getPackageCounts(packageId){return observation.measure(()=>{ensure();return callStore(()=>countPackageRows(store,packageId));});},
         readOperationState(input={}){return observation.measure(()=>{ensure();return callStore(()=>store.readOperationState(input));});},
+        readPurgeWorkerJournal(){ensure();return callStore(()=>store.readPurgeWorkerJournal());},
+        async reconcilePurgeWorker({isOwnerAlive=pid=>hasLiveOwner({ownerPid:pid})}={}){
+          ensure();const journal=callStore(()=>store.readPurgeWorkerJournal());
+          if(!journal||journal.state==='retired')return {status:'ordinary'};
+          let task;try{task=purgeTaskFor(state.control,journal.descriptor);}catch{return {status:'maintenance_pending'};}
+          if(journal.state==='dispatch_reserved')return {status:'maintenance_pending'};
+          const lease=callStore(()=>store.getRow({collection:'operationLeases',id:journal.descriptor.leaseOperationId}));
+          if(journal.state==='release_observed')return {status:'maintenance_pending'};
+          try{assertPurgeLease(lease,journal.descriptor,{workerPid:journal.workerPid,token:journal.leaseToken});}catch{return {status:'maintenance_pending'};}
+          let alive=true;try{alive=isOwnerAlive(lease.ownerPid)!==false;}catch{}
+          // A missing publication receipt, before the first body publication,
+          // proves this generation has not entered file effects. Any uncertain
+          // receipt/file intent needs the later worker recovery executor instead.
+          if(alive||journal.publicationReceipt!==null||!['prepared','body'].includes(journal.stage)||
+            !['prepared','purge_pending'].includes(task.phase)||task.fileIntent||task.worker.fileIntent)return {status:'maintenance_pending'};
+          const next=clone(state.control),current=next.purgeTasks[task.operationId];
+          if(['starting','running'].includes(current.worker.state)){
+            current.worker={...current.worker,state:'retry_wait',lastOutcome:'purge_worker_failed',
+              nextRetryAt:new Date(Number(clock.now())+300000).toISOString()};
+            current.attempts=(current.attempts||0)+1;current.nextRetryAt=current.worker.nextRetryAt;current.code='purge_worker_failed';
+            await fence.commitControl(next);
+          }
+          const released=callStore(()=>store.updatePurgeWorkerJournal(journal.descriptor,{expectedSequence:journal.sequence,
+            state:'release_observed',stage:journal.stage,leaseToken:journal.leaseToken,allowDeadOwner:true}));
+          const associated=clone(state.control);associated.purgeTasks[task.operationId].worker.journalSequence=released.journal.sequence;
+          await fence.commitControl(associated);return {status:'maintenance_reconciled_retry'};
+        },
+        ...(maintenanceState?{
+          async acquirePurgeClaim(binding){
+            ensure();requireMaintenanceBinding(binding);const descriptor=maintenanceState.descriptor,
+              task=purgeTaskFor(state.control,descriptor,{states:['starting','running']}),journal=callStore(()=>store.readPurgeWorkerJournal());
+            if(!journal||!samePurgeDescriptor(journal.descriptor,descriptor)||
+              task.worker.workerPid!==null&&task.worker.workerPid!==process.pid)throw purgeClaimError();
+            const acquired=callStore(()=>store.acquirePurgeWorkerLease(descriptor,{leaseToken:randomUUID(),createdAt:new Date(clock.now()).toISOString()})),
+              next=clone(state.control),worker=next.purgeTasks[descriptor.taskId].worker;
+            worker.workerPid=process.pid;worker.state='running';worker.startedAt??=new Date(clock.now()).toISOString();worker.journalSequence=acquired.journal.sequence;
+            await fence.commitControl(next);
+            const running=callStore(()=>store.updatePurgeWorkerJournal(descriptor,{expectedSequence:acquired.journal.sequence,
+              state:'running',stage:acquired.journal.stage,workerPid:process.pid,leaseToken:acquired.lease.token}));
+            const associated=clone(state.control);associated.purgeTasks[descriptor.taskId].worker.journalSequence=running.journal.sequence;
+            await fence.commitControl(associated);
+            return {...acquired.lease,acquiredRevision:callStore(()=>store.readPurgeLeaseRevision(acquired.lease.operationId))};
+          },
+          async releasePurgeClaim(binding,{outcome='purge_worker_stopped'}={}){
+            ensure();requireMaintenanceBinding(binding);const descriptor=maintenanceState.descriptor,
+              task=purgeTaskFor(state.control,descriptor),journal=callStore(()=>store.readPurgeWorkerJournal());
+            if(!journal||!samePurgeDescriptor(journal.descriptor,descriptor)||journal.workerPid!==process.pid)throw purgeClaimError();
+            const next=clone(state.control),current=next.purgeTasks[descriptor.taskId];
+            if(current.fileIntent&&current.fileIntent.stage!=='verified')throw purgeClaimError();
+            if(journal.publicationReceipt)current.sqlPublication={descriptor:clone(descriptor),...clone(journal.publicationReceipt)};
+            current.worker.workerPid=process.pid;current.worker.startedAt??=new Date(clock.now()).toISOString();
+            if(current.phase==='completed')current.worker.state='completed';
+            else if(['starting','running'].includes(current.worker.state)){
+              current.worker.state='retry_wait';current.worker.lastOutcome=outcome;
+              current.worker.nextRetryAt=new Date(Number(clock.now())+300000).toISOString();
+              current.attempts=(current.attempts||0)+1;current.nextRetryAt=current.worker.nextRetryAt;current.code=outcome;
+            }
+            await fence.commitControl(next);
+            const released=callStore(()=>store.updatePurgeWorkerJournal(descriptor,{expectedSequence:journal.sequence,
+              state:'release_observed',stage:current.phase==='completed'?'completed':journal.stage,leaseToken:journal.leaseToken}));
+            const associated=clone(state.control);associated.purgeTasks[descriptor.taskId].worker.journalSequence=released.journal.sequence;
+            await fence.commitControl(associated);return {released:true};
+          },
+          async beginPurgeStage(binding,stage){
+            ensure();requireMaintenanceBinding(binding);if(!PURGE_REPLACEMENT_STAGES.includes(stage))throw purgeClaimError();
+            const descriptor=maintenanceState.descriptor,task=purgeTaskFor(state.control,descriptor,{states:['running']}),
+              journal=callStore(()=>store.readPurgeWorkerJournal()),lease=callStore(()=>store.getRow({collection:'operationLeases',id:descriptor.leaseOperationId}));
+            if(!journal||journal.state!=='running'||!samePurgeDescriptor(journal.descriptor,descriptor)||journal.workerPid!==process.pid||
+              task.worker.workerPid!==process.pid||(task.worker.journalSequence??0)>journal.sequence||
+              stage==='final'&&task.phase!=='verified'||stage==='body'&&!['prepared','purge_pending'].includes(task.phase))throw purgeClaimError();
+            assertPurgeLease(lease,descriptor,{workerPid:process.pid,token:journal.leaseToken});
+            const updated=callStore(()=>store.updatePurgeWorkerJournal(descriptor,{expectedSequence:journal.sequence,state:'running',stage,
+              workerPid:process.pid,leaseToken:lease.token})),next=clone(state.control);
+            next.purgeTasks[descriptor.taskId].worker.journalSequence=updated.journal.sequence;
+            await fence.commitControl(next);return {sequence:updated.journal.sequence};
+          },
+          async publishPreparedPurgeReplacement(token){
+            ensure();const plan=purgeReplacementTokens.get(token);purgeReplacementTokens.delete(token);
+            if(!plan||controlIdentity(state.control)!==plan.controlIdentity)throw purgeClaimError('purge_state_changed');
+            const authority=runningPurgeAuthority(state.control);
+            if(!samePurgeDescriptor(authority.descriptor,plan.descriptor)||authority.journal.sequence!==plan.sequence||
+              plan.stage==='final'&&authority.task.phase!=='verified'||plan.stage==='body'&&!['prepared','purge_pending'].includes(authority.task.phase))
+              throw purgeClaimError('purge_state_changed');
+            // Reuse the bounded namespace/path inspection against the original
+            // opaque binding. A marker-only replacement is invisible to the
+            // control cache; never refresh the expected marker to accept it.
+            const existing=await recheckExistingMaintenance(existingMaintenanceBinding);
+            ensure();if(controlIdentity(existing.control)!==plan.controlIdentity)throw purgeClaimError('purge_state_changed');
+            assertExistingDatabasePathSync(existingMaintenanceBinding);
+            const receipt=callStore(()=>store.publishPreparedPurgeReplacement(plan.storeToken,{controlIdentity:plan.controlIdentity})),next=clone(state.control);
+            next.purgeTasks[plan.descriptor.taskId].worker.journalSequence=receipt.journal.sequence;
+            next.purgeTasks[plan.descriptor.taskId].sqlPublication={descriptor:clone(plan.descriptor),...clone(receipt.publicationReceipt)};
+            try{await fence.commitControl(next);}catch(error){throw Object.assign(error,{committed:true,revision:receipt.revision});}
+            return {revision:receipt.revision,publicationReceipt:receipt.publicationReceipt,rows:receipt.rows};
+          },
+        }:{}),
         transaction(selection,action){return observation.measure(()=>{
           ensure();const newPackages=new Set((selection.select||[]).filter(s=>s.collection==='packages').flatMap(s=>s.ids||[]).filter(id=>!callStore(()=>store.getRow({collection:'packages',id}))));
           const prior=state.options;state.options={...prior,newPackages};
@@ -266,7 +411,15 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
       });
       try{
         observation.measure(()=>{validate({select:[]},state.control,{...state.options,enforceMaintenance:true});if(!options.bootstrap)assertOperationWriteAllowed(operationView(),state.options);});
-        const result=await action(Object.freeze(fence));
+        const exposedFence=maintenanceState?Object.freeze({
+          get control(){return fence.control;},commitControl:next=>fence.commitControl(next),
+          getMeta:key=>{if(!['schemaVersion','revision','storeVersion','migrationSourceHash','jobReadModelVersion','collectionProjectionVersion'].includes(key))throw purgeClaimError();return fence.getMeta(key);},
+          readOperationState:input=>fence.readOperationState(input),readPurgeWorkerJournal:()=>fence.readPurgeWorkerJournal(),
+          reconcilePurgeWorker:input=>fence.reconcilePurgeWorker(input),acquirePurgeClaim:binding=>fence.acquirePurgeClaim(binding),
+          releasePurgeClaim:(binding,input)=>fence.releasePurgeClaim(binding,input),beginPurgeStage:(binding,stage)=>fence.beginPurgeStage(binding,stage),
+          publishPreparedPurgeReplacement:token=>fence.publishPreparedPurgeReplacement(token),
+        }):Object.freeze(fence);
+        const result=await action(exposedFence);
         if(controlWriting){await pendingControl;throw packageError('workspace_fence_busy','回调必须等待控制提交完成。',503);}
         return clone(result);
       }finally{if(controlWriting)await pendingControl.catch(()=>{});live=false;activePort=previousPort;}
@@ -301,6 +454,135 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
     enableStrictSchema3(){if(callStore(()=>store.getMeta('schemaVersion'))!==3)throw packageError('workspace_upgrade_required','旧格式仅可用于维护导入。',503);},
     withWriteFence,withMaintenanceTransaction,
     async readControl(){return clone(await currentControl());},
+    async readPurgeWorkerJournal(){await currentControl();return callStore(()=>store.readPurgeWorkerJournal());},
+    async claimPurgeDispatch({taskId,expectedDescriptor}={}){
+      if(maintenanceState||!UUID_RE.test(taskId||''))throw purgeClaimError();
+      return withWriteFence(async fence=>{
+        const control=fence.control,task=control.purgeTasks[taskId];
+        if(!task)throw purgeClaimError();
+        if(task.phase==='completed')return {descriptor:task.worker?purgeDescriptor(task):null,dispatchAllowed:false,completed:true};
+        const ledger=control.deletionLedger[task.packageId];if(!ledger||ledger.operationId!==taskId||ledger.phase!=='purge_pending')throw purgeClaimError();
+        for(const item of Object.values(control.migrationJournal.maintenance||{}))if(!['complete','aborted'].includes(item.phase))throw purgeClaimError();
+        for(const item of Object.values(control.migrationJournal.archives||{}))if(item.phase!=='complete')throw purgeClaimError();
+        if(Object.values(control.ownershipTransfers).some(item=>item.phase!==undefined&&item.phase!=='complete'))throw purgeClaimError();
+        let journal=fence.readPurgeWorkerJournal(),descriptor;
+        const prior=task.worker;
+        if(prior&&['starting','running'].includes(prior.state)){
+          descriptor=purgeDescriptor(task);
+          if(expectedDescriptor&&!samePurgeDescriptor(descriptor,expectedDescriptor))throw purgeClaimError();
+          if(prior.dispatcherPid!==process.pid||prior.state==='running'||prior.workerPid!==null)
+            return {descriptor,dispatchAllowed:false,completed:false};
+          if(journal&&!samePurgeDescriptor(journal.descriptor,descriptor)&&
+            (!prior.previousRetirement||!samePurgeDescriptor(journal.descriptor,prior.previousRetirement.descriptor)||
+             journal.state!=='retired'||journal.sequence!==prior.previousRetirement.sequence))throw purgeClaimError();
+        }else{
+          if(expectedDescriptor&&(!prior||!samePurgeDescriptor(purgeDescriptor(task),expectedDescriptor)))throw purgeClaimError();
+          if(prior&&(!['retry_wait','stopped'].includes(prior.state)||prior.retirement?.stage!=='complete'))throw purgeClaimError();
+          if(prior?.nextRetryAt&&clock.now()<Date.parse(prior.nextRetryAt)||task.nextRetryAt&&clock.now()<Date.parse(task.nextRetryAt))
+            return {descriptor:prior?purgeDescriptor(task):null,dispatchAllowed:false,completed:false};
+          if(journal){
+            const retiredTask=control.purgeTasks[journal.descriptor.taskId];
+            if(journal.state!=='retired'||!retiredTask?.worker||retiredTask.worker.retirement?.stage!=='complete'||
+              retiredTask.worker.journalSequence!==journal.sequence||!samePurgeDescriptor(purgeDescriptor(retiredTask),journal.descriptor))throw purgeClaimError();
+          }
+          const operations=fence.readOperationState();
+          if(operations.hasMore||operations.leases.some(hasLiveOwner)||operations.runs.some(hasLiveOwner))throw purgeClaimError();
+          descriptor={taskId,packageId:task.packageId,generation:(prior?.generation||0)+1,dispatchId:randomUUID(),leaseOperationId:'op-'+randomUUID()};
+          const next=clone(control),worker={formatVersion:1,generation:descriptor.generation,dispatchId:descriptor.dispatchId,
+            leaseOperationId:descriptor.leaseOperationId,state:'starting',dispatcherPid:process.pid,workerPid:null,
+            claimStartedAt:new Date(clock.now()).toISOString(),startedAt:null,lastOutcome:null,nextRetryAt:null};
+          if(journal)worker.previousRetirement={descriptor:clone(journal.descriptor),sequence:journal.sequence};
+          else if(prior)worker.previousRetirement={descriptor:purgeDescriptor(task),sequence:null};
+          next.purgeTasks[taskId].worker=worker;await fence.commitControl(next);await faultInjector?.('purge.claim-control-prepared');
+        }
+        const current=fence.control.purgeTasks[taskId].worker,previous=current.previousRetirement;
+        const reserved=callStore(()=>store.reservePurgeWorkerJournal(descriptor,{expectedSequence:previous?.sequence??null,previousDescriptor:previous?.descriptor??null}));
+        await faultInjector?.('purge.claim-sql-reserved');journal=reserved.journal;
+        const next=fence.control;next.purgeTasks[taskId].worker.journalSequence=journal.sequence;
+        delete next.purgeTasks[taskId].worker.previousRetirement;await fence.commitControl(next);await faultInjector?.('purge.claim-control-associated');
+        return {descriptor,dispatchAllowed:journal.state==='dispatch_reserved'&&journal.workerPid===null,completed:false};
+      },{operationMaintenance:true});
+    },
+    async reconcilePurgeCoordination(options={}){return withWriteFence(fence=>fence.reconcilePurgeWorker(options),{operationMaintenance:true});},
+    async retirePurgeDispatch({descriptor,hostStatus}={}){
+      if(maintenanceState)throw purgeClaimError();assertPurgeHostStatus(hostStatus,descriptor);
+      if(!hostStatus.cleanupSettled||!(hostStatus.exitObserved||hostStatus.spawnFailed))throw purgeClaimError();
+      return withWriteFence(async fence=>{
+        let task=purgeTaskFor(fence.control,descriptor),journal=fence.readPurgeWorkerJournal();
+        if(!journal&&task.worker.journalSequence!==undefined)throw purgeClaimError();
+        if(hostStatus.exitObserved&&(task.worker.workerPid??journal?.workerPid)!==hostStatus.workerPid)throw purgeClaimError();
+        if(hostStatus.spawnFailed&&(task.worker.workerPid!==null||journal?.workerPid!==undefined&&journal.workerPid!==null))throw purgeClaimError();
+        if(journal&&!samePurgeDescriptor(journal.descriptor,descriptor))throw purgeClaimError();
+        if(journal&&['claimed','running'].includes(journal.state)){
+          await fence.reconcilePurgeWorker();journal=fence.readPurgeWorkerJournal();task=purgeTaskFor(fence.control,descriptor);
+        }
+        if(journal&&journal.state!=='release_observed'&&!(hostStatus.spawnFailed&&journal.state==='dispatch_reserved')&&journal.state!=='retired')throw purgeClaimError();
+        const operations=fence.readOperationState();if(operations.hasMore||operations.leases.some(lease=>lease.operationId===descriptor.leaseOperationId))throw purgeClaimError();
+        if(task.fileIntent&&task.fileIntent.stage!=='verified')throw purgeClaimError();
+        if(journal?.publicationReceipt){
+          const proof=task.sqlPublication;
+          if(!proof||!samePurgeDescriptor(proof.descriptor,descriptor)||
+            !['stage','baseRevision','committedRevision'].every(key=>proof[key]===journal.publicationReceipt[key]))throw purgeClaimError();
+        }
+        if(!['retry_wait','stopped','completed'].includes(task.worker.state)){
+          if(!hostStatus.spawnFailed)throw purgeClaimError();
+          const failed=fence.control,current=failed.purgeTasks[descriptor.taskId];
+          current.worker={...current.worker,state:'retry_wait',lastOutcome:'purge_boot_failed',nextRetryAt:new Date(Number(clock.now())+300000).toISOString()};
+          current.attempts=(current.attempts||0)+1;current.nextRetryAt=current.worker.nextRetryAt;current.code='purge_boot_failed';await fence.commitControl(failed);
+        }
+        task=purgeTaskFor(fence.control,descriptor);
+        if(task.worker.retirement?.stage==='complete'){
+          if(journal&&journal.state!=='retired'||journal&&task.worker.journalSequence!==journal.sequence)throw purgeClaimError();
+          return {retired:true,sequence:journal?.sequence??null};
+        }
+        if(!task.worker.retirement){
+          if(journal?.state==='retired')throw purgeClaimError();
+          const prepared=fence.control;prepared.purgeTasks[descriptor.taskId].worker.retirement={sequence:journal?.sequence??0,stage:'prepared'};
+          await fence.commitControl(prepared);await faultInjector?.('purge.retire-control-prepared');
+        }
+        if(journal&&journal.state!=='retired'){
+          if(purgeTaskFor(fence.control,descriptor).worker.retirement.sequence!==journal.sequence)throw purgeClaimError();
+          const retired=callStore(()=>store.updatePurgeWorkerJournal(descriptor,{expectedSequence:journal.sequence,state:'retired'}));
+          journal=retired.journal;await faultInjector?.('purge.retire-sql-retired');
+        }
+        if(journal&&purgeTaskFor(fence.control,descriptor).worker.retirement.sequence+1!==journal.sequence)throw purgeClaimError();
+        const complete=fence.control,worker=complete.purgeTasks[descriptor.taskId].worker;
+        worker.retirement.stage='complete';if(journal)worker.journalSequence=journal.sequence;
+        await fence.commitControl(complete);await faultInjector?.('purge.retire-control-complete');return {retired:true,sequence:journal?.sequence??null};
+      },{operationMaintenance:true});
+    },
+    ...(maintenanceState?{
+      async acquirePurgeClaim(){
+        const value=await withWriteFence(fence=>fence.acquirePurgeClaim(existingMaintenanceBinding),{operationMaintenance:true});
+        return Object.freeze({...value,release:()=>repository.releasePurgeClaim()});
+      },
+      releasePurgeClaim:input=>withWriteFence(fence=>fence.releasePurgeClaim(existingMaintenanceBinding,input),{operationMaintenance:true}),
+      async preparePurgeReplacement({stage,operationLease}={}){
+        if(!PURGE_REPLACEMENT_STAGES.includes(stage))throw purgeClaimError();
+        const initial=runningPurgeAuthority(await currentControl());
+        if(operationLease?.operationId!==initial.lease.operationId||operationLease?.token!==initial.lease.token)throw purgeClaimError();
+        // Own intent/sequence is durable before any expensive computation; never
+        // rebind an already prepared token after publishing more own progress.
+        await withWriteFence(fence=>fence.beginPurgeStage(existingMaintenanceBinding,stage),{operationLease,operationMaintenance:true});
+        const before=await currentControl(),authority=runningPurgeAuthority(before),identity=controlIdentity(before);
+        if(stage==='final'&&authority.task.phase!=='verified')throw purgeClaimError();
+        const snapshot=callStore(()=>store.exportPurgeWorkspaceSnapshot(maintenanceState.limits)),latest=await currentControl();
+        if(controlIdentity(latest)!==identity)throw purgeClaimError('purge_state_changed');
+        const draft=applyDeletionLedger(snapshot.workspace,latest);
+        if(stage==='final')delete draft.packages[authority.descriptor.packageId];
+        assertWorkspace(draft);
+        const storeToken=callStore(()=>store.preparePurgeReplacement(draft,{descriptor:authority.descriptor,
+          leaseToken:authority.lease.token,expectedSequence:authority.journal.sequence,controlIdentity:identity,
+          sourceDataVersion:snapshot.dataVersion,stage,asOf:clock.now(),limits:maintenanceState.limits}));
+        const token=Object.freeze(Object.create(null));purgeReplacementTokens.set(token,{storeToken,descriptor:authority.descriptor,
+          lease:authority.lease,sequence:authority.journal.sequence,controlIdentity:identity,stage});return token;
+      },
+      async publishPreparedPurgeReplacement(token){
+        const plan=purgeReplacementTokens.get(token);if(!plan)throw purgeClaimError();
+        try{return await withWriteFence(fence=>fence.publishPreparedPurgeReplacement(token),{operationLease:plan.lease,operationMaintenance:true});}
+        finally{purgeReplacementTokens.delete(token);}
+      },
+    }:{}),
     async queryRecoveryRunHeads(input={}){
       await currentControl();const page=callStore(()=>store.queryRecoveryRunHeads(input));
       return clone(recoveryHeads(page,await currentControl()));
@@ -313,7 +595,9 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
       if(typeof packageId!=='string'||!packageId)throw packageError('package_scope_mismatch','包身份无效。',400);
       await currentControl();const result=callStore(()=>countPackageRows(store,packageId));await currentControl();return result;
     },
-    async exportWorkspace(){counts.maintenanceReads++;const control=await currentControl();const raw=callStore(()=>store.exportWorkspace());const latest=await currentControl();const value=applyDeletionLedger(raw,latest);return clone(value);},
+    async exportWorkspace(){counts.maintenanceReads++;const control=await currentControl();if(maintenanceState)runningPurgeAuthority(control);
+      const raw=callStore(()=>store.exportWorkspace());const latest=await currentControl();if(maintenanceState)runningPurgeAuthority(latest);
+      const value=applyDeletionLedger(raw,latest);return clone(value);},
     async read(){return repository.exportWorkspace();},
     async replaceWorkspace(workspace,options={}){return withMaintenanceTransaction(tx=>tx.commitWorkspace(workspace),options);},
     async mutateWorkspace(action,options={}){
@@ -364,5 +648,23 @@ export async function openWorkspaceRepository({dataDir,fsAdapter=fs,clock={now:(
   };
   for(const method of ['getMeta','getRow','getRecord','readView','queryRows','queryIds','aggregateRows','readChanges','queryJobPage','queryApplicationPage','findJobIdentityCandidates','queryJobQuality','readJobBodySignatures','readJobHead','queryJobRelatedPage','queryCollectionSnapshot','queryRunHeads','queryCollectionSlicePage','discoverLegacyOwners','queryLegacyApplicationPage','queryLegacyTrackingSummary','queryLegacyTrackingPage','queryLegacyRunTargets','findLegacyApplicationIds','queryDiagnosticRunScopes'])repository[method]=(input,options)=>readBounded(method,input,options);
   repository.writeOwnedRunSnapshot=createOwnedRunSnapshotWriter({repository,dataDir,fsAdapter,clock,faultInjector});
+  if(maintenanceState){
+    // This instance is a worker capability, not a second ordinary business
+    // context. Before the real claim is associated it exposes metadata only.
+    const selected=['dataDir','clock','migration','withWriteFence','readControl','readPurgeWorkerJournal','getMeta',
+      'acquirePurgeClaim','releasePurgeClaim','preparePurgeReplacement','publishPreparedPurgeReplacement','exportWorkspace','close','metrics','pragmas'];
+    const limited=Object.fromEntries(selected.map(key=>[key,repository[key]]));
+    limited.getMeta=async key=>{if(!['schemaVersion','revision','storeVersion','migrationSourceHash','jobReadModelVersion','collectionProjectionVersion'].includes(key))throw purgeClaimError();return repository.getMeta(key);};
+    limited.compact=()=>withWriteFence(()=>{runningPurgeAuthority(activePort.control);return callStore(()=>store.compact());},{operationMaintenance:true});
+    return Object.freeze(limited);
+  }
   return repository;
+}
+
+/** Internal worker factory. It cannot initialize a directory or perform the
+ * ordinary cold migration path, and a plain object is never a valid binding. */
+export async function openExistingMaintenanceRepository({dataDir,workspaceId,descriptor,fsAdapter=fs,clock={now:()=>Date.now()},
+  diagnostics,busyTimeoutMs=250,faultInjector,limits={}}={}){
+  const existingMaintenanceBinding=await inspectExistingMaintenance({dataDir,workspaceId,descriptor,fsAdapter,busyTimeoutMs,limits});
+  return openWorkspaceRepository({dataDir,fsAdapter,clock,diagnostics,busyTimeoutMs,faultInjector,existingMaintenanceBinding});
 }
